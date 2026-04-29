@@ -16,9 +16,9 @@ let defaultDirCreated = false;
 export function getDefaultDyadAppsDirectory(): string {
   if (IS_TEST_BUILD) {
     const electron = getElectron();
-    return path.join(electron!.app.getPath("userData"), "dyad-apps");
+    return path.join(electron!.app.getPath("userData"), "orianbuilder-apps");
   }
-  return path.join(os.homedir(), "dyad-apps");
+  return path.join(os.homedir(), "orianbuilder-apps");
 }
 
 /**

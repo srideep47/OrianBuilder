@@ -24,7 +24,7 @@ export function MacNotificationGuideDialog({
           <DialogTitle>Allow Notifications on macOS</DialogTitle>
           <DialogDescription>
             If you didn't receive a test notification, you may need to allow
-            notifications for Dyad in macOS. Here are two ways to do it:
+            notifications for OrianBuilder in macOS. Here are two ways to do it:
           </DialogDescription>
         </DialogHeader>
 

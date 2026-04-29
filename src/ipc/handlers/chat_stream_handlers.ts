@@ -340,11 +340,11 @@ export function registerChatStreamHandlers() {
           await writeFile(persistentPath, fileBuffer);
           attachmentPaths.push(persistentPath);
 
-          // Build dyad-media:// URL for display
+          // Build orian-media:// URL for display
           // Use a fixed hostname to avoid URL hostname normalization (lowercasing)
           // Encode path segments so special characters (spaces, #, ?, %) don't
           // break URL parsing. The protocol handler already decodeURIComponent's.
-          const mediaUrl = `dyad-media://media/${encodeURIComponent(chat.app.path)}/.dyad/media/${encodeURIComponent(filename)}`;
+          const mediaUrl = `orian-media://media/${encodeURIComponent(chat.app.path)}/.dyad/media/${encodeURIComponent(filename)}`;
 
           // Build display tag for inline rendering (escape attribute values)
           displayAttachmentInfo += `\n<dyad-attachment name="${escapeXmlAttr(attachment.name)}" type="${escapeXmlAttr(attachment.type)}" url="${escapeXmlAttr(mediaUrl)}" path="${escapeXmlAttr(persistentPath)}" attachment-type="${escapeXmlAttr(attachment.attachmentType)}"></dyad-attachment>\n`;

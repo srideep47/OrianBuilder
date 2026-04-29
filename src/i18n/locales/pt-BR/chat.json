@@ -113,7 +113,7 @@
   "total": "Total",
   "failedCountTokens": "Falha ao contar tokens",
   "optimizeTokens": "Otimize seus tokens com",
-  "dyadProSmartContext": "Contexto Inteligente do Dyad Pro",
+  "dyadProSmartContext": "Contexto Inteligente do OrianBuilder Pro",
   "attachFiles": "Anexar arquivos",
   "themes": "Temas",
   "noTheme": "Sem Tema",
@@ -190,11 +190,11 @@
     "versionCount": "Versão {{count}}"
   },
   "errorBox": {
-    "accessWithDyadPro": "Acessar com Dyad Pro",
+    "accessWithDyadPro": "Acessar com OrianBuilder Pro",
     "orSwitchModel": "ou mudar para outro modelo.",
-    "upgradeToDyadPro": "Atualizar para Dyad Pro",
+    "upgradeToDyadPro": "Atualizar para OrianBuilder Pro",
     "troubleshootingGuide": "Guia de solução de problemas",
-    "invalidProKey": "Parece que você não tem uma chave válida do Dyad Pro.",
+    "invalidProKey": "Parece que você não tem uma chave válida do OrianBuilder Pro.",
     "today": "hoje.",
     "creditsUsed": "Você utilizou todos os seus créditos de IA do Dyad neste mês.",
     "reloadOrUpgrade": "Recarregue ou atualize sua assinatura",
@@ -203,7 +203,7 @@
   },
   "promo": {
     "tiredOfWaiting": "Cansado de esperar pela IA?",
-    "getDyadPro": "Obtenha o Dyad Pro",
+    "getDyadPro": "Obtenha o OrianBuilder Pro",
     "fasterEdits": "para edições mais rápidas com Turbo Edits.",
     "saveOnCosts": "Economize até 3x nos custos de IA com",
     "debuggingLoop": "Preso em um loop de depuração? Tente um modelo diferente.",

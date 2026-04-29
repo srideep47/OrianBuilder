@@ -163,7 +163,7 @@ export function HelpBotDialog({ isOpen, onClose }: HelpBotDialogProps) {
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Dyad Help Bot</DialogTitle>
+          <DialogTitle>OrianBuilder Help Bot</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-3 h-[480px]">
           {error && (

@@ -81,10 +81,10 @@
     "errorLoadingSettings": "Erro ao Carregar Configurações",
     "couldNotLoadProvider": "Não foi possível carregar os dados do provedor: {{message}}",
     "couldNotLoadSettings": "Não foi possível carregar os dados de configuração: {{message}}",
-    "enableDyadPro": "Ativar Dyad Pro",
-    "toggleDyadPro": "Alternar para ativar o Dyad Pro",
+    "enableDyadPro": "Ativar OrianBuilder Pro",
+    "toggleDyadPro": "Alternar para ativar o OrianBuilder Pro",
     "apiKeyEmpty": "A Chave de API não pode estar vazia.",
-    "errorTogglingPro": "Erro ao alternar Dyad Pro: {{error}}",
+    "errorTogglingPro": "Erro ao alternar OrianBuilder Pro: {{error}}",
     "failedSaveApiKey": "Falha ao salvar a chave de API.",
     "failedDeleteApiKey": "Falha ao excluir a chave de API."
   },
@@ -258,6 +258,6 @@
     "updateProvider": "Atualizar Provedor",
     "failedCreate": "Falha ao criar provedor personalizado"
   },
-  "manageDyadPro": "Gerenciar Assinatura Dyad Pro",
-  "setupDyadPro": "Configurar Assinatura Dyad Pro"
+  "manageDyadPro": "Gerenciar Assinatura OrianBuilder Pro",
+  "setupDyadPro": "Configurar Assinatura OrianBuilder Pro"
 }

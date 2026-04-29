@@ -113,7 +113,7 @@
   "total": "总计",
   "failedCountTokens": "令牌计数失败",
   "optimizeTokens": "通过以下方式优化您的令牌",
-  "dyadProSmartContext": "Dyad Pro 的智能上下文",
+  "dyadProSmartContext": "OrianBuilder Pro 的智能上下文",
   "attachFiles": "附加文件",
   "themes": "主题",
   "noTheme": "无主题",
@@ -190,11 +190,11 @@
     "versionCount": "版本 {{count}}"
   },
   "errorBox": {
-    "accessWithDyadPro": "使用 Dyad Pro 访问",
+    "accessWithDyadPro": "使用 OrianBuilder Pro 访问",
     "orSwitchModel": "或切换到其他模型。",
-    "upgradeToDyadPro": "升级到 Dyad Pro",
+    "upgradeToDyadPro": "升级到 OrianBuilder Pro",
     "troubleshootingGuide": "故障排除指南",
-    "invalidProKey": "您似乎没有有效的 Dyad Pro 密钥。",
+    "invalidProKey": "您似乎没有有效的 OrianBuilder Pro 密钥。",
     "today": "今天。",
     "creditsUsed": "您本月的 Dyad AI 额度已用完。",
     "reloadOrUpgrade": "重新加载或升级您的订阅",
@@ -203,7 +203,7 @@
   },
   "promo": {
     "tiredOfWaiting": "厌倦了等待 AI？",
-    "getDyadPro": "获取 Dyad Pro",
+    "getDyadPro": "获取 OrianBuilder Pro",
     "fasterEdits": "使用 Turbo Edits 实现更快的编辑。",
     "saveOnCosts": "使用以下功能节省高达 3 倍的 AI 成本",
     "debuggingLoop": "陷入调试循环？尝试换一个模型。",

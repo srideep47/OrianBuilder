@@ -23,6 +23,7 @@ import {
 import { ProviderSettingsHeader } from "./ProviderSettingsHeader";
 import { ApiKeyConfiguration } from "./ApiKeyConfiguration";
 import { ModelsSection } from "./ModelsSection";
+import { EmbeddedModelSettings } from "./EmbeddedModelSettings";
 
 interface ProviderSettingsPageProps {
   provider: string;
@@ -248,6 +249,33 @@ export function ProviderSettingsPage({ provider }: ProviderSettingsPageProps) {
               Could not load provider data: {providersError.message}
             </AlertDescription>
           </Alert>
+        </div>
+      </div>
+    );
+  }
+
+  // Embedded (Tensor) provider has its own dedicated settings UI
+  if (provider === "embedded") {
+    return (
+      <div className="min-h-screen px-8 py-4">
+        <div className="max-w-4xl mx-auto">
+          <Button
+            onClick={() => router.history.back()}
+            variant="outline"
+            size="sm"
+            className="flex items-center gap-2 mb-4 bg-(--background-lightest) py-5"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Go Back
+          </Button>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+            Embedded (Tensor) Inference
+          </h1>
+          <p className="text-sm text-muted-foreground mb-6">
+            Run GGUF models directly in the app using CUDA tensor cores (RTX
+            4080 Super optimized).
+          </p>
+          <EmbeddedModelSettings />
         </div>
       </div>
     );

@@ -466,6 +466,20 @@ function getRegularModelClient(
         backupModelClients: [],
       };
     }
+    case "embedded": {
+      // Embedded node-llama-cpp inference server (tensor core accelerated)
+      const provider = createOpenAICompatible({
+        name: "embedded",
+        baseURL: "http://127.0.0.1:11435/v1",
+        fetch: localModelFetch,
+      });
+      return {
+        modelClient: {
+          model: provider(model.name),
+        },
+        backupModelClients: [],
+      };
+    }
     case "bedrock": {
       // AWS Bedrock supports API key authentication using AWS_BEARER_TOKEN_BEDROCK
       // See: https://sdk.vercel.ai/providers/ai-sdk-providers/amazon-bedrock#api-key-authentication

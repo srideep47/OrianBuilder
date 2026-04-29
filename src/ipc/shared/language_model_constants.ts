@@ -661,4 +661,8 @@ export const LOCAL_PROVIDERS: Record<
     displayName: "LM Studio",
     hasFreeTier: true,
   },
+  embedded: {
+    displayName: "Embedded (Tensor)",
+    hasFreeTier: true,
+  },
 };

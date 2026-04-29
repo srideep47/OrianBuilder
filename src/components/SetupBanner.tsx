@@ -383,7 +383,9 @@ function NodeJsHelpCallout() {
         If you run into issues, read our{" "}
         <a
           onClick={() => {
-            ipc.system.openExternalUrl("https://www.dyad.sh/docs/help/nodejs");
+            ipc.system.openExternalUrl(
+              "https://nodejs.org/en/download/package-manager",
+            );
           }}
           className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
         >

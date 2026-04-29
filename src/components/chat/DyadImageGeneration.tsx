@@ -52,7 +52,7 @@ export const DyadImageGeneration: React.FC<DyadImageGenerationProps> = ({
     .some((seg: string) => seg === "..");
   const imageUrl =
     appPath && normalizedImagePath && !hasTraversal
-      ? `dyad-media://media/${encodeURIComponent(appPath)}/${normalizedImagePath
+      ? `orian-media://media/${encodeURIComponent(appPath)}/${normalizedImagePath
           .split("/")
           .map(encodeURIComponent)
           .join("/")}`

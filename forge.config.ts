@@ -92,8 +92,8 @@ const config: ForgeConfig = {
       : undefined,
     protocols: [
       {
-        name: "Dyad",
-        schemes: ["dyad"],
+        name: "OrianBuilder",
+        schemes: ["orianbuilder"],
       },
     ],
     icon: "./assets/icon/logo",
@@ -117,15 +117,15 @@ const config: ForgeConfig = {
           teamId: process.env.APPLE_TEAM_ID!,
         },
     asar: {
-      // node-pty loads helper binaries like spawn-helper and winpty-agent from disk.
-      unpackDir: "node_modules/node-pty",
+      unpackDir:
+        "{node_modules/node-pty,node_modules/node-llama-cpp,node_modules/@node-llama-cpp}",
     },
     ignore,
     extraResource: ["node_modules/dugite/git", "node_modules/@vscode"],
     // ignore: [/node_modules\/(?!(better-sqlite3|bindings|file-uri-to-path)\/)/],
   },
   rebuildConfig: {
-    extraModules: ["better-sqlite3", "node-pty"],
+    extraModules: ["better-sqlite3", "node-pty", "node-llama-cpp"],
     force: true,
   },
   makers: [
@@ -135,12 +135,12 @@ const config: ForgeConfig = {
         ? {
             windowsSign,
             iconUrl:
-              "https://raw.githubusercontent.com/dyad-sh/dyad/main/assets/icon/logo.ico",
+              "https://raw.githubusercontent.com/srideep47/OrianBuilder/main/assets/icon/logo.ico",
             setupIcon: "./assets/icon/logo.ico",
           }
         : {
             iconUrl:
-              "https://raw.githubusercontent.com/dyad-sh/dyad/main/assets/icon/logo.ico",
+              "https://raw.githubusercontent.com/srideep47/OrianBuilder/main/assets/icon/logo.ico",
             setupIcon: "./assets/icon/logo.ico",
           },
     ),
@@ -152,7 +152,7 @@ const config: ForgeConfig = {
     }),
     new MakerDeb({
       options: {
-        mimeType: ["x-scheme-handler/dyad"],
+        mimeType: ["x-scheme-handler/orianbuilder"],
         icon: "./assets/icon/logo.png",
       },
     }),
@@ -165,8 +165,8 @@ const config: ForgeConfig = {
       name: "@electron-forge/publisher-github",
       config: {
         repository: {
-          owner: "dyad-sh",
-          name: "dyad",
+          owner: "srideep47",
+          name: "OrianBuilder",
         },
         draft: true,
         force: true,

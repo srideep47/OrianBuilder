@@ -50,6 +50,10 @@ import { cleanupOldMediaFiles } from "./ipc/utils/media_cleanup";
 import fs from "fs";
 import { gitAddSafeDirectory } from "./ipc/utils/git_utils";
 import { getDyadAppsBaseDirectory, getDyadAppPath } from "./paths/paths";
+import {
+  startServer as startEmbeddedServer,
+  stopServer as stopEmbeddedServer,
+} from "./ipc/utils/embedded_inference_server";
 
 log.errorHandler.startCatching();
 log.eventLogger.startLogging();
@@ -87,12 +91,12 @@ if (fs.existsSync(gitDir)) {
 // https://www.electronjs.org/docs/latest/tutorial/launch-app-from-url-in-another-app#main-process-mainjs
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient("dyad", process.execPath, [
+    app.setAsDefaultProtocolClient("orianbuilder", process.execPath, [
       path.resolve(process.argv[1]),
     ]);
   }
 } else {
-  app.setAsDefaultProtocolClient("dyad");
+  app.setAsDefaultProtocolClient("orianbuilder");
 }
 
 export async function onReady() {
@@ -208,10 +212,10 @@ export async function onReady() {
   // Start performance monitoring
   startPerformanceMonitoring();
 
-  // Handle dyad-media:// protocol requests to serve persistent media and screenshot files.
-  protocol.handle("dyad-media", async (request) => {
+  // Handle orian-media:// protocol requests to serve persistent media and screenshot files.
+  protocol.handle("orian-media", async (request) => {
     const url = new URL(request.url);
-    // Format: dyad-media://media/{app-path}/.dyad/{subdir}/{filename}
+    // Format: orian-media://media/{app-path}/.dyad/{subdir}/{filename}
     //   where {subdir} is DYAD_MEDIA_SUBDIR or DYAD_SCREENSHOT_SUBDIR.
     //   Uses a fixed hostname to avoid URL hostname normalization (lowercasing).
     //   The app-path segment is URI-encoded, so split on "/" before decoding
@@ -262,6 +266,11 @@ export async function onReady() {
     }
   });
 
+  // Start the embedded inference server (non-blocking; model loads on-demand)
+  startEmbeddedServer().catch((err) =>
+    logger.warn("Embedded inference server failed to start:", err),
+  );
+
   await onFirstRunMaybe(settings);
   createWindow();
   createApplicationMenu();
@@ -272,14 +281,14 @@ export async function onReady() {
     // but this is more explicit and falls back to stable if there's an unknown
     // release channel.
     const postfix = settings.releaseChannel === "beta" ? "beta" : "stable";
-    const host = `https://api.dyad.sh/v1/update/${postfix}`;
+    const host = `https://update.orianbuilder.app/v1/update/${postfix}`;
     logger.info("Auto-update release channel=", postfix);
     updateElectronApp({
       logger,
       updateInterval: "60 minutes",
       updateSource: {
         type: UpdateSourceType.ElectronPublicUpdateService,
-        repo: "dyad-sh/dyad",
+        repo: "srideep47/OrianBuilder",
         host,
       },
     }); // additional configuration options available
@@ -544,11 +553,11 @@ const createApplicationMenu = () => {
   Menu.setApplicationMenu(appMenu);
 };
 
-// Register dyad-media:// protocol for serving persistent media attachments.
+// Register orian-media:// protocol for serving persistent media attachments.
 // Must be called before app.whenReady().
 protocol.registerSchemesAsPrivileged([
   {
-    scheme: "dyad-media",
+    scheme: "orian-media",
     privileges: {
       standard: true,
       secure: true,
@@ -749,6 +758,11 @@ app.on("will-quit", () => {
 
   // Stop performance monitoring and capture final metrics
   stopPerformanceMonitoring();
+
+  // Stop the embedded inference server (fire-and-forget; can't await in will-quit)
+  stopEmbeddedServer().catch((err) =>
+    logger.warn("Error stopping embedded inference server:", err),
+  );
 
   writeSettings({ isRunning: false });
 });

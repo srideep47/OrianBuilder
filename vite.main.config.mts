@@ -10,7 +10,13 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
-      external: ["better-sqlite3", "node-pty", /^node:/],
+      external: [
+        "better-sqlite3",
+        "node-pty",
+        "node-llama-cpp",
+        /^node:/,
+        /^@node-llama-cpp\//,
+      ],
     },
   },
   plugins: [

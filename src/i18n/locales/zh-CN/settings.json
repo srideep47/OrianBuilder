@@ -81,10 +81,10 @@
     "errorLoadingSettings": "加载设置出错",
     "couldNotLoadProvider": "无法加载提供商数据：{{message}}",
     "couldNotLoadSettings": "无法加载配置数据：{{message}}",
-    "enableDyadPro": "启用 Dyad Pro",
-    "toggleDyadPro": "切换以启用 Dyad Pro",
+    "enableDyadPro": "启用 OrianBuilder Pro",
+    "toggleDyadPro": "切换以启用 OrianBuilder Pro",
     "apiKeyEmpty": "API 密钥不能为空。",
-    "errorTogglingPro": "切换 Dyad Pro 时出错：{{error}}",
+    "errorTogglingPro": "切换 OrianBuilder Pro 时出错：{{error}}",
     "failedSaveApiKey": "保存 API 密钥失败。",
     "failedDeleteApiKey": "删除 API 密钥失败。"
   },
@@ -258,6 +258,6 @@
     "updateProvider": "更新提供商",
     "failedCreate": "创建自定义提供商失败"
   },
-  "manageDyadPro": "管理 Dyad Pro 订阅",
-  "setupDyadPro": "设置 Dyad Pro 订阅"
+  "manageDyadPro": "管理 OrianBuilder Pro 订阅",
+  "setupDyadPro": "设置 OrianBuilder Pro 订阅"
 }

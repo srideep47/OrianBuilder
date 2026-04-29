@@ -143,6 +143,12 @@ export const languageModelContracts = {
     input: z.void(),
     output: z.object({ models: z.array(LocalModelSchema) }),
   }),
+
+  listEmbeddedModels: defineContract({
+    channel: "local-models:list-embedded",
+    input: z.void(),
+    output: z.object({ models: z.array(LocalModelSchema) }),
+  }),
 } as const;
 
 // =============================================================================

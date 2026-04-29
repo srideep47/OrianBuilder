@@ -2813,7 +2813,7 @@ export function registerAppHandlers() {
     const entries = await readScreenshotEntries(screenshotDir);
     const screenshots = entries.map(({ name }) => ({
       commitHash: name.slice(0, -".png".length),
-      url: `dyad-media://media/${encodeURIComponent(appRecord.path)}/${DYAD_SCREENSHOT_DIR_NAME}/${name}`,
+      url: `orian-media://media/${encodeURIComponent(appRecord.path)}/${DYAD_SCREENSHOT_DIR_NAME}/${name}`,
     }));
     return { screenshots };
   });
@@ -2842,7 +2842,7 @@ export function registerAppHandlers() {
         if (!latest) {
           return { appId, thumbnailUrl: null };
         }
-        const thumbnailUrl = `dyad-media://media/${encodeURIComponent(record.path)}/${DYAD_SCREENSHOT_DIR_NAME}/${latest.name}`;
+        const thumbnailUrl = `orian-media://media/${encodeURIComponent(record.path)}/${DYAD_SCREENSHOT_DIR_NAME}/${latest.name}`;
         return { appId, thumbnailUrl };
       }),
     );

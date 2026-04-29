@@ -84,10 +84,10 @@
     "errorLoadingSettings": "Error Loading Settings",
     "couldNotLoadProvider": "Could not load provider data: {{message}}",
     "couldNotLoadSettings": "Could not load configuration data: {{message}}",
-    "enableDyadPro": "Enable Dyad Pro",
-    "toggleDyadPro": "Toggle to enable Dyad Pro",
+    "enableDyadPro": "Enable OrianBuilder Pro",
+    "toggleDyadPro": "Toggle to enable OrianBuilder Pro",
     "apiKeyEmpty": "API Key cannot be empty.",
-    "errorTogglingPro": "Error toggling Dyad Pro: {{error}}",
+    "errorTogglingPro": "Error toggling OrianBuilder Pro: {{error}}",
     "failedSaveApiKey": "Failed to save API key.",
     "failedDeleteApiKey": "Failed to delete API key."
   },
@@ -268,6 +268,6 @@
     "updateProvider": "Update Provider",
     "failedCreate": "Failed to create custom provider"
   },
-  "manageDyadPro": "Manage Dyad Pro Subscription",
-  "setupDyadPro": "Setup Dyad Pro Subscription"
+  "manageDyadPro": "Manage OrianBuilder Pro Subscription",
+  "setupDyadPro": "Setup OrianBuilder Pro Subscription"
 }

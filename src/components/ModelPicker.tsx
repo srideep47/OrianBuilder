@@ -243,8 +243,8 @@ export function ModelPicker() {
             {/* Primary providers as submenus */}
             {primaryProviders.map(([providerId, models]) => {
               models = models.filter((model) => {
-                // Don't show free models if Dyad Pro is enabled because
-                // we will use the paid models (in Dyad Pro backend) which
+                // Don't show free models if OrianBuilder Pro is enabled because
+                // we will use the paid models (in OrianBuilder Pro backend) which
                 // don't have the free limitations.
                 if (
                   isDyadProEnabled(settings) &&
@@ -257,7 +257,7 @@ export function ModelPicker() {
               const provider = providers?.find((p) => p.id === providerId);
               const providerDisplayName =
                 provider?.id === "auto"
-                  ? "Dyad Turbo"
+                  ? "OrianBuilder Turbo"
                   : (provider?.name ?? providerId);
               return (
                 <DropdownMenuSub key={providerId}>
