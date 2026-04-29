@@ -6,20 +6,10 @@ const logger = log.scope("embedded-inference");
 export const EMBEDDED_PORT = 11435;
 export const EMBEDDED_BASE_URL = `http://127.0.0.1:${EMBEDDED_PORT}`;
 
-interface LlamaModule {
-  getLlama: (opts: {
-    gpu: "auto" | "cuda" | "cpu" | false;
-  }) => Promise<unknown>;
-  LlamaModel: new (opts: unknown) => unknown;
-  LlamaContext: new (opts: unknown) => unknown;
-  LlamaChatSession: new (opts: unknown) => unknown;
-}
-
 let server: http.Server | null = null;
 let llamaInstance: unknown = null;
 let currentModel: unknown = null;
 let currentContext: unknown = null;
-let currentSession: unknown = null;
 let currentModelPath: string | null = null;
 let isLoading = false;
 
@@ -45,8 +35,27 @@ export function getServerStatus(): EmbeddedServerStatus {
   };
 }
 
+// Cache the ESM module so we only load it once.
+// We use `new Function` to create the dynamic import because Vite/Rollup
+// rewrites static `import()` calls to `require()` in CJS bundles, which
+// breaks ESM-only packages like node-llama-cpp that use top-level await.
+// The Function wrapper is opaque to the bundler and preserves the real import().
+const _esmImport = new Function("specifier", "return import(specifier)") as (
+  s: string,
+) => Promise<unknown>;
+let llamaModule: typeof import("node-llama-cpp") | null = null;
+async function getLlamaModule(): Promise<typeof import("node-llama-cpp")> {
+  if (!llamaModule) {
+    llamaModule = (await _esmImport(
+      "node-llama-cpp",
+    )) as typeof import("node-llama-cpp");
+    logger.info("node-llama-cpp ESM module loaded");
+  }
+  return llamaModule;
+}
+
 export async function loadModel(config: EmbeddedModelConfig): Promise<void> {
-  if (isLoading) throw new Error("Model is already loading");
+  if (isLoading) throw new Error("A model is already loading");
   isLoading = true;
   logger.info(
     `Loading model: ${config.modelPath} (gpuLayers=${config.gpuLayers}, ctx=${config.contextSize})`,
@@ -55,31 +64,26 @@ export async function loadModel(config: EmbeddedModelConfig): Promise<void> {
   try {
     await unloadModel();
 
-    // Dynamically import node-llama-cpp to avoid bundling issues
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const llama = require("node-llama-cpp") as LlamaModule;
+    const { getLlama } = await getLlamaModule();
 
     if (!llamaInstance) {
-      llamaInstance = await llama.getLlama({ gpu: "auto" });
+      llamaInstance = await getLlama({ gpu: "auto" });
+      logger.info("llama instance created");
     }
 
-    currentModel = new llama.LlamaModel({
-      llama: llamaInstance,
+    // In node-llama-cpp v3, loadModel is an async method on the llama instance
+    currentModel = await (llamaInstance as any).loadModel({
       modelPath: config.modelPath,
       gpuLayers: config.gpuLayers,
     });
+    logger.info("Model loaded");
 
-    currentContext = new llama.LlamaContext({
-      model: currentModel,
+    currentContext = await (currentModel as any).createContext({
       contextSize: config.contextSize,
     });
-
-    currentSession = new llama.LlamaChatSession({
-      contextSequence: (currentContext as any).getSequence(),
-    });
+    logger.info("Context created");
 
     currentModelPath = config.modelPath;
-    logger.info("Model loaded successfully");
   } finally {
     isLoading = false;
   }
@@ -102,32 +106,15 @@ export async function unloadModel(): Promise<void> {
     }
     currentModel = null;
   }
-  currentSession = null;
   currentModelPath = null;
   logger.info("Model unloaded");
-}
-
-function buildMessages(messages: { role: string; content: string }[]): string {
-  return (
-    messages
-      .map((m) => {
-        if (m.role === "system")
-          return `<|im_start|>system\n${m.content}<|im_end|>`;
-        if (m.role === "user")
-          return `<|im_start|>user\n${m.content}<|im_end|>`;
-        if (m.role === "assistant")
-          return `<|im_start|>assistant\n${m.content}<|im_end|>`;
-        return m.content;
-      })
-      .join("\n") + "\n<|im_start|>assistant\n"
-  );
 }
 
 async function handleChatCompletions(
   req: http.IncomingMessage,
   res: http.ServerResponse,
 ): Promise<void> {
-  if (!currentSession || !currentModel) {
+  if (!currentContext || !currentModel) {
     res.writeHead(503, { "Content-Type": "application/json" });
     res.end(
       JSON.stringify({
@@ -142,8 +129,9 @@ async function handleChatCompletions(
   const messages: { role: string; content: string }[] = payload.messages ?? [];
   const stream: boolean = payload.stream ?? false;
   const maxTokens: number = payload.max_tokens ?? 4096;
+  const modelName = currentModelPath?.split(/[/\\]/).pop() ?? "embedded";
 
-  const prompt = buildMessages(messages);
+  const { LlamaChatSession } = await getLlamaModule();
 
   if (stream) {
     res.writeHead(200, {
@@ -152,41 +140,44 @@ async function handleChatCompletions(
       Connection: "keep-alive",
     });
 
-    const modelName =
-      currentModelPath?.split(/[/\\]/).pop() ?? "embedded-model";
-    let tokenCount = 0;
-
     try {
-      // Re-create session for each request to avoid state carryover
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const llama = require("node-llama-cpp") as LlamaModule;
-      const freshSession = new llama.LlamaChatSession({
+      const session = new LlamaChatSession({
         contextSequence: (currentContext as any).getSequence(),
+        systemPrompt: undefined,
       });
 
-      await (freshSession as any).prompt(prompt, {
+      // Build the last user message as the prompt (session tracks history)
+      const userMessages = messages.filter((m) => m.role !== "system");
+      const systemMsg = messages.find((m) => m.role === "system");
+      const lastUser = userMessages[userMessages.length - 1]?.content ?? "";
+
+      // Re-inject system via wrapper if present
+      const promptText = systemMsg
+        ? `${systemMsg.content}\n\n${lastUser}`
+        : lastUser;
+
+      let tokenCount = 0;
+
+      await session.prompt(promptText, {
         maxTokens,
-        onToken: (token: string) => {
+        // node-llama-cpp v3 uses onTextChunk for streaming
+        onTextChunk: (text: string) => {
           tokenCount++;
           const chunk = {
-            id: `chatcmpl-embedded-${Date.now()}`,
+            id: `chatcmpl-${Date.now()}`,
             object: "chat.completion.chunk",
             created: Math.floor(Date.now() / 1000),
             model: modelName,
             choices: [
-              {
-                index: 0,
-                delta: { content: token },
-                finish_reason: null,
-              },
+              { index: 0, delta: { content: text }, finish_reason: null },
             ],
           };
           res.write(`data: ${JSON.stringify(chunk)}\n\n`);
         },
       });
 
-      const doneChunk = {
-        id: `chatcmpl-embedded-${Date.now()}`,
+      const done = {
+        id: `chatcmpl-${Date.now()}`,
         object: "chat.completion.chunk",
         created: Math.floor(Date.now() / 1000),
         model: modelName,
@@ -197,7 +188,7 @@ async function handleChatCompletions(
           total_tokens: tokenCount,
         },
       };
-      res.write(`data: ${JSON.stringify(doneChunk)}\n\n`);
+      res.write(`data: ${JSON.stringify(done)}\n\n`);
       res.write("data: [DONE]\n\n");
       res.end();
     } catch (err) {
@@ -207,26 +198,24 @@ async function handleChatCompletions(
     }
   } else {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const llama = require("node-llama-cpp") as LlamaModule;
-      const freshSession = new llama.LlamaChatSession({
+      const session = new LlamaChatSession({
         contextSequence: (currentContext as any).getSequence(),
+        systemPrompt: undefined,
       });
 
-      let output = "";
-      await (freshSession as any).prompt(prompt, {
-        maxTokens,
-        onToken: (token: string) => {
-          output += token;
-        },
-      });
+      const userMessages = messages.filter((m) => m.role !== "system");
+      const systemMsg = messages.find((m) => m.role === "system");
+      const lastUser = userMessages[userMessages.length - 1]?.content ?? "";
+      const promptText = systemMsg
+        ? `${systemMsg.content}\n\n${lastUser}`
+        : lastUser;
 
-      const modelName =
-        currentModelPath?.split(/[/\\]/).pop() ?? "embedded-model";
+      const output = await session.prompt(promptText, { maxTokens });
+
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
-          id: `chatcmpl-embedded-${Date.now()}`,
+          id: `chatcmpl-${Date.now()}`,
           object: "chat.completion",
           created: Math.floor(Date.now() / 1000),
           model: modelName,
@@ -277,8 +266,7 @@ export function startServer(): Promise<void> {
       const url = req.url ?? "";
 
       if (url === "/v1/models" && req.method === "GET") {
-        const modelName =
-          currentModelPath?.split(/[/\\]/).pop() ?? "no-model-loaded";
+        const modelName = currentModelPath?.split(/[/\\]/).pop() ?? "no-model";
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
@@ -315,13 +303,11 @@ export function startServer(): Promise<void> {
       res.end(JSON.stringify({ error: "Not found" }));
     });
 
-    server.on("error", (err) => {
-      logger.error("Server error:", err);
-      reject(err);
-    });
-
+    server.on("error", reject);
     server.listen(EMBEDDED_PORT, "127.0.0.1", () => {
-      logger.info(`Embedded inference server started on port ${EMBEDDED_PORT}`);
+      logger.info(
+        `Embedded inference server listening on port ${EMBEDDED_PORT}`,
+      );
       resolve();
     });
   });
@@ -336,12 +322,13 @@ export async function stopServer(): Promise<void> {
       /* ignore */
     }
     llamaInstance = null;
+    llamaModule = null;
   }
   if (!server) return;
   return new Promise((resolve) => {
     server!.close(() => {
       server = null;
-      logger.info("Embedded inference server stopped");
+      logger.info("Inference server stopped");
       resolve();
     });
   });
