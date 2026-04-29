@@ -11,6 +11,7 @@ import { appsRoute } from "./routes/apps";
 import { themesRoute } from "./routes/themes";
 import { promptsRoute } from "./routes/prompts";
 import { mediaRoute } from "./routes/media";
+import { inferenceRoute } from "./routes/inference";
 
 const routeTree = rootRoute.addChildren([
   homeRoute,
@@ -23,6 +24,7 @@ const routeTree = rootRoute.addChildren([
   chatRoute,
   appDetailsRoute,
   settingsRoute.addChildren([providerSettingsRoute]),
+  inferenceRoute,
 ]);
 
 // src/components/NotFoundRedirect.tsx

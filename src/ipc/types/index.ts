@@ -54,6 +54,13 @@ export { freeAgentQuotaContracts } from "./free_agent_quota";
 export { audioContracts } from "./audio";
 export { mediaContracts } from "./media";
 export { imageGenerationContracts } from "./image_generation";
+export { embeddedModelContracts, embeddedModelClient } from "./embedded_model";
+export type {
+  GpuInfo,
+  GpuStats,
+  EmbeddedServerStatus,
+  EmbeddedModelConfig,
+} from "./embedded_model";
 
 // =============================================================================
 // Client Exports
@@ -384,6 +391,7 @@ import { freeAgentQuotaClient } from "./free_agent_quota";
 import { audioClient } from "./audio";
 import { mediaClient } from "./media";
 import { imageGenerationClient } from "./image_generation";
+import { embeddedModelClient } from "./embedded_model";
 
 /**
  * Unified IPC client with all domains organized by namespace.
@@ -443,6 +451,7 @@ export const ipc = {
   audio: audioClient,
   media: mediaClient,
   imageGeneration: imageGenerationClient,
+  embeddedModel: embeddedModelClient,
 
   // Event clients for main->renderer pub/sub
   events: {

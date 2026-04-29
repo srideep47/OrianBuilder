@@ -13,7 +13,9 @@ import {
 import { useEffect, useState } from "react";
 import { useLocalModels } from "@/hooks/useLocalModels";
 import { useLocalLMSModels } from "@/hooks/useLMStudioModels";
+import { useEmbeddedModel } from "@/hooks/useEmbeddedModel";
 import { useLanguageModelsByProviders } from "@/hooks/useLanguageModelsByProviders";
+import { Zap } from "lucide-react";
 
 import { LocalModel } from "@/ipc/types";
 import { useLanguageModelProviders } from "@/hooks/useLanguageModelProviders";
@@ -60,13 +62,21 @@ export function ModelPicker() {
     loadModels: loadLMStudioModels,
   } = useLocalLMSModels();
 
+  // Embedded model hook
+  const {
+    status: embeddedStatus,
+    loading: embeddedLoading,
+    refresh: refreshEmbedded,
+  } = useEmbeddedModel();
+
   // Load models when the dropdown opens
   useEffect(() => {
     if (open) {
       loadOllamaModels();
       loadLMStudioModels();
+      refreshEmbedded();
     }
-  }, [open, loadOllamaModels, loadLMStudioModels]);
+  }, [open, loadOllamaModels, loadLMStudioModels, refreshEmbedded]);
 
   // Get display name for the selected model
   const getModelDisplayName = () => {
@@ -81,8 +91,11 @@ export function ModelPicker() {
       return (
         lmStudioModels.find(
           (model: LocalModel) => model.modelName === selectedModel.name,
-        )?.displayName || selectedModel.name // Fallback to path if not found
+        )?.displayName || selectedModel.name
       );
+    }
+    if (selectedModel.provider === "embedded") {
+      return embeddedStatus?.modelName ?? selectedModel.name;
     }
 
     // For cloud models, look up in the modelsByProviders data
@@ -409,11 +422,60 @@ export function ModelPicker() {
               <div className="flex flex-col items-start">
                 <span>Local models</span>
                 <span className="text-xs text-muted-foreground">
-                  LM Studio, Ollama
+                  Embedded, LM Studio, Ollama
                 </span>
               </div>
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="w-56">
+              {/* Embedded (Tensor) Model — always shown at top */}
+              {embeddedStatus?.modelLoaded && embeddedStatus.modelName ? (
+                <DropdownMenuItem
+                  className={
+                    selectedModel.provider === "embedded" ? "bg-secondary" : ""
+                  }
+                  onClick={() => {
+                    onModelSelect({
+                      name: embeddedStatus.modelName!,
+                      provider: "embedded",
+                    });
+                    setOpen(false);
+                  }}
+                >
+                  <div className="flex items-center gap-2 w-full">
+                    <Zap className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-medium truncate">
+                        {embeddedStatus.modelName}
+                      </span>
+                      <span className="text-xs text-green-600 dark:text-green-400">
+                        Embedded · Tensor Cores
+                      </span>
+                    </div>
+                  </div>
+                </DropdownMenuItem>
+              ) : (
+                <div className="px-2 py-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <Zap className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <div className="flex flex-col">
+                      <span
+                        className={
+                          embeddedLoading ? "text-muted-foreground" : ""
+                        }
+                      >
+                        {embeddedLoading ? "Checking…" : "Embedded (Tensor)"}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {embeddedLoading
+                          ? ""
+                          : "No model loaded — go to Engine screen"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              <DropdownMenuSeparator />
+
               {/* Ollama Models SubMenu */}
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger

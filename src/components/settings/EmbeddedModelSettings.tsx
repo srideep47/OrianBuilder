@@ -10,79 +10,62 @@ import {
   AlertCircle,
   Zap,
 } from "lucide-react";
-
-interface GpuInfo {
-  available: boolean;
-  name: string;
-  vramMb: number;
-  computeCapability: number;
-  hasTensorCores: boolean;
-  tensorCoreGen: string;
-  recommendedGpuLayers: number;
-}
-
-interface ServerStatus {
-  running: boolean;
-  modelLoaded: boolean;
-  modelPath: string | null;
-  isLoading: boolean;
-}
-
-interface SavedConfig {
-  modelPath: string | null;
-  gpuLayers: number;
-  contextSize: number;
-}
+import type { GpuInfo, EmbeddedServerStatus } from "@/ipc/types";
 
 export function EmbeddedModelSettings() {
   const [gpuInfo, setGpuInfo] = useState<GpuInfo | null>(null);
-  const [status, setStatus] = useState<ServerStatus | null>(null);
-  const [savedConfig, setSavedConfig] = useState<SavedConfig | null>(null);
+  const [status, setStatus] = useState<EmbeddedServerStatus | null>(null);
+  const [modelPath, setModelPath] = useState<string | null>(null);
   const [gpuLayers, setGpuLayers] = useState(99);
   const [contextSize, setContextSize] = useState(8192);
   const [isLoadingModel, setIsLoadingModel] = useState(false);
 
   const refreshStatus = useCallback(async () => {
-    const s = await (ipc as any).invoke("embedded-model:get-status");
+    const s = await ipc.embeddedModel.getStatus();
     setStatus(s);
   }, []);
 
   useEffect(() => {
     (async () => {
       const [gpu, s, cfg] = await Promise.all([
-        (ipc as any).invoke("embedded-model:detect-gpu"),
-        (ipc as any).invoke("embedded-model:get-status"),
-        (ipc as any).invoke("embedded-model:get-saved-config"),
+        ipc.embeddedModel.detectGpu(undefined),
+        ipc.embeddedModel.getStatus(),
+        ipc.embeddedModel.getSavedConfig(),
       ]);
       setGpuInfo(gpu);
       setStatus(s);
-      setSavedConfig(cfg);
-      if (gpu?.recommendedGpuLayers) setGpuLayers(gpu.recommendedGpuLayers);
-      if (cfg?.gpuLayers) setGpuLayers(cfg.gpuLayers);
-      if (cfg?.contextSize) setContextSize(cfg.contextSize);
+      setModelPath((cfg as any).modelPath ?? null);
+      if ((cfg as any).gpuLayers) setGpuLayers((cfg as any).gpuLayers);
+      if ((cfg as any).contextSize) setContextSize((cfg as any).contextSize);
+      if (gpu?.recommendedGpuLayers && !(cfg as any).gpuLayers) {
+        setGpuLayers(gpu.recommendedGpuLayers);
+      }
     })();
   }, []);
 
   const handleSelectGguf = async () => {
-    const path = await (ipc as any).invoke("embedded-model:select-gguf");
-    if (!path) return;
-    setSavedConfig((prev) => ({
-      ...(prev ?? { gpuLayers, contextSize }),
-      modelPath: path,
-    }));
+    const path = await ipc.embeddedModel.selectGguf();
+    if (path) setModelPath(path);
   };
 
   const handleLoadModel = async () => {
-    if (!savedConfig?.modelPath) {
+    if (!modelPath) {
       showError("Please select a GGUF model file first");
       return;
     }
     setIsLoadingModel(true);
     try {
-      const result = await (ipc as any).invoke("embedded-model:load", {
-        modelPath: savedConfig.modelPath,
+      const result = await ipc.embeddedModel.loadModel({
+        modelPath,
         gpuLayers,
         contextSize,
+        batchSize: 512,
+        temperature: 0.7,
+        topP: 0.95,
+        topK: 40,
+        repeatPenalty: 1.1,
+        seed: null,
+        flashAttention: true,
       });
       if (result.success) {
         showSuccess("Model loaded successfully");
@@ -96,16 +79,15 @@ export function EmbeddedModelSettings() {
   };
 
   const handleUnload = async () => {
-    await (ipc as any).invoke("embedded-model:unload");
+    await ipc.embeddedModel.unloadModel();
     showSuccess("Model unloaded");
     await refreshStatus();
   };
 
-  const modelFileName = savedConfig?.modelPath?.split(/[/\\]/).pop();
+  const modelFileName = modelPath?.split(/[/\\]/).pop();
 
   return (
     <div className="space-y-6 p-4">
-      {/* GPU Info Card */}
       <div className="rounded-lg border bg-card p-4 space-y-2">
         <div className="flex items-center gap-2 font-semibold text-sm">
           <Zap className="w-4 h-4 text-yellow-500" />
@@ -113,59 +95,46 @@ export function EmbeddedModelSettings() {
         </div>
         {gpuInfo ? (
           <div className="text-sm space-y-1">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">GPU</span>
-              <span className="font-medium">{gpuInfo.name}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">VRAM</span>
-              <span className="font-medium">
-                {(gpuInfo.vramMb / 1024).toFixed(1)} GB
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Tensor Cores</span>
-              <span
-                className={`font-medium ${gpuInfo.hasTensorCores ? "text-green-600" : "text-muted-foreground"}`}
-              >
-                {gpuInfo.hasTensorCores
-                  ? `${gpuInfo.tensorCoreGen}`
-                  : "Not available"}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">
-                Recommended GPU Layers
-              </span>
-              <span className="font-medium">
-                {gpuInfo.recommendedGpuLayers}
-              </span>
-            </div>
+            {[
+              ["GPU", gpuInfo.name],
+              ["VRAM", `${(gpuInfo.vramMb / 1024).toFixed(1)} GB`],
+              [
+                "Tensor Cores",
+                gpuInfo.hasTensorCores
+                  ? gpuInfo.tensorCoreGen
+                  : "Not available",
+              ],
+              ["Recommended GPU Layers", String(gpuInfo.recommendedGpuLayers)],
+            ].map(([k, v]) => (
+              <div key={k} className="flex justify-between">
+                <span className="text-muted-foreground">{k}</span>
+                <span className="font-medium">{v}</span>
+              </div>
+            ))}
           </div>
         ) : (
-          <div className="text-sm text-muted-foreground">Detecting GPU...</div>
+          <div className="text-sm text-muted-foreground">Detecting GPU…</div>
         )}
       </div>
 
-      {/* Model Status */}
       <div className="rounded-lg border bg-card p-4 space-y-2">
         <div className="flex items-center gap-2 font-semibold text-sm">
           <Cpu className="w-4 h-4" />
           Model Status
         </div>
-        {status ? (
+        {status && (
           <div className="flex items-center gap-2 text-sm">
             {status.modelLoaded ? (
               <>
                 <CheckCircle2 className="w-4 h-4 text-green-600" />
                 <span className="text-green-700 dark:text-green-400">
-                  Loaded: {status.modelPath?.split(/[/\\]/).pop()}
+                  Loaded: {status.modelName}
                 </span>
               </>
             ) : status.isLoading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Loading model...</span>
+                <span>Loading model…</span>
               </>
             ) : (
               <>
@@ -174,20 +143,17 @@ export function EmbeddedModelSettings() {
               </>
             )}
           </div>
-        ) : null}
+        )}
       </div>
 
-      {/* Model Configuration */}
       <div className="rounded-lg border bg-card p-4 space-y-4">
         <div className="font-semibold text-sm">Load GGUF Model</div>
-
-        {/* File selector */}
         <div className="space-y-2">
           <label className="text-sm text-muted-foreground">
             Model File (.gguf)
           </label>
           <div className="flex gap-2 items-center">
-            <div className="flex-1 text-sm border rounded px-3 py-1.5 bg-background truncate min-w-0">
+            <div className="flex-1 text-sm border rounded px-3 py-1.5 bg-background truncate min-w-0 font-mono">
               {modelFileName ?? (
                 <span className="text-muted-foreground">No file selected</span>
               )}
@@ -198,12 +164,11 @@ export function EmbeddedModelSettings() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Point to your existing GGUF file (e.g. the Qwen3.6-27B-Q4_K_M.gguf
-            in LM Studio models folder)
+            Point to your GGUF file — e.g. Qwen3.6-27B-Q4_K_M.gguf in LM Studio
+            models folder.
           </p>
         </div>
 
-        {/* GPU Layers */}
         <div className="space-y-1">
           <label className="text-sm text-muted-foreground">
             GPU Layers:{" "}
@@ -218,43 +183,33 @@ export function EmbeddedModelSettings() {
             onChange={(e) => setGpuLayers(Number(e.target.value))}
             className="w-full accent-primary"
           />
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>0 (CPU only)</span>
-            <span>100 (GPU max)</span>
-          </div>
         </div>
 
-        {/* Context Size */}
         <div className="space-y-1">
-          <label className="text-sm text-muted-foreground">
-            Context Size:{" "}
-            <span className="font-medium text-foreground">
-              {contextSize.toLocaleString()} tokens
-            </span>
-          </label>
+          <label className="text-sm text-muted-foreground">Context Size</label>
           <select
             value={contextSize}
             onChange={(e) => setContextSize(Number(e.target.value))}
             className="w-full border rounded px-3 py-1.5 text-sm bg-background"
           >
-            <option value={4096}>4,096</option>
-            <option value={8192}>8,192 (recommended)</option>
-            <option value={16384}>16,384</option>
-            <option value={32768}>32,768</option>
+            {[4096, 8192, 16384, 32768].map((v) => (
+              <option key={v} value={v}>
+                {v.toLocaleString()} tokens
+              </option>
+            ))}
           </select>
         </div>
 
-        {/* Action Buttons */}
         <div className="flex gap-2">
           <Button
             onClick={handleLoadModel}
-            disabled={isLoadingModel || !savedConfig?.modelPath}
+            disabled={isLoadingModel || !modelPath}
             className="flex-1"
           >
             {isLoadingModel ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                Loading...
+                Loading…
               </>
             ) : (
               <>
@@ -272,9 +227,8 @@ export function EmbeddedModelSettings() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        After loading, select <strong>Embedded (Tensor)</strong> as your AI
-        provider in the model picker. The model uses CUDA tensor cores
-        automatically on supported NVIDIA GPUs.
+        For full settings (temperature, top-p, batch size, flash attention…)
+        open the <strong>Engine</strong> screen from the sidebar.
       </p>
     </div>
   );
