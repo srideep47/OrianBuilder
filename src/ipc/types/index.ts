@@ -54,13 +54,36 @@ export { freeAgentQuotaContracts } from "./free_agent_quota";
 export { audioContracts } from "./audio";
 export { mediaContracts } from "./media";
 export { imageGenerationContracts } from "./image_generation";
-export { embeddedModelContracts, embeddedModelClient } from "./embedded_model";
+export {
+  embeddedModelContracts,
+  embeddedModelClient,
+  embeddedModelEvents,
+  embeddedModelEventClient,
+} from "./embedded_model";
 export type {
   GpuInfo,
   GpuStats,
   EmbeddedServerStatus,
   EmbeddedModelConfig,
+  ModelInfo,
+  InferenceStats,
+  InferenceState,
+  InferenceLogEntry,
 } from "./embedded_model";
+export {
+  modelMarketplaceContracts,
+  modelMarketplaceClient,
+  modelMarketplaceEvents,
+  modelMarketplaceEventClient,
+} from "./model_marketplace";
+export type {
+  HFSearchModel,
+  HFFileSibling,
+  HFModelDetail,
+  DownloadProgress,
+  LocalModelEntry,
+  GgufMetadata,
+} from "./model_marketplace";
 
 // =============================================================================
 // Client Exports
@@ -391,7 +414,14 @@ import { freeAgentQuotaClient } from "./free_agent_quota";
 import { audioClient } from "./audio";
 import { mediaClient } from "./media";
 import { imageGenerationClient } from "./image_generation";
-import { embeddedModelClient } from "./embedded_model";
+import {
+  embeddedModelClient,
+  embeddedModelEventClient,
+} from "./embedded_model";
+import {
+  modelMarketplaceClient,
+  modelMarketplaceEventClient,
+} from "./model_marketplace";
 
 /**
  * Unified IPC client with all domains organized by namespace.
@@ -452,6 +482,7 @@ export const ipc = {
   media: mediaClient,
   imageGeneration: imageGenerationClient,
   embeddedModel: embeddedModelClient,
+  marketplace: modelMarketplaceClient,
 
   // Event clients for main->renderer pub/sub
   events: {
@@ -460,5 +491,7 @@ export const ipc = {
     mcp: mcpEventClient,
     system: systemEventClient,
     misc: miscEventClient,
+    marketplace: modelMarketplaceEventClient,
+    embeddedModel: embeddedModelEventClient,
   },
 } as const;

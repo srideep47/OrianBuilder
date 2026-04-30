@@ -12,6 +12,7 @@ import { themesRoute } from "./routes/themes";
 import { promptsRoute } from "./routes/prompts";
 import { mediaRoute } from "./routes/media";
 import { inferenceRoute } from "./routes/inference";
+import { marketplaceRoute, modelsLibraryRoute } from "./routes/marketplace";
 
 const routeTree = rootRoute.addChildren([
   homeRoute,
@@ -25,6 +26,8 @@ const routeTree = rootRoute.addChildren([
   appDetailsRoute,
   settingsRoute.addChildren([providerSettingsRoute]),
   inferenceRoute,
+  marketplaceRoute,
+  modelsLibraryRoute,
 ]);
 
 // src/components/NotFoundRedirect.tsx

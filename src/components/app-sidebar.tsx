@@ -6,6 +6,8 @@ import {
   Store,
   BookOpen,
   Cpu,
+  HardDrive,
+  Database,
 } from "lucide-react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useSidebar } from "@/components/ui/sidebar";
@@ -35,6 +37,8 @@ const items = [
   { title: "Apps", to: "/", icon: Home },
   { title: "Chat", to: "/chat", icon: Inbox },
   { title: "Engine", to: "/inference", icon: Cpu },
+  { title: "Models", to: "/models", icon: Database },
+  { title: "Marketplace", to: "/marketplace", icon: HardDrive },
   { title: "Settings", to: "/settings", icon: Settings },
   { title: "Library", to: "/library", icon: BookOpen },
   { title: "Hub", to: "/hub", icon: Store },

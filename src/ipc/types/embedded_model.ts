@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { defineContract, createClient } from "../contracts/core";
+import {
+  defineContract,
+  defineEvent,
+  createClient,
+  createEventClient,
+} from "../contracts/core";
 
 // =============================================================================
 // Schemas
@@ -34,12 +39,17 @@ export const EmbeddedServerStatusSchema = z.object({
   modelName: z.string().nullable(),
   tokensGenerated: z.number(),
   lastTokensPerSec: z.number(),
+  gpuLayers: z.number(),
+  actualContextSize: z.number(),
 });
 export type EmbeddedServerStatus = z.infer<typeof EmbeddedServerStatusSchema>;
 
 export const EmbeddedModelConfigSchema = z.object({
   modelPath: z.string(),
-  gpuLayers: z.number(),
+  // vLLM-style: fraction of total VRAM reserved for model weights (0.5–0.95).
+  // The remaining VRAM is available for the KV cache.
+  // Default 0.80 = 80% model, 20% context.
+  gpuMemoryUtilization: z.number(),
   contextSize: z.number(),
   batchSize: z.number(),
   temperature: z.number(),
@@ -48,8 +58,29 @@ export const EmbeddedModelConfigSchema = z.object({
   repeatPenalty: z.number(),
   seed: z.number().nullable(),
   flashAttention: z.boolean(),
+  // Internal: populated by model-info scan, used by the loader
+  _estimatedLayers: z.number().optional(),
+  _layerSizeMb: z.number().optional(),
+  _vramMb: z.number().optional(),
 });
 export type EmbeddedModelConfig = z.infer<typeof EmbeddedModelConfigSchema>;
+
+export const ModelInfoSchema = z.object({
+  filePath: z.string(),
+  fileName: z.string(),
+  fileSizeMb: z.number(),
+  paramBillions: z.number().nullable(),
+  quantization: z.string(),
+  estimatedLayers: z.number(),
+  layerSizeMb: z.number(),
+  recommendedGpuLayers: z.number(),
+  recommendedContextSize: z.number(),
+  maxSafeGpuLayers: z.number(),
+  architecture: z.string().nullable().optional(),
+  contextLengthTrained: z.number().nullable().optional(),
+  kvBytesPerTokenPerLayer: z.number().optional(),
+});
+export type ModelInfo = z.infer<typeof ModelInfoSchema>;
 
 export const EmbeddedLoadResultSchema = z.object({
   success: z.boolean(),
@@ -112,6 +143,68 @@ export const embeddedModelContracts = {
     }),
     output: z.void(),
   }),
+
+  getModelInfo: defineContract({
+    channel: "embedded-model:get-model-info",
+    input: z.string(),
+    output: ModelInfoSchema,
+  }),
+  getRecentLogs: defineContract({
+    channel: "embedded-model:get-recent-logs",
+    input: z.void(),
+    output: z.array(
+      z.object({
+        ts: z.number(),
+        level: z.enum(["info", "warn", "error"]),
+        msg: z.string(),
+      }),
+    ),
+  }),
+} as const;
+
+// ─── Events ───────────────────────────────────────────────────────────────────
+
+const InferenceStateSchema = z.enum([
+  "idle",
+  "loading",
+  "prefilling",
+  "generating",
+  "thinking",
+  "tool_calling",
+]);
+export type InferenceState = z.infer<typeof InferenceStateSchema>;
+
+export const InferenceStatsSchema = z.object({
+  state: InferenceStateSchema,
+  operation: z.string(),
+  liveTps: z.number(),
+  avgTps: z.number(),
+  peakTps: z.number(),
+  lowestTps: z.number(),
+  tokensGenerated: z.number(),
+  sessionDurationMs: z.number(),
+  totalSessions: z.number(),
+  totalTokensAllTime: z.number(),
+});
+export type InferenceStats = z.infer<typeof InferenceStatsSchema>;
+
+export const InferenceLogEntrySchema = z.object({
+  ts: z.number(),
+  level: z.enum(["info", "warn", "error"]),
+  msg: z.string(),
+});
+export type InferenceLogEntry = z.infer<typeof InferenceLogEntrySchema>;
+
+export const embeddedModelEvents = {
+  stats: defineEvent({
+    channel: "embedded-model:stats",
+    payload: InferenceStatsSchema,
+  }),
+  log: defineEvent({
+    channel: "embedded-model:log",
+    payload: InferenceLogEntrySchema,
+  }),
 } as const;
 
 export const embeddedModelClient = createClient(embeddedModelContracts);
+export const embeddedModelEventClient = createEventClient(embeddedModelEvents);

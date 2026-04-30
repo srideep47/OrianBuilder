@@ -43,7 +43,14 @@ import { planEvents, planContracts } from "../types/plan";
 import { audioContracts } from "../types/audio";
 import { mediaContracts } from "../types/media";
 import { imageGenerationContracts } from "../types/image_generation";
-import { embeddedModelContracts } from "../types/embedded_model";
+import {
+  embeddedModelContracts,
+  embeddedModelEvents,
+} from "../types/embedded_model";
+import {
+  modelMarketplaceContracts,
+  modelMarketplaceEvents,
+} from "../types/model_marketplace";
 
 // =============================================================================
 // Invoke Channels (derived from all contracts)
@@ -103,6 +110,7 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(mediaContracts),
   ...getInvokeChannels(imageGenerationContracts),
   ...getInvokeChannels(embeddedModelContracts),
+  ...getInvokeChannels(modelMarketplaceContracts),
 
   // Test-only channels
   ...TEST_INVOKE_CHANNELS,
@@ -128,6 +136,8 @@ export const VALID_RECEIVE_CHANNELS = [
   ...getReceiveChannels(systemEvents),
   ...getReceiveChannels(miscEvents),
   ...getReceiveChannels(planEvents),
+  ...getReceiveChannels(modelMarketplaceEvents),
+  ...getReceiveChannels(embeddedModelEvents),
 ] as const;
 
 // =============================================================================

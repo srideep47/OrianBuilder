@@ -16,7 +16,6 @@ export function EmbeddedModelSettings() {
   const [gpuInfo, setGpuInfo] = useState<GpuInfo | null>(null);
   const [status, setStatus] = useState<EmbeddedServerStatus | null>(null);
   const [modelPath, setModelPath] = useState<string | null>(null);
-  const [gpuLayers, setGpuLayers] = useState(99);
   const [contextSize, setContextSize] = useState(8192);
   const [isLoadingModel, setIsLoadingModel] = useState(false);
 
@@ -35,11 +34,7 @@ export function EmbeddedModelSettings() {
       setGpuInfo(gpu);
       setStatus(s);
       setModelPath((cfg as any).modelPath ?? null);
-      if ((cfg as any).gpuLayers) setGpuLayers((cfg as any).gpuLayers);
       if ((cfg as any).contextSize) setContextSize((cfg as any).contextSize);
-      if (gpu?.recommendedGpuLayers && !(cfg as any).gpuLayers) {
-        setGpuLayers(gpu.recommendedGpuLayers);
-      }
     })();
   }, []);
 
@@ -57,7 +52,7 @@ export function EmbeddedModelSettings() {
     try {
       const result = await ipc.embeddedModel.loadModel({
         modelPath,
-        gpuLayers,
+        gpuMemoryUtilization: 0.8,
         contextSize,
         batchSize: 512,
         temperature: 0.7,
@@ -171,22 +166,8 @@ export function EmbeddedModelSettings() {
 
         <div className="space-y-1">
           <label className="text-sm text-muted-foreground">
-            GPU Layers:{" "}
-            <span className="font-medium text-foreground">{gpuLayers}</span>
-            {gpuInfo && ` (recommended: ${gpuInfo.recommendedGpuLayers})`}
+            Context Size (desired max)
           </label>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={gpuLayers}
-            onChange={(e) => setGpuLayers(Number(e.target.value))}
-            className="w-full accent-primary"
-          />
-        </div>
-
-        <div className="space-y-1">
-          <label className="text-sm text-muted-foreground">Context Size</label>
           <select
             value={contextSize}
             onChange={(e) => setContextSize(Number(e.target.value))}
