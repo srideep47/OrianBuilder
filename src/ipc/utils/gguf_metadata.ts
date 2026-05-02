@@ -30,6 +30,8 @@ export interface GgufMetadata {
   feedForwardLength: number | null;
   attentionHeadCount: number | null;
   attentionHeadCountKv: number | null;
+  attentionSlidingWindow: number | null;
+  attentionSlidingWindowPattern: number | null;
   vocabSize: number | null;
   fileType: number | null;
   quantization: string | null;
@@ -245,6 +247,9 @@ function _parseGgufBuffer(buf: Buffer): GgufMetadata {
     feedForwardLength: archKey("feed_forward_length") ?? null,
     attentionHeadCount: archKey("attention.head_count") ?? null,
     attentionHeadCountKv: archKey("attention.head_count_kv") ?? null,
+    attentionSlidingWindow: archKey("attention.sliding_window") ?? null,
+    attentionSlidingWindowPattern:
+      archKey("attention.sliding_window_pattern") ?? null,
     vocabSize: archKey("vocab_size") ?? null,
     ropeFreqBase: archKey("rope.freq_base") ?? null,
     ropeDimensionCount: archKey("rope.dimension_count") ?? null,

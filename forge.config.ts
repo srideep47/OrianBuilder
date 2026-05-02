@@ -121,7 +121,14 @@ const config: ForgeConfig = {
         "{node_modules/node-pty,node_modules/node-llama-cpp,node_modules/@node-llama-cpp}",
     },
     ignore,
-    extraResource: ["node_modules/dugite/git", "node_modules/@vscode"],
+    extraResource: [
+      "node_modules/dugite/git",
+      "node_modules/@vscode",
+      "native/tensorrt-runner/bin",
+      "native/trt-llm-runner",
+      "scripts/build-tensorrt-engine.ps1",
+      "scripts/build-trt-llm-engine.ps1",
+    ],
     // ignore: [/node_modules\/(?!(better-sqlite3|bindings|file-uri-to-path)\/)/],
   },
   rebuildConfig: {

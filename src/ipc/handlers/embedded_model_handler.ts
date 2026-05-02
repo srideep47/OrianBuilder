@@ -1,7 +1,8 @@
-import { ipcMain, dialog, BrowserWindow } from "electron";
+import { ipcMain, dialog, BrowserWindow, app } from "electron";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs";
+import path from "node:path";
 import log from "electron-log";
 import {
   loadModel,
@@ -11,11 +12,17 @@ import {
   addStatsListener,
   addLogListener,
   getRecentLogs,
+  getCurrentStats,
 } from "../utils/embedded_inference_server";
 import { detectGpu } from "../utils/gpu_detection";
 import { readSettings, writeSettings } from "../../main/settings";
 import { readGgufMetadata } from "../utils/gguf_metadata";
-import { embeddedModelEvents } from "../types/embedded_model";
+import {
+  embeddedModelEvents,
+  type TensorRtEngineBuildRequest,
+  type TensorRtEngineBuildStatus,
+} from "../types/embedded_model";
+import { TensorRtNativeBackend } from "../utils/tensorrt_native_backend";
 
 function broadcast(channel: string, payload: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -26,27 +33,282 @@ function broadcast(channel: string, payload: unknown): void {
 const execFileAsync = promisify(execFile);
 const logger = log.scope("embedded-model-handler");
 
+const DEFAULT_TENSORRT_BUILD_MODEL_ID = "Qwen/Qwen2.5-0.5B-Instruct";
+
+// Shared backend instance for build operations (separate from inference server's instance)
+const buildBackend = new TensorRtNativeBackend();
+let tensorRtBuildAbort: AbortController | null = null;
+
+let tensorRtBuildStatus: TensorRtEngineBuildStatus = {
+  running: false,
+  phase: "idle",
+  message: "No TensorRT engine build has been started.",
+  outputDir: null,
+  onnxPath: null,
+  modelId: DEFAULT_TENSORRT_BUILD_MODEL_ID,
+  startedAt: null,
+  finishedAt: null,
+  exitCode: null,
+};
+
+function getDefaultTensorRtEngineOutputDir(modelId: string): string {
+  const safeName = modelId.replace(/[/\\:]/g, "-").toLowerCase();
+  return path.join(app.getPath("userData"), "models", "trt_engines", safeName);
+}
+
+function publishTensorRtBuildStatus(
+  patch: Partial<TensorRtEngineBuildStatus>,
+): TensorRtEngineBuildStatus {
+  tensorRtBuildStatus = { ...tensorRtBuildStatus, ...patch };
+  broadcast(
+    embeddedModelEvents.tensorRtBuildStatus.channel,
+    tensorRtBuildStatus,
+  );
+  return tensorRtBuildStatus;
+}
+
+function startTensorRtEngineBuild(
+  request: TensorRtEngineBuildRequest,
+): TensorRtEngineBuildStatus {
+  if (tensorRtBuildStatus.running) {
+    return publishTensorRtBuildStatus({
+      message: "TensorRT engine build is already running.",
+    });
+  }
+
+  const modelId = request.modelId || DEFAULT_TENSORRT_BUILD_MODEL_ID;
+  const outputDir =
+    request.outputDir ?? getDefaultTensorRtEngineOutputDir(modelId);
+
+  publishTensorRtBuildStatus({
+    running: true,
+    phase: "checking",
+    message: "Starting TensorRT-LLM engine build via Python runner…",
+    outputDir,
+    onnxPath: null,
+    modelId,
+    startedAt: Date.now(),
+    finishedAt: null,
+    exitCode: null,
+  });
+
+  tensorRtBuildAbort = new AbortController();
+  const abortSignal = tensorRtBuildAbort.signal;
+
+  buildBackend
+    .build({
+      modelId,
+      outputDir,
+      maxInputLen: request.maxInputLen ?? 4096,
+      maxOutputLen: request.maxSeqLen ?? 2048,
+      dtype: "fp16",
+      onProgress: (phase: string, message: string) => {
+        if (abortSignal.aborted) return;
+        const buildPhase =
+          phase === "building"
+            ? "building"
+            : phase === "exporting"
+              ? "building"
+              : phase === "downloading"
+                ? "checking"
+                : phase === "writing_meta"
+                  ? "building"
+                  : (tensorRtBuildStatus.phase as TensorRtEngineBuildStatus["phase"]);
+        publishTensorRtBuildStatus({ phase: buildPhase, message });
+        logger.info(`[trt-build] [${phase}] ${message}`);
+      },
+    })
+    .then(({ engineDir }) => {
+      if (abortSignal.aborted) return;
+      publishTensorRtBuildStatus({
+        running: false,
+        phase: "done",
+        message: `TensorRT engine built successfully at: ${engineDir}`,
+        outputDir: engineDir,
+        finishedAt: Date.now(),
+        exitCode: 0,
+      });
+    })
+    .catch((err: Error) => {
+      if (abortSignal.aborted) return;
+      logger.error("TensorRT engine build failed:", err);
+      publishTensorRtBuildStatus({
+        running: false,
+        phase: "failed",
+        message: err.message,
+        finishedAt: Date.now(),
+        exitCode: -1,
+      });
+    })
+    .finally(() => {
+      tensorRtBuildAbort = null;
+    });
+
+  return tensorRtBuildStatus;
+}
+
+function cancelTensorRtEngineBuild(): TensorRtEngineBuildStatus {
+  if (!tensorRtBuildStatus.running) return tensorRtBuildStatus;
+  publishTensorRtBuildStatus({
+    phase: "cancelled",
+    message: "Cancelling TensorRT engine build.",
+  });
+  tensorRtBuildAbort?.abort();
+  tensorRtBuildAbort = null;
+  // Shut down the build runner process
+  void buildBackend.shutdown();
+  publishTensorRtBuildStatus({
+    running: false,
+    message: "TensorRT engine build cancelled.",
+    finishedAt: Date.now(),
+    exitCode: -1,
+  });
+  return tensorRtBuildStatus;
+}
+
 // ─── GPU stats ───────────────────────────────────────────────────────────────
+
+let lastGpuStats: {
+  utilizationPercent: number;
+  vramUsedMb: number;
+  vramTotalMb: number;
+  sharedSystemMemoryUsedMb: number;
+  dedicatedMemoryUsedMb: number;
+  memoryOverflowMb: number;
+  temperatureC: number;
+  powerW: number;
+  clockMhz: number;
+} | null = null;
+let lastGpuStatsAt = 0;
+
+function parseTypeperfCsvLine(line: string): string[] {
+  const values: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (const ch of line) {
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+    } else if (ch === "," && !inQuotes) {
+      values.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  values.push(current);
+  return values.map((value) => value.trim());
+}
+
+async function getWindowsGpuMemoryStats(): Promise<{
+  dedicatedMemoryUsedMb: number;
+  sharedSystemMemoryUsedMb: number;
+  memoryOverflowMb: number;
+}> {
+  if (process.platform !== "win32") {
+    return {
+      dedicatedMemoryUsedMb: 0,
+      sharedSystemMemoryUsedMb: 0,
+      memoryOverflowMb: 0,
+    };
+  }
+
+  try {
+    const { stdout } = await execFileAsync("typeperf", [
+      "\\GPU Adapter Memory(*)\\Dedicated Usage",
+      "\\GPU Adapter Memory(*)\\Shared Usage",
+      "-sc",
+      "1",
+    ]);
+    const lines = stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('"'));
+    if (lines.length < 2) {
+      throw new Error("typeperf returned no GPU memory samples");
+    }
+
+    const headers = parseTypeperfCsvLine(lines[0]);
+    const values = parseTypeperfCsvLine(lines[1]);
+    let dedicatedBytes = 0;
+    let sharedBytes = 0;
+    let totalDedicatedBytes: number | null = null;
+    let totalSharedBytes: number | null = null;
+
+    for (let i = 1; i < headers.length; i++) {
+      const header = headers[i].toLowerCase();
+      const value = Number(values[i]) || 0;
+      if (header.includes("\\gpu adapter memory(_total)\\")) {
+        if (header.endsWith("\\dedicated usage")) {
+          totalDedicatedBytes = value;
+        } else if (header.endsWith("\\shared usage")) {
+          totalSharedBytes = value;
+        }
+      } else if (header.endsWith("\\dedicated usage")) {
+        dedicatedBytes += value;
+      } else if (header.endsWith("\\shared usage")) {
+        sharedBytes += value;
+      }
+    }
+
+    const dedicatedMemoryUsedMb =
+      (totalDedicatedBytes ?? dedicatedBytes) / (1024 * 1024);
+    const sharedSystemMemoryUsedMb =
+      (totalSharedBytes ?? sharedBytes) / (1024 * 1024);
+
+    return {
+      dedicatedMemoryUsedMb,
+      sharedSystemMemoryUsedMb,
+      memoryOverflowMb: sharedSystemMemoryUsedMb,
+    };
+  } catch (err) {
+    logger.debug("Windows GPU shared memory counters unavailable:", err);
+    return {
+      dedicatedMemoryUsedMb: 0,
+      sharedSystemMemoryUsedMb: 0,
+      memoryOverflowMb: 0,
+    };
+  }
+}
 
 async function getGpuStats() {
   try {
-    const { stdout } = await execFileAsync("nvidia-smi", [
-      "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,clocks.current.graphics",
-      "--format=csv,noheader,nounits",
+    const [{ stdout }, windowsMemory] = await Promise.all([
+      execFileAsync("nvidia-smi", [
+        "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,clocks.current.graphics",
+        "--format=csv,noheader,nounits",
+      ]),
+      getWindowsGpuMemoryStats(),
     ]);
     const parts = stdout
       .trim()
-      .split(", ")
+      .split(",")
       .map((s) => s.trim());
-    return {
+    lastGpuStats = {
       utilizationPercent: parseFloat(parts[0]) || 0,
       vramUsedMb: parseFloat(parts[1]) || 0,
       vramTotalMb: parseFloat(parts[2]) || 0,
+      sharedSystemMemoryUsedMb: windowsMemory.sharedSystemMemoryUsedMb,
+      dedicatedMemoryUsedMb:
+        windowsMemory.dedicatedMemoryUsedMb || parseFloat(parts[1]) || 0,
+      memoryOverflowMb:
+        Math.max(
+          parseFloat(parts[1]) || 0,
+          windowsMemory.dedicatedMemoryUsedMb,
+        ) /
+          Math.max(1, parseFloat(parts[2]) || 0) >
+        0.96
+          ? windowsMemory.memoryOverflowMb
+          : 0,
       temperatureC: parseFloat(parts[3]) || 0,
       powerW: parseFloat(parts[4]) || 0,
       clockMhz: parseFloat(parts[5]) || 0,
     };
+    lastGpuStatsAt = Date.now();
+    return lastGpuStats;
   } catch {
+    if (lastGpuStats && Date.now() - lastGpuStatsAt < 10_000) {
+      return lastGpuStats;
+    }
     return null;
   }
 }
@@ -108,7 +370,7 @@ function loadedVramFactor(quant: string): number {
 
 async function computeModelInfo(filePath: string, vramMb: number) {
   const fileName = filePath.split(/[/\\]/).pop() ?? "";
-  const stat = fs.statSync(filePath);
+  const stat = await fs.promises.stat(filePath);
   const fileSizeMb = Math.round(stat.size / (1024 * 1024));
 
   // Try to read real GGUF metadata first — much more accurate than filename guessing.
@@ -118,6 +380,8 @@ async function computeModelInfo(filePath: string, vramMb: number) {
   let realKvHeads: number | null = null;
   let realEmbedding: number | null = null;
   let realHeadCount: number | null = null;
+  let attentionSlidingWindow: number | null = null;
+  let attentionSlidingWindowPattern: number | null = null;
   let architecture: string | null = null;
   try {
     const md = await readGgufMetadata(filePath);
@@ -127,6 +391,8 @@ async function computeModelInfo(filePath: string, vramMb: number) {
     realKvHeads = md.attentionHeadCountKv ?? md.attentionHeadCount;
     realEmbedding = md.embeddingLength;
     realHeadCount = md.attentionHeadCount;
+    attentionSlidingWindow = md.attentionSlidingWindow;
+    attentionSlidingWindowPattern = md.attentionSlidingWindowPattern;
     architecture = md.architecture;
   } catch (err) {
     logger.warn(
@@ -145,10 +411,9 @@ async function computeModelInfo(filePath: string, vramMb: number) {
   const loadedModelVramMb = fileSizeMb * factor;
   const layerSizeMb = Math.ceil(loadedModelVramMb / estimatedLayers);
 
-  // Reserve VRAM for: CUDA runtime (512 MB) + KV cache headroom (2.5 GB).
-  // This matches the 2048 MB floor the inference server applies when calculating
-  // gpuLayers, so the UI preview stays in sync with what actually loads.
-  const reservedMb = 3072;
+  // Keep recommendations aggressive for local app-building: by default the
+  // loader leaves an explicit 512 MB headroom and gives the rest to weights/KV.
+  const reservedMb = 512;
   const usableVramMb = Math.max(0, vramMb - reservedMb);
 
   const maxSafeGpuLayers = Math.min(
@@ -172,11 +437,19 @@ async function computeModelInfo(filePath: string, vramMb: number) {
     0,
     usableVramMb - recommendedGpuLayers * layerSizeMb,
   );
+  const effectiveKvContextForBudget = getEffectiveKvContextSize(
+    realCtxLength ?? 131072,
+    attentionSlidingWindow,
+    attentionSlidingWindowPattern,
+    true,
+  );
   const maxCtxFromVram =
     recommendedGpuLayers > 0 && vramAfterModelMb > 0
       ? Math.floor(
           (vramAfterModelMb * 1024 * 1024) /
-            (kvBytesPerTokenPerLayer * recommendedGpuLayers),
+            (kvBytesPerTokenPerLayer *
+              recommendedGpuLayers *
+              (effectiveKvContextForBudget / (realCtxLength ?? 131072))),
         )
       : 512;
   // Dyad's system prompt (app codebase + instructions) is typically 30K–60K tokens.
@@ -221,7 +494,27 @@ async function computeModelInfo(filePath: string, vramMb: number) {
     architecture,
     contextLengthTrained: realCtxLength,
     kvBytesPerTokenPerLayer,
+    attentionSlidingWindow,
+    attentionSlidingWindowPattern,
   };
+}
+
+function getEffectiveKvContextSize(
+  contextSize: number,
+  attentionSlidingWindow?: number | null,
+  attentionSlidingWindowPattern?: number | null,
+  flashAttention?: boolean,
+): number {
+  const slidingWindow = attentionSlidingWindow ?? 0;
+  if (slidingWindow <= 0 || slidingWindow >= contextSize) {
+    return contextSize;
+  }
+  const pattern = Math.max(1, attentionSlidingWindowPattern ?? 1);
+  const nonSwaPercent =
+    pattern <= 1 ? 1 : 1 / (pattern + (flashAttention ? -0.5 : -1));
+  return Math.ceil(
+    (1 - nonSwaPercent) * slidingWindow + nonSwaPercent * contextSize,
+  );
 }
 
 function nearestPower2(n: number): number {
@@ -241,6 +534,7 @@ export function registerEmbeddedModelHandlers(): void {
   addLogListener((e) => broadcast(embeddedModelEvents.log.channel, e));
 
   ipcMain.handle("embedded-model:get-recent-logs", () => getRecentLogs());
+  ipcMain.handle("embedded-model:get-stats", () => getCurrentStats());
 
   ipcMain.handle("embedded-model:get-status", async () => {
     const s = getServerStatus();
@@ -251,6 +545,8 @@ export function registerEmbeddedModelHandlers(): void {
         : null,
       tokensGenerated: 0,
       lastTokensPerSec: 0,
+      totalLayers: s.totalLayers,
+      cpuLayers: s.cpuLayers,
     };
   });
 
@@ -273,6 +569,40 @@ export function registerEmbeddedModelHandlers(): void {
     });
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0];
+  });
+
+  ipcMain.handle("embedded-model:select-tensorrt-engine-dir", async () => {
+    const result = await dialog.showOpenDialog({
+      title: "Select TensorRT Engine Directory",
+      properties: ["openDirectory"],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle("embedded-model:select-tensorrt-onnx", async () => {
+    const result = await dialog.showOpenDialog({
+      title: "Select ONNX Model for TensorRT Build",
+      filters: [{ name: "ONNX Models", extensions: ["onnx"] }],
+      properties: ["openFile"],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle("embedded-model:get-tensorrt-engine-build-status", () => {
+    return tensorRtBuildStatus;
+  });
+
+  ipcMain.handle(
+    "embedded-model:start-tensorrt-engine-build",
+    (_event, request: TensorRtEngineBuildRequest) => {
+      return startTensorRtEngineBuild(request);
+    },
+  );
+
+  ipcMain.handle("embedded-model:cancel-tensorrt-engine-build", () => {
+    return cancelTensorRtEngineBuild();
   });
 
   ipcMain.handle(
@@ -310,6 +640,9 @@ export function registerEmbeddedModelHandlers(): void {
       let vramMb = 0;
       let layerSizeMb = 200;
       let estimatedLayers = 64;
+      let kvBytesPerTokenPerLayer = 4096;
+      let attentionSlidingWindow: number | null = null;
+      let attentionSlidingWindowPattern: number | null = null;
 
       try {
         const gpuInfo = await detectGpu();
@@ -323,6 +656,10 @@ export function registerEmbeddedModelHandlers(): void {
           const modelInfo = await computeModelInfo(config.modelPath, vramMb);
           layerSizeMb = modelInfo.layerSizeMb;
           estimatedLayers = modelInfo.estimatedLayers;
+          kvBytesPerTokenPerLayer = modelInfo.kvBytesPerTokenPerLayer ?? 4096;
+          attentionSlidingWindow = modelInfo.attentionSlidingWindow ?? null;
+          attentionSlidingWindowPattern =
+            modelInfo.attentionSlidingWindowPattern ?? null;
         }
       } catch {
         /* ignore — will fall back to defaults */
@@ -330,13 +667,26 @@ export function registerEmbeddedModelHandlers(): void {
 
       await loadModel({
         modelPath: config.modelPath,
+        inferenceBackend: config.inferenceBackend ?? "llama-cpp",
+        tensorRtEngineDir: config.tensorRtEngineDir ?? null,
         gpuMemoryUtilization: config.gpuMemoryUtilization ?? 0.8,
+        vramHeadroomMb: config.vramHeadroomMb ?? 512,
         contextSize: config.contextSize,
         batchSize: config.batchSize ?? 512,
         flashAttention: config.flashAttention ?? true,
+        aggressiveMemory: config.aggressiveMemory ?? true,
+        gpuLayersMode: config.gpuLayersMode ?? "auto",
+        manualGpuLayers: config.manualGpuLayers ?? null,
         _vramMb: vramMb,
         _layerSizeMb: layerSizeMb,
         _estimatedLayers: estimatedLayers,
+        _kvBytesPerTokenPerLayer:
+          config._kvBytesPerTokenPerLayer ?? kvBytesPerTokenPerLayer,
+        _attentionSlidingWindow:
+          config._attentionSlidingWindow ?? attentionSlidingWindow,
+        _attentionSlidingWindowPattern:
+          config._attentionSlidingWindowPattern ??
+          attentionSlidingWindowPattern,
       });
 
       // Push sampling defaults to the engine so they take effect for chat requests.
@@ -377,7 +727,10 @@ export function registerEmbeddedModelHandlers(): void {
     const cfg = settings.embeddedConfig ?? {};
     return {
       modelPath: cfg.modelPath ?? null,
-      gpuMemoryUtilization: cfg.gpuMemoryUtilization ?? 0.8,
+      inferenceBackend: cfg.inferenceBackend ?? "llama-cpp",
+      tensorRtEngineDir: cfg.tensorRtEngineDir ?? null,
+      gpuMemoryUtilization: cfg.gpuMemoryUtilization ?? 0.98,
+      vramHeadroomMb: cfg.vramHeadroomMb ?? 512,
       contextSize: cfg.contextSize ?? 8192,
       batchSize: cfg.batchSize ?? 512,
       temperature: cfg.temperature ?? 0.7,
@@ -386,6 +739,9 @@ export function registerEmbeddedModelHandlers(): void {
       repeatPenalty: cfg.repeatPenalty ?? 1.1,
       seed: cfg.seed ?? null,
       flashAttention: cfg.flashAttention ?? true,
+      aggressiveMemory: cfg.aggressiveMemory ?? true,
+      gpuLayersMode: cfg.gpuLayersMode ?? "auto",
+      manualGpuLayers: cfg.manualGpuLayers ?? null,
     };
   });
 

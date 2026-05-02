@@ -52,7 +52,7 @@ export async function detectGpu(modelSizeMb = 17920): Promise<GpuInfo> {
     const line = stdout.trim().split("\n")[0];
     if (!line) throw new Error("No GPU found");
 
-    const parts = line.split(", ").map((s) => s.trim());
+    const parts = line.split(",").map((s) => s.trim());
     const name = parts[0];
     const vramMb = parseInt(parts[1], 10);
     const ccStr = parts[2];

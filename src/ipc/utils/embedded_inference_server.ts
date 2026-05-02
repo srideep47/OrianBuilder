@@ -1,5 +1,9 @@
 import http from "node:http";
 import log from "electron-log";
+import {
+  findDefaultTensorRtEngineDir,
+  TensorRtNativeBackend,
+} from "./tensorrt_native_backend";
 
 const logger = log.scope("embedded-inference");
 
@@ -14,20 +18,32 @@ let currentModel: unknown = null;
 let currentContext: unknown = null;
 let currentModelPath: string | null = null;
 let currentGpuLayers = 0;
+let currentTotalLayers = 0;
 let currentActualContextSize = 0;
+let currentBackend: "none" | "llama-cpp" | "tensorrt-native" = "none";
+let tensorRtBackend: TensorRtNativeBackend | null = null;
 let isLoading = false;
 let isInferring = false;
 let currentAbort: AbortController | null = null;
 
 export interface EmbeddedModelConfig {
   modelPath: string;
+  inferenceBackend?: "llama-cpp" | "tensorrt-native";
+  tensorRtEngineDir?: string | null;
   gpuMemoryUtilization: number;
+  vramHeadroomMb?: number;
   contextSize: number;
   batchSize?: number;
   flashAttention?: boolean;
+  aggressiveMemory?: boolean;
+  gpuLayersMode?: "auto" | "manual";
+  manualGpuLayers?: number | null;
   _estimatedLayers?: number;
   _layerSizeMb?: number;
   _vramMb?: number;
+  _kvBytesPerTokenPerLayer?: number;
+  _attentionSlidingWindow?: number | null;
+  _attentionSlidingWindowPattern?: number | null;
 }
 
 let defaultSampling = {
@@ -47,17 +63,36 @@ export interface EmbeddedServerStatus {
   modelLoaded: boolean;
   modelPath: string | null;
   isLoading: boolean;
+  backend: "none" | "llama-cpp" | "tensorrt-native";
+  tensorRtRunnerAvailable: boolean;
+  tensorRtRuntimeAvailable: boolean;
+  tensorRtRuntimePath: string | null;
+  tensorRtEngineDir: string | null;
+  tensorRtEngineFormat: "tensorrt-llm" | "tensorrt-plan" | "unknown" | null;
   gpuLayers: number;
+  totalLayers: number;
+  cpuLayers: number;
   actualContextSize: number;
 }
 
 export function getServerStatus(): EmbeddedServerStatus {
+  const tensorRtStatus = getTensorRtBackend().getStatus();
+  const tensorRtLoaded =
+    currentBackend === "tensorrt-native" && tensorRtStatus.loaded;
   return {
     running: server !== null,
-    modelLoaded: currentModel !== null,
+    modelLoaded: currentModel !== null || tensorRtLoaded,
     modelPath: currentModelPath,
     isLoading,
+    backend: currentBackend,
+    tensorRtRunnerAvailable: tensorRtStatus.runnerAvailable,
+    tensorRtRuntimeAvailable: tensorRtStatus.runtimeAvailable,
+    tensorRtRuntimePath: tensorRtStatus.runtimePath,
+    tensorRtEngineDir: tensorRtStatus.engineDir,
+    tensorRtEngineFormat: tensorRtStatus.engineFormat,
     gpuLayers: currentGpuLayers,
+    totalLayers: currentTotalLayers,
+    cpuLayers: Math.max(0, currentTotalLayers - currentGpuLayers),
     actualContextSize: currentActualContextSize,
   };
 }
@@ -75,8 +110,13 @@ export type InferenceState =
 export interface InferenceStats {
   state: InferenceState;
   operation: string;
+  backend: "none" | "llama-cpp" | "tensorrt-native";
   liveTps: number;
   avgTps: number;
+  prefillTps: number;
+  promptTokens: number;
+  prefillDurationMs: number;
+  decodeTps: number;
   peakTps: number;
   lowestTps: number;
   tokensGenerated: number;
@@ -107,6 +147,10 @@ interface TpsBucket {
 }
 let tpsBuckets: TpsBucket[] = [];
 let sessionStart = 0;
+let prefillStart = 0;
+let firstTokenAt = 0;
+let currentPromptTokens = 0;
+let currentPrefillDurationMs = 0;
 let sessionTokens = 0;
 let sessionPeakTps = 0;
 let sessionLowestTps = Infinity;
@@ -135,11 +179,31 @@ export function getCurrentStats(): InferenceStats {
   const sessionDurationMs = sessionStart > 0 ? Date.now() - sessionStart : 0;
   const avgTps =
     sessionDurationMs > 0 ? (sessionTokens / sessionDurationMs) * 1000 : 0;
+  const activePrefillMs =
+    prefillStart > 0 &&
+    firstTokenAt === 0 &&
+    currentInferenceState === "prefilling"
+      ? Date.now() - prefillStart
+      : currentPrefillDurationMs;
+  const prefillTps =
+    currentPromptTokens > 0 && activePrefillMs > 0
+      ? (currentPromptTokens / activePrefillMs) * 1000
+      : 0;
+  const decodeMs =
+    firstTokenAt > 0
+      ? Math.max(1, Date.now() - firstTokenAt)
+      : sessionDurationMs;
+  const decodeTps = sessionTokens > 0 ? (sessionTokens / decodeMs) * 1000 : 0;
   return {
     state: currentInferenceState,
     operation: currentOperation,
+    backend: currentBackend,
     liveTps,
     avgTps,
+    prefillTps,
+    promptTokens: currentPromptTokens,
+    prefillDurationMs: activePrefillMs,
+    decodeTps,
     peakTps: sessionPeakTps,
     lowestTps: sessionLowestTps === Infinity ? 0 : sessionLowestTps,
     tokensGenerated: sessionTokens,
@@ -161,6 +225,10 @@ function computeLiveTps(): number {
 }
 
 function recordToken(): void {
+  if (firstTokenAt === 0 && prefillStart > 0) {
+    firstTokenAt = Date.now();
+    currentPrefillDurationMs = Math.max(1, firstTokenAt - prefillStart);
+  }
   sessionTokens++;
   allTimeTotalTokens++;
   const now = Date.now();
@@ -175,6 +243,10 @@ function recordToken(): void {
   const live = computeLiveTps();
   if (live > sessionPeakTps) sessionPeakTps = live;
   if (live > 0 && live < sessionLowestTps) sessionLowestTps = live;
+}
+
+function recordTokenCount(count: number): void {
+  for (let i = 0; i < Math.max(0, count); i++) recordToken();
 }
 
 function setState(s: InferenceState, op = ""): void {
@@ -203,8 +275,12 @@ function stopStatsBroadcast(): void {
   broadcastStats();
 }
 
-function beginSession(): void {
+function beginSession(promptTokens: number): void {
   sessionStart = Date.now();
+  prefillStart = sessionStart;
+  firstTokenAt = 0;
+  currentPromptTokens = promptTokens;
+  currentPrefillDurationMs = 0;
   sessionTokens = 0;
   sessionPeakTps = 0;
   sessionLowestTps = Infinity;
@@ -275,19 +351,76 @@ async function destroyLlamaInstance(): Promise<void> {
   logger.info("Llama instance destroyed");
 }
 
+function getTensorRtBackend(): TensorRtNativeBackend {
+  tensorRtBackend ??= new TensorRtNativeBackend();
+  return tensorRtBackend;
+}
+
+function getModelLoaded(): boolean {
+  return (
+    currentModel !== null ||
+    (currentBackend === "tensorrt-native" &&
+      getTensorRtBackend().getStatus().loaded)
+  );
+}
+
 // ─── GPU layer calculation ────────────────────────────────────────────────────
 
 function calculateGpuLayers(
   vramMb: number,
   utilization: number,
+  vramHeadroomMb: number | undefined,
   layerSizeMb: number,
   totalLayers: number,
+  contextSize: number,
+  kvBytesPerTokenPerLayer: number,
+  attentionSlidingWindow?: number | null,
+  attentionSlidingWindowPattern?: number | null,
+  flashAttention?: boolean,
 ): number {
   if (vramMb <= 0 || layerSizeMb <= 0) return 0;
-  const kvFloorMb = 2048;
-  const utilBudget = vramMb * Math.min(0.95, Math.max(0.3, utilization));
-  const budget = Math.max(0, Math.min(utilBudget, vramMb - kvFloorMb));
-  return Math.min(totalLayers, Math.floor(budget / layerSizeMb));
+  const explicitHeadroomMb =
+    typeof vramHeadroomMb === "number"
+      ? Math.max(256, Math.min(4096, vramHeadroomMb))
+      : null;
+  const utilBudget = vramMb * Math.min(0.98, Math.max(0.3, utilization));
+  const budget = Math.max(
+    0,
+    explicitHeadroomMb == null ? utilBudget : vramMb - explicitHeadroomMb,
+  );
+  const effectiveContextSize = getEffectiveKvContextSize(
+    contextSize,
+    attentionSlidingWindow,
+    attentionSlidingWindowPattern,
+    flashAttention,
+  );
+  const kvPerLayerMb =
+    (Math.max(512, effectiveContextSize) * kvBytesPerTokenPerLayer) /
+    (1024 * 1024);
+  const perLayerMb = layerSizeMb + kvPerLayerMb;
+  return Math.min(totalLayers, Math.floor(budget / perLayerMb));
+}
+
+function clampGpuLayers(layers: number, totalLayers: number): number {
+  return Math.max(0, Math.min(totalLayers, Math.floor(layers)));
+}
+
+function getEffectiveKvContextSize(
+  contextSize: number,
+  attentionSlidingWindow?: number | null,
+  attentionSlidingWindowPattern?: number | null,
+  flashAttention?: boolean,
+): number {
+  const slidingWindow = attentionSlidingWindow ?? 0;
+  if (slidingWindow <= 0 || slidingWindow >= contextSize) {
+    return contextSize;
+  }
+  const pattern = Math.max(1, attentionSlidingWindowPattern ?? 1);
+  const nonSwaPercent =
+    pattern <= 1 ? 1 : 1 / (pattern + (flashAttention ? -0.5 : -1));
+  return Math.ceil(
+    (1 - nonSwaPercent) * slidingWindow + nonSwaPercent * contextSize,
+  );
 }
 
 const OOM_KEYWORDS = [
@@ -317,18 +450,37 @@ function isOomError(err: unknown): boolean {
 export async function loadModel(config: EmbeddedModelConfig): Promise<void> {
   if (isLoading) throw new Error("A model is already loading");
   isLoading = true;
+
+  if (config.inferenceBackend === "tensorrt-native") {
+    await loadTensorRtModel(config);
+    return;
+  }
+
   setState("loading", `Loading ${config.modelPath.split(/[/\\]/).pop()}…`);
 
   const vramMb = config._vramMb ?? 0;
   const layerSizeMb = config._layerSizeMb ?? 200;
   const totalLayers = config._estimatedLayers ?? 64;
-  const baseGpuLayers = calculateGpuLayers(
+  const kvBytesPerTokenPerLayer = config._kvBytesPerTokenPerLayer ?? 4096;
+  const flashAttention = config.flashAttention ?? true;
+  const autoGpuLayers = calculateGpuLayers(
     vramMb,
     config.gpuMemoryUtilization,
+    config.vramHeadroomMb,
     layerSizeMb,
     totalLayers,
+    config.contextSize,
+    kvBytesPerTokenPerLayer,
+    config._attentionSlidingWindow,
+    config._attentionSlidingWindowPattern,
+    flashAttention,
   );
-  const flashAttention = config.flashAttention ?? true;
+  const baseGpuLayers =
+    config.gpuLayersMode === "manual" &&
+    typeof config.manualGpuLayers === "number"
+      ? clampGpuLayers(config.manualGpuLayers, totalLayers)
+      : autoGpuLayers;
+  const aggressiveMemory = config.aggressiveMemory ?? true;
   const batchSize = config.batchSize ?? 512;
 
   const attempts: Array<{
@@ -340,41 +492,51 @@ export async function loadModel(config: EmbeddedModelConfig): Promise<void> {
     {
       gpuLayers: baseGpuLayers,
       ctxMax: config.contextSize,
-      ctxMin: 256,
+      ctxMin: aggressiveMemory ? config.contextSize : 256,
       label: "initial",
     },
     {
       gpuLayers: Math.floor(baseGpuLayers * 0.75),
       ctxMax: config.contextSize,
-      ctxMin: 256,
+      ctxMin: aggressiveMemory ? config.contextSize : 256,
       label: "75% layers",
     },
     {
       gpuLayers: Math.floor(baseGpuLayers * 0.5),
       ctxMax: config.contextSize,
-      ctxMin: 256,
+      ctxMin: aggressiveMemory ? config.contextSize : 256,
       label: "50% layers",
     },
     {
       gpuLayers: Math.floor(baseGpuLayers * 0.25),
-      ctxMax: Math.min(config.contextSize, 4096),
+      ctxMax: config.contextSize,
       ctxMin: 128,
       label: "25% layers",
     },
     {
       gpuLayers: 0,
-      ctxMax: Math.min(config.contextSize, 8192),
+      ctxMax: config.contextSize,
       ctxMin: 64,
       label: "CPU-only",
+    },
+    {
+      gpuLayers: 0,
+      ctxMax: Math.min(config.contextSize, 32768),
+      ctxMin: 64,
+      label: "CPU-only reduced context",
     },
   ];
 
   logger.info(
     `Loading: ${config.modelPath} | util=${(config.gpuMemoryUtilization * 100).toFixed(0)}% | ` +
-      `baseGpuLayers=${baseGpuLayers}/${totalLayers} | ctx≤${config.contextSize} | vram=${(vramMb / 1024).toFixed(1)}GB`,
+      `headroom=${config.vramHeadroomMb ?? "legacy"}MB | aggressive=${aggressiveMemory} | ` +
+      `gpuLayers=${baseGpuLayers}/${totalLayers} (${config.gpuLayersMode ?? "auto"}) | ` +
+      `ctx≤${config.contextSize} | kv=${(kvBytesPerTokenPerLayer / 1024).toFixed(1)}KB/token/layer | ` +
+      `vram=${(vramMb / 1024).toFixed(1)}GB`,
   );
 
   await _fullReset();
+  currentBackend = "llama-cpp";
   let lastError: unknown = new Error("No load attempt made");
 
   for (const attempt of attempts) {
@@ -404,17 +566,30 @@ export async function loadModel(config: EmbeddedModelConfig): Promise<void> {
       );
 
       const ctx = await (model as any).createContext({
-        contextSize: { min: attempt.ctxMin, max: attempt.ctxMax },
+        contextSize:
+          aggressiveMemory && attempt.ctxMin === attempt.ctxMax
+            ? attempt.ctxMax
+            : { min: attempt.ctxMin, max: attempt.ctxMax },
         flashAttention,
         batchSize: Math.min(batchSize, attempt.ctxMax),
+        ignoreMemorySafetyChecks: aggressiveMemory,
+        failedCreationRemedy: aggressiveMemory ? false : undefined,
       });
       const actualCtx: number = (ctx as any).contextSize ?? attempt.ctxMax;
-      logger.info(`[${attempt.label}] Context created — ${actualCtx} tokens`);
+      const allocatedCtx: number =
+        typeof (ctx as any).getAllocatedContextSize === "function"
+          ? (ctx as any).getAllocatedContextSize()
+          : actualCtx;
+      logger.info(
+        `[${attempt.label}] Context created — ${actualCtx} tokens (${allocatedCtx} allocated)`,
+      );
 
       currentModel = model;
       currentContext = ctx;
       currentModelPath = config.modelPath;
+      currentBackend = "llama-cpp";
       currentGpuLayers = actualGpu;
+      currentTotalLayers = totalLayers;
       currentActualContextSize = actualCtx;
       isLoading = false;
       setState("idle", "Model ready");
@@ -440,6 +615,7 @@ export async function loadModel(config: EmbeddedModelConfig): Promise<void> {
 
       if (!isOomError(err)) {
         currentModelPath = null;
+        currentBackend = "none";
         currentGpuLayers = 0;
         currentActualContextSize = 0;
         isLoading = false;
@@ -449,7 +625,9 @@ export async function loadModel(config: EmbeddedModelConfig): Promise<void> {
   }
 
   currentModelPath = null;
+  currentBackend = "none";
   currentGpuLayers = 0;
+  currentTotalLayers = 0;
   currentActualContextSize = 0;
   isLoading = false;
   const msg =
@@ -459,6 +637,38 @@ export async function loadModel(config: EmbeddedModelConfig): Promise<void> {
       `Last error: ${msg}\n\n` +
       `Try: (1) Close GPU-heavy apps. (2) Lower "GPU Memory Utilization". (3) Use a smaller quantized model.`,
   );
+}
+
+async function loadTensorRtModel(config: EmbeddedModelConfig): Promise<void> {
+  const engineDir = config.tensorRtEngineDir ?? findDefaultTensorRtEngineDir();
+  if (!engineDir) {
+    isLoading = false;
+    currentBackend = "none";
+    throw new Error(
+      "TensorRT engine directory not found. Select a compiled engine directory containing engine_meta.json.",
+    );
+  }
+
+  setState("loading", `Loading TensorRT engine ${engineDir}...`);
+  await _fullReset();
+  currentBackend = "tensorrt-native";
+  try {
+    await getTensorRtBackend().load(engineDir);
+    currentModelPath = engineDir;
+    currentGpuLayers = config._estimatedLayers ?? 0;
+    currentTotalLayers = config._estimatedLayers ?? 0;
+    currentActualContextSize = config.contextSize;
+    isLoading = false;
+    setState("idle", "TensorRT engine ready");
+  } catch (err) {
+    currentBackend = "none";
+    currentModelPath = null;
+    currentGpuLayers = 0;
+    currentTotalLayers = 0;
+    currentActualContextSize = 0;
+    isLoading = false;
+    throw err;
+  }
 }
 
 async function _fullReset(): Promise<void> {
@@ -484,9 +694,12 @@ async function _fullReset(): Promise<void> {
     currentModel = null;
   }
   currentModelPath = null;
+  currentBackend = "none";
   currentGpuLayers = 0;
+  currentTotalLayers = 0;
   currentActualContextSize = 0;
   await destroyLlamaInstance();
+  await tensorRtBackend?.unload();
 }
 
 export async function unloadModel(): Promise<void> {
@@ -624,6 +837,27 @@ function openAiToLlamaChatInput(rawMessages: OpenAIMessage[]): {
   return { history, userPrompt: "[System] Continue with the next step." };
 }
 
+function openAiToPlainPrompt(rawMessages: OpenAIMessage[]): {
+  system: string;
+  prompt: string;
+} {
+  const system = rawMessages
+    .filter((m) => m.role === "system")
+    .map((m) => m.content ?? "")
+    .join("\n\n");
+  const turns = rawMessages
+    .filter((m) => m.role !== "system")
+    .map((m) => {
+      if (m.role === "assistant") return `Assistant: ${m.content ?? ""}`;
+      if (m.role === "tool") return `Tool: ${m.content ?? ""}`;
+      return `User: ${m.content ?? ""}`;
+    });
+  return {
+    system,
+    prompt: `${turns.join("\n\n")}\n\nAssistant:`,
+  };
+}
+
 // ─── Sampling options helper ──────────────────────────────────────────────────
 
 function buildSamplingOpts(
@@ -732,7 +966,9 @@ async function handleWithTools(
       `userPromptLen=${userPrompt.length} tools=${tools.length} stream=${stream} maxTokens=${maxTokens}`,
   );
 
-  beginSession();
+  beginSession(
+    payload._dyadEstimatedInputTokens ?? Math.ceil(userPrompt.length / 4),
+  );
   setState("prefilling", "Processing context…");
 
   // ── Run generation ────────────────────────────────────────────────────────
@@ -992,7 +1228,9 @@ async function handleWithoutTools(
     if (!res.writableEnded && !outerAbort.signal.aborted) outerAbort.abort();
   });
 
-  beginSession();
+  beginSession(
+    payload._dyadEstimatedInputTokens ?? Math.ceil(userPrompt.length / 4),
+  );
   setState("prefilling", "Processing context…");
 
   if (stream) {
@@ -1126,13 +1364,226 @@ async function handleWithoutTools(
   }
 }
 
+async function handleTensorRtChatCompletions(
+  rawMessages: OpenAIMessage[],
+  payload: any,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  reqId: string,
+  created: number,
+  modelName: string,
+): Promise<void> {
+  if (Array.isArray(payload.tools) && payload.tools.length > 0) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({
+        error: {
+          message:
+            "Native TensorRT backend does not support tool calling yet. Use llama.cpp backend for app-building agent mode.",
+          type: "unsupported_tools",
+        },
+      }),
+    );
+    return;
+  }
+
+  // Guard: one request at a time (same as llama.cpp path)
+  if (isInferring) {
+    res.writeHead(429, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({
+        error: {
+          message: "Inference busy — one request at a time",
+          type: "busy",
+        },
+      }),
+    );
+    return;
+  }
+
+  const stream: boolean = payload.stream ?? false;
+  const maxTokens: number = payload.max_tokens ?? 8192;
+  const { system, prompt } = openAiToPlainPrompt(rawMessages);
+  const estimatedInputTokens = Math.ceil(
+    rawMessages.reduce((s, m) => s + (m.content?.length ?? 0), 0) / 4,
+  );
+
+  isInferring = true;
+  const abort = new AbortController();
+  currentAbort = abort;
+  req.on("close", () => {
+    if (!abort.signal.aborted) abort.abort();
+  });
+
+  beginSession(estimatedInputTokens);
+  setState("prefilling", "TensorRT prefill…");
+
+  if (stream) {
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    // Initial role delta
+    res.write(
+      sseChunk({
+        id: reqId,
+        object: "chat.completion.chunk",
+        created,
+        model: modelName,
+        choices: [
+          {
+            index: 0,
+            delta: { role: "assistant", content: "" },
+            finish_reason: null,
+          },
+        ],
+      }),
+    );
+  }
+
+  try {
+    const result = await getTensorRtBackend().chat({
+      system,
+      prompt,
+      maxTokens,
+      temperature: payload.temperature ?? defaultSampling.temperature,
+      topP: payload.top_p ?? defaultSampling.topP,
+      topK: payload.top_k ?? defaultSampling.topK,
+      stop: payload.stop ?? [],
+      stream,
+      onToken: stream
+        ? (text: string) => {
+            if (abort.signal.aborted || res.writableEnded) return;
+            recordToken();
+            if (text.includes("<think>")) setState("thinking", "Thinking…");
+            else if (text.includes("</think>"))
+              setState("generating", "Generating…");
+            else if (currentInferenceState === "prefilling")
+              setState("generating", "Generating…");
+            res.write(
+              sseChunk({
+                id: reqId,
+                object: "chat.completion.chunk",
+                created,
+                model: modelName,
+                choices: [
+                  { index: 0, delta: { content: text }, finish_reason: null },
+                ],
+              }),
+            );
+          }
+        : undefined,
+    });
+
+    if (!stream) {
+      // Non-streaming: record tokens in bulk
+      const tokenCount =
+        result.tokenCount > 0
+          ? result.tokenCount
+          : Math.ceil(result.text.length / 4);
+      recordTokenCount(tokenCount);
+    }
+    stopStatsBroadcast();
+
+    if (abort.signal.aborted) {
+      if (stream && !res.writableEnded) {
+        res.write(
+          sseChunk({
+            id: reqId,
+            object: "chat.completion.chunk",
+            created,
+            model: modelName,
+            choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+          }),
+        );
+        res.write("data: [DONE]\n\n");
+        res.end();
+      }
+      return;
+    }
+
+    if (stream) {
+      if (!res.writableEnded) {
+        res.write(
+          sseChunk({
+            id: reqId,
+            object: "chat.completion.chunk",
+            created,
+            model: modelName,
+            choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+            usage: {
+              prompt_tokens: result.promptTokens || estimatedInputTokens,
+              completion_tokens: result.tokenCount,
+              total_tokens:
+                (result.promptTokens || estimatedInputTokens) +
+                result.tokenCount,
+            },
+          }),
+        );
+        res.write("data: [DONE]\n\n");
+        res.end();
+      }
+    } else {
+      const tokenCount =
+        result.tokenCount > 0
+          ? result.tokenCount
+          : Math.ceil(result.text.length / 4);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: reqId,
+          object: "chat.completion",
+          created,
+          model: modelName,
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: result.text },
+              finish_reason: "stop",
+            },
+          ],
+          usage: {
+            prompt_tokens: result.promptTokens || estimatedInputTokens,
+            completion_tokens: tokenCount,
+            total_tokens:
+              (result.promptTokens || estimatedInputTokens) + tokenCount,
+          },
+        }),
+      );
+    }
+  } catch (err) {
+    stopStatsBroadcast();
+    logger.error("[inference/tensorrt] error:", err);
+    if (stream && !res.writableEnded) {
+      res.write(sseChunk({ error: { message: String(err) } }));
+      res.write("data: [DONE]\n\n");
+      res.end();
+    } else if (!res.headersSent) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: {
+            message: err instanceof Error ? err.message : String(err),
+            type: "tensorrt_error",
+          },
+        }),
+      );
+    }
+  } finally {
+    isInferring = false;
+    currentAbort = null;
+  }
+}
+
 // ─── HTTP /v1/chat/completions handler ───────────────────────────────────────
 
 async function handleChatCompletions(
   req: http.IncomingMessage,
   res: http.ServerResponse,
 ): Promise<void> {
-  if (!currentContext || !currentModel) {
+  if (!getModelLoaded()) {
     res.writeHead(503, { "Content-Type": "application/json" });
     res.end(
       JSON.stringify({
@@ -1193,6 +1644,7 @@ async function handleChatCompletions(
   const estimatedInputTokens = Math.ceil(
     rawMessages.reduce((s, m) => s + (m.content?.length ?? 0), 0) / 4,
   );
+  payload._dyadEstimatedInputTokens = estimatedInputTokens;
   const safeLimit = Math.floor(currentActualContextSize * 0.8);
   if (estimatedInputTokens > safeLimit) {
     const msg =
@@ -1210,10 +1662,24 @@ async function handleChatCompletions(
     return;
   }
 
-  const { LlamaChatSession } = await getLlamaModule();
   const modelName = currentModelPath?.split(/[/\\]/).pop() ?? "embedded";
   const reqId = `chatcmpl-${Date.now().toString(36)}`;
   const created = Math.floor(Date.now() / 1000);
+
+  if (currentBackend === "tensorrt-native") {
+    await handleTensorRtChatCompletions(
+      rawMessages,
+      payload,
+      req,
+      res,
+      reqId,
+      created,
+      modelName,
+    );
+    return;
+  }
+
+  const { LlamaChatSession } = await getLlamaModule();
 
   isInferring = true;
   const abort = new AbortController();
@@ -1339,11 +1805,15 @@ export function startServer(): Promise<void> {
 
         if (url === "/v1/models" && req.method === "GET") {
           const name = currentModelPath?.split(/[/\\]/).pop() ?? "no-model";
+          const hasModel =
+            currentModel !== null ||
+            (currentBackend === "tensorrt-native" &&
+              getTensorRtBackend().getStatus().loaded);
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(
             JSON.stringify({
               object: "list",
-              data: currentModel
+              data: hasModel
                 ? [
                     {
                       id: name,
@@ -1368,8 +1838,9 @@ export function startServer(): Promise<void> {
           res.end(
             JSON.stringify({
               status: "ok",
-              modelLoaded: currentModel !== null,
+              modelLoaded: getModelLoaded(),
               modelPath: currentModelPath,
+              backend: currentBackend,
               gpuLayers: currentGpuLayers,
               contextSize: currentActualContextSize,
             }),

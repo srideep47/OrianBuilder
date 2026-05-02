@@ -47,7 +47,10 @@
     "e2e:fast": "PLAYWRIGHT_RETRIES=1 playwright test",
     "e2e:shard": "playwright test --shard",
     "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build"
+    "build-storybook": "storybook build",
+    "build:tensorrt-runner": "powershell -ExecutionPolicy Bypass -File scripts/build-tensorrt-runner.ps1",
+    "build:tensorrt-engine": "powershell -ExecutionPolicy Bypass -File scripts/build-tensorrt-engine.ps1",
+    "build:trt-llm-engine": "powershell -ExecutionPolicy Bypass -File scripts/build-trt-llm-engine.ps1"
   },
   "dependencies": {
     "@ai-sdk/amazon-bedrock": "^4.0.46",

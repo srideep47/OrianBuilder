@@ -58,6 +58,38 @@ function sortListedPaths(entries: ListedPath[]): ListedPath[] {
   });
 }
 
+function looksLikeDirectoryPath(value: string): boolean {
+  const normalized = value.replace(/\\/g, "/");
+  return (
+    normalized === "." ||
+    normalized === ".." ||
+    normalized.startsWith("./") ||
+    normalized.startsWith("../") ||
+    normalized === ".dyad" ||
+    normalized.startsWith(".dyad/") ||
+    normalized.includes("/")
+  );
+}
+
+function normalizeListFilesArgs(args: ListFilesArgs): ListFilesArgs {
+  if (!args.app_name || !looksLikeDirectoryPath(args.app_name)) {
+    return args;
+  }
+
+  if (args.directory) {
+    throw new DyadError(
+      "app_name must be a referenced app name, not a path. Put paths in the directory parameter.",
+      DyadErrorKind.Validation,
+    );
+  }
+
+  return {
+    ...args,
+    app_name: undefined,
+    directory: args.app_name,
+  };
+}
+
 function getXmlAttributes(args: ListFilesArgs, count?: number, total?: number) {
   const dirAttr = args.directory
     ? ` directory="${escapeXmlAttr(args.directory)}"`
@@ -101,14 +133,15 @@ export const listFilesTool: ToolDefinition<ListFilesArgs> = {
   },
 
   execute: async (args, ctx: AgentContext) => {
-    const targetAppPath = resolveTargetAppPath(ctx, args.app_name);
+    const normalizedArgs = normalizeListFilesArgs(args);
+    const targetAppPath = resolveTargetAppPath(ctx, normalizedArgs.app_name);
 
     // Validate directory path to prevent path traversal attacks
     let sanitizedDirectory: string | undefined;
-    if (args.directory) {
+    if (normalizedArgs.directory) {
       const relativePathFromApp = resolveDirectoryWithinAppPath({
         appPath: targetAppPath,
-        directory: args.directory,
+        directory: normalizedArgs.directory,
       });
 
       // Normalize for glob usage (glob treats "\" as an escape on Windows)
@@ -121,7 +154,11 @@ export const listFilesTool: ToolDefinition<ListFilesArgs> = {
       sanitizedDirectory = normalizedRelativePath || undefined;
     }
 
-    if (args.include_ignored && args.recursive && !sanitizedDirectory) {
+    if (
+      normalizedArgs.include_ignored &&
+      normalizedArgs.recursive &&
+      !sanitizedDirectory
+    ) {
       throw new DyadError(
         "include_ignored=true with recursive=true requires a non-root directory to avoid listing too many files.",
         DyadErrorKind.Validation,
@@ -129,17 +166,17 @@ export const listFilesTool: ToolDefinition<ListFilesArgs> = {
     }
 
     // Use "**" for recursive, "*" for non-recursive (immediate children only)
-    const globSuffix = args.recursive ? "/**" : "/*";
+    const globSuffix = normalizedArgs.recursive ? "/**" : "/*";
     const globPath = sanitizedDirectory
       ? sanitizedDirectory + globSuffix
       : globSuffix.slice(1); // Remove leading "/" for root directory
 
     let allPaths: ListedPath[];
 
-    if (args.include_ignored) {
+    if (normalizedArgs.include_ignored) {
       const normalizedAppPath = targetAppPath.replace(/\\/g, "/");
       const globPattern = `${normalizedAppPath}/${globPath}`;
-      const ignoredGlobs = args.app_name
+      const ignoredGlobs = normalizedArgs.app_name
         ? ["**/.git", "**/.git/**", DYAD_INTERNAL_GLOB]
         : ["**/.git", "**/.git/**"];
       const ignoredPaths = await glob(globPattern, {
@@ -167,7 +204,10 @@ export const listFilesTool: ToolDefinition<ListFilesArgs> = {
         },
       });
 
-      const filteredFiles = filterDyadInternalFiles(files, args.app_name);
+      const filteredFiles = filterDyadInternalFiles(
+        files,
+        normalizedArgs.app_name,
+      );
 
       // Build the list of file paths
       allPaths = sortListedPaths(
@@ -203,7 +243,7 @@ export const listFilesTool: ToolDefinition<ListFilesArgs> = {
 
     // Write abbreviated list to UI
     ctx.onXmlComplete(
-      `<dyad-list-files${getXmlAttributes(args, cappedPaths.length, totalCount)}>${escapeXmlContent(abbreviatedList + countInfo)}</dyad-list-files>`,
+      `<dyad-list-files${getXmlAttributes(normalizedArgs, cappedPaths.length, totalCount)}>${escapeXmlContent(abbreviatedList + countInfo)}</dyad-list-files>`,
     );
 
     // Return full file list for LLM

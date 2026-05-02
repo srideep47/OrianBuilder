@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"D:/Work/LegionStudios/ProjectOrion/Builder/dyad/native/tensorrt-runner/build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

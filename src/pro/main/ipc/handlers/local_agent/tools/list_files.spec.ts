@@ -273,6 +273,31 @@ describe("listFilesTool", () => {
   });
 
   describe("execute - app_name (referenced apps)", () => {
+    it("treats a path-like app_name as a current-app directory", async () => {
+      const result = await listFilesTool.execute(
+        { app_name: ".dyad", include_ignored: true },
+        mockContext,
+      );
+
+      expect(result).toContain(" - .dyad/snapshot.json");
+      const xmlCall = (mockContext.onXmlComplete as any).mock.calls[0]?.[0];
+      expect(xmlCall).toContain('directory=".dyad"');
+      expect(xmlCall).not.toContain("app_name=");
+    });
+
+    it("rejects path-like app_name when directory is also provided", async () => {
+      await expect(
+        listFilesTool.execute(
+          { app_name: ".dyad/snapshots", directory: "src" },
+          mockContext,
+        ),
+      ).rejects.toMatchObject({
+        kind: DyadErrorKind.Validation,
+        message:
+          "app_name must be a referenced app name, not a path. Put paths in the directory parameter.",
+      });
+    });
+
     it("lists files from the referenced app's path (non-recursive)", async () => {
       mockContext.referencedApps.set("other-app", otherAppDir);
       const result = await listFilesTool.execute(

@@ -69,6 +69,8 @@ export type {
   InferenceStats,
   InferenceState,
   InferenceLogEntry,
+  TensorRtEngineBuildStatus,
+  TensorRtEngineBuildRequest,
 } from "./embedded_model";
 export {
   modelMarketplaceContracts,

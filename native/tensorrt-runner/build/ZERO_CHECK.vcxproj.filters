@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="D:\Work\LegionStudios\ProjectOrion\Builder\dyad\native\tensorrt-runner\build\CMakeFiles\264b36d3910cafd71f1e0331ba595ac2\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{83944A96-80E2-3E80-9210-05BC7960224E}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
