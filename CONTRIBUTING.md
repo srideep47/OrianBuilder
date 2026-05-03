@@ -1,20 +1,19 @@
-# Contributing
+# Contributing to Orian Builder
 
-Before opening a pull request, please open an issue and discuss whether the change makes sense in Dyad. Ensuring a cohesive user experience sometimes means we can't include every possible feature or we need to consider the long-term design of how we want to support a feature area.
+Before opening a pull request, please open an issue and discuss whether the change makes sense. Ensuring a cohesive user experience sometimes means we can't include every possible feature, or we need to consider the long-term design of how we want to support a feature area.
 
-- For a high-level overview of how Dyad works, please see the [Architecture Guide](./docs/architecture.md). Understanding the architecture will help ensure your contributions align with the overall design of the project.
-- For a detailed architecture on how the new local agent mode (aka Agent v2) works, please read the [Agent Architecture Guide](./docs/agent_architecture.md)
-- For an in-depth overview of the Dyad codebase, see the DeepWiki documentation [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/dyad-sh/dyad)
+- For a high-level overview of how Orian Builder works, see the [Architecture Guide](./docs/architecture.md).
+- For details on the local agent loop (Agent v2 / tool-calling mode), see the [Agent Architecture Guide](./docs/agent_architecture.md).
 
 > **Note:** By submitting a contribution within `src/pro`, you agree that such contribution is licensed under the Fair Source License (FSL) used by that directory.
 
-## More than code contributions
+## Non-code contributions
 
-Something that I really appreciate are all the non-code contributions, such as reporting bugs, writing feature requests and participating on [Dyad's sub-reddit](https://www.reddit.com/r/dyadbuilders).
+Bug reports, feature requests, and design feedback are just as valuable as code. If you found an issue or have an idea, open a GitHub issue at [github.com/srideep47/OrianBuilder/issues](https://github.com/srideep47/OrianBuilder/issues).
 
 ## Development
 
-Dyad is an Electron app.
+Orian Builder is an Electron app.
 
 **Install dependencies:**
 
@@ -22,7 +21,7 @@ Dyad is an Electron app.
 npm install
 ```
 
-**Create the userData directory (required for database)**
+**Create the userData directory (required for database):**
 
 ```sh
 # Unix/macOS/Linux:
@@ -30,20 +29,17 @@ mkdir -p userData
 
 # Windows PowerShell (run only if folder doesn't exist):
 mkdir userData
-
-# Windows Command Prompt (run only if folder doesn't exist):
-md userData
 ```
 
 **Generate DB migrations:**
 
-If you change the DB schema (i.e. `src/db/schema.ts`), you will need to generate a DB migration.
+If you change the DB schema (`src/db/schema.ts`), generate a migration:
 
 ```sh
 npm run db:generate
 ```
 
-> If you want to discard a DB migration, you will likely need to reset your database which you can do by deleting the file in `userData/sqlite.db`.
+> To discard a migration, delete `userData/sqlite.db` to reset your local database.
 
 **Run locally:**
 
@@ -53,13 +49,35 @@ npm start
 
 ## Setup
 
-If you'd like to contribute a pull request, we highly recommend setting the pre-commit hooks which will run the formatter and linter before each git commit. This is a great way of catching issues early on without waiting to run the GitHub Actions for your pull request.
-
-Simply run this once in your repo:
+Set up pre-commit hooks to run the formatter and linter before each commit:
 
 ```sh
 npm run init-precommit
 ```
+
+## Pre-commit checks
+
+Run all checks before committing:
+
+**Formatting:**
+
+```sh
+npm run fmt
+```
+
+**Linting:**
+
+```sh
+npm run lint
+```
+
+**Type-checking:**
+
+```sh
+npm run ts
+```
+
+> **WARNING:** Do NOT run `npx tsc` directly. Always use `npm run ts` — it uses the correct configuration and compiler (`tsgo`).
 
 ## Testing
 
@@ -71,15 +89,15 @@ npm test
 
 ### E2E tests
 
-Build the app for E2E testing:
+Build the app for E2E testing (required before running tests):
 
 ```sh
 npm run build
 ```
 
-> Note: you only need to re-build the app when changing the app code. You don't need to re-build the app if you're just updating the tests.
+> You only need to rebuild when changing app code. Changes to test files alone do not require a rebuild.
 
-Run the whole e2e test suite:
+Run the full E2E test suite:
 
 ```sh
 npm run e2e
@@ -97,11 +115,25 @@ Update snapshots for a test:
 npm run e2e e2e-tests/context_manage.spec.ts -- --update-snapshots
 ```
 
+## TensorRT development
+
+To build a TensorRT engine locally (requires NVIDIA GPU, CUDA 12.x, Python 3.10, TensorRT 10.x):
+
+```sh
+npm run build:trt-llm-engine
+```
+
+The Python runner lives at `native/trt-llm-runner/runner.py`. The TypeScript backend is at `src/ipc/utils/tensorrt_native_backend.ts`.
+
 ## Code reviews
 
-Dyad relies on several AI code reviewers to catch issues. If a comment is irrelevant please leave a brief comment and mark the comment as resolved.
+Use local review tools for quick feedback before pushing:
 
-You can also do local code reviews with the following tools:
+- Claude Code CLI — `claude` → `/review`
 
-- Codex CLI - `codex` -> `/review`
-- Claude Code CLI - `claude` -> `/review`
+## Code style
+
+- Use **Base UI** (`@base-ui/react`) for all UI primitives — never Radix UI.
+- IPC errors that are not bugs (validation, missing entities, user refusal) must be thrown as `DyadError` with a `DyadErrorKind`. See [rules/dyad-errors.md](rules/dyad-errors.md).
+- Keep Electron security practices in mind: no `remote`, validate by `appId` when mutating shared resources.
+- Add tests in the same folder tree when touching renderer components.

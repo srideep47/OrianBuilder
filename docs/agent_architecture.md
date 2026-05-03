@@ -1,20 +1,32 @@
 # Agent Architecture
 
-Previously, Dyad used a pseudo tool-calling strategy using custom XML instead of model's formal tool calling capabilities. Now that models have gotten much better with tool calling, particularly with parallel tool calling, it's beneficial to use a more standard tool calling approach which will also make it much easier to add new tools.
+Orian Builder uses a full tool-calling agent loop for its local agent mode. Instead of the earlier pseudo tool-calling strategy (custom XML tags), the agent now uses the model's native function-calling capabilities, which enables parallel tool calls and easier extensibility.
 
-- The heart of the local agent is in `src/pro/main/ipc/handlers/local_agent/local_agent_handler.ts` which contains the core agent loop: which keeps calling the LLM until it chooses not to do a tool call or hits the maximum number of steps for the turn.
-- `src/pro/main/ipc/handlers/local_agent/tool_definitions.ts` contains the list of all the tools available to the Dyad local agent.
+## Core loop
+
+The heart of the local agent is `src/pro/main/ipc/handlers/local_agent/local_agent_handler.ts`. It implements the agent loop:
+
+1. Send the current context + user message to the LLM with the available tool schemas.
+2. Execute any tool calls the LLM requests (in parallel where possible).
+3. Append tool results and loop back to step 1.
+4. Stop when the LLM produces a response with no tool calls, or when the maximum step count for the turn is reached.
+
+Tool definitions live in `src/pro/main/ipc/handlers/local_agent/tool_definitions.ts`.
 
 ## Add a tool
 
-If you want to add a new tool, you will want to create a new tool in the `src/pro/main/ipc/handlers/local_agent/tools` directory. You can look at the existing tools as examples.
-
-Then, import the tool and include it in `src/pro/main/ipc/handlers/local_agent/tool_definitions.ts`
-
-Finally, you will need to define how to render the custom XML tag (e.g. `<dyad-$foo-tool-name>`) inside `src/components/chat/DyadMarkdownParser.tsx` which will typically involve creating a new React component to render the custom XML tag.
+1. Create a new tool file in `src/pro/main/ipc/handlers/local_agent/tools/`. Use an existing tool as a template.
+2. Import the tool and add it to `src/pro/main/ipc/handlers/local_agent/tool_definitions.ts`.
+3. Define how to render the corresponding `<dyad-$tool-name>` tag inside `src/components/chat/DyadMarkdownParser.tsx` — typically by creating a new React component for the tag.
 
 ## Testing
 
-You can add an E2E test by looking at the existing local agent E2E tests which are named like `e2e-tests/local_agent*.spec.ts`
+E2E tests for the local agent are in `e2e-tests/` and named like `local_agent*.spec.ts`.
 
-You can define a tool call testing fixture at `e2e-tests/fixtures/engine` which allows you to simulate a tool call.
+Tool-call testing fixtures live at `e2e-tests/fixtures/engine/` and let you simulate a tool call response without hitting a real LLM.
+
+## Local model support
+
+The agent loop is backend-agnostic. It calls an OpenAI-compatible `/v1/chat/completions` endpoint. When the embedded inference engine is active (llama.cpp or TensorRT backend), the loop routes requests to the local server at `http://localhost:<port>/v1`. Tool calling works with any local model that supports the `tools` parameter in the chat completion API.
+
+> **Note:** The TensorRT backend does not yet implement tool-call JSON parsing. For agentic workflows requiring tool calling, use the llama.cpp backend.

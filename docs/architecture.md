@@ -1,52 +1,99 @@
-# Dyad Architecture
+# Orian Builder Architecture
 
-This doc describes how the Dyad desktop app works at a high-level. If something is out of date, please feel free to suggest a change via a pull request.
+This document describes how the Orian Builder desktop app works at a high level. If something is out of date, feel free to suggest a change via a pull request.
 
 ## Overview
 
-Dyad is an Electron app that is a local, open-source alternative to AI app builders like Lovable, v0, and Bolt. While the specifics of how other AI app builders are constructed aren't publicly documented, there is available information like [system prompts](https://github.com/x1xhlol/system-prompts-and-models-of-ai-tools) about these other app builders.
+Orian Builder is an Electron app that is a local, open-source AI app builder. It combines cloud AI providers (Anthropic, OpenAI, Google, etc.) with an embedded local inference engine so you can build apps without sending data to external servers.
 
 ## Electron Architecture
 
-If you're not familiar with Electron apps, they are similar to a full-stack JavaScript app where there's a client-side called the **renderer process** which executes the UI code like React and then there's a Node.js process called the **main process** which is comparable to the server-side portion of a full-stack app. The main process is privileged, meaning it has access to the filesystem and other system resources, whereas the renderer process is sandboxed. The renderer process can communicate to the main process using [IPCs](https://en.wikipedia.org/wiki/Inter-process_communication) which is similar to how the browser communicates to the server using HTTP requests.
+Electron apps are similar to a full-stack JavaScript app:
 
-## Life of a request
+- **Renderer process** — the sandboxed UI layer (React, TanStack Router).
+- **Main process** — a privileged Node.js process with access to the filesystem, native modules, and system resources.
 
-The core workflow of Dyad is that a user sends a prompt to the AI which edits the code and is reflected in the preview. We'll break this down step-by-step.
+The renderer communicates to the main process via [IPC](https://en.wikipedia.org/wiki/Inter-process_communication), analogous to how a browser communicates with a server via HTTP. All IPC contracts are defined in `src/ipc/` using typed schemas (Zod).
 
-1. **Constructing an LLM request** - the LLM request that Dyad sends consists of much more than the prompt (i.e. user input). It includes, by default, the entire codebase as well as a detailed [system prompt](https://github.com/dyad-sh/dyad/blob/main/src/prompts/system_prompt.ts) which gives the LLM instructions to respond in a specific XML-like format (e.g. `<dyad-write path="path/to/file.ts">console.log("hi")</dyad-write>`).
-2. **Stream the LLM response to the UI** - It's important to provide visual feedback to the user otherwise they're waiting for several minutes without knowing what's happening so we stream the LLM response and show the LLM response. We have a specialized [Markdown parser](https://github.com/dyad-sh/dyad/blob/main/src/components/chat/DyadMarkdownParser.tsx) which parses these `<dyad-*>` tags like the `<dyad-write>` tag shown earlier, so we can display the LLM output in a nice UI rather than just printing out raw XML-like text.
-3. **Process the LLM response** - Once the LLM response has finished, and the user has approved the changes, the [response processor](https://github.com/dyad-sh/dyad/blob/main/src/ipc/processors/response_processor.ts) in the main process applies these changes. Essentially each `<dyad-*>` tag described in the [system prompt](https://github.com/dyad-sh/dyad/blob/main/src/prompts/system_prompt.ts) maps to specific logic in the response processor, e.g. writing a file, deleting a file, adding a new NPM package, etc.
+## Life of a Request
 
-To recap, Dyad essentially tells the LLM about a bunch of tools like writing files using the `<dyad-*>` tags, the renderer process displays these Dyad tags in a nice UI and the main process executes these Dyad tags to apply the changes.
+The core workflow: a user sends a prompt → the AI edits code → changes are previewed.
+
+1. **Construct the LLM request** — the request includes the user prompt, the current codebase (or a smart-filtered subset of it), and a detailed [system prompt](../src/prompts/system_prompt.ts) that instructs the LLM to respond using `<dyad-write>`, `<dyad-delete>`, and other XML-like action tags.
+
+2. **Stream the response to the UI** — we stream the LLM response in real time and parse the `<dyad-*>` tags using a specialized [Markdown parser](../src/components/chat/DyadMarkdownParser.tsx) so the output is displayed as structured UI rather than raw text.
+
+3. **Process the response** — once generation completes and the user approves, the [response processor](../src/ipc/processors/response_processor.ts) in the main process applies each `<dyad-*>` action: writing files, deleting files, adding npm packages, running SQL, etc.
+
+## Embedded Inference Engine
+
+Orian Builder includes a fully local inference engine so you can run LLMs on your own hardware with no API keys.
+
+### llama.cpp Backend
+
+- **Runtime:** `node-llama-cpp` (native Node.js bindings to llama.cpp)
+- **Models:** Any GGUF-format model downloaded from HuggingFace or loaded from disk
+- **GPU acceleration:** Automatic layer detection; GPU layers are maximized within available VRAM headroom
+- **Features:** Flash Attention, configurable context size, temperature/top-p/top-k/repeat-penalty, seed control
+
+The embedded server exposes an OpenAI-compatible `/v1/chat/completions` endpoint internally so the same agent loop works for both cloud and local models.
+
+### TensorRT Backend (NVIDIA GPU)
+
+For maximum GPU throughput on NVIDIA hardware, Orian Builder includes a TensorRT inference path:
+
+- **Architecture:** Electron main → `TensorRtNativeBackend` (TypeScript) → Python sidecar (`native/trt-llm-runner/runner.py`) → TensorRT Python API
+- **Engine build pipeline:** HuggingFace download → ONNX export (via `transformers`) → `trtexec` compilation → serialized `.plan` engine
+- **Inference:** Tokenize → prefill → decode loop with streaming token events
+- **Token streaming:** The Python runner emits JSON-line events; the TypeScript backend relays them via an `onToken` callback
+- **Requirements:** NVIDIA GPU, CUDA 12.x, Python 3.10, TensorRT 10.x, `TENSORRT_ROOT` environment variable
+
+### Live Monitor
+
+The Engine screen provides real-time observability:
+
+- Tokens per second (live, average, peak, lowest)
+- Prefill throughput
+- GPU utilization %, VRAM used/total
+- GPU temperature and power draw
+- Inference state machine (idle / loading / prefilling / generating / tool_calling)
+- Scrollable inference log with timestamps and log levels
+
+## Advanced Agentic System
+
+Orian Builder uses a full tool-calling agent loop instead of a single-shot LLM request.
+
+- **Agent loop** (`src/pro/main/ipc/handlers/local_agent/local_agent_handler.ts`) — keeps calling the LLM until it stops requesting tool calls or hits the max steps per turn.
+- **Parallel tool calls** — multiple tools are executed concurrently per step.
+- **Tool definitions** (`src/pro/main/ipc/handlers/local_agent/tool_definitions.ts`) — full list of tools available to the agent.
+- **TypeScript auto-fix** — compiler errors are detected and fed back into the agent loop automatically (when Auto-fix is enabled).
+
+## Context Engineering
+
+Sending the right context to the AI is critical:
+
+- **Full codebase mode** — simplest approach; effective for small projects.
+- **Smart Context** — uses a smaller model to filter the most relevant files before sending them to the main LLM.
+- **Select component** — manually pin specific files or components as context.
+- **Manual context management** — explicit file selection for large apps.
 
 ## FAQ
 
-### Why not use actual tool calls?
+### Why use XML-like tags instead of actual tool calls?
 
-One thing that may seem strange is that we don't use actual function calling/tool calling capabilities of the AI and instead use these XML-like syntax which simulate tool calling. This is something I observed from studying the [system prompts](https://github.com/x1xhlol/system-prompts-and-models-of-ai-tools) of other app builders.
+1. You can define many parallel "tool calls" in a single generation without model-level parallel function calling support.
+2. [Evidence from the community](https://aider.chat/2024/08/14/code-in-json.html) shows that forcing code output into JSON (as tool calling requires) can reduce code quality.
 
-I think the two main reasons to use this XML-like format instead of actual tool calling is that:
+The agentic mode (Agent v2) does use native tool calling — the XML format is used for the simpler single-shot code-editing mode.
 
-1. You can call many tools at once, although some models allow [parallel calls](https://platform.openai.com/docs/guides/function-calling/parallel-function-calling#parallel-function-calling), many don't.
-2. There's also [evidence](https://aider.chat/2024/08/14/code-in-json.html) that forcing LLMs to return code in JSON (which is essentially what tool calling would entail here) negatively affects the quality.
+### Why does the app send the full codebase?
 
-However, many AI editors _do_ heavily rely on tool calling and this is something that we're evaluating, particularly with upcoming MCP support.
+Sending the entire codebase is simple and effective for small projects. For larger codebases, Smart Context, manual file selection, and the "select component" feature let you control what is sent without requiring per-file manual curation.
 
-### Why isn't Dyad more agentic?
+### How does local inference interact with the agentic loop?
 
-Many other systems (e.g. Cursor) are much more agentic than Dyad. For example, they will call many tools and do things like create a plan, use command-line tools to search through the codebase, run linters and tests and automatically fix the code based on those output.
+The embedded inference server exposes an OpenAI-compatible API internally. The agent loop calls this endpoint the same way it calls any cloud provider. Tool calling is supported for local models that output JSON tool-call syntax (note: TensorRT backend currently uses llama.cpp for tool-call-heavy workflows).
 
-Dyad, on the other hand, has a relatively simple agentic loop. We will fix TypeScript compiler errors if Auto-fix problems is enabled, but otherwise it's usually a single request to the AI.
+### What is the Python sidecar and why?
 
-The biggest issue with complex agentic workflows is that they can get very expensive very quickly! It's not uncommon to see users report spending a few dollars with a single request because under the hood, that single user requests turns into dozens of LLM requests. To keep Dyad as cost-efficient as possible, we've avoided complex agentic workflows at least until the cost of LLMs is more affordable.
-
-### Why does Dyad send the entire codebase with each AI request?
-
-Sending the right context to the AI has been rightfully emphasized as important, so much so that the term ["context engineering"](https://www.philschmid.de/context-engineering) is now in vogue.
-
-Sending the entire codebase is the simplest approach and quite effective for small codebases. Another approach is for the user to explicitly select the part of the codebase to use as context. This can be done through the [select component](https://www.dyad.sh/docs/releases/0.8.0) feature or [manual context management](https://www.dyad.sh/docs/guides/large-apps#manual-context-management).
-
-However, both of these approaches require users to manually select the right files which isn't always practical. Dyad's [Smart Context](https://www.dyad.sh/docs/guides/ai-models/pro-modes#smart-context) feature essentially uses smaller models to filter out the most important files in the given chat. That said, we are constantly experimenting with new approaches to context selection as it's quite a difficult problem.
-
-One approach that we don't use is a more agentic-style like what Claude Code and Cursor does where it iteratively searches and navigates through a codebase using tool calls. The main reason we don't do this is due to cost (see the above question: [Why isn't Dyad more agentic](#why-isnt-dyad-more-agentic)).
+TensorRT-LLM's C++ runtime is not buildable on Windows. The Python API (`tensorrt` wheel) is, and it integrates cleanly with `transformers` and `torch` for tokenization and ONNX export. The sidecar communicates over stdin/stdout using JSON-line events, keeping the boundary minimal and debuggable.
