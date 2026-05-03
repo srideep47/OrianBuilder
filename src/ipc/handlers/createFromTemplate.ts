@@ -10,19 +10,44 @@ import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 
 const logger = log.scope("createFromTemplate");
 
+// Templates that ship as local directories alongside the app (no GitHub clone).
+const LOCAL_SCAFFOLD_IDS = new Set([
+  "react",
+  "sveltekit",
+  "astro",
+  "sqlite-express",
+  "remix",
+  "electron-app",
+  "expo",
+]);
+
+function getLocalScaffoldDir(templateId: string): string {
+  // react uses the root "scaffold/" dir; others use "scaffolds/<id>/"
+  if (templateId === "react") {
+    return path.join(__dirname, "..", "..", "scaffold");
+  }
+  return path.join(__dirname, "..", "..", "scaffolds", templateId);
+}
+
 export async function createFromTemplate({
   fullAppPath,
+  templateId: templateIdOverride,
 }: {
   fullAppPath: string;
+  templateId?: string;
 }) {
   const settings = readSettings();
-  const templateId = settings.selectedTemplateId;
+  const templateId = templateIdOverride ?? settings.selectedTemplateId;
 
-  if (templateId === "react") {
-    await copyDirectoryRecursive(
-      path.join(__dirname, "..", "..", "scaffold"),
-      fullAppPath,
-    );
+  if (LOCAL_SCAFFOLD_IDS.has(templateId)) {
+    const scaffoldDir = getLocalScaffoldDir(templateId);
+    if (!fs.existsSync(scaffoldDir)) {
+      throw new DyadError(
+        `Local scaffold for template "${templateId}" not found at ${scaffoldDir}`,
+        DyadErrorKind.NotFound,
+      );
+    }
+    await copyDirectoryRecursive(scaffoldDir, fullAppPath);
     return;
   }
 

@@ -38,6 +38,7 @@ import type { FileAttachment } from "@/ipc/types";
 import type { ListedApp } from "@/ipc/types/app";
 import { NEON_TEMPLATE_IDS } from "@/shared/templates";
 import { neonTemplateHook } from "@/client_logic/template_hook";
+import { autoSelectTemplate } from "@/lib/template_auto_select";
 import {
   ProBanner,
   ManageDyadProButton,
@@ -196,17 +197,16 @@ export default function HomePage() {
         appId = selectedApp.id;
       } else {
         // New app flow (default behavior)
+        const autoTemplateId = autoSelectTemplate(inputValue);
         const result = await ipc.app.createApp({
           name: generateCuteAppName(),
           initialChatMode,
+          templateId: autoTemplateId,
         });
         chatId = result.chatId;
         appId = result.app.id;
 
-        if (
-          settings?.selectedTemplateId &&
-          NEON_TEMPLATE_IDS.has(settings.selectedTemplateId)
-        ) {
+        if (NEON_TEMPLATE_IDS.has(autoTemplateId)) {
           await neonTemplateHook({
             appId: result.app.id,
             appName: result.app.name,

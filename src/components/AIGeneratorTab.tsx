@@ -3,22 +3,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Loader2, Upload, X, Sparkles, Lock, Link } from "lucide-react";
+import { Loader2, Upload, X, Sparkles, Link, AlertCircle } from "lucide-react";
 import {
   useGenerateThemePrompt,
   useGenerateThemeFromUrl,
-  useThemeGenerationModelOptions,
 } from "@/hooks/useCustomThemes";
 import { ipc } from "@/ipc/types";
 import { showError } from "@/lib/toast";
 import { toast } from "sonner";
 import { useUserBudgetInfo } from "@/hooks/useUserBudgetInfo";
-import { AiAccessBanner } from "./ProBanner";
-import type {
-  ThemeGenerationMode,
-  ThemeGenerationModel,
-  ThemeInputSource,
-} from "@/ipc/types";
+import { ThemeModelPicker } from "@/components/ThemeModelPicker";
+import type { LargeLanguageModel } from "@/lib/schemas";
+import type { ThemeGenerationMode, ThemeInputSource } from "@/ipc/types";
 
 // Image upload constants
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB per image (raw file size)
@@ -57,8 +53,9 @@ export function AIGeneratorTab({
   const [aiKeywords, setAiKeywords] = useState("");
   const [aiGenerationMode, setAiGenerationMode] =
     useState<ThemeGenerationMode>("inspired");
-  const [aiSelectedModel, setAiSelectedModel] =
-    useState<ThemeGenerationModel>("");
+  const [selectedModel, setSelectedModel] = useState<LargeLanguageModel | null>(
+    null,
+  );
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Track if dialog is open to prevent orphaned uploads from adding images after close
@@ -73,8 +70,7 @@ export function AIGeneratorTab({
   const isGenerating =
     generatePromptMutation.isPending || generateFromUrlMutation.isPending;
   const { userBudget } = useUserBudgetInfo();
-  const { themeGenerationModelOptions, isLoadingThemeGenerationModelOptions } =
-    useThemeGenerationModelOptions();
+  const hasProKey = !!userBudget;
 
   // Cleanup function to revoke blob URLs and delete temp files
   const cleanupImages = useCallback(
@@ -104,20 +100,6 @@ export function AIGeneratorTab({
     isDialogOpenRef.current = isDialogOpen;
   }, [isDialogOpen]);
 
-  useEffect(() => {
-    const firstModelId = themeGenerationModelOptions[0]?.id ?? "";
-    if (!firstModelId) {
-      return;
-    }
-
-    if (
-      !aiSelectedModel ||
-      !themeGenerationModelOptions.some((model) => model.id === aiSelectedModel)
-    ) {
-      setAiSelectedModel(firstModelId);
-    }
-  }, [aiSelectedModel, themeGenerationModelOptions]);
-
   // Keep a ref to current images for cleanup without causing effect re-runs
   const aiImagesRef = useRef<ThemeImage[]>([]);
   useEffect(() => {
@@ -127,7 +109,6 @@ export function AIGeneratorTab({
   // Cleanup images and reset state when dialog closes
   useEffect(() => {
     if (!isDialogOpen) {
-      // Use ref to get current images to avoid dependency on aiImages
       const imagesToCleanup = aiImagesRef.current;
       if (imagesToCleanup.length > 0) {
         cleanupImages(imagesToCleanup);
@@ -135,11 +116,11 @@ export function AIGeneratorTab({
       }
       setAiKeywords("");
       setAiGenerationMode("inspired");
-      setAiSelectedModel(themeGenerationModelOptions[0]?.id ?? "");
+      // Keep selectedModel so the user's choice persists across opens
       setInputSource("images");
       setWebsiteUrl("");
     }
-  }, [isDialogOpen, cleanupImages, themeGenerationModelOptions]);
+  }, [isDialogOpen, cleanupImages]);
 
   const handleImageUpload = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -257,8 +238,23 @@ export function AIGeneratorTab({
   );
 
   const handleGenerate = useCallback(async () => {
+    if (!selectedModel) {
+      showError("Please select a model first");
+      return;
+    }
+
+    // Encode LargeLanguageModel into the IPC model string the backend expects.
+    // Local models use "local:<provider>:<name>"; cloud providers pass the name
+    // directly (the backend's resolveThemeModel will treat it as a builtin alias
+    // when it doesn't start with "local:").
+    const modelId =
+      selectedModel.provider === "embedded" ||
+      selectedModel.provider === "ollama" ||
+      selectedModel.provider === "lmstudio"
+        ? `local:${selectedModel.provider}:${selectedModel.name}`
+        : selectedModel.name;
+
     if (inputSource === "images") {
-      // Image-based generation
       if (aiImages.length === 0) {
         showError("Please upload at least one image");
         return;
@@ -269,7 +265,7 @@ export function AIGeneratorTab({
           imagePaths: aiImages.map((img) => img.path),
           keywords: aiKeywords,
           generationMode: aiGenerationMode,
-          model: aiSelectedModel,
+          model: modelId,
         });
         setAiGeneratedPrompt(result.prompt);
         toast.success("Theme prompt generated successfully");
@@ -279,7 +275,6 @@ export function AIGeneratorTab({
         );
       }
     } else {
-      // URL-based generation
       if (!websiteUrl.trim()) {
         showError("Please enter a website URL");
         return;
@@ -290,9 +285,8 @@ export function AIGeneratorTab({
           url: websiteUrl,
           keywords: aiKeywords,
           generationMode: aiGenerationMode,
-          model: aiSelectedModel,
+          model: modelId,
         });
-
         setAiGeneratedPrompt(result.prompt);
         toast.success("Theme prompt generated from website");
       } catch (error) {
@@ -302,38 +296,16 @@ export function AIGeneratorTab({
       }
     }
   }, [
+    selectedModel,
     inputSource,
     aiImages,
     websiteUrl,
     aiKeywords,
     aiGenerationMode,
-    aiSelectedModel,
     generatePromptMutation,
     generateFromUrlMutation,
     setAiGeneratedPrompt,
   ]);
-
-  // Show Pro-only locked state for non-Pro users
-  if (!userBudget) {
-    return (
-      <div className="space-y-4 mt-4">
-        <div className="flex flex-col items-center justify-center py-8 px-4 border-2 border-dashed border-muted-foreground/25 rounded-lg bg-muted/10">
-          <Lock className="h-12 w-12 text-muted-foreground mb-4" />
-          <h3 className="text-lg font-semibold text-center mb-2">
-            AI Theme Generator
-          </h3>
-          <p className="text-sm text-muted-foreground text-center max-w-md">
-            Upload screenshots and let AI generate a custom theme prompt
-            tailored to your design style.
-          </p>
-          <p className="text-xs text-muted-foreground/70 mt-2">
-            Pro-only feature
-          </p>
-        </div>
-        <AiAccessBanner />
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-4 mt-4">
@@ -458,18 +430,31 @@ export function AIGeneratorTab({
       {/* URL Input Section - only shown when inputSource is "url" */}
       {inputSource === "url" && (
         <div className="space-y-2">
-          <Label htmlFor="website-url">Website URL</Label>
-          <Input
-            id="website-url"
-            type="url"
-            placeholder="https://example.com"
-            value={websiteUrl}
-            onChange={(e) => setWebsiteUrl(e.target.value)}
-            disabled={isGenerating}
-          />
-          <p className="text-xs text-muted-foreground">
-            Enter a website URL to extract its design system
-          </p>
+          {!hasProKey ? (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+              <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-muted-foreground">
+                Website crawling requires a Dyad Pro API key. Use{" "}
+                <strong>Upload Images</strong> instead, or add a Pro key in
+                Settings to enable URL extraction.
+              </p>
+            </div>
+          ) : (
+            <>
+              <Label htmlFor="website-url">Website URL</Label>
+              <Input
+                id="website-url"
+                type="url"
+                placeholder="https://example.com"
+                value={websiteUrl}
+                onChange={(e) => setWebsiteUrl(e.target.value)}
+                disabled={isGenerating}
+              />
+              <p className="text-xs text-muted-foreground">
+                Enter a website URL to extract its design system
+              </p>
+            </>
+          )}
         </div>
       )}
 
@@ -524,52 +509,19 @@ export function AIGeneratorTab({
       </div>
 
       {/* Model Selection */}
-      <div className="space-y-3">
-        <Label>Model Selection</Label>
-        <div
-          className="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-3"
-          role="radiogroup"
-          aria-label="Model Selection"
-        >
-          {isLoadingThemeGenerationModelOptions ? (
-            <div className="col-span-full flex items-center justify-center py-3 text-sm text-muted-foreground">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Loading models...
-            </div>
-          ) : themeGenerationModelOptions.length === 0 ? (
-            <div className="col-span-full text-center py-3 text-sm text-muted-foreground">
-              No models available
-            </div>
-          ) : (
-            themeGenerationModelOptions.map((modelOption) => (
-              <button
-                key={modelOption.id}
-                type="button"
-                role="radio"
-                aria-checked={aiSelectedModel === modelOption.id}
-                onClick={() => setAiSelectedModel(modelOption.id)}
-                className={`flex flex-col items-center rounded-lg border p-3 text-center transition-colors ${
-                  aiSelectedModel === modelOption.id
-                    ? "border-primary bg-primary/5"
-                    : "hover:bg-muted/50"
-                }`}
-              >
-                <span className="font-medium text-sm">{modelOption.label}</span>
-              </button>
-            ))
-          )}
-        </div>
+      <div className="space-y-2">
+        <Label>Model</Label>
+        <ThemeModelPicker value={selectedModel} onChange={setSelectedModel} />
       </div>
 
       {/* Generate Button */}
       <Button
         onClick={handleGenerate}
         disabled={
-          isLoadingThemeGenerationModelOptions ||
-          !aiSelectedModel ||
+          !selectedModel ||
           isGenerating ||
           (inputSource === "images" && aiImages.length === 0) ||
-          (inputSource === "url" && !websiteUrl.trim())
+          (inputSource === "url" && (!hasProKey || !websiteUrl.trim()))
         }
         variant="secondary"
         className="w-full"

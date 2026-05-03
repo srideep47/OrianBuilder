@@ -40,6 +40,7 @@ export const SETTING_IDS = {
   enableMcpServersForBuildMode: "setting-enable-mcp-servers-for-build-mode",
   enableSelectAppFromHomeChatInput:
     "setting-enable-select-app-from-home-chat-input",
+  braveSearch: "setting-brave-search",
   reset: "setting-reset",
 } as const;
 

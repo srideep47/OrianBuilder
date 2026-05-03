@@ -40,6 +40,7 @@ import { CloudSandboxExperimentSwitch } from "@/components/CloudSandboxExperimen
 import { useSetAtom } from "jotai";
 import { activeSettingsSectionAtom } from "@/atoms/viewAtoms";
 import { SECTION_IDS, SETTING_IDS } from "@/lib/settingsSearchIndex";
+import { BraveSearchSettings } from "@/components/settings/BraveSearchSettings";
 
 export default function SettingsPage() {
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
@@ -143,6 +144,9 @@ export default function SettingsPage() {
               </div>
               <div id={SETTING_IDS.neon}>
                 <NeonIntegration />
+              </div>
+              <div id={SETTING_IDS.braveSearch}>
+                <BraveSearchSettings />
               </div>
             </div>
           </div>

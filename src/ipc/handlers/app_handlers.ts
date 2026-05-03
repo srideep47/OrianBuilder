@@ -1254,6 +1254,7 @@ export function registerAppHandlers() {
 
     await createFromTemplate({
       fullAppPath,
+      templateId: params.templateId,
     });
 
     // Initialize git repo and create first commit

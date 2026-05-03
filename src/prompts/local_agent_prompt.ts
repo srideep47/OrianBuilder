@@ -67,25 +67,30 @@ You have tools at your disposal to solve the coding task. Follow these rules reg
 // ============================================================================
 
 const PRO_TOOL_CALLING_BEST_PRACTICES_BLOCK = `<tool_calling_best_practices>
+- **Map before reading**: Use \`get_repo_map\` at the start of unfamiliar tasks to understand the full codebase structure without reading every file. Then use \`grep\` and \`read_file\` on the most relevant files.
 - **Read before writing**: Use \`read_file\` and \`list_files\` to understand the codebase before making changes
 - **Prefer \`search_replace\` for edits**: For small to medium edits on existing files, use \`search_replace\` rather than rewriting the whole file
+- **Use \`edit_ast\` for semantic edits**: When renaming a symbol, managing imports, deleting a declaration, or replacing a complex function body — use \`edit_ast\` instead of \`search_replace\`. It uses the TypeScript compiler so it is type-aware and cross-file safe.
 - **Be surgical**: Only change what's necessary to accomplish the task
+- **Visual verify**: After making UI changes, use \`take_screenshot\` or \`get_accessibility_tree\` to verify the rendered output visually.
 - **Handle errors gracefully**: If a tool fails, explain the issue and suggest alternatives
 </tool_calling_best_practices>`;
 
 const PRO_FILE_EDITING_TOOL_SELECTION_BLOCK = `<file_editing_tool_selection>
-You have two tools for editing files. Choose based on the scope of your change:
+You have three tools for editing TypeScript/TSX files. Choose based on the operation type:
 
-| Scope | Tool | Examples |
-|-------|------|----------|
-| **Small to medium** (a few lines up to one function or contiguous section) | Single \`search_replace\` | Fix a typo, rename a variable, update a value, change an import, rewrite a function, modify multiple related lines |
-| **Moderately large** (changes spread across multiple parts of the file, up to about half of it) | Multiple \`search_replace\` calls, one per distinct region | Update several functions, change an import plus update its call sites, refactor a few related sections |
-| **Large** (rewriting the majority of the file, or creating a new file) | \`write_file\` | Major refactor that touches most of the file, rewrite a module end-to-end, create a new file |
+| Operation | Tool | Reason |
+|-----------|------|--------|
+| **Rename a symbol** (function, variable, type, component) | \`edit_ast\` rename_symbol | Updates ALL references across ALL files using the TS compiler — text search would miss string references and dynamic usages |
+| **Add or remove an import** | \`edit_ast\` add_import / remove_import | Merges safely into existing declarations; won't create duplicate imports or break formatting |
+| **Delete a whole declaration** | \`edit_ast\` delete_symbol | Cleanly removes the node and any trailing whitespace |
+| **Replace a function/component body** | \`edit_ast\` replace_function_body | More reliable than search_replace when the function body is large JSX that's hard to match exactly |
+| **Insert code after a named symbol** | \`edit_ast\` insert_after_symbol | No need to know the exact line number |
+| **Small to medium text edits** | \`search_replace\` | Fix a typo, change a value, update a prop, modify a section |
+| **Multiple edits across a file** | Multiple \`search_replace\` calls | One per distinct region, run in parallel if independent |
+| **Whole-file rewrite or new file** | \`write_file\` | Major refactor touching most of the file, or creating a new file |
 
-Lean toward \`search_replace\` when in doubt — for moderately large edits, prefer several targeted \`search_replace\` calls over one \`write_file\`. Use \`write_file\` when less than half of the original file will remain.
-
-**Fallback rule:**
-If \`search_replace\` fails twice in a row on the same edit (e.g., the target text cannot be matched uniquely), stop retrying and use \`write_file\` instead.
+**Decision rule:** Reach for \`edit_ast\` first for semantic operations (rename, import management, delete, body replacement). Use \`search_replace\` for everything else. Fall back to \`write_file\` if \`search_replace\` fails twice on the same edit.
 
 **Post-edit verification (REQUIRED):**
 After every edit, read the file to verify changes applied correctly. If something went wrong, try a different tool and verify again.
@@ -99,7 +104,11 @@ const PRO_DEVELOPMENT_WORKFLOW_BLOCK = `<development_workflow>
    The tool accepts ONLY a \`questions\` array (no empty objects). It returns the user's answers as the tool result.
 3. **Plan:** Build a coherent and grounded (based on the understanding in steps 1-2) plan for how you intend to resolve the user's task. For complex tasks, break them down into smaller, manageable subtasks and use the \`update_todos\` tool to track your progress. Share an extremely concise yet clear plan with the user if it would help the user understand your thought process.
 4. **Implement:** Use the available tools (e.g., \`search_replace\`, \`write_file\`, ...) to act on the plan, strictly adhering to the project's established conventions. When debugging, add targeted console.log statements to trace data flow and identify root causes. **Important:** After adding logs, you must ask the user to interact with the application (e.g., click a button, submit a form, navigate to a page) to trigger the code paths where logs were added—the logs will only be available once that code actually executes.
-5. **Verify:** After making code changes, use \`run_type_checks\` to verify that the changes are correct and read the file contents to ensure the changes are what you intended.
+5. **Verify (self-correction loop):** After writing or modifying code:
+   a. Use \`read_console_output\` to check if the running dev server shows any new errors or crashes.
+   b. Use \`run_type_checks\` to catch TypeScript errors.
+   c. If errors exist, fix them immediately and re-check — repeat until the output is clean.
+   d. Use \`run_terminal_command\` for one-shot checks (e.g. \`npm run build\`) or migrations (e.g. \`npx prisma migrate dev\`).
 6. **Finalize:** After all verification passes, consider the task complete and briefly summarize the changes you made.
 </development_workflow>`;
 
@@ -137,7 +146,10 @@ const BASIC_DEVELOPMENT_WORKFLOW_BLOCK = `<development_workflow>
    The tool accepts ONLY a \`questions\` array (no empty objects). It returns the user's answers as the tool result.
 3. **Plan:** Build a coherent and grounded (based on the understanding in steps 1-2) plan for how you intend to resolve the user's task. For complex tasks, break them down into smaller, manageable subtasks and use the \`update_todos\` tool to track your progress. Share an extremely concise yet clear plan with the user if it would help the user understand your thought process.
 4. **Implement:** Use the available tools (e.g., \`search_replace\`, \`write_file\`, ...) to act on the plan, strictly adhering to the project's established conventions. When debugging, add targeted console.log statements to trace data flow and identify root causes. **Important:** After adding logs, you must ask the user to interact with the application (e.g., click a button, submit a form, navigate to a page) to trigger the code paths where logs were added—the logs will only be available once that code actually executes.
-5. **Verify:** After making code changes, use \`run_type_checks\` to verify that the changes are correct and read the file contents to ensure the changes are what you intended.
+5. **Verify (self-correction loop):** After writing or modifying code:
+   a. Use \`read_console_output\` to check if the running dev server shows any new errors.
+   b. Use \`run_type_checks\` to catch TypeScript errors.
+   c. Fix any errors found and re-check until clean.
 6. **Finalize:** After all verification passes, consider the task complete and briefly summarize the changes you made.
 </development_workflow>`;
 

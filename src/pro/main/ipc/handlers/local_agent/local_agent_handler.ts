@@ -1307,6 +1307,17 @@ export async function handleLocalAgentStream(
       return false; // Cancelled - don't consume quota
     }
 
+    if (
+      fullResponse.trim().length === 0 &&
+      accumulatedAiMessages.length === 0 &&
+      totalStepsExecuted === 0
+    ) {
+      throw new DyadError(
+        "The model stream ended without producing any text or tool calls. This is usually a local model/provider issue; try again or switch to a larger tool-capable model.",
+        DyadErrorKind.External,
+      );
+    }
+
     // Collect XML produced by post-turn side-effects (step-limit notice,
     // Supabase deploy results) so we can persist them into aiMessagesJson.
     // parseAiMessagesJson reads from aiMessagesJson when present and ignores

@@ -707,6 +707,17 @@ export async function unloadModel(): Promise<void> {
   logger.info("Model unloaded");
 }
 
+// Abort any in-progress inference and clear the busy flag.
+// Safe to call even when nothing is running.
+export function abortCurrentInference(): void {
+  if (currentAbort && !currentAbort.signal.aborted) {
+    currentAbort.abort();
+  }
+  currentAbort = null;
+  isInferring = false;
+  logger.info("Inference aborted by caller");
+}
+
 // ─── OpenAI → node-llama-cpp message conversion ──────────────────────────────
 //
 // The agent passes a full conversation that includes:
@@ -726,7 +737,7 @@ interface OpenAIToolCall {
 
 interface OpenAIMessage {
   role: string;
-  content?: string | null;
+  content?: unknown;
   tool_calls?: OpenAIToolCall[];
   tool_call_id?: string;
 }
@@ -748,6 +759,64 @@ interface NlcModelMessage {
 }
 type NlcHistoryItem = NlcSystemMessage | NlcUserMessage | NlcModelMessage;
 
+function safeJsonStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function stringifyOpenAIContent(content: unknown): string {
+  if (content == null) return "";
+  if (typeof content === "string") return content;
+  if (typeof content === "number" || typeof content === "boolean") {
+    return String(content);
+  }
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (part == null) return "";
+        if (typeof part === "string") return part;
+        if (typeof part === "number" || typeof part === "boolean") {
+          return String(part);
+        }
+        if (typeof part === "object") {
+          const typedPart = part as Record<string, unknown>;
+          if (typeof typedPart.text === "string") return typedPart.text;
+          if (typeof typedPart.value === "string") return typedPart.value;
+          if (typedPart.type === "image" || typedPart.type === "image_url") {
+            return "[image]";
+          }
+          return safeJsonStringify(typedPart);
+        }
+        return String(part);
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+  if (typeof content === "object") return safeJsonStringify(content);
+  return String(content);
+}
+
+function estimateOpenAIRequestTokens(
+  rawMessages: OpenAIMessage[],
+  payload?: { tools?: unknown },
+): number {
+  const messageChars = rawMessages.reduce((sum, message) => {
+    let chars =
+      stringifyOpenAIContent(message.content).length + message.role.length + 8;
+    if (message.tool_calls)
+      chars += safeJsonStringify(message.tool_calls).length;
+    if (message.tool_call_id) chars += message.tool_call_id.length;
+    return sum + chars;
+  }, 0);
+  const toolChars = payload?.tools
+    ? safeJsonStringify(payload.tools).length
+    : 0;
+  return Math.ceil((messageChars + toolChars) / 4);
+}
+
 function openAiToLlamaChatInput(rawMessages: OpenAIMessage[]): {
   history: NlcHistoryItem[];
   userPrompt: string;
@@ -757,7 +826,7 @@ function openAiToLlamaChatInput(rawMessages: OpenAIMessage[]): {
   // Collect system messages first (Dyad puts the codebase here)
   const systemParts = rawMessages
     .filter((m) => m.role === "system")
-    .map((m) => m.content ?? "");
+    .map((m) => stringifyOpenAIContent(m.content));
   if (systemParts.length > 0) {
     history.push({ type: "system", text: systemParts.join("\n\n") });
   }
@@ -770,11 +839,12 @@ function openAiToLlamaChatInput(rawMessages: OpenAIMessage[]): {
     const msg = conv[i];
 
     if (msg.role === "user") {
+      const content = stringifyOpenAIContent(msg.content);
       // The LAST user message becomes the prompt arg to session.prompt()
       if (i === conv.length - 1) {
-        return { history, userPrompt: msg.content ?? "" };
+        return { history, userPrompt: content };
       }
-      history.push({ type: "user", text: msg.content ?? "" });
+      history.push({ type: "user", text: content });
       i++;
       continue;
     }
@@ -801,12 +871,13 @@ function openAiToLlamaChatInput(rawMessages: OpenAIMessage[]): {
             type: "functionCall" as const,
             name: tc.function.name,
             params,
-            result: resultMsg?.content ?? "",
+            result: stringifyOpenAIContent(resultMsg?.content),
           });
         }
 
         // If the assistant also emitted text alongside the tool calls, prepend it
-        if (msg.content) response.unshift(msg.content);
+        const content = stringifyOpenAIContent(msg.content);
+        if (content) response.unshift(content);
         history.push({ type: "model", response });
 
         // Skip past all the tool result messages that were consumed above
@@ -816,8 +887,9 @@ function openAiToLlamaChatInput(rawMessages: OpenAIMessage[]): {
       }
 
       // Plain text assistant turn
-      if (msg.content) {
-        history.push({ type: "model", response: [msg.content] });
+      const content = stringifyOpenAIContent(msg.content);
+      if (content) {
+        history.push({ type: "model", response: [content] });
       }
       i++;
       continue;
@@ -843,14 +915,15 @@ function openAiToPlainPrompt(rawMessages: OpenAIMessage[]): {
 } {
   const system = rawMessages
     .filter((m) => m.role === "system")
-    .map((m) => m.content ?? "")
+    .map((m) => stringifyOpenAIContent(m.content))
     .join("\n\n");
   const turns = rawMessages
     .filter((m) => m.role !== "system")
     .map((m) => {
-      if (m.role === "assistant") return `Assistant: ${m.content ?? ""}`;
-      if (m.role === "tool") return `Tool: ${m.content ?? ""}`;
-      return `User: ${m.content ?? ""}`;
+      const content = stringifyOpenAIContent(m.content);
+      if (m.role === "assistant") return `Assistant: ${content}`;
+      if (m.role === "tool") return `Tool: ${content}`;
+      return `User: ${content}`;
     });
   return {
     system,
@@ -1404,9 +1477,7 @@ async function handleTensorRtChatCompletions(
   const stream: boolean = payload.stream ?? false;
   const maxTokens: number = payload.max_tokens ?? 8192;
   const { system, prompt } = openAiToPlainPrompt(rawMessages);
-  const estimatedInputTokens = Math.ceil(
-    rawMessages.reduce((s, m) => s + (m.content?.length ?? 0), 0) / 4,
-  );
+  const estimatedInputTokens = estimateOpenAIRequestTokens(rawMessages);
 
   isInferring = true;
   const abort = new AbortController();
@@ -1641,8 +1712,9 @@ async function handleChatCompletions(
   // ── Context overflow pre-check ────────────────────────────────────────────
   // Estimate prompt token count. If it clearly exceeds the loaded context,
   // return an actionable error rather than silently truncating.
-  const estimatedInputTokens = Math.ceil(
-    rawMessages.reduce((s, m) => s + (m.content?.length ?? 0), 0) / 4,
+  const estimatedInputTokens = estimateOpenAIRequestTokens(
+    rawMessages,
+    payload,
   );
   payload._dyadEstimatedInputTokens = estimatedInputTokens;
   const safeLimit = Math.floor(currentActualContextSize * 0.8);
@@ -1684,6 +1756,9 @@ async function handleChatCompletions(
   isInferring = true;
   const abort = new AbortController();
   currentAbort = abort;
+  req.on("close", () => {
+    if (!abort.signal.aborted) abort.abort();
+  });
 
   let sequence: unknown = null;
   try {

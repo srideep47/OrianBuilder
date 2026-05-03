@@ -7,6 +7,7 @@ import {
 } from "../../atoms/appAtoms";
 
 import { CodeView } from "./CodeView";
+import { ExpoPreviewPanel } from "./ExpoPreviewPanel";
 import { PreviewIframe } from "./PreviewIframe";
 import { Problems } from "./Problems";
 import { ConfigurePanel } from "./ConfigurePanel";
@@ -133,7 +134,11 @@ export function PreviewPanel() {
           <Panel id="content" minSize={30}>
             <div className="h-full overflow-y-auto">
               {previewMode === "preview" ? (
-                <PreviewIframe key={key} loading={loading} />
+                app?.frameworkType === "expo" && app.id ? (
+                  <ExpoPreviewPanel appId={app.id} />
+                ) : (
+                  <PreviewIframe key={key} loading={loading} />
+                )
               ) : previewMode === "code" ? (
                 <CodeView loading={loading} app={app} />
               ) : previewMode === "configure" ? (

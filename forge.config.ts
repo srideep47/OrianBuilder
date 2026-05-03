@@ -46,6 +46,21 @@ const ignore = (file: string) => {
   if (file.startsWith("/node_modules/node-pty")) {
     return false;
   }
+  if (file.startsWith("/node_modules/playwright")) {
+    return false;
+  }
+  if (file.startsWith("/node_modules/playwright-core")) {
+    return false;
+  }
+  if (file.startsWith("/node_modules/chromium-bidi")) {
+    return false;
+  }
+  if (file.startsWith("/node_modules/devtools-protocol")) {
+    return false;
+  }
+  if (file.startsWith("/node_modules/mitt")) {
+    return false;
+  }
   if (file.startsWith("/node_modules/node-addon-api")) {
     return false;
   }
@@ -118,7 +133,7 @@ const config: ForgeConfig = {
         },
     asar: {
       unpackDir:
-        "{node_modules/node-pty,node_modules/node-llama-cpp,node_modules/@node-llama-cpp}",
+        "{node_modules/node-pty,node_modules/node-llama-cpp,node_modules/@node-llama-cpp,node_modules/playwright,node_modules/playwright-core,node_modules/chromium-bidi}",
     },
     ignore,
     extraResource: [

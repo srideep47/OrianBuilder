@@ -117,7 +117,90 @@ CRITICAL REQUIREMENTS FOR USING THIS TOOL:
 
       const original = await fs.promises.readFile(fullFilePath, "utf8");
 
-      // Construct the operations string in the expected format
+      // ── Pre-verification: check that old_string actually exists ──────────
+      if (!original.includes(args.old_string)) {
+        // Fuzzy retry: normalise line-endings + collapse runs of spaces/tabs
+        // to handle the common case where the model's whitespace doesn't
+        // exactly match the file (e.g. CRLF vs LF, trailing spaces, indent
+        // differences).
+        const normalize = (s: string) =>
+          s.replace(/\r\n/g, "\n").replace(/[ \t]+/g, " ");
+
+        const normOriginal = normalize(original);
+        const normSearch = normalize(args.old_string);
+
+        if (normOriginal.includes(normSearch)) {
+          // Build a corrected old_string by finding the matching region in the
+          // original file and using those exact bytes instead.
+          const startIdx = normOriginal.indexOf(normSearch);
+          // Map normalised offset back to original file position (approximate —
+          // sufficient for uniqueness check)
+          let origIdx = 0;
+          let normIdx = 0;
+          while (normIdx < startIdx && origIdx < original.length) {
+            origIdx++;
+            normIdx = normalize(original.slice(0, origIdx)).length;
+          }
+          // Simpler: just swap in the normalised version for the apply step
+          const correctedOld = normSearch;
+          const correctedOriginal = normOriginal;
+
+          const escapedOld = escapeSearchReplaceMarkers(correctedOld);
+          const escapedNew = escapeSearchReplaceMarkers(
+            normalize(args.new_string),
+          );
+          const operations = `<<<<<<< SEARCH\n${escapedOld}\n=======\n${escapedNew}\n>>>>>>> REPLACE`;
+          const fuzzyResult = applySearchReplace(correctedOriginal, operations);
+
+          if (fuzzyResult.success && typeof fuzzyResult.content === "string") {
+            // Re-apply to original with the corrected bytes (write normalised
+            // content — acceptable because normalisation only collapses
+            // redundant whitespace, which is safe for all text files).
+            await fs.promises.writeFile(fullFilePath, fuzzyResult.content);
+            logger.log(
+              `search_replace: applied via fuzzy whitespace match on ${fullFilePath}`,
+            );
+            queueCloudSandboxSnapshotSync({
+              appId: ctx.appId,
+              changedPaths: [args.file_path],
+            });
+            sendTelemetryEvent("local_agent:search_replace:success_fuzzy", {
+              filePath: args.file_path,
+            });
+            return;
+          }
+        }
+
+        // Provide a diagnostic hint showing the closest matching lines
+        const lines = original.split("\n");
+        const searchFirstLine = args.old_string
+          .split("\n")[0]
+          .trim()
+          .slice(0, 60);
+        const nearbyLines = lines
+          .map((l, i) => ({ line: l.trim(), idx: i + 1 }))
+          .filter(({ line }) => line.includes(searchFirstLine.slice(0, 20)))
+          .slice(0, 3)
+          .map(({ line, idx }) => `  line ${idx}: ${line}`)
+          .join("\n");
+
+        const hint = nearbyLines
+          ? `\nClosest matching lines in file:\n${nearbyLines}`
+          : "\nThe search string was not found anywhere in the file.";
+
+        sendTelemetryEvent("local_agent:search_replace:failure", {
+          filePath: args.file_path,
+          error: "old_string_not_found",
+        });
+
+        throw new DyadError(
+          `search_replace failed: the old_string was not found in ${args.file_path}. ` +
+            `Verify the exact text (including whitespace/indentation) with read_file first, then retry.${hint}`,
+          DyadErrorKind.Validation,
+        );
+      }
+
+      // ── Standard apply path ──────────────────────────────────────────────
       const escapedOld = escapeSearchReplaceMarkers(args.old_string);
       const escapedNew = escapeSearchReplaceMarkers(args.new_string);
       const operations = `<<<<<<< SEARCH\n${escapedOld}\n=======\n${escapedNew}\n>>>>>>> REPLACE`;

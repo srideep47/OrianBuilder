@@ -33,6 +33,15 @@ export function detectFrameworkType(appPath: string): AppFrameworkType | null {
       };
       if (deps.next) return "nextjs";
       if (deps.vite) return "vite";
+      if (deps.expo) return "expo";
+    }
+
+    // Expo config file is a reliable signal even before npm install
+    if (
+      fs.existsSync(path.join(appPath, "app.config.js")) ||
+      fs.existsSync(path.join(appPath, "app.config.ts"))
+    ) {
+      return "expo";
     }
 
     return "other";

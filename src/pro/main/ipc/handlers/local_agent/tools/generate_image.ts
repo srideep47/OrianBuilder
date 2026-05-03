@@ -9,12 +9,14 @@ import {
   escapeXmlAttr,
   escapeXmlContent,
 } from "./types";
-import { engineFetch } from "./engine_fetch";
+import { readSettings } from "@/main/settings";
 import { DYAD_MEDIA_DIR_NAME } from "@/ipc/utils/media_path_utils";
 import { ImageGenerationApiResponseSchema } from "@/ipc/types/image_generation";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 
 const logger = log.scope("generate_image");
+
+const OPENAI_IMAGE_URL = "https://api.openai.com/v1/images/generations";
 
 const generateImageSchema = z.object({
   prompt: z
@@ -47,15 +49,46 @@ Write detailed, descriptive prompts. Be specific about:
 The tool returns the file path in .dyad/media. Use the copy_file tool to copy it to the appropriate location in the project (e.g., public/assets/) and reference that path in your code.
 `;
 
+// Resolve the best available API key for image generation.
+// Priority: Dyad Pro key (auto) → OpenAI key → none
+function resolveImageApiKey(): { key: string; baseUrl: string } | null {
+  const settings = readSettings();
+  const proKey = settings.providerSettings?.auto?.apiKey?.value;
+  if (proKey) {
+    const engineUrl =
+      process.env.DYAD_ENGINE_URL ?? "https://engine.dyad.sh/v1";
+    return { key: proKey, baseUrl: `${engineUrl}/images/generations` };
+  }
+  const openaiKey = settings.providerSettings?.openai?.apiKey?.value;
+  if (openaiKey) {
+    return { key: openaiKey, baseUrl: OPENAI_IMAGE_URL };
+  }
+  return null;
+}
+
 async function callGenerateImage(
   prompt: string,
-  ctx: Pick<AgentContext, "dyadRequestId">,
 ): Promise<z.infer<typeof ImageGenerationApiResponseSchema>["data"][number]> {
-  const response = await engineFetch(ctx, "/images/generations", {
+  const resolved = resolveImageApiKey();
+
+  if (!resolved) {
+    throw new DyadError(
+      "Image generation requires an OpenAI API key. Add one in Settings → Providers → OpenAI.",
+      DyadErrorKind.Auth,
+    );
+  }
+
+  const response = await fetch(resolved.baseUrl, {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${resolved.key}`,
+    },
     body: JSON.stringify({
       prompt,
-      model: "gpt-image-1.5",
+      model: "dall-e-3",
+      n: 1,
+      size: "1024x1024",
     }),
   });
 
@@ -123,8 +156,6 @@ export const generateImageTool: ToolDefinition<
   defaultConsent: "always",
   modifiesState: true,
 
-  isEnabled: (ctx) => ctx.isDyadPro,
-
   getConsentPreview: (args) => `Generate image: "${args.prompt}"`,
 
   buildXml: (args, isComplete) => {
@@ -141,8 +172,7 @@ export const generateImageTool: ToolDefinition<
     );
 
     try {
-      const imageData = await callGenerateImage(args.prompt, ctx);
-
+      const imageData = await callGenerateImage(args.prompt);
       const relativePath = await saveGeneratedImage(imageData, ctx.appPath);
 
       ctx.onXmlComplete(

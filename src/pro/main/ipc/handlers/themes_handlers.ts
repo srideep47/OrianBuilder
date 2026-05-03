@@ -28,12 +28,103 @@ import type {
   CleanupThemeImagesParams,
   ThemeGenerationModelOption,
 } from "@/ipc/types";
+import type { LargeLanguageModel } from "@/lib/schemas";
 import { webCrawlResponseSchema } from "./local_agent/tools/web_crawl";
 import {
   getThemeGenerationModelOptions,
   resolveBuiltinModelAlias,
 } from "@/ipc/shared/remote_language_model_catalog";
+import { getServerStatus } from "@/ipc/utils/embedded_inference_server";
+import { fetchOllamaModels } from "@/ipc/handlers/local_model_ollama_handler";
+import { fetchLMStudioModels } from "@/ipc/handlers/local_model_lmstudio_handler";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+
+/**
+ * Parse a local model ID of the form "local:<provider>:<modelName>".
+ * Returns null if the id does not match the local prefix.
+ */
+function parseLocalModelId(id: string): LargeLanguageModel | null {
+  if (!id.startsWith("local:")) return null;
+  const rest = id.slice("local:".length);
+  const colonIdx = rest.indexOf(":");
+  if (colonIdx === -1) return null;
+  const provider = rest.slice(0, colonIdx);
+  const name = rest.slice(colonIdx + 1);
+  if (!provider || !name) return null;
+  return { provider, name };
+}
+
+/**
+ * Resolve a theme model selection to a LargeLanguageModel.
+ * Accepts both builtin aliases (e.g. "dyad/theme-generator/google") and
+ * local model IDs (e.g. "local:embedded:mymodel.gguf").
+ */
+async function resolveThemeModel(modelId: string): Promise<LargeLanguageModel> {
+  const local = parseLocalModelId(modelId);
+  if (local) return local;
+
+  const resolved = await resolveBuiltinModelAlias(modelId);
+  if (!resolved) {
+    throw new Error(
+      `Invalid model selection: "${modelId}" could not be resolved`,
+    );
+  }
+  return { provider: resolved.providerId, name: resolved.apiName };
+}
+
+/**
+ * Build the list of available local models for theme generation.
+ * Returns ThemeGenerationModelOption[] with "local:<provider>:<name>" ids.
+ */
+async function getLocalThemeModelOptions(): Promise<
+  ThemeGenerationModelOption[]
+> {
+  const options: ThemeGenerationModelOption[] = [];
+
+  // Embedded (tensor core) model
+  try {
+    const embeddedStatus = getServerStatus();
+    const modelName = embeddedStatus.modelPath
+      ? (embeddedStatus.modelPath.split(/[/\\]/).pop() ?? null)
+      : null;
+    if (embeddedStatus.modelLoaded && modelName) {
+      options.push({
+        id: `local:embedded:${modelName}`,
+        label: modelName,
+      });
+    }
+  } catch {
+    // Embedded server not running — skip silently
+  }
+
+  // Ollama models
+  try {
+    const { models: ollamaModels } = await fetchOllamaModels();
+    for (const m of ollamaModels) {
+      options.push({
+        id: `local:ollama:${m.modelName}`,
+        label: m.displayName || m.modelName,
+      });
+    }
+  } catch {
+    // Ollama not running — skip silently
+  }
+
+  // LM Studio models
+  try {
+    const { models: lmsModels } = await fetchLMStudioModels();
+    for (const m of lmsModels) {
+      options.push({
+        id: `local:lmstudio:${m.modelName}`,
+        label: m.displayName || m.modelName,
+      });
+    }
+  } catch {
+    // LM Studio not running — skip silently
+  }
+
+  return options;
+}
 
 const logger = log.scope("themes_handlers");
 const handle = createLoggedHandler(logger);
@@ -323,7 +414,12 @@ export function registerThemesHandlers() {
   handle(
     "get-theme-generation-model-options",
     async (): Promise<ThemeGenerationModelOption[]> => {
-      return getThemeGenerationModelOptions();
+      const [cloudOptions, localOptions] = await Promise.all([
+        getThemeGenerationModelOptions(),
+        getLocalThemeModelOptions(),
+      ]);
+      // Local models first so they're immediately visible
+      return [...localOptions, ...cloudOptions];
     },
   );
 
@@ -640,22 +736,11 @@ Modern dark theme with purple accents for testing.
         );
       }
 
-      // Validate and map model selection
-      const selectedModel = await resolveBuiltinModelAlias(params.model);
-      if (!selectedModel) {
-        throw new Error(
-          `Invalid model selection: alias "${params.model}" could not be resolved`,
-        );
-      }
+      // Validate and map model selection (supports both cloud aliases and local:provider:name)
+      const resolvedModel = await resolveThemeModel(params.model);
 
       // Use the selected model for theme generation
-      const { modelClient } = await getModelClient(
-        {
-          provider: selectedModel.providerId,
-          name: selectedModel.apiName,
-        },
-        settings,
-      );
+      const { modelClient } = await getModelClient(resolvedModel, settings);
 
       // Select system prompt based on generation mode
       const systemPrompt =
@@ -804,18 +889,16 @@ Modern theme extracted from website for testing.
         );
       }
 
-      // Validate and map model selection
-      const selectedModel = await resolveBuiltinModelAlias(params.model);
-      if (!selectedModel) {
-        throw new Error(
-          `Invalid model selection: alias "${params.model}" could not be resolved`,
-        );
-      }
+      // Validate and map model selection (supports both cloud aliases and local:provider:name)
+      const resolvedModel = await resolveThemeModel(params.model);
 
-      // Get API key for Dyad Engine
+      // Get API key for Dyad Engine (required for web crawl)
       const apiKey = settings.providerSettings?.auto?.apiKey?.value;
       if (!apiKey) {
-        throw new DyadError("Dyad Pro API key is required", DyadErrorKind.Auth);
+        throw new DyadError(
+          "Dyad Pro API key is required for website crawling",
+          DyadErrorKind.Auth,
+        );
       }
 
       // Crawl the website
@@ -889,13 +972,7 @@ Modern theme extracted from website for testing.
       logger.log(`Website crawled successfully: ${params.url}`);
 
       // Use the selected model for theme generation
-      const { modelClient } = await getModelClient(
-        {
-          provider: selectedModel.providerId,
-          name: selectedModel.apiName,
-        },
-        settings,
-      );
+      const { modelClient } = await getModelClient(resolvedModel, settings);
 
       // Select system prompt based on generation mode
       const systemPrompt =

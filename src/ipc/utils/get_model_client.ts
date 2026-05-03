@@ -30,6 +30,7 @@ import { getOllamaApiUrl } from "../handlers/local_model_ollama_handler";
 import { localModelFetch } from "./local_model_fetch";
 import { createFallback } from "./fallback_ai_model";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { getServerStatus } from "./embedded_inference_server";
 
 const dyadEngineUrl = process.env.DYAD_ENGINE_URL;
 
@@ -467,6 +468,20 @@ function getRegularModelClient(
       };
     }
     case "embedded": {
+      if (
+        settings.selectedChatMode === "local-agent" ||
+        settings.selectedChatMode === "ask" ||
+        settings.selectedChatMode === "plan"
+      ) {
+        const status = getServerStatus();
+        if (status.backend === "tensorrt-native") {
+          throw new DyadError(
+            "The embedded TensorRT backend does not support app-building agent tool calls yet. Reload the model with the llama.cpp backend, or choose Ollama, LM Studio, or a cloud model for Build/Ask/Plan mode.",
+            DyadErrorKind.Precondition,
+          );
+        }
+      }
+
       // Embedded node-llama-cpp inference server (tensor core accelerated)
       const provider = createOpenAICompatible({
         name: "embedded",

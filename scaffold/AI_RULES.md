@@ -2,18 +2,31 @@
 
 - You are building a React application.
 - Use TypeScript.
-- Use React Router. KEEP the routes in src/App.tsx
-- Always put source code in the src folder.
-- Put pages into src/pages/
-- Put components into src/components/
-- The main page (default page) is src/pages/Index.tsx
-- UPDATE the main page to include the new components. OTHERWISE, the user can NOT see any components!
-- ALWAYS try to use the shadcn/ui library.
-- Tailwind CSS: always use Tailwind CSS for styling components. Utilize Tailwind classes extensively for layout, spacing, colors, and other design aspects.
+- Use React Router. KEEP the routes in `src/App.tsx`
+- Always put source code in the `src/` folder.
+- Put pages into `src/pages/`, components into `src/components/`
+- The main page (default page) is `src/pages/Index.tsx`
+- UPDATE the main page to include new components — otherwise the user cannot see them.
+- ALWAYS prefer the shadcn/ui library for UI components.
+- Use Tailwind CSS for all styling. Never write raw CSS unless absolutely necessary.
 
-Available packages and libraries:
+## Available packages (already installed — do NOT install again)
 
-- The lucide-react package is installed for icons.
-- You ALREADY have ALL the shadcn/ui components and their dependencies installed. So you don't need to install them again.
-- You have ALL the necessary Radix UI components installed.
-- Use prebuilt components from the shadcn/ui library after importing them. Note that these files shouldn't be edited, so make new components if you need to change them.
+- `shadcn/ui` — full component library (Button, Card, Dialog, Input, Table, etc.)
+- All Radix UI primitives
+- `lucide-react` — icons
+- `react-hook-form` + `zod` — forms and validation
+- `@tanstack/react-query` — server state / data fetching
+- `recharts` — charts and graphs
+- `date-fns` — date utilities
+
+## Rules
+
+- Never use `any` — always type properly.
+- Prefer named exports over default exports for components.
+- Keep components small and focused. Extract sub-components when a file exceeds ~150 lines.
+- Always handle loading and error states in data-fetching components.
+- Images go in `public/` and are referenced as `/image.png`.
+- Never hardcode secrets or API keys in source files — use environment variables.
+- When adding a new page, register its route in `src/App.tsx`.
+- After editing a file, check that imports are correct and nothing is left unused.

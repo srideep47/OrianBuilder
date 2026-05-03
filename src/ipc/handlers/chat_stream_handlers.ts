@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { ipcMain, IpcMainInvokeEvent } from "electron";
+import { abortCurrentInference } from "../utils/embedded_inference_server";
 import { createTypedHandler } from "./base";
 import { chatContracts } from "../types/chat";
 import {
@@ -1821,6 +1822,11 @@ ${problemReport.problems
     } else {
       logger.warn(`No active stream found for chat ${chatId}`);
     }
+
+    // Always clear the embedded inference busy flag — the Vercel AI SDK does
+    // not reliably close the underlying HTTP connection when aborted, so the
+    // embedded server can stay stuck in isInferring=true indefinitely.
+    abortCurrentInference();
 
     // Send the end event to the renderer with wasCancelled flag
     safeSend(event.sender, "chat:response:end", {

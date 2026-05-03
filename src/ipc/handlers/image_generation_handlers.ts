@@ -24,6 +24,7 @@ const activeControllers = new Map<string, AbortController>();
 
 const DYAD_ENGINE_URL =
   process.env.DYAD_ENGINE_URL ?? "https://engine.dyad.sh/v1";
+const OPENAI_IMAGE_URL = "https://api.openai.com/v1/images/generations";
 
 const IMAGE_GENERATION_TIMEOUT_MS = 120_000;
 const MAX_IMAGE_SIZE = 50 * 1024 * 1024; // 50 MB
@@ -43,11 +44,16 @@ export function registerImageGenerationHandlers() {
     imageGenerationContracts.generateImage,
     async (_, params) => {
       const settings = readSettings();
-      const apiKey = settings.providerSettings?.auto?.apiKey?.value;
+      const apiKey =
+        settings.providerSettings?.auto?.apiKey?.value ??
+        settings.providerSettings?.openai?.apiKey?.value;
+      const imageEndpoint = settings.providerSettings?.auto?.apiKey?.value
+        ? `${DYAD_ENGINE_URL}/images/generations`
+        : OPENAI_IMAGE_URL;
 
       if (!apiKey) {
         throw new DyadError(
-          "Dyad Pro API key is required for image generation",
+          "Image generation requires an OpenAI API key. Add one in Settings → Providers → OpenAI.",
           DyadErrorKind.Auth,
         );
       }
@@ -72,9 +78,14 @@ export function registerImageGenerationHandlers() {
         IMAGE_GENERATION_TIMEOUT_MS,
       );
 
+      // Use Pro engine model when Pro key present, otherwise standard dall-e-3
+      const imageModel = settings.providerSettings?.auto?.apiKey?.value
+        ? "gpt-image-1.5"
+        : "dall-e-3";
+
       let response: Response;
       try {
-        response = await fetch(`${DYAD_ENGINE_URL}/images/generations`, {
+        response = await fetch(imageEndpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -83,7 +94,9 @@ export function registerImageGenerationHandlers() {
           },
           body: JSON.stringify({
             prompt: fullPrompt,
-            model: "gpt-image-1.5",
+            model: imageModel,
+            n: 1,
+            size: "1024x1024",
           }),
           signal: controller.signal,
         });

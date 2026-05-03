@@ -62,10 +62,12 @@ export async function fetchApiTemplates(): Promise<Template[]> {
   return apiTemplatesFetchPromise;
 }
 
-// Get all templates (local + API)
+// Get all templates (local + API, deduped by id — local entries win)
 export async function getAllTemplates(): Promise<Template[]> {
   const apiTemplates = await fetchApiTemplates();
-  return [...localTemplatesData, ...apiTemplates];
+  const localIds = new Set(localTemplatesData.map((t) => t.id));
+  const uniqueApiTemplates = apiTemplates.filter((t) => !localIds.has(t.id));
+  return [...localTemplatesData, ...uniqueApiTemplates];
 }
 
 export async function getTemplateOrThrow(

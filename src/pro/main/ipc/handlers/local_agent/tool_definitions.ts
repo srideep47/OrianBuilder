@@ -21,6 +21,11 @@ import { getSupabaseProjectInfoTool } from "./tools/get_supabase_project_info";
 import { setChatSummaryTool } from "./tools/set_chat_summary";
 import { addIntegrationTool } from "./tools/add_integration";
 import { readLogsTool } from "./tools/read_logs";
+import { readConsoleOutputTool } from "./tools/read_console_output";
+import { runTerminalCommandTool } from "./tools/run_terminal_command";
+import { takeScreenshotTool } from "./tools/take_screenshot";
+import { getAccessibilityTreeTool } from "./tools/get_accessibility_tree";
+import { getRepoMapTool } from "./tools/get_repo_map";
 import { searchReplaceTool } from "./tools/search_replace";
 import { webSearchTool } from "./tools/web_search";
 import { webCrawlTool } from "./tools/web_crawl";
@@ -34,6 +39,7 @@ import { planningQuestionnaireTool } from "./tools/planning_questionnaire";
 import { writePlanTool } from "./tools/write_plan";
 import { exitPlanTool } from "./tools/exit_plan";
 import { readGuideTool } from "./tools/read_guide";
+import { editAstTool } from "./tools/edit_ast";
 import type { LanguageModelV3ToolResultOutput } from "@ai-sdk/provider";
 import {
   escapeXmlAttr,
@@ -70,6 +76,7 @@ function getToolErrorSummary(error: unknown): string {
 export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   writeFileTool,
   searchReplaceTool,
+  editAstTool,
   copyFileTool,
   deleteFileTool,
   renameFileTool,
@@ -85,6 +92,11 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   setChatSummaryTool,
   addIntegrationTool,
   readLogsTool,
+  readConsoleOutputTool,
+  runTerminalCommandTool,
+  takeScreenshotTool,
+  getAccessibilityTreeTool,
+  getRepoMapTool,
   webSearchTool,
   webCrawlTool,
   webFetchTool,
