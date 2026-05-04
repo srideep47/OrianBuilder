@@ -44,7 +44,7 @@ const ignore = (file: string) => {
     return false;
   }
   if (file.startsWith("/node_modules/node-pty")) {
-    return false;
+    return true;
   }
   if (file.startsWith("/node_modules/playwright")) {
     return false;
@@ -133,7 +133,7 @@ const config: ForgeConfig = {
         },
     asar: {
       unpackDir:
-        "{node_modules/node-pty,node_modules/node-llama-cpp,node_modules/@node-llama-cpp,node_modules/playwright,node_modules/playwright-core,node_modules/chromium-bidi}",
+        "{node_modules/node-llama-cpp,node_modules/@node-llama-cpp,node_modules/playwright,node_modules/playwright-core,node_modules/chromium-bidi}",
     },
     ignore,
     extraResource: [
@@ -147,7 +147,7 @@ const config: ForgeConfig = {
     // ignore: [/node_modules\/(?!(better-sqlite3|bindings|file-uri-to-path)\/)/],
   },
   rebuildConfig: {
-    extraModules: ["better-sqlite3", "node-pty", "node-llama-cpp"],
+    extraModules: ["better-sqlite3", "node-llama-cpp"],
     force: true,
   },
   makers: [
