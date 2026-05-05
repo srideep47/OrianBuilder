@@ -204,6 +204,41 @@
       "when": 1776728360068,
       "tag": "0028_icy_veda",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1777845543316,
+      "tag": "0029_nasty_cammi",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1777846801388,
+      "tag": "0030_bored_jack_power",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1777847171107,
+      "tag": "0031_cultured_virginia_dare",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1777847923157,
+      "tag": "0032_closed_omega_sentinel",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1777928413699,
+      "tag": "0033_cultured_mephisto",
+      "breakpoints": true
     }
   ]
 }

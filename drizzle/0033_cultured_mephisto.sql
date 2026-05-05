@@ -1,0 +1,22 @@
+CREATE TABLE `mission_workers` (
+	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	`mission_id` integer NOT NULL,
+	`run_id` integer,
+	`worker_key` text NOT NULL,
+	`role` text NOT NULL,
+	`status` text DEFAULT 'queued' NOT NULL,
+	`title` text NOT NULL,
+	`goal` text NOT NULL,
+	`workspace_provider` text DEFAULT 'local' NOT NULL,
+	`workspace_ref` text,
+	`branch_name` text,
+	`file_scopes` text,
+	`depends_on` text,
+	`metadata` text,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
+	`updated_at` integer DEFAULT (unixepoch()) NOT NULL,
+	`started_at` integer,
+	`completed_at` integer,
+	FOREIGN KEY (`mission_id`) REFERENCES `missions`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`run_id`) REFERENCES `mission_runs`(`id`) ON UPDATE no action ON DELETE set null
+);

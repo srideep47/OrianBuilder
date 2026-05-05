@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Sparkles,
   Image,
@@ -68,11 +68,11 @@ export default function MediaAIPage() {
   };
 
   // Check health on mount and when server URL changes
-  useState(() => {
-    checkBackendHealth();
+  useEffect(() => {
+    void checkBackendHealth();
     const interval = setInterval(checkBackendHealth, 30000);
     return () => clearInterval(interval);
-  });
+  }, [serverUrl]);
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {

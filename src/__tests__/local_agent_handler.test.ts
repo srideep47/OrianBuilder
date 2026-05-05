@@ -93,11 +93,13 @@ function buildTestSettings(
     hasApiKey?: boolean;
     selectedModel?: string;
     enableContextCompaction?: boolean;
+    autonomousMode?: boolean;
   } = {},
 ) {
   const baseSettings = {
     selectedModel: overrides.selectedModel ?? "gpt-4",
     enableContextCompaction: overrides.enableContextCompaction ?? true,
+    autonomousMode: overrides.autonomousMode,
   };
 
   if (overrides.enableDyadPro && overrides.hasApiKey !== false) {
@@ -303,7 +305,10 @@ vi.mock("@/ipc/handlers/compaction/compaction_handler", () => ({
 
 import { handleLocalAgentStream } from "@/pro/main/ipc/handlers/local_agent/local_agent_handler";
 import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
-import { buildAgentToolSet } from "@/pro/main/ipc/handlers/local_agent/tool_definitions";
+import {
+  buildAgentToolSet,
+  requireAgentToolConsent,
+} from "@/pro/main/ipc/handlers/local_agent/tool_definitions";
 import {
   commitAllChanges,
   deployAllFunctionsIfNeeded,
@@ -427,6 +432,63 @@ describe("handleLocalAgentStream", () => {
   });
 
   describe("Warning propagation", () => {
+    it("auto-approves local-agent tools when autonomous mode is enabled", async () => {
+      const { event, getMessagesByChannel } = createFakeEvent();
+      mockSettings = buildTestSettings({
+        enableDyadPro: true,
+        autonomousMode: true,
+      });
+      mockChatData = buildTestChat();
+
+      vi.mocked(buildAgentToolSet).mockImplementationOnce((ctx) => {
+        return {
+          guarded_tool: {
+            execute: async () => {
+              const allowed = await ctx.requireConsent({
+                toolName: "run_terminal_command",
+                toolDescription: "Run a command",
+                inputPreview: "npm test",
+              });
+              return allowed ? "allowed" : "blocked";
+            },
+          },
+        } as any;
+      });
+
+      mockStreamTextImpl = (options) => ({
+        fullStream: (async function* () {
+          const result = await options.tools.guarded_tool.execute();
+          yield { type: "text-delta", text: `Tool ${result}.` };
+        })(),
+        response: Promise.resolve({
+          messages: [
+            {
+              role: "assistant",
+              content: [{ type: "text", text: "Tool allowed." }],
+            },
+          ],
+        }),
+        steps: Promise.resolve([{ toolCalls: [] }]),
+      });
+
+      await handleLocalAgentStream(
+        event,
+        { chatId: 1, prompt: "test" },
+        new AbortController(),
+        {
+          placeholderMessageId: 10,
+          systemPrompt: "You are helpful",
+          dyadRequestId,
+        },
+      );
+
+      expect(requireAgentToolConsent).not.toHaveBeenCalled();
+      expect(getMessagesByChannel("agent-tool:consent-request")).toHaveLength(
+        0,
+      );
+      expect(getMessagesByChannel("chat:response:error")).toHaveLength(0);
+    });
+
     it("includes warning messages in the error payload when a tool fails after warning", async () => {
       const { event, getMessagesByChannel } = createFakeEvent();
       mockSettings = buildTestSettings({ enableDyadPro: true });

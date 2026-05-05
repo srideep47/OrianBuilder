@@ -99,6 +99,19 @@ export interface AgentContext {
    * Queues a warning toast to be shown to the user when the turn completes.
    */
   onWarningMessage?: (message: string) => void;
+  onToolExecutionStart?: (params: {
+    toolName: string;
+    inputPreview?: string | null;
+    modifiesState: boolean;
+  }) => void;
+  onToolExecutionComplete?: (params: {
+    toolName: string;
+    status: "completed" | "failed";
+    durationMs: number;
+    outputPreview?: string | null;
+    error?: string | null;
+    modifiesState: boolean;
+  }) => void;
 }
 
 // ============================================================================

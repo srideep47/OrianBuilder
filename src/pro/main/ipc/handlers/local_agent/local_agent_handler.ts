@@ -15,7 +15,7 @@ import {
 import log from "electron-log";
 
 import { db } from "@/db";
-import { chats, messages } from "@/db/schema";
+import { chats, messages, missions } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 import {
@@ -104,6 +104,22 @@ import {
   maybeAppendRetryReplayForRetry,
 } from "./retry_replay_utils";
 import { setChatSummaryTool } from "./tools/set_chat_summary";
+import {
+  createMissionArtifact,
+  createMissionCheckpoint,
+  finishMissionRun,
+  logMissionEvent,
+  startMissionRun,
+} from "@/ipc/utils/mission_utils";
+import {
+  getMissionEventSummaryForXml,
+  getMissionVerificationEventForXml,
+} from "@/ipc/utils/mission_verification";
+import { syncMissionTasksFromTodos } from "@/ipc/utils/mission_tasks";
+import { getMissionStructuredEventsForXml } from "@/ipc/utils/mission_xml_events";
+import { extractMissionVisualEventsForXml } from "@/ipc/utils/mission_visual_events";
+import { getAutonomyPolicyDecision } from "@/ipc/utils/autonomy_policy";
+import type { MissionAutonomyProfile } from "@/ipc/types/mission";
 
 const logger = log.scope("local_agent_handler");
 const PLANNING_QUESTIONNAIRE_TOOL_NAME = "planning_questionnaire";
@@ -336,6 +352,9 @@ export async function handleLocalAgentStream(
   },
 ): Promise<boolean> {
   const settings = settingsOverride ?? readSettings();
+  const missionId = req.missionId;
+  let missionRunId: number | null = null;
+  let totalStepsExecuted = 0;
   const maxToolCallSteps =
     settings.maxToolCallSteps ?? DEFAULT_MAX_TOOL_CALL_STEPS;
   let fullResponse = "";
@@ -392,6 +411,51 @@ export async function handleLocalAgentStream(
   }
 
   const appPath = getDyadAppPath(chat.app.path);
+  const activeMission = missionId
+    ? await db.query.missions.findFirst({
+        where: eq(missions.id, missionId),
+      })
+    : null;
+  const autonomyProfile: MissionAutonomyProfile =
+    activeMission?.autonomyProfile ??
+    settings.defaultMissionAutonomyProfile ??
+    (settings.autonomousMode ? "full-autopilot-sandbox" : "supervised");
+  const missionRun = await startMissionRun({
+    missionId,
+    chatId: req.chatId,
+    messageId: placeholderMessageId,
+    model: settings.selectedModel.name,
+    requestId: dyadRequestId,
+    metadata: {
+      appId: chat.app.id,
+      provider: settings.selectedModel.provider,
+      readOnly,
+      planModeOnly,
+      autonomyProfile,
+      maxToolCallSteps,
+      retryPolicy: {
+        maxRetries: MAX_TERMINATED_STREAM_RETRIES,
+        baseDelayMs: STREAM_RETRY_BASE_DELAY_MS,
+      },
+    },
+  }).catch((err) => {
+    logger.warn("Failed to start mission run:", err);
+    return null;
+  });
+  missionRunId = missionRun?.id ?? null;
+  await logMissionEvent({
+    missionId,
+    eventType: "agent_stream_started",
+    summary: "Agent stream started",
+    metadata: {
+      chatId: req.chatId,
+      appId: chat.app.id,
+      readOnly,
+      planModeOnly,
+      autonomyProfile,
+      maxToolCallSteps,
+    },
+  }).catch((err) => logger.warn("Failed to log mission start event:", err));
 
   const maybePerformPendingCompaction = async (options?: {
     showOnTopOfCurrentResponse?: boolean;
@@ -503,6 +567,9 @@ export async function handleLocalAgentStream(
   // Store injected messages with their insertion index to re-inject at the same spot each step
   const allInjectedMessages: InjectedMessage[] = [];
   const warningMessages: string[] = [];
+  let missionStepCheckpointCount = 0;
+  const recentStepSignatures: string[] = [];
+  const warnedStepLoopSignatures = new Set<string>();
 
   try {
     // Get model client
@@ -568,6 +635,14 @@ export async function handleLocalAgentStream(
         const xmlChunk = `${finalXml}\n`;
         fullResponse += xmlChunk;
         streamingPreview = ""; // Clear preview
+        logMissionEventsForXml({
+          missionId,
+          missionRunId,
+          chatId: req.chatId,
+          xml: finalXml,
+        }).catch((err) =>
+          logger.warn("Failed to log mission agent output event:", err),
+        );
         updateResponseInDb(placeholderMessageId, fullResponse);
         sendResponseChunk(
           event,
@@ -583,6 +658,40 @@ export async function handleLocalAgentStream(
         toolDescription?: string | null;
         inputPreview?: string | null;
       }) => {
+        const policy = getAutonomyPolicyDecision({
+          profile: autonomyProfile,
+          runtimeMode: settings.runtimeMode2 ?? "host",
+          toolName: params.toolName,
+          inputPreview: params.inputPreview,
+        });
+        logMissionEvent({
+          missionId,
+          eventType: "agent_tool_policy_decision",
+          summary: `${policy.decision.replace("_", " ")}: ${params.toolName}`,
+          metadata: {
+            chatId: chat.id,
+            toolName: params.toolName,
+            decision: policy.decision,
+            risk: policy.risk,
+            reason: policy.reason,
+            autonomyProfile,
+            runtimeMode: settings.runtimeMode2 ?? "host",
+          },
+        }).catch((err) =>
+          logger.warn("Failed to log autonomy policy decision:", err),
+        );
+
+        if (policy.decision === "deny") {
+          throw new DyadError(policy.reason, DyadErrorKind.Precondition);
+        }
+
+        if (policy.decision === "auto_approve") {
+          logger.info(
+            `Autonomy policy auto-approved local-agent tool ${params.toolName} for chat ${chat.id}`,
+          );
+          return true;
+        }
+
         return requireAgentToolConsent(event, {
           chatId: chat.id,
           toolName: params.toolName as AgentToolName,
@@ -598,9 +707,56 @@ export async function handleLocalAgentStream(
           chatId: chat.id,
           todos,
         });
+        syncMissionTasksFromTodos({ missionId, todos }).catch((err) =>
+          logger.warn("Failed to sync mission tasks:", err),
+        );
       },
       onWarningMessage: (message) => {
         warningMessages.push(message);
+      },
+      onToolExecutionStart: (params) => {
+        logMissionEvent({
+          missionId,
+          eventType: "agent_tool_execution_started",
+          summary: `Tool started: ${params.toolName}`,
+          metadata: {
+            chatId: chat.id,
+            runId: missionRunId,
+            toolName: params.toolName,
+            inputPreview: params.inputPreview ?? null,
+            modifiesState: params.modifiesState,
+          },
+        }).catch((err) =>
+          logger.warn("Failed to log tool execution start:", err),
+        );
+      },
+      onToolExecutionComplete: (params) => {
+        const metadata = {
+          chatId: chat.id,
+          runId: missionRunId,
+          toolName: params.toolName,
+          status: params.status,
+          durationMs: params.durationMs,
+          outputPreview: params.outputPreview ?? null,
+          error: params.error ?? null,
+          modifiesState: params.modifiesState,
+        };
+        logMissionEvent({
+          missionId,
+          eventType: "agent_tool_execution_completed",
+          summary: `Tool ${params.status}: ${params.toolName}`,
+          metadata,
+        }).catch((err) =>
+          logger.warn("Failed to log tool execution completion:", err),
+        );
+        createMissionCheckpoint({
+          missionId,
+          runId: missionRunId,
+          summary: `Tool ${params.status}: ${params.toolName}`,
+          metadata,
+        }).catch((err) =>
+          logger.warn("Failed to checkpoint tool execution:", err),
+        );
       },
     };
 
@@ -654,7 +810,6 @@ export async function handleLocalAgentStream(
     let currentMessageHistory = messageHistory;
     const accumulatedAiMessages: ModelMessage[] = [];
     // Track total steps across all passes to detect step limit
-    let totalStepsExecuted = 0;
 
     // If there are persisted todos from a previous turn, inject a synthetic
     // user message so the LLM is aware of them. Inserted BEFORE the user's
@@ -905,6 +1060,79 @@ export async function handleLocalAgentStream(
                 }
               }
 
+              missionStepCheckpointCount += 1;
+              const stepToolNames = getStepToolNames(step);
+              const stepSignature = getStepSignature(stepToolNames);
+              const stepMetadata = {
+                chatId: req.chatId,
+                runId: missionRunId,
+                stepNumber: missionStepCheckpointCount,
+                totalStepsObserved:
+                  totalStepsExecuted + missionStepCheckpointCount,
+                toolNames: stepToolNames,
+                toolCallCount: step.toolCalls.length,
+                textLength: step.text?.length ?? 0,
+                usage: step.usage,
+              };
+              await createMissionCheckpoint({
+                missionId,
+                runId: missionRunId,
+                summary: `Agent step ${missionStepCheckpointCount} completed`,
+                metadata: stepMetadata,
+              }).catch((err) =>
+                logger.warn("Failed to create mission step checkpoint:", err),
+              );
+              await logMissionEvent({
+                missionId,
+                eventType: "agent_step_checkpointed",
+                summary: `Agent step ${missionStepCheckpointCount} checkpointed`,
+                metadata: stepMetadata,
+              }).catch((err) =>
+                logger.warn("Failed to log mission step checkpoint:", err),
+              );
+
+              if (stepSignature) {
+                recentStepSignatures.push(stepSignature);
+                if (recentStepSignatures.length > 3) {
+                  recentStepSignatures.shift();
+                }
+                const isRepeatedLoop =
+                  recentStepSignatures.length === 3 &&
+                  recentStepSignatures.every(
+                    (signature) => signature === stepSignature,
+                  );
+                if (
+                  isRepeatedLoop &&
+                  !warnedStepLoopSignatures.has(stepSignature)
+                ) {
+                  warnedStepLoopSignatures.add(stepSignature);
+                  const loopMetadata = {
+                    ...stepMetadata,
+                    signature: stepSignature,
+                    repeatedCount: recentStepSignatures.length,
+                  };
+                  await logMissionEvent({
+                    missionId,
+                    eventType: "mission_stuck_loop_warning",
+                    summary: `Possible stuck loop: ${stepSignature}`,
+                    metadata: loopMetadata,
+                  }).catch((err) =>
+                    logger.warn("Failed to log stuck-loop warning:", err),
+                  );
+                  await createMissionCheckpoint({
+                    missionId,
+                    runId: missionRunId,
+                    summary: `Possible stuck loop: ${stepSignature}`,
+                    metadata: loopMetadata,
+                  }).catch((err) =>
+                    logger.warn(
+                      "Failed to checkpoint stuck-loop warning:",
+                      err,
+                    ),
+                  );
+                }
+              }
+
               if (
                 settings.enableContextCompaction === false ||
                 compactedMidTurn
@@ -1146,6 +1374,15 @@ export async function handleLocalAgentStream(
                 error: String(streamError),
                 phase: "stream_iteration",
               });
+              await logMissionRetryScheduled({
+                missionId,
+                missionRunId,
+                chatId: req.chatId,
+                retryCount: terminatedRetryCount,
+                retryDelayMs,
+                phase: "stream_iteration",
+                error: streamError,
+              });
               logger.warn(
                 `Transient stream termination for chat ${req.chatId}; retrying pass (${terminatedRetryCount}/${MAX_TERMINATED_STREAM_RETRIES}) after ${retryDelayMs}ms`,
               );
@@ -1194,6 +1431,15 @@ export async function handleLocalAgentStream(
                 retryCount: terminatedRetryCount,
                 error: String(err),
                 phase: "response_finalization",
+              });
+              await logMissionRetryScheduled({
+                missionId,
+                missionRunId,
+                chatId: req.chatId,
+                retryCount: terminatedRetryCount,
+                retryDelayMs,
+                phase: "response_finalization",
+                error: err,
               });
               logger.warn(
                 `Transient stream termination while finalizing response for chat ${req.chatId}; retrying pass (${terminatedRetryCount}/${MAX_TERMINATED_STREAM_RETRIES}) after ${retryDelayMs}ms`,
@@ -1304,6 +1550,31 @@ export async function handleLocalAgentStream(
           content: appendCancelledResponseNotice(fullResponse ?? ""),
         })
         .where(eq(messages.id, placeholderMessageId));
+      await logMissionEvent({
+        missionId,
+        eventType: "agent_stream_cancelled",
+        summary: "Agent stream was cancelled",
+        metadata: { chatId: req.chatId },
+      }).catch((err) =>
+        logger.warn("Failed to log mission cancellation event:", err),
+      );
+      await finishMissionRun({
+        runId: missionRunId,
+        status: "cancelled",
+        totalStepsExecuted,
+      }).catch((err) => logger.warn("Failed to finish mission run:", err));
+      await createMissionCheckpoint({
+        missionId,
+        runId: missionRunId,
+        summary: "Mission run cancelled",
+        metadata: {
+          chatId: req.chatId,
+          totalStepsExecuted,
+          responseLength: fullResponse.length,
+        },
+      }).catch((err) =>
+        logger.warn("Failed to create mission checkpoint:", err),
+      );
       return false; // Cancelled - don't consume quota
     }
 
@@ -1333,6 +1604,29 @@ export async function handleLocalAgentStream(
       const stepLimitXml = `<dyad-step-limit steps="${totalStepsExecuted}" limit="${maxToolCallSteps}">Automatically paused after ${totalStepsExecuted} tool calls.</dyad-step-limit>`;
       postTurnXmlParts.push(stepLimitXml);
       fullResponse += `\n\n${stepLimitXml}`;
+      const stepLimitMetadata = {
+        chatId: req.chatId,
+        runId: missionRunId,
+        totalStepsExecuted,
+        maxToolCallSteps,
+        budgetType: "tool_steps",
+      };
+      await logMissionEvent({
+        missionId,
+        eventType: "mission_budget_limit_reached",
+        summary: `Step budget reached: ${totalStepsExecuted}/${maxToolCallSteps}`,
+        metadata: stepLimitMetadata,
+      }).catch((err) =>
+        logger.warn("Failed to log mission step budget event:", err),
+      );
+      await createMissionCheckpoint({
+        missionId,
+        runId: missionRunId,
+        summary: `Step budget reached: ${totalStepsExecuted}/${maxToolCallSteps}`,
+        metadata: stepLimitMetadata,
+      }).catch((err) =>
+        logger.warn("Failed to checkpoint mission step budget:", err),
+      );
       await updateResponseInDb(placeholderMessageId, fullResponse);
       sendResponseChunk(
         event,
@@ -1443,6 +1737,41 @@ export async function handleLocalAgentStream(
         warningMessages.length > 0 ? [...new Set(warningMessages)] : undefined,
     } satisfies ChatResponseEnd);
 
+    await logMissionEvent({
+      missionId,
+      eventType: "agent_stream_completed",
+      summary: "Agent stream completed",
+      metadata: {
+        chatId: req.chatId,
+        updatedFiles: !readOnly,
+        totalStepsExecuted,
+      },
+    }).catch((err) =>
+      logger.warn("Failed to log mission completion event:", err),
+    );
+    await finishMissionRun({
+      runId: missionRunId,
+      status: "completed",
+      totalStepsExecuted,
+      metadata: {
+        updatedFiles: !readOnly,
+        chatSummary: ctx.chatSummary,
+      },
+    }).catch((err) => logger.warn("Failed to finish mission run:", err));
+    await createMissionCheckpoint({
+      missionId,
+      runId: missionRunId,
+      summary: ctx.chatSummary ?? "Agent stream completed",
+      metadata: {
+        chatId: req.chatId,
+        totalStepsExecuted,
+        todos: ctx.todos,
+        fileEditTracker,
+        warningMessages:
+          warningMessages.length > 0 ? [...new Set(warningMessages)] : [],
+      },
+    }).catch((err) => logger.warn("Failed to create mission checkpoint:", err));
+
     return true; // Success
   } catch (error) {
     // Clean up any pending consent/questionnaire requests for this chat to prevent
@@ -1458,6 +1787,31 @@ export async function handleLocalAgentStream(
           content: appendCancelledResponseNotice(fullResponse ?? ""),
         })
         .where(eq(messages.id, placeholderMessageId));
+      await logMissionEvent({
+        missionId,
+        eventType: "agent_stream_cancelled",
+        summary: "Agent stream was cancelled",
+        metadata: { chatId: req.chatId },
+      }).catch((err) =>
+        logger.warn("Failed to log mission cancellation event:", err),
+      );
+      await finishMissionRun({
+        runId: missionRunId,
+        status: "cancelled",
+        totalStepsExecuted,
+      }).catch((err) => logger.warn("Failed to finish mission run:", err));
+      await createMissionCheckpoint({
+        missionId,
+        runId: missionRunId,
+        summary: "Mission run cancelled",
+        metadata: {
+          chatId: req.chatId,
+          totalStepsExecuted,
+          responseLength: fullResponse.length,
+        },
+      }).catch((err) =>
+        logger.warn("Failed to create mission checkpoint:", err),
+      );
       return false; // Cancelled - don't consume quota
     }
 
@@ -1468,8 +1822,174 @@ export async function handleLocalAgentStream(
       warningMessages:
         warningMessages.length > 0 ? [...new Set(warningMessages)] : undefined,
     });
+    await logMissionEvent({
+      missionId,
+      eventType: "agent_stream_failed",
+      summary: "Agent stream failed",
+      body: getErrorMessage(error),
+      metadata: { chatId: req.chatId },
+    }).catch((err) => logger.warn("Failed to log mission failure event:", err));
+    await finishMissionRun({
+      runId: missionRunId,
+      status: "failed",
+      totalStepsExecuted,
+      error: getErrorMessage(error),
+    }).catch((err) => logger.warn("Failed to finish mission run:", err));
+    await createMissionCheckpoint({
+      missionId,
+      runId: missionRunId,
+      summary: "Mission run failed",
+      metadata: {
+        chatId: req.chatId,
+        totalStepsExecuted,
+        error: getErrorMessage(error),
+        responseLength: fullResponse.length,
+      },
+    }).catch((err) => logger.warn("Failed to create mission checkpoint:", err));
     return false; // Error - don't consume quota
   }
+}
+
+async function logMissionEventsForXml(input: {
+  missionId: number | undefined;
+  missionRunId?: number | null;
+  chatId: number;
+  xml: string;
+}) {
+  const { missionId, missionRunId, chatId, xml } = input;
+  if (!missionId) {
+    return;
+  }
+
+  await logMissionEvent({
+    missionId,
+    eventType: "agent_output",
+    summary: getMissionEventSummaryForXml(xml),
+    body: xml,
+    metadata: { chatId },
+  });
+
+  for (const event of getMissionStructuredEventsForXml(xml)) {
+    await logMissionEvent({
+      missionId,
+      eventType: event.eventType,
+      summary: event.summary,
+      body: xml,
+      metadata: {
+        chatId,
+        ...event.metadata,
+      },
+    });
+  }
+
+  const visual = extractMissionVisualEventsForXml(xml);
+  for (const event of visual.events) {
+    await logMissionEvent({
+      missionId,
+      eventType: event.eventType,
+      summary: event.summary,
+      body: xml,
+      metadata: {
+        chatId,
+        gate: event.gate,
+        status: event.status,
+        ...event.metadata,
+      },
+    });
+  }
+  for (const artifact of visual.artifacts) {
+    await createMissionArtifact({
+      missionId,
+      runId: missionRunId ?? null,
+      artifactType: artifact.artifactType,
+      title: artifact.title,
+      uri: artifact.uri ?? null,
+      body: artifact.body ?? null,
+      mimeType: artifact.mimeType ?? null,
+      metadata: {
+        chatId,
+        ...(artifact.metadata ?? {}),
+      },
+    });
+  }
+
+  const verification = getMissionVerificationEventForXml(xml);
+  if (!verification) {
+    return;
+  }
+
+  await logMissionEvent({
+    missionId,
+    eventType: verification.eventType,
+    summary: verification.summary,
+    body: xml,
+    metadata: {
+      chatId,
+      status: verification.status,
+      check: verification.check,
+      command: verification.command,
+      problemCount: verification.problemCount,
+      exitCode: verification.exitCode,
+    },
+  });
+}
+
+async function logMissionRetryScheduled(input: {
+  missionId: number | undefined;
+  missionRunId: number | null;
+  chatId: number;
+  retryCount: number;
+  retryDelayMs: number;
+  phase: string;
+  error: unknown;
+}) {
+  const metadata = {
+    chatId: input.chatId,
+    runId: input.missionRunId,
+    retryCount: input.retryCount,
+    retryDelayMs: input.retryDelayMs,
+    phase: input.phase,
+    error: getErrorMessage(input.error),
+    retryPolicy: {
+      maxRetries: MAX_TERMINATED_STREAM_RETRIES,
+      baseDelayMs: STREAM_RETRY_BASE_DELAY_MS,
+    },
+  };
+
+  await logMissionEvent({
+    missionId: input.missionId,
+    eventType: "agent_stream_retry_scheduled",
+    summary: `Retry ${input.retryCount} scheduled after ${input.retryDelayMs}ms`,
+    metadata,
+  }).catch((err) => logger.warn("Failed to log mission retry:", err));
+
+  await createMissionCheckpoint({
+    missionId: input.missionId,
+    runId: input.missionRunId,
+    summary: `Retry ${input.retryCount} scheduled`,
+    metadata,
+  }).catch((err) => logger.warn("Failed to checkpoint mission retry:", err));
+}
+
+function getStepToolNames(step: { toolCalls: Array<unknown> }) {
+  return step.toolCalls
+    .map((toolCall) => {
+      if (!toolCall || typeof toolCall !== "object") {
+        return null;
+      }
+      const maybeToolCall = toolCall as Record<string, unknown>;
+      return typeof maybeToolCall.toolName === "string"
+        ? maybeToolCall.toolName
+        : null;
+    })
+    .filter((toolName): toolName is string => !!toolName);
+}
+
+function getStepSignature(toolNames: string[]) {
+  if (toolNames.length === 0) {
+    return null;
+  }
+  return toolNames.join(",");
 }
 
 function buildTerminatedRetryContinuationInstruction(): ModelMessage {

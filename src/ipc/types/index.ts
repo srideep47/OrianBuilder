@@ -78,6 +78,7 @@ export {
   modelMarketplaceEvents,
   modelMarketplaceEventClient,
 } from "./model_marketplace";
+export { missionContracts, missionClient } from "./mission";
 export type {
   HFSearchModel,
   HFFileSibling,
@@ -86,6 +87,27 @@ export type {
   LocalModelEntry,
   GgufMetadata,
 } from "./model_marketplace";
+export type {
+  Mission,
+  MissionEvent,
+  MissionTask,
+  MissionRun,
+  MissionWorker,
+  MissionWorkerReport,
+  MissionCheckpoint,
+  MissionArtifact,
+  CreateMissionParams,
+  UpdateMissionStatusParams,
+  AddMissionEventParams,
+  CreateMissionWorkerParams,
+  UpdateMissionWorkerStatusParams,
+  DispatchMissionWorkersParams,
+  RetryMissionWorkerParams,
+  MarkStaleMissionWorkersParams,
+  SubmitMissionWorkerReportParams,
+  PrepareMissionWorkerWorkspaceParams,
+  SetMissionWorkerIntegrationStatusParams,
+} from "./mission";
 
 // =============================================================================
 // Client Exports
@@ -424,6 +446,7 @@ import {
   modelMarketplaceClient,
   modelMarketplaceEventClient,
 } from "./model_marketplace";
+import { missionClient } from "./mission";
 
 /**
  * Unified IPC client with all domains organized by namespace.
@@ -485,6 +508,7 @@ export const ipc = {
   imageGeneration: imageGenerationClient,
   embeddedModel: embeddedModelClient,
   marketplace: modelMarketplaceClient,
+  mission: missionClient,
 
   // Event clients for main->renderer pub/sub
   events: {

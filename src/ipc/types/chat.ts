@@ -98,6 +98,7 @@ export const ChatStreamParamsSchema = z.object({
   attachments: z.array(ChatAttachmentSchema).optional(),
   selectedComponents: z.array(ComponentSelectionSchema).optional(),
   requestedChatMode: ChatModeSchema.optional(),
+  missionId: z.number().optional(),
 });
 
 export type ChatStreamParams = z.infer<typeof ChatStreamParamsSchema>;

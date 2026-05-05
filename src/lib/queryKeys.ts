@@ -73,6 +73,26 @@ export const queryKeys = {
     }) => ["plans", "forChat", appId, chatId] as const,
   },
 
+  missions: {
+    all: ["missions"] as const,
+    list: ({ appId }: { appId: number | null }) =>
+      ["missions", "list", appId] as const,
+    detail: ({ missionId }: { missionId: number | null }) =>
+      ["missions", "detail", missionId] as const,
+    events: ({ missionId }: { missionId: number | null }) =>
+      ["missions", "events", missionId] as const,
+    tasks: ({ missionId }: { missionId: number | null }) =>
+      ["missions", "tasks", missionId] as const,
+    runs: ({ missionId }: { missionId: number | null }) =>
+      ["missions", "runs", missionId] as const,
+    workers: ({ missionId }: { missionId: number | null }) =>
+      ["missions", "workers", missionId] as const,
+    checkpoints: ({ missionId }: { missionId: number | null }) =>
+      ["missions", "checkpoints", missionId] as const,
+    artifacts: ({ missionId }: { missionId: number | null }) =>
+      ["missions", "artifacts", missionId] as const,
+  },
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Proposals
   // ─────────────────────────────────────────────────────────────────────────────
@@ -368,6 +388,7 @@ export type AppQueryKey =
   | QueryKeyOf<(typeof queryKeys.apps)[keyof typeof queryKeys.apps]>
   | QueryKeyOf<(typeof queryKeys.chats)[keyof typeof queryKeys.chats]>
   | QueryKeyOf<(typeof queryKeys.plans)[keyof typeof queryKeys.plans]>
+  | QueryKeyOf<(typeof queryKeys.missions)[keyof typeof queryKeys.missions]>
   | QueryKeyOf<(typeof queryKeys.proposals)[keyof typeof queryKeys.proposals]>
   | QueryKeyOf<(typeof queryKeys.versions)[keyof typeof queryKeys.versions]>
   | QueryKeyOf<(typeof queryKeys.branches)[keyof typeof queryKeys.branches]>

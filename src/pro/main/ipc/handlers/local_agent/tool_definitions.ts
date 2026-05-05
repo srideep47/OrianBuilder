@@ -14,6 +14,7 @@ import { addDependencyTool } from "./tools/add_dependency";
 import { executeSqlTool } from "./tools/execute_sql";
 import { getNeonProjectInfoTool } from "./tools/get_neon_project_info";
 import { getDatabaseTableSchemaTool } from "./tools/get_database_table_schema";
+import { browserControlTool } from "./tools/browser_control";
 
 import { readFileTool } from "./tools/read_file";
 import { listFilesTool } from "./tools/list_files";
@@ -25,12 +26,21 @@ import { readConsoleOutputTool } from "./tools/read_console_output";
 import { runTerminalCommandTool } from "./tools/run_terminal_command";
 import { takeScreenshotTool } from "./tools/take_screenshot";
 import { getAccessibilityTreeTool } from "./tools/get_accessibility_tree";
+import { createProjectTool } from "./tools/create_project";
+import { verifyProjectTool } from "./tools/verify_project";
+import {
+  readDevServerOutputTool,
+  startDevServerTool,
+  stopDevServerTool,
+} from "./tools/start_dev_server";
+import { detectProjectStackTool } from "./tools/detect_project_stack";
 import { getRepoMapTool } from "./tools/get_repo_map";
 import { searchReplaceTool } from "./tools/search_replace";
 import { webSearchTool } from "./tools/web_search";
 import { webCrawlTool } from "./tools/web_crawl";
 import { webFetchTool } from "./tools/web_fetch";
 import { generateImageTool } from "./tools/generate_image";
+import { manageMcpServerTool } from "./tools/manage_mcp_server";
 import { updateTodosTool } from "./tools/update_todos";
 import { runTypeChecksTool } from "./tools/run_type_checks";
 import { grepTool } from "./tools/grep";
@@ -72,6 +82,10 @@ function getToolErrorSummary(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function getToolOutputPreview(result: ToolResult): string {
+  return String(result).slice(0, 500);
+}
+
 // Combined tool definitions array
 export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   writeFileTool,
@@ -89,11 +103,18 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   getSupabaseProjectInfoTool,
   getNeonProjectInfoTool,
   getDatabaseTableSchemaTool,
+  browserControlTool,
   setChatSummaryTool,
   addIntegrationTool,
   readLogsTool,
   readConsoleOutputTool,
   runTerminalCommandTool,
+  detectProjectStackTool,
+  createProjectTool,
+  verifyProjectTool,
+  startDevServerTool,
+  stopDevServerTool,
+  readDevServerOutputTool,
   takeScreenshotTool,
   getAccessibilityTreeTool,
   getRepoMapTool,
@@ -101,6 +122,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   webCrawlTool,
   webFetchTool,
   generateImageTool,
+  manageMcpServerTool,
   updateTodosTool,
   runTypeChecksTool,
   readGuideTool,
@@ -504,6 +526,7 @@ export function buildAgentToolSet(
       description: tool.description,
       inputSchema: tool.inputSchema,
       execute: async (args: any) => {
+        let startedAt: number | null = null;
         try {
           const processedArgs = await processArgPlaceholders(args, ctx);
 
@@ -524,12 +547,35 @@ export function buildAgentToolSet(
           // (including failures) for retry/fallback telemetry
           trackFileEditTool(ctx, tool.name, processedArgs);
 
+          const inputPreview = tool.getConsentPreview?.(processedArgs) ?? null;
+          startedAt = Date.now();
+          ctx.onToolExecutionStart?.({
+            toolName: tool.name,
+            inputPreview,
+            modifiesState: !!tool.modifiesState,
+          });
+
           const result = await tool.execute(processedArgs, ctx);
+          ctx.onToolExecutionComplete?.({
+            toolName: tool.name,
+            status: "completed",
+            durationMs: Date.now() - startedAt,
+            outputPreview: getToolOutputPreview(result),
+            modifiesState: !!tool.modifiesState,
+          });
 
           return convertToolResultForAiSdk(result);
         } catch (error) {
           const errorMessage = getToolErrorSummary(error);
           const errorDetails = getToolErrorDisplayDetails(error);
+
+          ctx.onToolExecutionComplete?.({
+            toolName: tool.name,
+            status: "failed",
+            durationMs: startedAt ? Date.now() - startedAt : 0,
+            error: errorMessage,
+            modifiesState: !!tool.modifiesState,
+          });
 
           ctx.onXmlComplete(
             `<dyad-output type="error" message="Tool '${tool.name}' failed: ${escapeXmlAttr(errorMessage)}">${escapeXmlContent(errorDetails)}</dyad-output>`,

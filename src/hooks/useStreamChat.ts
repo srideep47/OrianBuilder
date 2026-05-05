@@ -14,6 +14,7 @@ import {
   queuedMessagesByIdAtom,
   streamCompletedSuccessfullyByIdAtom,
   queuePausedByIdAtom,
+  activeMissionByChatIdAtom,
   type QueuedMessageItem,
 } from "@/atoms/chatAtoms";
 import { ipc } from "@/ipc/types";
@@ -74,6 +75,7 @@ export function useStreamChat({
   );
   const queuePausedById = useAtomValue(queuePausedByIdAtom);
   const setQueuePausedById = useSetAtom(queuePausedByIdAtom);
+  const activeMissionByChatId = useAtomValue(activeMissionByChatIdAtom);
 
   const posthog = usePostHog();
   const queryClient = useQueryClient();
@@ -94,6 +96,7 @@ export function useStreamChat({
       attachments,
       selectedComponents,
       requestedChatMode,
+      missionId,
       onSettled,
     }: {
       prompt: string;
@@ -103,6 +106,7 @@ export function useStreamChat({
       attachments?: FileAttachment[];
       selectedComponents?: ComponentSelection[];
       requestedChatMode?: Chat["chatMode"] | null;
+      missionId?: number;
       onSettled?: (result: { success: boolean }) => void;
     }) => {
       if (
@@ -194,6 +198,7 @@ export function useStreamChat({
       }
       const targetAppId =
         appId ?? resolvedAppIdFromChat ?? selectedAppId ?? null;
+      const effectiveMissionId = missionId ?? activeMissionByChatId.get(chatId);
       try {
         const cachedChat =
           requestedChatMode === null
@@ -213,6 +218,7 @@ export function useStreamChat({
               requestedChatMode === null
                 ? undefined
                 : (requestedChatMode ?? cachedChat?.chatMode ?? undefined),
+            missionId: effectiveMissionId,
           },
           {
             onChunk: ({
@@ -370,6 +376,38 @@ export function useStreamChat({
                 queryClient.invalidateQueries({
                   queryKey: queryKeys.freeAgentQuota.status,
                 });
+                if (effectiveMissionId !== undefined) {
+                  queryClient.invalidateQueries({
+                    queryKey: queryKeys.missions.detail({
+                      missionId: effectiveMissionId,
+                    }),
+                  });
+                  queryClient.invalidateQueries({
+                    queryKey: queryKeys.missions.events({
+                      missionId: effectiveMissionId,
+                    }),
+                  });
+                  queryClient.invalidateQueries({
+                    queryKey: queryKeys.missions.tasks({
+                      missionId: effectiveMissionId,
+                    }),
+                  });
+                  queryClient.invalidateQueries({
+                    queryKey: queryKeys.missions.runs({
+                      missionId: effectiveMissionId,
+                    }),
+                  });
+                  queryClient.invalidateQueries({
+                    queryKey: queryKeys.missions.checkpoints({
+                      missionId: effectiveMissionId,
+                    }),
+                  });
+                  queryClient.invalidateQueries({
+                    queryKey: queryKeys.missions.artifacts({
+                      missionId: effectiveMissionId,
+                    }),
+                  });
+                }
 
                 // Keep the same as below
                 setIsStreamingById((prev) => {
@@ -439,6 +477,38 @@ export function useStreamChat({
               queryClient.invalidateQueries({
                 queryKey: queryKeys.freeAgentQuota.status,
               });
+              if (effectiveMissionId !== undefined) {
+                queryClient.invalidateQueries({
+                  queryKey: queryKeys.missions.detail({
+                    missionId: effectiveMissionId,
+                  }),
+                });
+                queryClient.invalidateQueries({
+                  queryKey: queryKeys.missions.events({
+                    missionId: effectiveMissionId,
+                  }),
+                });
+                queryClient.invalidateQueries({
+                  queryKey: queryKeys.missions.tasks({
+                    missionId: effectiveMissionId,
+                  }),
+                });
+                queryClient.invalidateQueries({
+                  queryKey: queryKeys.missions.runs({
+                    missionId: effectiveMissionId,
+                  }),
+                });
+                queryClient.invalidateQueries({
+                  queryKey: queryKeys.missions.checkpoints({
+                    missionId: effectiveMissionId,
+                  }),
+                });
+                queryClient.invalidateQueries({
+                  queryKey: queryKeys.missions.artifacts({
+                    missionId: effectiveMissionId,
+                  }),
+                });
+              }
 
               // Keep the same as above
               setIsStreamingById((prev) => {
@@ -485,6 +555,7 @@ export function useStreamChat({
       refetchUserBudget,
       settings,
       queryClient,
+      activeMissionByChatId,
     ],
   );
 
@@ -512,7 +583,10 @@ export function useStreamChat({
     (
       id: string,
       updates: Partial<
-        Pick<QueuedMessageItem, "prompt" | "attachments" | "selectedComponents">
+        Pick<
+          QueuedMessageItem,
+          "prompt" | "attachments" | "selectedComponents" | "missionId"
+        >
       >,
     ) => {
       if (chatId === undefined) return;

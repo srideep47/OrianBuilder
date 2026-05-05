@@ -39,6 +39,7 @@ import {
   pendingAgentConsentsAtom,
   agentTodosByChatIdAtom,
   needsFreshPlanChatAtom,
+  activeMissionByChatIdAtom,
 } from "@/atoms/chatAtoms";
 import { atom, useAtom, useSetAtom, useAtomValue } from "jotai";
 import { useStreamChat } from "@/hooks/useStreamChat";
@@ -185,6 +186,10 @@ export function ChatInput({ chatId }: { chatId?: number }) {
     (c) => c.chatId === chatId,
   );
   const pendingAgentConsent = consentsForThisChat[0] ?? null;
+  const activeMissionByChatId = useAtomValue(activeMissionByChatIdAtom);
+  const activeMissionId = chatId
+    ? activeMissionByChatId.get(chatId)
+    : undefined;
 
   // Get todos for this chat
   const agentTodosByChatId = useAtomValue(agentTodosByChatIdAtom);
@@ -536,6 +541,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
         attachments,
         redo: false,
         requestedChatMode: "plan",
+        missionId: activeMissionId,
       });
       clearAttachments();
       posthog.capture("chat:submit", { chatMode });
@@ -556,6 +562,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
         prompt: currentInput,
         attachments,
         selectedComponents: componentsToSend,
+        missionId: activeMissionId,
       });
       resetEditingState();
       return;
@@ -608,6 +615,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
       redo: false,
       selectedComponents: componentsToSend,
       requestedChatMode: isChatModeLoading ? null : chatMode,
+      missionId: activeMissionId,
     });
     clearAttachments();
     posthog.capture("chat:submit", { chatMode });

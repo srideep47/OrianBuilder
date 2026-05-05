@@ -77,7 +77,7 @@ function getWindowsSanitizedEnv():
  * Wrapper around dugite's exec that uses a sanitized environment on Windows
  * to prevent WSL interop issues.
  */
-async function execGit(
+export async function execGit(
   args: string[],
   path: string,
   options?: IGitStringExecutionOptions,

@@ -55,6 +55,7 @@ import {
   startServer as startEmbeddedServer,
   stopServer as stopEmbeddedServer,
 } from "./ipc/utils/embedded_inference_server";
+import { recoverInterruptedMissionsOnStartup } from "./ipc/utils/mission_recovery";
 
 log.errorHandler.startCatching();
 log.eventLogger.startLogging();
@@ -178,6 +179,17 @@ export async function onReady() {
     logger.error("Error initializing backup manager", e);
   }
   initializeDatabase();
+  recoverInterruptedMissionsOnStartup()
+    .then(({ recoveredRunCount }) => {
+      if (recoveredRunCount > 0) {
+        logger.warn(
+          `Recovered ${recoveredRunCount} interrupted mission run(s) after startup.`,
+        );
+      }
+    })
+    .catch((err) =>
+      logger.warn("Failed to recover interrupted mission runs:", err),
+    );
 
   // Cleanup old ai_messages_json entries to prevent database bloat
   cleanupOldAiMessagesJson();
@@ -272,33 +284,7 @@ export async function onReady() {
     logger.warn("Embedded inference server failed to start:", err),
   );
 
-  // Start the Media AI Python backend
-  const backendPath = path.join(__dirname, "../../mediaai-backend/backend");
-  pythonServer = spawn(
-    "python",
-    ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"],
-    {
-      cwd: backendPath,
-      shell: true,
-      env: {
-        ...process.env,
-        PYTHONPATH: backendPath,
-      },
-    },
-  );
-
-  pythonServer.stdout?.on("data", (data) => {
-    logger.info(`Media AI Backend: ${data}`);
-  });
-  pythonServer.stderr?.on("data", (data) => {
-    logger.error(`Media AI Error: ${data}`);
-  });
-  pythonServer.on("error", (err) => {
-    logger.error("Failed to start Media AI backend:", err);
-  });
-  pythonServer.on("close", (code) => {
-    logger.info(`Media AI backend exited with code ${code}`);
-  });
+  startMediaAiBackend();
 
   await onFirstRunMaybe(settings);
   createWindow();
@@ -373,6 +359,50 @@ declare global {
 let mainWindow: BrowserWindow | null = null;
 let pendingForceCloseData: any = null;
 let pythonServer: ChildProcess | null = null;
+
+function resolveMediaAiBackendPath() {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, "mediaai-backend", "backend");
+  }
+  return path.join(app.getAppPath(), "mediaai-backend", "backend");
+}
+
+function startMediaAiBackend() {
+  const backendPath = resolveMediaAiBackendPath();
+  if (!fs.existsSync(path.join(backendPath, "app", "main.py"))) {
+    logger.warn(
+      `Media AI backend not found at ${backendPath}; skipping auto-start.`,
+    );
+    return;
+  }
+
+  pythonServer = spawn(
+    "python",
+    ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"],
+    {
+      cwd: backendPath,
+      shell: true,
+      env: {
+        ...process.env,
+        PYTHONPATH: backendPath,
+      },
+    },
+  );
+
+  pythonServer.stdout?.on("data", (data) => {
+    logger.info(`Media AI Backend: ${data}`);
+  });
+  pythonServer.stderr?.on("data", (data) => {
+    logger.error(`Media AI Error: ${data}`);
+  });
+  pythonServer.on("error", (err) => {
+    logger.error("Failed to start Media AI backend:", err);
+  });
+  pythonServer.on("close", (code) => {
+    logger.info(`Media AI backend exited with code ${code}`);
+    pythonServer = null;
+  });
+}
 
 const createWindow = () => {
   // Create the browser window.

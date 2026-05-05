@@ -120,6 +120,206 @@ export const messages = sqliteTable("messages", {
     .default(sql`(unixepoch())`),
 });
 
+export const missions = sqliteTable("missions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  appId: integer("app_id")
+    .notNull()
+    .references(() => apps.id, { onDelete: "cascade" }),
+  chatId: integer("chat_id").references(() => chats.id, {
+    onDelete: "set null",
+  }),
+  title: text("title").notNull(),
+  goal: text("goal").notNull(),
+  status: text("status", {
+    enum: ["queued", "running", "paused", "completed", "failed", "cancelled"],
+  })
+    .notNull()
+    .default("queued"),
+  autonomyProfile: text("autonomy_profile", {
+    enum: ["supervised", "trusted-workspace", "full-autopilot-sandbox"],
+  })
+    .notNull()
+    .default("supervised"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  startedAt: integer("started_at", { mode: "timestamp" }),
+  completedAt: integer("completed_at", { mode: "timestamp" }),
+});
+
+export const missionEvents = sqliteTable("mission_events", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  missionId: integer("mission_id")
+    .notNull()
+    .references(() => missions.id, { onDelete: "cascade" }),
+  eventType: text("event_type").notNull(),
+  summary: text("summary").notNull(),
+  body: text("body"),
+  metadata: text("metadata", { mode: "json" }).$type<Record<
+    string,
+    unknown
+  > | null>(),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+export const missionTasks = sqliteTable(
+  "mission_tasks",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    missionId: integer("mission_id")
+      .notNull()
+      .references(() => missions.id, { onDelete: "cascade" }),
+    externalId: text("external_id").notNull(),
+    title: text("title").notNull(),
+    status: text("status", {
+      enum: ["pending", "in_progress", "completed"],
+    })
+      .notNull()
+      .default("pending"),
+    orderIndex: integer("order_index").notNull().default(0),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    completedAt: integer("completed_at", { mode: "timestamp" }),
+  },
+  (table) => [
+    unique("mission_tasks_mission_external_unique").on(
+      table.missionId,
+      table.externalId,
+    ),
+  ],
+);
+
+export const missionRuns = sqliteTable("mission_runs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  missionId: integer("mission_id")
+    .notNull()
+    .references(() => missions.id, { onDelete: "cascade" }),
+  chatId: integer("chat_id").references(() => chats.id, {
+    onDelete: "set null",
+  }),
+  messageId: integer("message_id").references(() => messages.id, {
+    onDelete: "set null",
+  }),
+  status: text("status", {
+    enum: ["running", "completed", "failed", "cancelled"],
+  })
+    .notNull()
+    .default("running"),
+  model: text("model"),
+  requestId: text("request_id"),
+  totalStepsExecuted: integer("total_steps_executed").notNull().default(0),
+  error: text("error"),
+  metadata: text("metadata", { mode: "json" }).$type<Record<
+    string,
+    unknown
+  > | null>(),
+  startedAt: integer("started_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  completedAt: integer("completed_at", { mode: "timestamp" }),
+});
+
+export const missionWorkers = sqliteTable("mission_workers", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  missionId: integer("mission_id")
+    .notNull()
+    .references(() => missions.id, { onDelete: "cascade" }),
+  runId: integer("run_id").references(() => missionRuns.id, {
+    onDelete: "set null",
+  }),
+  workerKey: text("worker_key").notNull(),
+  role: text("role", {
+    enum: ["planner", "architect", "builder", "qa", "reviewer", "integrator"],
+  }).notNull(),
+  status: text("status", {
+    enum: [
+      "queued",
+      "ready",
+      "running",
+      "blocked",
+      "completed",
+      "failed",
+      "cancelled",
+    ],
+  })
+    .notNull()
+    .default("queued"),
+  title: text("title").notNull(),
+  goal: text("goal").notNull(),
+  workspaceProvider: text("workspace_provider", {
+    enum: ["local", "worktree", "docker", "cloud"],
+  })
+    .notNull()
+    .default("local"),
+  workspaceRef: text("workspace_ref"),
+  branchName: text("branch_name"),
+  fileScopes: text("file_scopes", { mode: "json" }).$type<string[] | null>(),
+  dependsOn: text("depends_on", { mode: "json" }).$type<string[] | null>(),
+  metadata: text("metadata", { mode: "json" }).$type<Record<
+    string,
+    unknown
+  > | null>(),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  startedAt: integer("started_at", { mode: "timestamp" }),
+  completedAt: integer("completed_at", { mode: "timestamp" }),
+});
+
+export const missionCheckpoints = sqliteTable("mission_checkpoints", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  missionId: integer("mission_id")
+    .notNull()
+    .references(() => missions.id, { onDelete: "cascade" }),
+  runId: integer("run_id").references(() => missionRuns.id, {
+    onDelete: "set null",
+  }),
+  summary: text("summary").notNull(),
+  metadata: text("metadata", { mode: "json" }).$type<Record<
+    string,
+    unknown
+  > | null>(),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+export const missionArtifacts = sqliteTable("mission_artifacts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  missionId: integer("mission_id")
+    .notNull()
+    .references(() => missions.id, { onDelete: "cascade" }),
+  runId: integer("run_id").references(() => missionRuns.id, {
+    onDelete: "set null",
+  }),
+  artifactType: text("artifact_type", {
+    enum: ["screenshot", "accessibility_tree", "console_output", "runtime"],
+  }).notNull(),
+  title: text("title").notNull(),
+  uri: text("uri"),
+  body: text("body"),
+  mimeType: text("mime_type"),
+  metadata: text("metadata", { mode: "json" }).$type<Record<
+    string,
+    unknown
+  > | null>(),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
 export const versions = sqliteTable(
   "versions",
   {
@@ -145,11 +345,13 @@ export const versions = sqliteTable(
 // Define relations
 export const appsRelations = relations(apps, ({ many }) => ({
   chats: many(chats),
+  missions: many(missions),
   versions: many(versions),
 }));
 
 export const chatsRelations = relations(chats, ({ many, one }) => ({
   messages: many(messages),
+  missions: many(missions),
   app: one(apps, {
     fields: [chats.appId],
     references: [apps.id],
@@ -162,6 +364,93 @@ export const messagesRelations = relations(messages, ({ one }) => ({
     references: [chats.id],
   }),
 }));
+
+export const missionsRelations = relations(missions, ({ one, many }) => ({
+  app: one(apps, {
+    fields: [missions.appId],
+    references: [apps.id],
+  }),
+  chat: one(chats, {
+    fields: [missions.chatId],
+    references: [chats.id],
+  }),
+  events: many(missionEvents),
+  tasks: many(missionTasks),
+  runs: many(missionRuns),
+  workers: many(missionWorkers),
+  checkpoints: many(missionCheckpoints),
+  artifacts: many(missionArtifacts),
+}));
+
+export const missionEventsRelations = relations(missionEvents, ({ one }) => ({
+  mission: one(missions, {
+    fields: [missionEvents.missionId],
+    references: [missions.id],
+  }),
+}));
+
+export const missionTasksRelations = relations(missionTasks, ({ one }) => ({
+  mission: one(missions, {
+    fields: [missionTasks.missionId],
+    references: [missions.id],
+  }),
+}));
+
+export const missionRunsRelations = relations(missionRuns, ({ one, many }) => ({
+  mission: one(missions, {
+    fields: [missionRuns.missionId],
+    references: [missions.id],
+  }),
+  chat: one(chats, {
+    fields: [missionRuns.chatId],
+    references: [chats.id],
+  }),
+  message: one(messages, {
+    fields: [missionRuns.messageId],
+    references: [messages.id],
+  }),
+  checkpoints: many(missionCheckpoints),
+  workers: many(missionWorkers),
+}));
+
+export const missionWorkersRelations = relations(missionWorkers, ({ one }) => ({
+  mission: one(missions, {
+    fields: [missionWorkers.missionId],
+    references: [missions.id],
+  }),
+  run: one(missionRuns, {
+    fields: [missionWorkers.runId],
+    references: [missionRuns.id],
+  }),
+}));
+
+export const missionCheckpointsRelations = relations(
+  missionCheckpoints,
+  ({ one }) => ({
+    mission: one(missions, {
+      fields: [missionCheckpoints.missionId],
+      references: [missions.id],
+    }),
+    run: one(missionRuns, {
+      fields: [missionCheckpoints.runId],
+      references: [missionRuns.id],
+    }),
+  }),
+);
+
+export const missionArtifactsRelations = relations(
+  missionArtifacts,
+  ({ one }) => ({
+    mission: one(missions, {
+      fields: [missionArtifacts.missionId],
+      references: [missions.id],
+    }),
+    run: one(missionRuns, {
+      fields: [missionArtifacts.runId],
+      references: [missionRuns.id],
+    }),
+  }),
+);
 
 export const language_model_providers = sqliteTable(
   "language_model_providers",

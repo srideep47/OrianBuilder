@@ -329,6 +329,10 @@ const BaseUserSettingsFields = {
   maxChatTurnsInContext: z.number().optional(),
   maxToolCallSteps: z.number().optional(),
   thinkingBudget: z.enum(["low", "medium", "high"]).optional(),
+  autonomousMode: z.boolean().optional(),
+  defaultMissionAutonomyProfile: z
+    .enum(["supervised", "trusted-workspace", "full-autopilot-sandbox"])
+    .optional(),
   enableProLazyEditsMode: z.boolean().optional(),
   proLazyEditsMode: z.enum(["off", "v1", "v2"]).optional(),
   enableProSmartFilesContextMode: z.boolean().optional(),

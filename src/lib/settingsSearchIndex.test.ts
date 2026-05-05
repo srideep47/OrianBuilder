@@ -44,4 +44,17 @@ describe("SETTINGS_SEARCH_INDEX", () => {
       sectionLabel: "Experiments",
     });
   });
+
+  it("includes default mission autonomy under agent permissions", () => {
+    expect(
+      SETTINGS_SEARCH_INDEX.find(
+        (item) => item.id === SETTING_IDS.defaultMissionAutonomyProfile,
+      ),
+    ).toMatchObject({
+      id: SETTING_IDS.defaultMissionAutonomyProfile,
+      label: "Default Mission Autonomy",
+      sectionId: SECTION_IDS.agentPermissions,
+      sectionLabel: "Agent Permissions",
+    });
+  });
 });

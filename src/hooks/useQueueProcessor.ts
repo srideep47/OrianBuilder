@@ -83,6 +83,7 @@ export function useQueueProcessor() {
         attachments: messageToSend.attachments,
         selectedComponents: messageToSend.selectedComponents,
         requestedChatMode: chatMode,
+        missionId: messageToSend.missionId,
       });
 
       // Only process one chatId per effect run

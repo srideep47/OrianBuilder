@@ -51,6 +51,7 @@ import {
   modelMarketplaceContracts,
   modelMarketplaceEvents,
 } from "../types/model_marketplace";
+import { missionContracts } from "../types/mission";
 
 // =============================================================================
 // Invoke Channels (derived from all contracts)
@@ -111,6 +112,7 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(imageGenerationContracts),
   ...getInvokeChannels(embeddedModelContracts),
   ...getInvokeChannels(modelMarketplaceContracts),
+  ...getInvokeChannels(missionContracts),
 
   // Test-only channels
   ...TEST_INVOKE_CHANNELS,

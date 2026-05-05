@@ -1,13 +1,5 @@
 import { spawn as spawnProcess } from "node:child_process";
-
-// Dynamically import node-pty to handle its absence gracefully
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let spawnPty: any;
-try {
-  spawnPty = require("node-pty").spawn;
-} catch {
-  spawnPty = undefined;
-}
+import { spawn as spawnPty } from "node-pty";
 
 const DEFAULT_PTY_NAME = "xterm-color";
 const DEFAULT_PTY_COLS = 160;
@@ -239,14 +231,8 @@ export async function runPtyCommand(
   command: string,
   args: string[],
   options: PtyCommandExecutionOptions = {},
-  ptySpawner?: PtySpawner,
+  ptySpawner: PtySpawner = spawnPty,
 ): Promise<PtyCommandExecutionResult> {
-  const spawner = ptySpawner ?? spawnPty;
-  if (!spawner) {
-    throw new PtyCommandExecutionError({
-      message: `Failed to run command '${command}': node-pty is not available. Please install Visual Studio Build Tools with Spectre-mitigated libraries.`,
-    });
-  }
   return new Promise((resolve, reject) => {
     const displayedCommand =
       options.displayCommand ?? buildDisplayedCommand(command, args);
@@ -273,7 +259,7 @@ export async function runPtyCommand(
 
     let ptyProcess: PtyProcessLike;
     try {
-      ptyProcess = spawner(command, args, {
+      ptyProcess = ptySpawner(command, args, {
         cols: options.cols ?? DEFAULT_PTY_COLS,
         cwd: options.cwd,
         env: options.env ?? process.env,

@@ -16,6 +16,14 @@ class McpManager {
 
   private clients = new Map<number, MCPClient>();
 
+  listConnectedServerIds() {
+    return [...this.clients.keys()];
+  }
+
+  isConnected(serverId: number) {
+    return this.clients.has(serverId);
+  }
+
   async getClient(serverId: number): Promise<MCPClient> {
     const existing = this.clients.get(serverId);
     if (existing) return existing;
@@ -62,6 +70,11 @@ class McpManager {
       c.close();
       this.clients.delete(serverId);
     }
+  }
+
+  async reload(serverId: number): Promise<MCPClient> {
+    this.dispose(serverId);
+    return this.getClient(serverId);
   }
 }
 

@@ -689,6 +689,125 @@ function listenToProcess({
   });
 }
 
+export async function runAppById(
+  event: Electron.IpcMainInvokeEvent,
+  appId: number,
+): Promise<void> {
+  return withLock(appId, async () => {
+    // Check if app is already running
+    if (runningApps.has(appId)) {
+      logger.debug(`App ${appId} is already running.`);
+      // Re-emit the proxy URL so the frontend can restore the preview
+      const appInfo = runningApps.get(appId);
+      if (appInfo?.proxyUrl && appInfo?.originalUrl) {
+        emitProxyServerStarted({
+          appId,
+          event,
+          proxyUrl: appInfo.proxyUrl,
+          originalUrl: appInfo.originalUrl,
+          mode: appInfo.mode,
+        });
+      }
+      return;
+    }
+
+    const app = await db.query.apps.findFirst({
+      where: eq(apps.id, appId),
+    });
+
+    if (!app) {
+      throw new DyadError("App not found", DyadErrorKind.NotFound);
+    }
+
+    logger.debug(`Starting app ${appId} in path ${app.path}`);
+
+    const appPath = getDyadAppPath(app.path);
+    try {
+      // There may have been a previous run that left a process on this port.
+      await cleanUpPort(getAppPort(appId));
+      await executeApp({
+        appPath,
+        appId,
+        event,
+        isNeon: !!app.neonProjectId,
+        installCommand: app.installCommand,
+        startCommand: app.startCommand,
+      });
+
+      return;
+    } catch (error: any) {
+      logger.error(`Error running app ${appId}:`, error);
+      // Ensure cleanup if error happens during setup but before process events are handled
+      if (
+        runningApps.has(appId) &&
+        runningApps.get(appId)?.processId === processCounter.value
+      ) {
+        runningApps.delete(appId);
+      }
+      throw new DyadError(
+        `Failed to run app ${appId}: ${error.message}`,
+        DyadErrorKind.External,
+      );
+    }
+  });
+}
+
+export async function stopAppById(appId: number): Promise<void> {
+  logger.log(
+    `Attempting to stop app ${appId}. Current running apps: ${runningApps.size}`,
+  );
+  return withLock(appId, async () => {
+    const appInfo = runningApps.get(appId);
+
+    if (!appInfo) {
+      logger.log(
+        `App ${appId} not found in running apps map. Assuming already stopped.`,
+      );
+      return;
+    }
+
+    const { process, processId } = appInfo;
+    logger.log(
+      `Found running app ${appId} with processId ${processId}${process?.pid ? ` (PID: ${process.pid})` : ""}. Attempting to stop.`,
+    );
+
+    // Check if the process is already exited or closed
+    if (process && (process.exitCode !== null || process.signalCode !== null)) {
+      logger.log(
+        `Process for app ${appId} (PID: ${process.pid}) already exited (code: ${process.exitCode}, signal: ${process.signalCode}). Cleaning up map.`,
+      );
+      runningApps.delete(appId); // Ensure cleanup if somehow missed
+      return;
+    }
+
+    try {
+      await stopAppByInfo(appId, appInfo);
+
+      // Now, safely remove the app from the map *after* confirming closure
+      if (process) {
+        removeAppIfCurrentProcess(appId, process);
+      }
+
+      return;
+    } catch (error: any) {
+      logger.error(
+        `Error stopping app ${appId}${process?.pid ? ` (PID: ${process.pid}, processId: ${processId})` : ` (processId: ${processId})`}:`,
+        error,
+      );
+      // Attempt cleanup even if an error occurred during the stop process
+      if (process) {
+        removeAppIfCurrentProcess(appId, process);
+      } else if (appInfo.mode !== "cloud") {
+        runningApps.delete(appId);
+      }
+      throw new DyadError(
+        `Failed to stop app ${appId}: ${error.message}`,
+        DyadErrorKind.External,
+      );
+    }
+  });
+}
+
 async function executeAppInDocker({
   appPath,
   appId,
@@ -1482,124 +1601,11 @@ export function registerAppHandlers() {
   });
 
   createTypedHandler(appContracts.runApp, async (event, params) => {
-    const { appId } = params;
-    return withLock(appId, async () => {
-      // Check if app is already running
-      if (runningApps.has(appId)) {
-        logger.debug(`App ${appId} is already running.`);
-        // Re-emit the proxy URL so the frontend can restore the preview
-        const appInfo = runningApps.get(appId);
-        if (appInfo?.proxyUrl && appInfo?.originalUrl) {
-          emitProxyServerStarted({
-            appId,
-            event,
-            proxyUrl: appInfo.proxyUrl,
-            originalUrl: appInfo.originalUrl,
-            mode: appInfo.mode,
-          });
-        }
-        return;
-      }
-
-      const app = await db.query.apps.findFirst({
-        where: eq(apps.id, appId),
-      });
-
-      if (!app) {
-        throw new DyadError("App not found", DyadErrorKind.NotFound);
-      }
-
-      logger.debug(`Starting app ${appId} in path ${app.path}`);
-
-      const appPath = getDyadAppPath(app.path);
-      try {
-        // There may have been a previous run that left a process on this port.
-        await cleanUpPort(getAppPort(appId));
-        await executeApp({
-          appPath,
-          appId,
-          event,
-          isNeon: !!app.neonProjectId,
-          installCommand: app.installCommand,
-          startCommand: app.startCommand,
-        });
-
-        return;
-      } catch (error: any) {
-        logger.error(`Error running app ${appId}:`, error);
-        // Ensure cleanup if error happens during setup but before process events are handled
-        if (
-          runningApps.has(appId) &&
-          runningApps.get(appId)?.processId === processCounter.value
-        ) {
-          runningApps.delete(appId);
-        }
-        throw new DyadError(
-          `Failed to run app ${appId}: ${error.message}`,
-          DyadErrorKind.External,
-        );
-      }
-    });
+    await runAppById(event, params.appId);
   });
 
   createTypedHandler(appContracts.stopApp, async (_, params) => {
-    const { appId } = params;
-    logger.log(
-      `Attempting to stop app ${appId}. Current running apps: ${runningApps.size}`,
-    );
-    return withLock(appId, async () => {
-      const appInfo = runningApps.get(appId);
-
-      if (!appInfo) {
-        logger.log(
-          `App ${appId} not found in running apps map. Assuming already stopped.`,
-        );
-        return;
-      }
-
-      const { process, processId } = appInfo;
-      logger.log(
-        `Found running app ${appId} with processId ${processId}${process?.pid ? ` (PID: ${process.pid})` : ""}. Attempting to stop.`,
-      );
-
-      // Check if the process is already exited or closed
-      if (
-        process &&
-        (process.exitCode !== null || process.signalCode !== null)
-      ) {
-        logger.log(
-          `Process for app ${appId} (PID: ${process.pid}) already exited (code: ${process.exitCode}, signal: ${process.signalCode}). Cleaning up map.`,
-        );
-        runningApps.delete(appId); // Ensure cleanup if somehow missed
-        return;
-      }
-
-      try {
-        await stopAppByInfo(appId, appInfo);
-
-        // Now, safely remove the app from the map *after* confirming closure
-        if (process) {
-          removeAppIfCurrentProcess(appId, process);
-        }
-
-        return;
-      } catch (error: any) {
-        logger.error(
-          `Error stopping app ${appId}${process?.pid ? ` (PID: ${process.pid}, processId: ${processId})` : ` (processId: ${processId})`}:`,
-          error,
-        );
-        // Attempt cleanup even if an error occurred during the stop process
-        if (process) {
-          removeAppIfCurrentProcess(appId, process);
-        } else if (appInfo.mode !== "cloud") {
-          runningApps.delete(appId);
-        }
-        throw new DyadError(
-          `Failed to stop app ${appId}: ${error.message}`,
-          DyadErrorKind.External,
-        );
-      }
-    });
+    await stopAppById(params.appId);
   });
 
   createTypedHandler(

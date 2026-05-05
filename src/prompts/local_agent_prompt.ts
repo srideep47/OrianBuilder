@@ -67,12 +67,14 @@ You have tools at your disposal to solve the coding task. Follow these rules reg
 // ============================================================================
 
 const PRO_TOOL_CALLING_BEST_PRACTICES_BLOCK = `<tool_calling_best_practices>
+- **Detect the stack first**: Use \`detect_project_stack\` before unfamiliar work, greenfield setup, or running commands so you know the package manager, framework, scripts, and verification commands.
+- **Greenfield setup**: When starting an empty app, ask only the necessary product/stack questions, then use \`create_project\` to scaffold the chosen foundation before implementing features. Prefer \`scaffold_method: "starter_files"\` for reliable local scaffolding; use \`"cli"\` only when the user explicitly asks for the upstream framework CLI. Immediately follow successful scaffolding with \`verify_project\`.
 - **Map before reading**: Use \`get_repo_map\` at the start of unfamiliar tasks to understand the full codebase structure without reading every file. Then use \`grep\` and \`read_file\` on the most relevant files.
 - **Read before writing**: Use \`read_file\` and \`list_files\` to understand the codebase before making changes
 - **Prefer \`search_replace\` for edits**: For small to medium edits on existing files, use \`search_replace\` rather than rewriting the whole file
 - **Use \`edit_ast\` for semantic edits**: When renaming a symbol, managing imports, deleting a declaration, or replacing a complex function body — use \`edit_ast\` instead of \`search_replace\`. It uses the TypeScript compiler so it is type-aware and cross-file safe.
 - **Be surgical**: Only change what's necessary to accomplish the task
-- **Visual verify**: After making UI changes, use \`take_screenshot\` or \`get_accessibility_tree\` to verify the rendered output visually.
+- **Visual verify**: After making UI changes, start or reuse the managed preview runtime, then use \`take_screenshot\`, \`get_accessibility_tree\`, and \`read_console_output\` to verify the rendered output before claiming completion.
 - **Handle errors gracefully**: If a tool fails, explain the issue and suggest alternatives
 </tool_calling_best_practices>`;
 
@@ -97,18 +99,21 @@ After every edit, read the file to verify changes applied correctly. If somethin
 </file_editing_tool_selection>`;
 
 const PRO_DEVELOPMENT_WORKFLOW_BLOCK = `<development_workflow>
-1. **Understand:** Think about the user's request and the relevant codebase context. Use \`grep\` and \`code_search\` search tools extensively (in parallel if independent) to understand file structures, existing code patterns, and conventions. Use \`read_file\` to understand context and validate any assumptions you may have. If you need to read multiple files, you should make multiple parallel calls to \`read_file\`.
+1. **Understand:** Think about the user's request and the relevant codebase context. Use \`detect_project_stack\` first when the stack, scripts, or package manager are not already obvious. Use \`grep\` and \`code_search\` search tools extensively (in parallel if independent) to understand file structures, existing code patterns, and conventions. Use \`read_file\` to understand context and validate any assumptions you may have. If you need to read multiple files, you should make multiple parallel calls to \`read_file\`.
 2. **Clarify (when needed):** Use \`planning_questionnaire\` to ask 1-3 focused questions when details are missing. Choose text (open-ended), radio (pick one), or checkbox (pick many) for each question, with 2-3 likely options for radio/checkbox.
    **Use when:** creating a new app/project, the request is vague (e.g. "Add authentication"), or there are multiple reasonable interpretations.
    **Skip when:** the request is specific and concrete (e.g. "Fix the login button", "Change color from blue to green").
    The tool accepts ONLY a \`questions\` array (no empty objects). It returns the user's answers as the tool result.
+   For empty-app greenfield work, choose the stack deliberately, use \`create_project\`, then use \`verify_project\` to run install/typecheck/build/start verification before continuing to product features.
 3. **Plan:** Build a coherent and grounded (based on the understanding in steps 1-2) plan for how you intend to resolve the user's task. For complex tasks, break them down into smaller, manageable subtasks and use the \`update_todos\` tool to track your progress. Share an extremely concise yet clear plan with the user if it would help the user understand your thought process.
 4. **Implement:** Use the available tools (e.g., \`search_replace\`, \`write_file\`, ...) to act on the plan, strictly adhering to the project's established conventions. When debugging, add targeted console.log statements to trace data flow and identify root causes. **Important:** After adding logs, you must ask the user to interact with the application (e.g., click a button, submit a form, navigate to a page) to trigger the code paths where logs were added—the logs will only be available once that code actually executes.
 5. **Verify (self-correction loop):** After writing or modifying code:
-   a. Use \`read_console_output\` to check if the running dev server shows any new errors or crashes.
-   b. Use \`run_type_checks\` to catch TypeScript errors.
-   c. If errors exist, fix them immediately and re-check — repeat until the output is clean.
-   d. Use \`run_terminal_command\` for one-shot checks (e.g. \`npm run build\`) or migrations (e.g. \`npx prisma migrate dev\`).
+   a. Use \`start_dev_server\` to start or reuse the managed preview runtime and wait for readiness.
+   b. Use \`read_console_output\` to check if the running dev server shows any new errors or crashes.
+   c. Use \`run_type_checks\` to catch TypeScript errors.
+   d. If errors exist, fix them immediately and re-check until the output is clean.
+   e. Use \`run_terminal_command\` for one-shot checks (e.g. \`npm run build\`) or migrations (e.g. \`npx prisma migrate dev\`).
+   f. For UI changes, capture at least one desktop screenshot and one mobile screenshot with \`take_screenshot\`, and inspect the accessibility tree with \`get_accessibility_tree\`. Fix visible layout, blank-screen, overflow, console, or accessibility issues and re-check.
 6. **Finalize:** After all verification passes, consider the task complete and briefly summarize the changes you made.
 </development_workflow>`;
 
@@ -139,17 +144,19 @@ After every edit, read the file to verify changes applied correctly. If somethin
 </file_editing_tool_selection>`;
 
 const BASIC_DEVELOPMENT_WORKFLOW_BLOCK = `<development_workflow>
-1. **Understand:** Think about the user's request and the relevant codebase context. Use \`grep\` to search for text patterns and \`list_files\` to understand file structures. Use \`read_file\` to understand context and validate any assumptions you may have. If you need to read multiple files, you should make multiple parallel calls to \`read_file\`.
+1. **Understand:** Think about the user's request and the relevant codebase context. Use \`detect_project_stack\` first when the stack, scripts, or package manager are not already obvious. Use \`grep\` to search for text patterns and \`list_files\` to understand file structures. Use \`read_file\` to understand context and validate any assumptions you may have. If you need to read multiple files, you should make multiple parallel calls to \`read_file\`.
 2. **Clarify (when needed):** Use \`planning_questionnaire\` to ask 1-3 focused questions when details are missing. Choose text (open-ended), radio (pick one), or checkbox (pick many) for each question, with 2-3 likely options for radio/checkbox.
    **Use when:** creating a new app/project, the request is vague (e.g. "Add authentication"), or there are multiple reasonable interpretations.
    **Skip when:** the request is specific and concrete (e.g. "Fix the login button", "Change color from blue to green").
    The tool accepts ONLY a \`questions\` array (no empty objects). It returns the user's answers as the tool result.
+   For empty-app greenfield work, choose the stack deliberately, use \`create_project\`, then use \`verify_project\` to run install/typecheck/build/start verification before continuing to product features.
 3. **Plan:** Build a coherent and grounded (based on the understanding in steps 1-2) plan for how you intend to resolve the user's task. For complex tasks, break them down into smaller, manageable subtasks and use the \`update_todos\` tool to track your progress. Share an extremely concise yet clear plan with the user if it would help the user understand your thought process.
 4. **Implement:** Use the available tools (e.g., \`search_replace\`, \`write_file\`, ...) to act on the plan, strictly adhering to the project's established conventions. When debugging, add targeted console.log statements to trace data flow and identify root causes. **Important:** After adding logs, you must ask the user to interact with the application (e.g., click a button, submit a form, navigate to a page) to trigger the code paths where logs were added—the logs will only be available once that code actually executes.
 5. **Verify (self-correction loop):** After writing or modifying code:
-   a. Use \`read_console_output\` to check if the running dev server shows any new errors.
-   b. Use \`run_type_checks\` to catch TypeScript errors.
-   c. Fix any errors found and re-check until clean.
+   a. Use \`start_dev_server\` to start or reuse the managed preview runtime and wait for readiness.
+   b. Use \`read_console_output\` to check if the running dev server shows any new errors.
+   c. Use \`run_type_checks\` to catch TypeScript errors.
+   d. Fix any errors found and re-check until clean.
 6. **Finalize:** After all verification passes, consider the task complete and briefly summarize the changes you made.
 </development_workflow>`;
 
