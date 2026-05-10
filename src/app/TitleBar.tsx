@@ -1,11 +1,26 @@
-import { useAtomValue } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
-import { useRouter, useRouterState } from "@tanstack/react-router";
+import { useLoadApps } from "@/hooks/useLoadApps";
+import { useRouter } from "@tanstack/react-router";
 import { useSettings } from "@/hooks/useSettings";
+import { Button } from "@/components/ui/button";
+// @ts-ignore
+import logo from "../../assets/logo.svg";
+import { providerSettingsRoute } from "@/routes/settings/providers/$provider";
+import { cn } from "@/lib/utils";
 import { useDeepLink } from "@/contexts/DeepLinkContext";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { OrianBuilderProSuccessDialog } from "@/components/OrianBuilderProSuccessDialog";
+import { useTheme } from "@/contexts/ThemeContext";
 import { ipc } from "@/ipc/types";
 import { useSystemPlatform } from "@/hooks/useSystemPlatform";
+import { useUserBudgetInfo } from "@/hooks/useUserBudgetInfo";
+import type { UserBudgetInfo } from "@/ipc/types";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { ChatTabs } from "@/components/chat/ChatTabs";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { Wrench, Cog, Trash2 } from "lucide-react";
@@ -20,98 +35,171 @@ import { showError, showSuccess } from "@/lib/toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
 import { useTranslation } from "react-i18next";
-import { providerSettingsRoute } from "@/routes/settings/providers/$provider";
 
 export const TitleBar = () => {
-  const { t } = useTranslation("home");
+  const [selectedAppId] = useAtom(selectedAppIdAtom);
   const selectedChatId = useAtomValue(selectedChatIdAtom);
+  const { apps } = useLoadApps();
   const { navigate } = useRouter();
   const { refreshSettings } = useSettings();
   const queryClient = useQueryClient();
+  const [isSuccessDialogOpen, setIsSuccessDialogOpen] = useState(false);
   const platform = useSystemPlatform();
   const showWindowControls = platform !== null && platform !== "darwin";
+
+  const showDyadProSuccessDialog = () => {
+    setIsSuccessDialogOpen(true);
+  };
 
   const { lastDeepLink, clearLastDeepLink } = useDeepLink();
   useEffect(() => {
     const handleDeepLink = async () => {
-      if (lastDeepLink?.type === "orianbuilder-pro-return") {
+      if (lastDeepLink?.type === "dyad-pro-return") {
         await refreshSettings();
+        // Refetch user budget when OrianBuilder Pro key is set via deep link
         queryClient.invalidateQueries({ queryKey: queryKeys.userBudget.info });
+        showDyadProSuccessDialog();
         clearLastDeepLink();
       }
     };
     handleDeepLink();
   }, [lastDeepLink?.timestamp]);
 
-  const routerState = useRouterState();
-  const isHomeRoute = routerState.location.pathname === "/";
+  // Get selected app name
+  const selectedApp = apps.find((app) => app.id === selectedAppId);
+  const displayText = selectedApp
+    ? `App: ${selectedApp.name}`
+    : "(no app selected)";
 
-  const ctx = routerState.location.pathname.replace("/", "") || "apps";
+  const handleAppClick = () => {
+    if (selectedApp) {
+      navigate({ to: "/app-details", search: { appId: selectedApp.id } });
+    }
+  };
 
   return (
     <>
-      <div className="design-topbar z-11 absolute top-0 left-0 w-full">
-        {/* Left padding: macOS needs space for traffic lights, Windows for sidebar icon column */}
-        <div
-          style={{ width: showWindowControls ? "64px" : "76px", flexShrink: 0 }}
+      <div className="@container z-11 w-full h-11 pt-3 bg-(--sidebar) absolute top-0 left-0 app-region-drag flex items-center">
+        <div className={`${showWindowControls ? "pl-2" : "pl-18"}`}></div>
+
+        <img
+          src={logo}
+          alt="OrianBuilder Logo"
+          className="w-6 h-6 mr-0.5 ml-2"
         />
-        <span className="app-ctx">
-          <span className="dot" />
-          OrianBuilder · {ctx}
-        </span>
-
-        {!isHomeRoute && (
-          <div className="flex-1 min-w-0 overflow-hidden">
-            <ChatTabs selectedChatId={selectedChatId} />
-          </div>
-        )}
-
-        {isHomeRoute && (
-          <button
-            className="win-btn text-[10px] font-medium px-2 whitespace-nowrap"
-            style={{ width: "auto", color: "rgba(168,140,255,.9)" }}
-            onClick={() =>
-              navigate({
-                to: providerSettingsRoute.id,
-                params: { provider: "auto" },
-              })
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                data-testid="title-bar-app-name-button"
+                variant="outline"
+                size="sm"
+                className={`hidden @2xl:block no-app-region-drag text-xs max-w-38 truncate font-medium ${
+                  selectedApp ? "cursor-pointer" : ""
+                }`}
+                onClick={handleAppClick}
+              />
             }
           >
-            {t("proBanner.alreadyHavePro")}
-          </button>
-        )}
+            {displayText}
+          </TooltipTrigger>
+          <TooltipContent>
+            {selectedApp ? selectedApp.name : "No app selected"}
+          </TooltipContent>
+        </Tooltip>
 
-        {!isHomeRoute && <TitleBarActions />}
+        <div className="flex-1 min-w-0 overflow-hidden no-app-region-drag">
+          <ChatTabs selectedChatId={selectedChatId} />
+        </div>
 
-        {showWindowControls && <DesignWindowControls />}
+        <TitleBarActions />
+
+        {showWindowControls && <WindowsControls />}
       </div>
+
+      <OrianBuilderProSuccessDialog
+        isOpen={isSuccessDialogOpen}
+        onClose={() => setIsSuccessDialogOpen(false)}
+      />
     </>
   );
 };
 
-function DesignWindowControls() {
+function WindowsControls() {
+  const { isDarkMode } = useTheme();
+
+  const minimizeWindow = () => {
+    ipc.system.minimizeWindow();
+  };
+
+  const maximizeWindow = () => {
+    ipc.system.maximizeWindow();
+  };
+
+  const closeWindow = () => {
+    ipc.system.closeWindow();
+  };
+
   return (
-    <div className="win-btns">
+    <div className="ml-auto flex no-app-region-drag">
       <button
-        className="win-btn"
+        className="w-10 h-10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+        onClick={minimizeWindow}
         aria-label="Minimize"
-        onClick={() => ipc.system.minimizeWindow()}
       >
-        —
+        <svg
+          width="12"
+          height="1"
+          viewBox="0 0 12 1"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <rect
+            width="12"
+            height="1"
+            fill={isDarkMode ? "#ffffff" : "#000000"}
+          />
+        </svg>
       </button>
       <button
-        className="win-btn"
+        className="w-10 h-10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+        onClick={maximizeWindow}
         aria-label="Maximize"
-        onClick={() => ipc.system.maximizeWindow()}
       >
-        ⤢
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <rect
+            x="0.5"
+            y="0.5"
+            width="11"
+            height="11"
+            stroke={isDarkMode ? "#ffffff" : "#000000"}
+          />
+        </svg>
       </button>
       <button
-        className="win-btn close"
+        className="w-10 h-10 flex items-center justify-center hover:bg-red-500 transition-colors"
+        onClick={closeWindow}
         aria-label="Close"
-        onClick={() => ipc.system.closeWindow()}
       >
-        ✕
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M1 1L11 11M1 11L11 1"
+            stroke={isDarkMode ? "#ffffff" : "#000000"}
+            strokeWidth="1.5"
+          />
+        </svg>
       </button>
     </div>
   );
@@ -198,5 +286,62 @@ function TitleBarActions() {
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
+  );
+}
+
+export function DyadProButton({
+  isDyadProEnabled,
+}: {
+  isDyadProEnabled: boolean;
+}) {
+  const { navigate } = useRouter();
+  const { userBudget } = useUserBudgetInfo();
+  return (
+    <Button
+      data-testid="title-bar-dyad-pro-button"
+      onClick={() => {
+        navigate({
+          to: providerSettingsRoute.id,
+          params: { provider: "auto" },
+        });
+      }}
+      variant="outline"
+      className={cn(
+        "hidden @2xl:block ml-1 no-app-region-drag h-7 bg-indigo-600 text-white dark:bg-indigo-600 dark:text-white text-xs px-2 pt-1 pb-1",
+        !isDyadProEnabled && "bg-zinc-600 dark:bg-zinc-600",
+      )}
+      size="sm"
+    >
+      {isDyadProEnabled
+        ? userBudget?.isTrial
+          ? "Pro Trial"
+          : "Pro"
+        : "Pro (off)"}
+      {userBudget && isDyadProEnabled && (
+        <AICreditStatus userBudget={userBudget} />
+      )}
+    </Button>
+  );
+}
+
+export function AICreditStatus({
+  userBudget,
+}: {
+  userBudget: NonNullable<UserBudgetInfo>;
+}) {
+  const remaining = Math.round(
+    userBudget.totalCredits - userBudget.usedCredits,
+  );
+  return (
+    <Tooltip>
+      <TooltipTrigger>
+        <div className="text-xs pl-1 mt-0.5">{remaining} credits</div>
+      </TooltipTrigger>
+      <TooltipContent>
+        <div>
+          <p>Note: there is a slight delay in updating the credit status.</p>
+        </div>
+      </TooltipContent>
+    </Tooltip>
   );
 }

@@ -2,7 +2,7 @@ import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ReactNode } from "react";
 
-type SetupProviderVariant = "google" | "openrouter" | "orianbuilder";
+type SetupProviderVariant = "google" | "openrouter" | "dyad";
 
 export function SetupProviderCard({
   variant,
@@ -28,7 +28,7 @@ export function SetupProviderCard({
   return (
     <div
       className={cn(
-        "galaxy-provider-card p-3 border rounded-lg cursor-pointer transition-colors relative",
+        "p-3 border rounded-lg cursor-pointer transition-colors relative",
         styles.container,
         className,
       )}
@@ -97,7 +97,7 @@ function getVariantStyles(variant: SetupProviderVariant) {
           "text-zinc-600 dark:text-zinc-300 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700",
         chevronColor: "text-zinc-400 dark:text-zinc-500",
       } as const;
-    case "orianbuilder":
+    case "dyad":
       return {
         container:
           "bg-primary/10 border-primary/50 dark:bg-violet-800/50 dark:border-violet-700 hover:bg-violet-100 dark:hover:bg-violet-900/70",

@@ -5,6 +5,8 @@ import { queryKeys } from "@/lib/queryKeys";
 export function useVercelDeployments(appId: number) {
   const queryClient = useQueryClient();
 
+  const TERMINAL_STATES = new Set(["READY", "ERROR", "CANCELED"]);
+
   const {
     data: deployments = [],
     isLoading,
@@ -15,7 +17,14 @@ export function useVercelDeployments(appId: number) {
     queryFn: async () => {
       return ipc.vercel.getDeployments({ appId });
     },
-    // enabled: false, // Don't auto-fetch, only fetch when explicitly requested
+    // Poll every 5 s while any deployment is in a non-terminal state;
+    // stop polling once all are done.
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data || data.length === 0) return false;
+      const hasActive = data.some((d) => !TERMINAL_STATES.has(d.readyState));
+      return hasActive ? 5000 : false;
+    },
   });
 
   const disconnectProjectMutation = useMutation<void, Error, void>({

@@ -6,6 +6,7 @@ import {
   Mic,
   MicOff,
   Loader2,
+  Lock,
 } from "lucide-react";
 import {
   Tooltip,
@@ -34,6 +35,7 @@ import { useLoadApps } from "@/hooks/useLoadApps";
 import { AppSearchDialog } from "../AppSearchDialog";
 import { useVoiceToText } from "@/hooks/useVoiceToText";
 import { useUserBudgetInfo } from "@/hooks/useUserBudgetInfo";
+import { ipc } from "@/ipc/types";
 import { useCallback, useEffect } from "react";
 import { showError } from "@/lib/toast";
 
@@ -51,7 +53,7 @@ export function HomeChatInput({
   }); // eslint-disable-line @typescript-eslint/no-unused-vars
   useChatModeToggle();
   const { userBudget } = useUserBudgetInfo();
-  const isProEnabled = !!userBudget && !!settings?.enableOrianBuilderPro;
+  const isProEnabled = !!userBudget && !!settings?.enableDyadPro;
 
   const handleTranscription = useCallback(
     (text: string) => {
@@ -147,7 +149,7 @@ export function HomeChatInput({
       <div className="p-4" data-testid="home-chat-input-container">
         <div
           className={cn(
-            "galaxy-chat-input relative flex flex-col border border-border rounded-2xl bg-(--background-lighter) transition-colors duration-200",
+            "relative flex flex-col border border-border rounded-2xl bg-(--background-lighter) transition-colors duration-200",
             "hover:border-primary/30",
             "focus-within:border-primary/30 focus-within:ring-1 focus-within:ring-primary/20",
             isDraggingOver && "ring-2 ring-blue-500 border-blue-500",
@@ -186,7 +188,7 @@ export function HomeChatInput({
             />
 
             {/* Voice-to-text button */}
-            {isProEnabled && (
+            {isProEnabled ? (
               <Tooltip>
                 <TooltipTrigger
                   render={
@@ -224,6 +226,24 @@ export function HomeChatInput({
                       ? "Transcribing..."
                       : "Voice to text"}
                 </TooltipContent>
+              </Tooltip>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      onClick={() =>
+                        ipc.system.openExternalUrl("https://dyad.sh/pro")
+                      }
+                      aria-label="Voice to text (Pro)"
+                      className="px-2 py-2 mb-0.5 text-muted-foreground hover:text-primary rounded-lg transition-colors duration-150 cursor-pointer relative"
+                    />
+                  }
+                >
+                  <Mic size={20} />
+                  <Lock size={10} className="absolute -top-0.5 -right-0.5" />
+                </TooltipTrigger>
+                <TooltipContent>Voice to text (requires Pro)</TooltipContent>
               </Tooltip>
             )}
 
@@ -263,10 +283,7 @@ export function HomeChatInput({
           </div>
           <div className="px-2 flex items-center justify-between pb-0.5 pt-0.5">
             <div className="flex items-center">
-              <ChatInputControls
-                showContextFilesPicker={false}
-                showProSelector={false}
-              />
+              <ChatInputControls showContextFilesPicker={false} />
               {settings?.enableSelectAppFromHomeChatInput && (
                 <Tooltip>
                   <TooltipTrigger

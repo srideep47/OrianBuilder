@@ -70,7 +70,7 @@ export function AppList({ show }: { show?: boolean }) {
             <Button
               onClick={handleNewApp}
               variant="outline"
-              className="galaxy-sidebar-btn flex items-center justify-start gap-2 mx-2 py-2"
+              className="flex items-center justify-start gap-2 mx-2 py-2"
             >
               <PlusCircle size={16} />
               <span>New App</span>
@@ -78,7 +78,7 @@ export function AppList({ show }: { show?: boolean }) {
             <Button
               onClick={() => setIsSearchDialogOpen(!isSearchDialogOpen)}
               variant="outline"
-              className="galaxy-sidebar-btn flex items-center justify-start gap-2 mx-2 py-3"
+              className="flex items-center justify-start gap-2 mx-2 py-3"
               data-testid="search-apps-button"
             >
               <Search size={16} />

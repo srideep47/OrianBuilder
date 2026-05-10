@@ -783,11 +783,13 @@ body.galaxy-mode .no-app-region-drag button svg path {
   stroke: rgba(228, 220, 255, 0.88) !important;
 }
 
-/* Main layout container — flat, no border, transparent */
+/* Main layout container — flat, no border, transparent.
+   Keep margin-top so content stays below the fixed title bar. */
 body.galaxy-mode #layout-main-content-container {
   background: transparent !important;
   border: none !important;
-  margin: 0 !important;
+  margin-bottom: 0 !important;
+  margin-right: 0 !important;
   border-radius: 0 !important;
 }
 

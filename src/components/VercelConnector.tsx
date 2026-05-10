@@ -361,13 +361,31 @@ function UnconnectedVercelConnector({
       setProjectCheckError(null);
       refreshApp();
     } catch (err: any) {
-      setCreateProjectError(
+      const raw: string =
         err.message ||
-          `Failed to ${projectSetupMode === "create" ? "create" : "connect to"} project.`,
-      );
+        `Failed to ${projectSetupMode === "create" ? "create" : "connect to"} project.`;
+      setCreateProjectError(raw);
     } finally {
       setIsCreatingProject(false);
     }
+  };
+
+  // Parse error message that may contain an embedded action link ("msg||link:url")
+  // Also strips the Electron IPC wrapper prefix added by the renderer bridge.
+  const parseCreateError = (
+    raw: string | null,
+  ): { message: string; link: string | null } => {
+    if (!raw) return { message: "", link: null };
+    // Strip "Error invoking remote method '...': Error: " wrapper
+    const stripped = raw.replace(
+      /^Error invoking remote method '[^']+': Error: /,
+      "",
+    );
+    const sep = stripped.indexOf("||link:");
+    if (sep !== -1) {
+      return { message: stripped.slice(0, sep), link: stripped.slice(sep + 7) };
+    }
+    return { message: stripped, link: null };
   };
 
   if (!settings?.vercelAccessToken) {
@@ -625,9 +643,28 @@ function UnconnectedVercelConnector({
             </Button>
           </form>
 
-          {createProjectError && (
-            <p className="text-red-600 mt-2">{createProjectError}</p>
-          )}
+          {createProjectError &&
+            (() => {
+              const { message, link } = parseCreateError(createProjectError);
+              return (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3 mt-2 space-y-2">
+                  <p className="text-sm text-red-800 dark:text-red-200">
+                    {message}
+                  </p>
+                  {link && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/30"
+                      onClick={() => ipc.system.openExternalUrl(link)}
+                    >
+                      Install GitHub App →
+                    </Button>
+                  )}
+                </div>
+              );
+            })()}
           {createProjectSuccess && (
             <p className="text-green-600 mt-2">
               {projectSetupMode === "create"

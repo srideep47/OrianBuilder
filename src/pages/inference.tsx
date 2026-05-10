@@ -122,42 +122,6 @@ function getContextSizeForEffectiveKv(
   );
 }
 
-function UsageBar({
-  label,
-  used,
-  total,
-  formatValue,
-}: {
-  label: string;
-  used: number;
-  total: number;
-  formatValue?: (used: number, total: number, pct: number) => string;
-}) {
-  const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
-  const color =
-    pct > 90 ? "bg-red-500" : pct > 70 ? "bg-yellow-500" : "bg-green-500";
-  const valueText = formatValue
-    ? formatValue(used, total, pct)
-    : `${pct.toFixed(0)}%`;
-  return (
-    <div className="space-y-1">
-      <div className="flex justify-between text-xs text-muted-foreground">
-        <span>{label}</span>
-        <span>{valueText}</span>
-      </div>
-      <div className="h-2 rounded-full bg-muted overflow-hidden">
-        <div
-          className={cn(
-            "h-full rounded-full transition-all duration-500",
-            color,
-          )}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
 function VramBar({
   used,
   total,
@@ -420,36 +384,24 @@ function SpeedMetric({
   label,
   value,
   primary,
-  pending,
-  sublabel,
 }: {
   label: string;
   value: number;
   primary?: boolean;
-  pending?: boolean;
-  sublabel?: string;
 }) {
   return (
-    <div className="flex flex-col items-center px-1">
+    <div className="flex flex-col items-center">
       <span
         className={cn(
           "tabular-nums font-bold leading-none",
           primary
             ? "text-xl text-foreground"
             : "text-base text-muted-foreground",
-          pending && "text-sky-500 dark:text-sky-400",
         )}
       >
-        {pending ? "…" : value > 0 ? value.toFixed(1) : "—"}
+        {value > 0 ? value.toFixed(1) : "—"}
       </span>
-      <span className="text-[10px] text-muted-foreground mt-0.5 text-center leading-tight">
-        {label}
-      </span>
-      {sublabel && (
-        <span className="text-[9px] text-muted-foreground/60 leading-tight">
-          {sublabel}
-        </span>
-      )}
+      <span className="text-[10px] text-muted-foreground mt-0.5">{label}</span>
     </div>
   );
 }
@@ -515,29 +467,15 @@ function InferenceMonitor({
         </div>
 
         {/* Speed metrics */}
-        <div className="rounded-lg border bg-card px-4 py-2.5 flex-1 min-w-64">
+        <div className="rounded-lg border bg-card px-4 py-2.5 flex-1 min-w-56">
           <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1">
             <Zap className="w-3 h-3" />
             Speed (tok/s)
           </p>
-          <div className="grid grid-cols-5 gap-1 divide-x">
+          <div className="grid grid-cols-4 gap-1 divide-x">
             <SpeedMetric label="Live" value={stats?.liveTps ?? 0} primary />
-            <SpeedMetric
-              label="Decode"
-              sublabel="recent"
-              value={stats?.recentDecodeTps ?? 0}
-            />
-            <SpeedMetric
-              label="Decode"
-              sublabel="avg"
-              value={stats?.decodeTps ?? 0}
-            />
-            <SpeedMetric
-              label="Prefill"
-              sublabel="avg"
-              value={stats?.prefillTps ?? 0}
-              pending={stats?.state === "prefilling" && !stats?.prefillComplete}
-            />
+            <SpeedMetric label="Decode" value={stats?.decodeTps ?? 0} />
+            <SpeedMetric label="Prefill" value={stats?.prefillTps ?? 0} />
             <SpeedMetric label="Peak" value={stats?.peakTps ?? 0} />
           </div>
         </div>
@@ -1023,10 +961,7 @@ export default function InferencePage() {
   };
 
   return (
-    <div
-      className="cockpit-l design-scroll"
-      style={{ color: "#fff", padding: 18, height: "100%" }}
-    >
+    <div className="flex flex-col h-full overflow-hidden bg-background">
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b px-6 py-4 flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2">
@@ -1754,9 +1689,9 @@ export default function InferencePage() {
                             <strong className="text-yellow-700 dark:text-yellow-400">
                               Context too small for app building.
                             </strong>{" "}
-                            OrianBuilder's system prompt needs ~30K–60K tokens.
-                            Use Max Context or move fewer layers to GPU, then
-                            reload with ≥ 32K.
+                            Dyad's system prompt needs ~30K–60K tokens. Use Max
+                            Context or move fewer layers to GPU, then reload
+                            with ≥ 32K.
                           </>
                         )}
                       </span>
@@ -1797,11 +1732,11 @@ export default function InferencePage() {
                       <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                       <span>
                         <strong>App building needs ≥ 32K context.</strong>{" "}
-                        OrianBuilder's system prompt carries your app's source
-                        code — typically 30K–60K tokens. Below 32K, the prompt
-                        gets truncated and the model can barely generate a
-                        response. Use Max Context or move fewer layers to GPU,
-                        then set context to 32K.
+                        Dyad's system prompt carries your app's source code —
+                        typically 30K–60K tokens. Below 32K, the prompt gets
+                        truncated and the model can barely generate a response.
+                        Use Max Context or move fewer layers to GPU, then set
+                        context to 32K.
                       </span>
                     </div>
                   )}
@@ -1983,35 +1918,12 @@ export default function InferencePage() {
                     nvidia-smi not detected; live GPU stats are unavailable
                   </p>
                 )}
-
-                {/* System RAM bar */}
-                {inferenceStats && inferenceStats.systemRamTotalMb > 0 && (
-                  <UsageBar
-                    label="System RAM"
-                    used={inferenceStats.systemRamUsedMb}
-                    total={inferenceStats.systemRamTotalMb}
-                    formatValue={(used, total, pct) =>
-                      `${(used / 1024).toFixed(1)} / ${(total / 1024).toFixed(1)} GB (${pct.toFixed(0)}%)`
-                    }
-                  />
-                )}
-
                 <div className="grid grid-cols-2 gap-2">
                   <StatCard
                     label="GPU Util"
                     value={gpuStats?.utilizationPercent.toFixed(0) ?? "—"}
                     unit="%"
                     icon={Activity}
-                  />
-                  <StatCard
-                    label="CPU Util"
-                    value={
-                      inferenceStats
-                        ? inferenceStats.processCpuPercent.toFixed(0)
-                        : "—"
-                    }
-                    unit="%"
-                    icon={Cpu}
                   />
                   <StatCard
                     label="Temp"

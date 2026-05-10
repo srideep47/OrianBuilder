@@ -436,8 +436,29 @@ async function handleCreateProject(
     }
   } catch (err: any) {
     if (err instanceof OrianBuilderError) throw err;
+
+    // Parse structured Vercel API errors (SDK wraps them as "... Body: {json}")
+    const rawMessage: string = err.message || "";
+    const bodyMatch = rawMessage.match(/Body:\s*(\{[\s\S]*\})/);
+    if (bodyMatch) {
+      try {
+        const body = JSON.parse(bodyMatch[1]);
+        const apiError = body?.error;
+        if (apiError?.message) {
+          const actionLink = apiError.link || null;
+          const enriched = actionLink
+            ? `${apiError.message}||link:${actionLink}`
+            : apiError.message;
+          throw new Error(enriched);
+        }
+      } catch (parseErr: any) {
+        if (parseErr.message && !parseErr.message.startsWith("{"))
+          throw parseErr;
+      }
+    }
+
     logger.error("[Vercel Handler] Failed to create project:", err);
-    throw new Error(err.message || "Failed to create Vercel project.");
+    throw new Error(rawMessage || "Failed to create Vercel project.");
   }
 }
 

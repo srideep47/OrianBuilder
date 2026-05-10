@@ -22,11 +22,11 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { ChatList } from "./ChatList";
 import { AppList } from "./AppList";
@@ -105,22 +105,13 @@ export function AppSidebar() {
         if (!isDropdownOpen) setHoverState("clear-hover");
       }}
     >
-      {/* Logo header — same row as the topbar */}
-      <SidebarHeader className="sidebar-brand-header">
-        <div className="sidebar-orb" aria-hidden="true" />
-        <span className="group-data-[collapsible=icon]:hidden sidebar-brand-name">
-          OrianBuilder
-        </span>
-      </SidebarHeader>
-
       <SidebarContent className="overflow-hidden">
-        <div className="flex h-full" style={{ marginTop: 8 }}>
-          {/* Icon strip — always visible, expands to show labels on hover */}
-          <div className="sidebar-nav-strip flex-shrink-0">
+        <div className="flex mt-8">
+          <div className="">
+            <SidebarTrigger onMouseEnter={() => setHoverState("clear-hover")} />
             <AppIcons onHoverChange={setHoverState} />
           </div>
-          {/* Secondary context panel — hidden when sidebar is collapsed */}
-          <div className="sidebar-context-panel group-data-[state=collapsed]:hidden">
+          <div className="w-[272px]">
             <AppList show={selectedItem === "Apps"} />
             <ChatList show={selectedItem === "Chat"} />
             <SettingsList show={selectedItem === "Settings"} />
@@ -134,13 +125,11 @@ export function AppSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton
               size="sm"
-              className="sidebar-help-btn"
+              className="font-medium w-14 flex flex-col items-center gap-1 h-14 mb-2 rounded-2xl"
               onClick={() => setIsHelpDialogOpen(true)}
             >
-              <HelpCircle className="h-4 w-4 flex-shrink-0" />
-              <span className="group-data-[collapsible=icon]:hidden text-xs">
-                Help
-              </span>
+              <HelpCircle className="h-5 w-5" />
+              <span className="text-xs">Help</span>
             </SidebarMenuButton>
             <HelpDialog
               isOpen={isHelpDialogOpen}
@@ -164,9 +153,9 @@ function AppIcons({
   const pathname = routerState.location.pathname;
 
   return (
-    <SidebarGroup className="p-0">
+    <SidebarGroup className="pr-0">
       <SidebarGroupContent>
-        <SidebarMenu className="gap-0">
+        <SidebarMenu>
           {items.map((item) => {
             const isActive =
               (item.to === "/" && pathname === "/") ||
@@ -177,8 +166,10 @@ function AppIcons({
                 <SidebarMenuButton
                   as={Link}
                   to={item.to}
-                  data-active={isActive}
-                  className={`sidebar-nav-btn ${isActive ? "sidebar-nav-btn--active" : ""}`}
+                  size="sm"
+                  className={`font-medium w-14 flex flex-col items-center gap-1 h-14 mb-2 rounded-2xl ${
+                    isActive ? "bg-sidebar-accent" : ""
+                  }`}
                   onMouseEnter={() => {
                     if (item.title === "Apps") onHoverChange("start-hover:app");
                     else if (item.title === "Chat")
@@ -189,10 +180,10 @@ function AppIcons({
                       onHoverChange("start-hover:library");
                   }}
                 >
-                  <item.icon className="h-4 w-4 flex-shrink-0" />
-                  <span className="group-data-[collapsible=icon]:hidden sidebar-nav-label">
-                    {item.title}
-                  </span>
+                  <div className="flex flex-col items-center gap-1">
+                    <item.icon className="h-5 w-5" />
+                    <span className="text-xs">{item.title}</span>
+                  </div>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             );

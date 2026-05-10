@@ -1,6 +1,5 @@
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { providerSettingsRoute } from "@/routes/settings/providers/$provider";
 import { useAtom, useSetAtom } from "jotai";
 import { homeChatInputValueAtom } from "../atoms/chatAtoms";
 import { ipc } from "@/ipc/types";
@@ -9,11 +8,12 @@ import { useLoadApps } from "@/hooks/useLoadApps";
 import { useSettings } from "@/hooks/useSettings";
 import { SetupBanner } from "@/components/SetupBanner";
 import { isPreviewOpenAtom } from "@/atoms/viewAtoms";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useStreamChat } from "@/hooks/useStreamChat";
 import { HomeChatInput } from "@/components/chat/HomeChatInput";
 import { usePostHog } from "posthog-js/react";
 import { PrivacyBanner } from "@/components/TelemetryBanner";
+import { INSPIRATION_PROMPTS } from "@/prompts/inspiration_prompts";
 import { useAppVersion } from "@/hooks/useAppVersion";
 
 import {
@@ -32,25 +32,28 @@ import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
 import { ForceCloseDialog } from "@/components/ForceCloseDialog";
 import { useSelectChat } from "@/hooks/useSelectChat";
+import { FeaturedAppShowcase } from "@/components/FeaturedAppShowcase";
 
 import type { FileAttachment } from "@/ipc/types";
 import type { ListedApp } from "@/ipc/types/app";
 import { NEON_TEMPLATE_IDS } from "@/shared/templates";
 import { neonTemplateHook } from "@/client_logic/template_hook";
 import { autoSelectTemplate } from "@/lib/template_auto_select";
-import { getEffectiveDefaultChatMode } from "@/lib/schemas";
-import { useInitialChatMode } from "@/hooks/useInitialChatMode";
+import {
+  ProBanner,
+  ManageOrianBuilderProButton,
+  SetupOrianBuilderProButton,
+} from "@/components/ProBanner";
+import {
+  hasOrianBuilderProKey,
+  getEffectiveDefaultChatMode,
+} from "@/lib/schemas";
 import { useFreeAgentQuota } from "@/hooks/useFreeAgentQuota";
+import { useInitialChatMode } from "@/hooks/useInitialChatMode";
 
 // Track whether we've already checked release notes this session (module-scoped
 // so it persists across component unmount/remount cycles).
 let hasCheckedReleaseNotes = false;
-
-const QUICK_ACTIONS = [
-  { icon: "📋", label: "TODO list app" },
-  { icon: "🏠", label: "Landing Page" },
-  { icon: "📝", label: "Sign Up Form" },
-] as const;
 
 // Adding an export for attachments
 export interface HomeSubmitOptions {
@@ -134,6 +137,22 @@ export default function HomePage() {
 
   // Get the appId from search params
   const appId = search.appId ? Number(search.appId) : null;
+
+  // State for random prompts
+  const [randomPrompts, setRandomPrompts] = useState<
+    typeof INSPIRATION_PROMPTS
+  >([]);
+
+  // Function to get random prompts
+  const getRandomPrompts = useCallback(() => {
+    const shuffled = [...INSPIRATION_PROMPTS].sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, 3);
+  }, []);
+
+  // Initialize random prompts
+  useEffect(() => {
+    setRandomPrompts(getRandomPrompts());
+  }, [getRandomPrompts]);
 
   // Redirect to app details page if appId is present
   useEffect(() => {
@@ -266,87 +285,88 @@ export default function HomePage() {
     );
   }
 
-  // Main Home Page Content — Design: AppsPage layout
+  // Main Home Page Content
   return (
-    <div className="apps-stage">
-      <ForceCloseDialog
-        isOpen={forceCloseDialogOpen}
-        onClose={() => setForceCloseDialogOpen(false)}
-        performanceData={performanceData}
-      />
-
-      <div className="orbital">
-        <div className="orbital-rings" aria-hidden />
-
-        {/* Hero */}
-        <div className="apps-hero">
-          <span className="eyebrow">Mission Control · Setup</span>
-          <h1>Setup OrianBuilder</h1>
+    <div className="flex flex-col w-full">
+      <div className="flex flex-col items-center justify-center max-w-3xl w-full m-auto p-8 relative">
+        <div className="fixed top-16 right-8 z-50">
+          {settings && hasOrianBuilderProKey(settings) ? (
+            <ManageOrianBuilderProButton className="mt-0 w-auto h-9 px-3 text-base shadow-sm bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm hover:bg-white dark:hover:bg-gray-800" />
+          ) : (
+            <SetupOrianBuilderProButton />
+          )}
         </div>
-
-        {/* Setup wizard: video card + step cards (real logic) */}
+        <ForceCloseDialog
+          isOpen={forceCloseDialogOpen}
+          onClose={() => setForceCloseDialogOpen(false)}
+          performanceData={performanceData}
+        />
         <SetupBanner />
 
-        {/* Import + Prompt block */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            margin: "14px 0",
-          }}
-        >
-          <ImportAppButton className="btn primary" />
-        </div>
-
-        <div className="glass" style={{ borderRadius: 12, padding: 14 }}>
+        <div className="w-full">
+          <div className="flex items-center justify-center gap-4 mb-4">
+            <ImportAppButton className="px-0 pb-0 flex-none" />
+          </div>
           <HomeChatInput onSubmit={handleSubmit} />
 
-          <div className="chip-row">
-            {QUICK_ACTIONS.map((item) => (
-              <span
-                key={item.label}
-                className="chip"
-                onClick={() => setInputValue(item.label)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) =>
-                  e.key === "Enter" && setInputValue(item.label)
-                }
+          <div className="flex flex-col gap-4 mt-2">
+            <div className="flex flex-wrap gap-4 justify-center">
+              {randomPrompts.map((item, index) => (
+                <button
+                  type="button"
+                  key={index}
+                  onClick={() =>
+                    setInputValue(t("buildMeA", { label: item.label }))
+                  }
+                  className="flex items-center gap-3 px-4 py-2 rounded-xl border border-gray-200
+                           bg-white/50 backdrop-blur-sm
+                           transition-all duration-200
+                           hover:bg-white hover:shadow-md hover:border-gray-300
+                           active:scale-[0.98]
+                           dark:bg-gray-800/50 dark:border-gray-700
+                           dark:hover:bg-gray-800 dark:hover:border-gray-600"
+                >
+                  <span className="text-gray-700 dark:text-gray-300">
+                    {item.icon}
+                  </span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {item.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setRandomPrompts(getRandomPrompts())}
+              className="self-center flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200
+                       bg-white/50 backdrop-blur-sm
+                       transition-all duration-200
+                       hover:bg-white hover:shadow-md hover:border-gray-300
+                       active:scale-[0.98]
+                       dark:bg-gray-800/50 dark:border-gray-700
+                       dark:hover:bg-gray-800 dark:hover:border-gray-600"
+            >
+              <svg
+                className="w-5 h-5 text-gray-700 dark:text-gray-300"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
               >
-                {item.icon} {item.label}
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                {t("moreIdeas")}
               </span>
-            ))}
+            </button>
           </div>
+          <ProBanner />
         </div>
-
-        {/* Promo */}
-        <div className="promo">
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12, color: "#5fdfa3", fontWeight: 500 }}>
-              {t("proBanner.upTo3xCheaper")}
-            </div>
-            <div style={{ fontSize: 10, color: "rgba(95,223,163,.65)" }}>
-              {t("proBanner.byUsingSmartContext")}
-            </div>
-          </div>
-          <button
-            className="btn sm"
-            style={{
-              background: "rgba(60,200,140,.18)",
-              borderColor: "rgba(60,200,140,.35)",
-              color: "#5fdfa3",
-            }}
-            onClick={() =>
-              navigate({
-                to: providerSettingsRoute.id,
-                params: { provider: "auto" },
-              })
-            }
-          >
-            {t("proBanner.getOrianBuilderPro")} →
-          </button>
-        </div>
-
         <PrivacyBanner />
 
         {/* Release Notes Dialog */}
@@ -370,7 +390,7 @@ export default function HomePage() {
                 <ExternalLink className="w-4 h-4" />
               </Button>
             </DialogHeader>
-            <div className="overflow-auto h-[70vh] flex flex-col">
+            <div className="overflow-auto h-[70vh] flex flex-col ">
               {releaseUrl && (
                 <div className="flex-1">
                   <iframe
@@ -384,6 +404,7 @@ export default function HomePage() {
           </DialogContent>
         </Dialog>
       </div>
+      <FeaturedAppShowcase />
     </div>
   );
 }

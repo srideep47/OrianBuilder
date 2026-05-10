@@ -28,69 +28,62 @@ const HubPage: React.FC = () => {
     templates?.filter((template) => !template.isOfficial) || [];
 
   return (
-    <div className="hub-page" style={{ color: "#fff" }}>
+    <div className="min-h-screen px-8 py-4">
       <div className="max-w-5xl mx-auto pb-12">
         <Button
           onClick={() => router.history.back()}
-          variant="ghost"
+          variant="outline"
           size="sm"
-          className="galaxy-sidebar-btn flex items-center gap-2 mb-6 py-5"
+          className="flex items-center gap-2 mb-4 bg-(--background-lightest) py-5"
         >
           <ArrowLeft className="h-4 w-4" />
           Go Back
         </Button>
-
-        <div className="galaxy-page-header">
-          <h1 className="galaxy-page-title">Template Hub</h1>
-          <p className="galaxy-page-subtitle">
-            Choose a launchpad for your next project
-            {isLoading && " — loading templates…"}
+        <header className="mb-8 text-left">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+            Pick your default template
+          </h1>
+          <p className="text-md text-gray-600 dark:text-gray-400">
+            Choose a starting point for your new project.
+            {isLoading && " Loading additional templates..."}
           </p>
-        </div>
+        </header>
 
-        {/* Official Templates */}
+        {/* Official Templates Section */}
         {officialTemplates.length > 0 && (
-          <section className="mb-10">
-            <h2 className="galaxy-section-label">Official templates</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {officialTemplates.map((template, i) => (
-                <div
+          <section className="mb-12">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+              Official templates
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {officialTemplates.map((template) => (
+                <TemplateCard
                   key={template.id}
-                  className="galaxy-card overflow-hidden"
-                  style={{ animationDelay: `${i * 0.06}s` }}
-                >
-                  <TemplateCard
-                    template={template}
-                    isSelected={template.id === selectedTemplateId}
-                    onSelect={handleTemplateSelect}
-                    onCreateApp={handleCreateApp}
-                  />
-                </div>
+                  template={template}
+                  isSelected={template.id === selectedTemplateId}
+                  onSelect={handleTemplateSelect}
+                  onCreateApp={handleCreateApp}
+                />
               ))}
             </div>
           </section>
         )}
 
-        {/* Community Templates */}
+        {/* Community Templates Section */}
         {communityTemplates.length > 0 && (
-          <section className="mb-10">
-            <h2 className="galaxy-section-label">Community templates</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {communityTemplates.map((template, i) => (
-                <div
+          <section className="mb-12">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+              Community templates
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {communityTemplates.map((template) => (
+                <TemplateCard
                   key={template.id}
-                  className="galaxy-card overflow-hidden"
-                  style={{
-                    animationDelay: `${(officialTemplates.length + i) * 0.06}s`,
-                  }}
-                >
-                  <TemplateCard
-                    template={template}
-                    isSelected={template.id === selectedTemplateId}
-                    onSelect={handleTemplateSelect}
-                    onCreateApp={handleCreateApp}
-                  />
-                </div>
+                  template={template}
+                  isSelected={template.id === selectedTemplateId}
+                  onSelect={handleTemplateSelect}
+                  onCreateApp={handleCreateApp}
+                />
               ))}
             </div>
           </section>
