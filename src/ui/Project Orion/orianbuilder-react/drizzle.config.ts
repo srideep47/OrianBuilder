@@ -1,10 +1,10 @@
-import type { Config } from 'drizzle-kit';
+import type { Config } from "drizzle-kit";
 
 export default {
-  schema: './src/lib/db/schema.ts',
-  out: './drizzle',
-  dialect: 'sqlite',
+  schema: "./src/lib/db/schema.ts",
+  out: "./drizzle",
+  dialect: "sqlite",
   dbCredentials: {
-    url: 'orianbuilder.db',
+    url: "orianbuilder.db",
   },
 } satisfies Config;

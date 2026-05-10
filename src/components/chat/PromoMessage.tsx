@@ -59,7 +59,7 @@ export const TURBO_EDITS_PROMO_MESSAGE: MessageConfig = {
     {
       type: "link",
       content: " Get OrianBuilder Pro",
-      url: "https://dyad.sh/pro#ai",
+      url: "https://orianbuilder.sh/pro#ai",
     },
     { type: "text", content: " for faster edits with Turbo Edits." },
   ],
@@ -71,7 +71,7 @@ export const SMART_CONTEXT_PROMO_MESSAGE: MessageConfig = {
     {
       type: "link",
       content: "OrianBuilder Pro's Smart Context",
-      url: "https://dyad.sh/pro#ai",
+      url: "https://orianbuilder.sh/pro#ai",
     },
   ],
 };
@@ -95,7 +95,7 @@ export const REDDIT_TIP: MessageConfig = {
     {
       type: "link",
       content: "OrianBuilder community",
-      url: "https://www.reddit.com/r/dyadbuilders/",
+      url: "https://www.reddit.com/r/orianbuilderbuilders/",
     },
   ],
 };
@@ -142,12 +142,12 @@ export const DEBUGGING_TIPS_TIP: MessageConfig = {
     {
       type: "link",
       content: "debugging tips",
-      url: "https://www.dyad.sh/docs/guides/debugging",
+      url: "https://www.orianbuilder.sh/docs/guides/debugging",
     },
   ],
 };
 
-// Advanced tip: Customize your AI rules https://www.dyad.sh/docs/guides/ai-rules
+// Advanced tip: Customize your AI rules https://www.orianbuilder.sh/docs/guides/ai-rules
 export const AI_RULES_TIP: MessageConfig = {
   spans: [
     {
@@ -157,7 +157,7 @@ export const AI_RULES_TIP: MessageConfig = {
     {
       type: "link",
       content: "AI rules",
-      url: "https://www.dyad.sh/docs/guides/ai-rules",
+      url: "https://www.orianbuilder.sh/docs/guides/ai-rules",
     },
   ],
 };
@@ -171,7 +171,7 @@ export const NEW_CHAT_TIP: MessageConfig = {
   ],
 };
 
-// Want to know what's next? Checkout our roadmap https://www.dyad.sh/docs/roadmap
+// Want to know what's next? Checkout our roadmap https://www.orianbuilder.sh/docs/roadmap
 export const ROADMAP_TIP: MessageConfig = {
   spans: [
     {
@@ -181,22 +181,22 @@ export const ROADMAP_TIP: MessageConfig = {
     {
       type: "link",
       content: "roadmap",
-      url: "https://www.dyad.sh/docs/roadmap",
+      url: "https://www.orianbuilder.sh/docs/roadmap",
     },
   ],
 };
 
-// Like Dyad? Star it on GitHub https://github.com/dyad-sh/dyad/
+// Like OrianBuilder? Star it on GitHub https://github.com/orianbuilder-sh/orianbuilder/
 export const GITHUB_TIP: MessageConfig = {
   spans: [
     {
       type: "text",
-      content: "Like Dyad? Star it on ",
+      content: "Like OrianBuilder? Star it on ",
     },
     {
       type: "link",
       content: "GitHub",
-      url: "https://github.com/dyad-sh/dyad",
+      url: "https://github.com/orianbuilder-sh/orianbuilder",
     },
   ],
 };

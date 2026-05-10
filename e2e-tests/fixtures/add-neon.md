@@ -1,2 +1,2 @@
 Adding neon...
-<dyad-add-integration></dyad-add-integration>
+<orianbuilder-add-integration></orianbuilder-add-integration>

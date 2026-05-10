@@ -39,7 +39,7 @@ export const localTemplatesData: Template[] = [
     description: "Uses Next.js, React.js, Shadcn, Tailwind and TypeScript.",
     imageUrl:
       "https://github.com/user-attachments/assets/96258e4f-abce-4910-a62a-a9dff77965f2",
-    githubUrl: "https://github.com/dyad-sh/nextjs-template",
+    githubUrl: "https://github.com/orianbuilder-sh/nextjs-template",
     isOfficial: true,
   },
   {
@@ -48,72 +48,74 @@ export const localTemplatesData: Template[] = [
     description: "Uses Neon DB, Payload CMS, Next.js",
     imageUrl:
       "https://github.com/user-attachments/assets/ed86f322-40bf-4fd5-81dc-3b1d8a16e12b",
-    githubUrl: "https://github.com/dyad-sh/portal-mini-store-template",
+    githubUrl: "https://github.com/orianbuilder-sh/portal-mini-store-template",
     isOfficial: true,
     isExperimental: true,
     requiresNeon: true,
   },
-  // Community templates (offline fallbacks — also served live via the Dyad API)
+  // Community templates (offline fallbacks — also served live via the OrianBuilder API)
   {
-    id: "sparkie-dev/dyad-react-router-7-fs-routes-template",
+    id: "sparkie-dev/orianbuilder-react-router-7-fs-routes-template",
     title: "React Router 7 + Full Stack",
     description:
       "React 19 + React Router 7 with file-based routes, Express 5, Prisma ORM, shadcn/ui and TanStack Query. True full-stack with a built-in backend.",
     imageUrl:
       "https://github.com/user-attachments/assets/6715b328-540f-4bd0-96fa-a0a78e73497c",
     githubUrl:
-      "https://github.com/sparkie-dev/dyad-react-router-7-fs-routes-template",
+      "https://github.com/sparkie-dev/orianbuilder-react-router-7-fs-routes-template",
     isOfficial: false,
   },
   {
-    id: "stgreenb/docker-dyad-template",
+    id: "stgreenb/docker-orianbuilder-template",
     title: "Docker / Next.js / Lowdb",
     description:
       "Next.js + shadcn/ui + Lowdb JSON database with Dockerized deployment and automated GHCR GitHub Actions container builds.",
     imageUrl:
       "https://github.com/user-attachments/assets/ba9656e3-b9c4-4032-a138-f6d4a83cd84d",
-    githubUrl: "https://github.com/stgreenb/docker-dyad-template",
+    githubUrl: "https://github.com/stgreenb/docker-orianbuilder-template",
     isOfficial: false,
   },
   {
-    id: "k1lgor/dyad-vue-template",
+    id: "k1lgor/orianbuilder-vue-template",
     title: "Vue 3",
     description:
       "Vue 3 + Pinia + Reka UI + Vee-Validate + Supabase + TanStack Table. Production-ready Vue starter with TypeScript, Vite, and Tailwind CSS.",
     imageUrl:
       "https://github.com/user-attachments/assets/173a3551-ad10-4778-925f-6e2604570116",
-    githubUrl: "https://github.com/k1lgor/dyad-vue-template",
+    githubUrl: "https://github.com/k1lgor/orianbuilder-vue-template",
     isOfficial: false,
   },
   {
-    id: "jeff-kazzee/dyad-template-angular",
+    id: "jeff-kazzee/orianbuilder-template-angular",
     title: "Angular",
     description:
       "Angular 17 with standalone components, RxJS, and TypeScript. Clean minimal starter for Angular apps.",
     imageUrl:
       "https://github.com/user-attachments/assets/9f8a86e9-2625-4cdf-9e47-c3b0d615cf4d",
-    githubUrl: "https://github.com/jeff-kazzee/dyad-template-angular",
+    githubUrl: "https://github.com/jeff-kazzee/orianbuilder-template-angular",
     isOfficial: false,
   },
   {
-    id: "tonedice/dyad-chrome-extension-template",
+    id: "tonedice/orianbuilder-chrome-extension-template",
     title: "Chrome Extension",
     description:
-      "Manifest V3 Chrome Extension starter. Note: Dyad live preview does not work for extensions — load unpacked in Chrome to test.",
+      "Manifest V3 Chrome Extension starter. Note: OrianBuilder live preview does not work for extensions — load unpacked in Chrome to test.",
     imageUrl:
       "https://github.com/user-attachments/assets/dcf38eff-8772-458f-9ac9-07374c57c25e",
-    githubUrl: "https://github.com/tonedice/dyad-chrome-extension-template",
+    githubUrl:
+      "https://github.com/tonedice/orianbuilder-chrome-extension-template",
     isOfficial: false,
     isExperimental: true,
   },
   {
-    id: "shaaraa/dyad-react-native-expo-template",
+    id: "shaaraa/orianbuilder-react-native-expo-template",
     title: "React Native (Expo) + Web",
     description:
       "Expo SDK 53 + expo-router v5 starter that runs on iOS, Android, and the browser via react-native-web.",
     imageUrl:
       "https://github.com/user-attachments/assets/d6b58360-ef17-4614-8083-6abef1a00877",
-    githubUrl: "https://github.com/shaaraa/dyad-react-native-expo-template",
+    githubUrl:
+      "https://github.com/shaaraa/orianbuilder-react-native-expo-template",
     isOfficial: false,
     isExperimental: true,
   },

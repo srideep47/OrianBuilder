@@ -49,9 +49,9 @@ describe("searchReplaceTool", () => {
     frameworkType: null,
     messageId: 1,
     isSharedModulesChanged: false,
-    isDyadPro: false,
+    isOrianBuilderPro: false,
     todos: [],
-    dyadRequestId: "test-request",
+    orianbuilderRequestId: "test-request",
     fileEditTracker: {},
     onXmlStream: vi.fn(),
     onXmlComplete: vi.fn(),
@@ -387,7 +387,7 @@ describe("searchReplaceTool", () => {
       expect(result).toContain("=======");
       expect(result).toContain("new content");
       expect(result).toContain(">>>>>>> REPLACE");
-      expect(result).toContain("</dyad-search-replace>");
+      expect(result).toContain("</orianbuilder-search-replace>");
     });
   });
 

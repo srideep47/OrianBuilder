@@ -69,6 +69,22 @@ describe("mission workers", () => {
     ]);
   });
 
+  it("caps worker seed fan-out for very large missions", () => {
+    const workers = buildWorkerSeedFromTasks(
+      Array.from({ length: 12 }, (_, index) => ({
+        externalId: `task-${index}`,
+        title: `Task ${index}`,
+        status: "pending" as const,
+      })),
+    );
+
+    expect(workers.filter((worker) => worker.role === "builder")).toHaveLength(
+      8,
+    );
+    expect(workers[0].goal).toContain("4 lower-priority task(s)");
+    expect(workers.at(-1)?.dependsOn).toHaveLength(9);
+  });
+
   it("selects queued workers whose dependencies are complete", () => {
     const workers = [
       {
@@ -216,6 +232,26 @@ describe("mission workers", () => {
       blockers: null,
       artifacts: ["screenshot.png"],
     });
+  });
+
+  it("bounds verbose worker completion reports", () => {
+    const report = normalizeMissionWorkerReport({
+      summary: "x".repeat(2200),
+      changedFiles: Array.from({ length: 55 }, (_, index) => `src/${index}.ts`),
+      validation: "v".repeat(2200),
+      blockers: "b".repeat(2200),
+      artifacts: Array.from(
+        { length: 55 },
+        (_, index) => `artifact-${index}.txt`,
+      ),
+    });
+
+    expect(report.summary).toContain("[truncated 200 chars]");
+    expect(report.validation).toContain("[truncated 200 chars]");
+    expect(report.blockers).toContain("[truncated 200 chars]");
+    expect(report.changedFiles).toHaveLength(51);
+    expect(report.changedFiles.at(-1)).toBe("[5 items omitted]");
+    expect(report.artifacts).toHaveLength(51);
   });
 
   it("tracks lifecycle and stale metadata", () => {

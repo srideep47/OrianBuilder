@@ -3,7 +3,10 @@ import fs from "fs/promises";
 import path from "path";
 import { createLoggedHandler } from "./safe_handle";
 import log from "electron-log";
-import { getDyadAppPath, isAppLocationAccessible } from "../../paths/paths";
+import {
+  getOrianBuilderAppPath,
+  isAppLocationAccessible,
+} from "../../paths/paths";
 import { apps } from "@/db/schema";
 import { db } from "@/db";
 import { chats } from "@/db/schema";
@@ -12,7 +15,10 @@ import { eq } from "drizzle-orm";
 import { ImportAppParams, ImportAppResult } from "@/ipc/types";
 import { copyDirectoryRecursive } from "../utils/file_utils";
 import { gitCommit, gitAdd, gitInit } from "../utils/git_utils";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { getInitialChatModeForNewChat } from "./chat_mode_resolution";
 
 const logger = log.scope("import-handlers");
@@ -53,9 +59,9 @@ export function registerImportHandlers() {
       _,
       { appName, skipCopy }: { appName: string; skipCopy?: boolean },
     ) => {
-      // Only check filesystem if we're copying to dyad-apps
+      // Only check filesystem if we're copying to orianbuilder-apps
       if (!skipCopy) {
-        const appPath = getDyadAppPath(appName);
+        const appPath = getOrianBuilderAppPath(appName);
         try {
           await fs.access(appPath);
           return { exists: true };
@@ -90,14 +96,14 @@ export function registerImportHandlers() {
       try {
         await fs.access(sourcePath);
       } catch {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Source folder does not exist",
-          DyadErrorKind.NotFound,
+          OrianBuilderErrorKind.NotFound,
         );
       }
 
       // Determine the app path based on skipCopy
-      const appPath = skipCopy ? sourcePath : getDyadAppPath(appName);
+      const appPath = skipCopy ? sourcePath : getOrianBuilderAppPath(appName);
 
       if (!skipCopy) {
         if (!isAppLocationAccessible(appPath)) {
@@ -106,7 +112,7 @@ export function registerImportHandlers() {
           );
         }
 
-        // Check if the app already exists in dyad-apps
+        // Check if the app already exists in orianbuilder-apps
         const errorMessage = "An app with this name already exists";
         try {
           await fs.access(appPath);
@@ -116,7 +122,7 @@ export function registerImportHandlers() {
             throw error;
           }
         }
-        // Copy the app folder to the Dyad apps directory.
+        // Copy the app folder to the OrianBuilder apps directory.
         // Why not use fs.cp? Because we want stable ordering for
         // tests.
         await copyDirectoryRecursive(sourcePath, appPath);
@@ -137,7 +143,7 @@ export function registerImportHandlers() {
         // Create initial commit
         await gitCommit({
           path: appPath,
-          message: "Init Dyad app",
+          message: "Init OrianBuilder app",
         });
       }
 

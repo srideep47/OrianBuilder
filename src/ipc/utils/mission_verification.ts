@@ -21,7 +21,7 @@ export function getMissionVerificationEventForXml(
 ): MissionVerificationEvent | null {
   const statusTitle = getXmlAttribute(xml, "title");
   if (
-    xml.startsWith("<dyad-status") &&
+    xml.startsWith("<orianbuilder-status") &&
     statusTitle?.startsWith("Type checking")
   ) {
     const problemCountMatch = xml.match(/Found\s+(\d+)\s+type error\(s\)/i);
@@ -42,7 +42,34 @@ export function getMissionVerificationEventForXml(
     };
   }
 
-  if (!xml.startsWith("<dyad-terminal-command")) {
+  if (xml.startsWith("<orianbuilder-project-check")) {
+    const checkRaw = getXmlAttribute(xml, "check");
+    const statusRaw = getXmlAttribute(xml, "status");
+    const command = getXmlAttribute(xml, "command") ?? undefined;
+    const exitCodeRaw = getXmlAttribute(xml, "exit-code");
+    const exitCode = exitCodeRaw ? Number(exitCodeRaw) : undefined;
+    if (statusRaw !== "passed" && statusRaw !== "failed") {
+      return null;
+    }
+    const check = normalizeProjectCheck(checkRaw);
+    if (!check) {
+      return null;
+    }
+    const label = getVerificationLabel(check);
+    return {
+      eventType: `verification_${check}`,
+      summary:
+        statusRaw === "passed"
+          ? `${label} passed`
+          : `${label} failed${Number.isFinite(exitCode) ? ` with exit code ${exitCode}` : ""}`,
+      status: statusRaw,
+      check,
+      command,
+      exitCode: Number.isFinite(exitCode) ? exitCode : undefined,
+    };
+  }
+
+  if (!xml.startsWith("<orianbuilder-terminal-command")) {
     return null;
   }
 
@@ -93,6 +120,23 @@ function classifyVerificationCommand(
     return "start_app";
   }
   return null;
+}
+
+function normalizeProjectCheck(
+  check: string | undefined,
+): "install" | "build" | "test" | "typecheck" | "start_app" | null {
+  switch (check) {
+    case "install":
+    case "build":
+    case "typecheck":
+      return check;
+    case "lint":
+    case "unit_test":
+    case "e2e_test":
+      return "test";
+    default:
+      return null;
+  }
 }
 
 function getVerificationLabel(

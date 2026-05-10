@@ -17,7 +17,7 @@ Tool definitions live in `src/pro/main/ipc/handlers/local_agent/tool_definitions
 
 1. Create a new tool file in `src/pro/main/ipc/handlers/local_agent/tools/`. Use an existing tool as a template.
 2. Import the tool and add it to `src/pro/main/ipc/handlers/local_agent/tool_definitions.ts`.
-3. Define how to render the corresponding `<dyad-$tool-name>` tag inside `src/components/chat/DyadMarkdownParser.tsx` — typically by creating a new React component for the tag.
+3. Define how to render the corresponding `<orianbuilder-$tool-name>` tag inside `src/components/chat/OrianBuilderMarkdownParser.tsx` — typically by creating a new React component for the tag.
 
 ## Testing
 

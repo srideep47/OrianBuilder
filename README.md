@@ -2,7 +2,7 @@
 
 **Orian Builder** is a local, open-source AI app builder by **Legion Studios** — fast, private, and fully under your control. Like Lovable, v0, or Bolt, but running right on your machine with full GPU-accelerated local inference.
 
-> Built on the foundation of [Dyad](https://github.com/dyad-sh/dyad) and supercharged with Legion Studios' embedded inference engine, NVIDIA TensorRT acceleration, and advanced agentic system.
+> Built on the foundation of [OrianBuilder](https://github.com/orianbuilder-sh/orianbuilder) and supercharged with Legion Studios' embedded inference engine, NVIDIA TensorRT acceleration, and advanced agentic system.
 
 ## Features
 

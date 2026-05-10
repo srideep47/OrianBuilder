@@ -8,7 +8,7 @@ import {
 } from "./types";
 import { extractCodebase } from "../../../../../../utils/codebase";
 import {
-  filterDyadInternalFiles,
+  filterOrianBuilderInternalFiles,
   resolveTargetAppPath,
 } from "./resolve_app_context";
 
@@ -132,14 +132,14 @@ export const codeSearchTool: ToolDefinition<CodeSearchArgs> = {
   buildXml: (args, isComplete) => {
     if (!args.query) return undefined;
     if (isComplete) return undefined;
-    return `<dyad-code-search${buildCodeSearchAttributes(args)}>Searching...`;
+    return `<orianbuilder-code-search${buildCodeSearchAttributes(args)}>Searching...`;
   },
 
   execute: async (args, ctx: AgentContext) => {
     logger.log(`Executing code search: ${args.query}`);
 
     ctx.onXmlStream(
-      `<dyad-code-search${buildCodeSearchAttributes({
+      `<orianbuilder-code-search${buildCodeSearchAttributes({
         query: args.query,
         app_name: args.app_name,
       })}>`,
@@ -156,7 +156,7 @@ export const codeSearchTool: ToolDefinition<CodeSearchArgs> = {
       },
     });
 
-    const filteredFiles = filterDyadInternalFiles(files, args.app_name);
+    const filteredFiles = filterOrianBuilderInternalFiles(files, args.app_name);
 
     const filesContext = filteredFiles.map((f) => ({
       path: f.path,
@@ -175,7 +175,7 @@ export const codeSearchTool: ToolDefinition<CodeSearchArgs> = {
         : relevantFiles.map((f) => ` - ${f}`).join("\n");
 
     ctx.onXmlComplete(
-      `<dyad-code-search${buildCodeSearchAttributes(args)}>${escapeXmlContent(resultText)}</dyad-code-search>`,
+      `<orianbuilder-code-search${buildCodeSearchAttributes(args)}>${escapeXmlContent(resultText)}</orianbuilder-code-search>`,
     );
 
     logger.log(`Code search completed for query: ${args.query}`);

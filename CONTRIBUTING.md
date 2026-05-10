@@ -134,6 +134,6 @@ Use local review tools for quick feedback before pushing:
 ## Code style
 
 - Use **Base UI** (`@base-ui/react`) for all UI primitives — never Radix UI.
-- IPC errors that are not bugs (validation, missing entities, user refusal) must be thrown as `DyadError` with a `DyadErrorKind`. See [rules/dyad-errors.md](rules/dyad-errors.md).
+- IPC errors that are not bugs (validation, missing entities, user refusal) must be thrown as `OrianBuilderError` with a `OrianBuilderErrorKind`. See [rules/orianbuilder-errors.md](rules/orianbuilder-errors.md).
 - Keep Electron security practices in mind: no `remote`, validate by `appId` when mutating shared resources.
 - Add tests in the same folder tree when touching renderer components.

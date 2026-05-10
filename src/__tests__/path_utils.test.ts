@@ -1,4 +1,4 @@
-import { safeJoin } from "@/ipc/utils/path_utils";
+import { safeJoin, normalizePath } from "@/ipc/utils/path_utils";
 import { describe, it, expect } from "vitest";
 import path from "node:path";
 import os from "node:os";
@@ -11,41 +11,53 @@ describe("safeJoin", () => {
     it("should join simple relative paths", () => {
       const result = safeJoin(testBaseDir, "src", "components", "Button.tsx");
       expect(result).toBe(
-        path.join(testBaseDir, "src", "components", "Button.tsx"),
+        normalizePath(
+          path.join(testBaseDir, "src", "components", "Button.tsx"),
+        ),
       );
     });
 
     it("should handle single file names", () => {
       const result = safeJoin(testBaseDir, "package.json");
-      expect(result).toBe(path.join(testBaseDir, "package.json"));
+      expect(result).toBe(
+        normalizePath(path.join(testBaseDir, "package.json")),
+      );
     });
 
     it("should handle nested directories", () => {
       const result = safeJoin(testBaseDir, "src/pages/home/index.tsx");
-      expect(result).toBe(path.join(testBaseDir, "src/pages/home/index.tsx"));
+      expect(result).toBe(
+        normalizePath(path.join(testBaseDir, "src/pages/home/index.tsx")),
+      );
     });
 
     it("should handle paths with dots in filename", () => {
       const result = safeJoin(testBaseDir, "config.test.js");
-      expect(result).toBe(path.join(testBaseDir, "config.test.js"));
+      expect(result).toBe(
+        normalizePath(path.join(testBaseDir, "config.test.js")),
+      );
     });
 
     it("should handle empty path segments", () => {
       const result = safeJoin(testBaseDir, "", "src", "", "file.ts");
-      expect(result).toBe(path.join(testBaseDir, "", "src", "", "file.ts"));
+      expect(result).toBe(
+        normalizePath(path.join(testBaseDir, "", "src", "", "file.ts")),
+      );
     });
 
     it("should handle multiple path segments", () => {
       const result = safeJoin(testBaseDir, "a", "b", "c", "d", "file.txt");
       expect(result).toBe(
-        path.join(testBaseDir, "a", "b", "c", "d", "file.txt"),
+        normalizePath(path.join(testBaseDir, "a", "b", "c", "d", "file.txt")),
       );
     });
 
     it("should work with actual temp directory", () => {
       const tempDir = os.tmpdir();
       const result = safeJoin(tempDir, "test", "file.txt");
-      expect(result).toBe(path.join(tempDir, "test", "file.txt"));
+      expect(result).toBe(
+        normalizePath(path.join(tempDir, "test", "file.txt")),
+      );
     });
 
     it("should handle Windows-style relative paths with backslashes", () => {
@@ -137,7 +149,9 @@ describe("safeJoin", () => {
   describe("edge cases", () => {
     it("should handle Windows-style base paths", () => {
       const result = safeJoin(testBaseDirWindows, "src", "file.txt");
-      expect(result).toBe(path.join(testBaseDirWindows, "src", "file.txt"));
+      expect(result).toBe(
+        normalizePath(path.join(testBaseDirWindows, "src", "file.txt")),
+      );
     });
 
     it("should throw on Windows traversal from Unix base", () => {
@@ -148,13 +162,15 @@ describe("safeJoin", () => {
 
     it("should handle current directory references safely", () => {
       const result = safeJoin(testBaseDir, "./src/file.txt");
-      expect(result).toBe(path.join(testBaseDir, "./src/file.txt"));
+      expect(result).toBe(
+        normalizePath(path.join(testBaseDir, "./src/file.txt")),
+      );
     });
 
     it("should handle nested current directory references", () => {
       const result = safeJoin(testBaseDir, "src/./components/./Button.tsx");
       expect(result).toBe(
-        path.join(testBaseDir, "src/./components/./Button.tsx"),
+        normalizePath(path.join(testBaseDir, "src/./components/./Button.tsx")),
       );
     });
 
@@ -167,7 +183,7 @@ describe("safeJoin", () => {
     it("should handle very long paths safely", () => {
       const longPath = Array(50).fill("subdir").join("/") + "/file.txt";
       const result = safeJoin(testBaseDir, longPath);
-      expect(result).toBe(path.join(testBaseDir, longPath));
+      expect(result).toBe(normalizePath(path.join(testBaseDir, longPath)));
     });
 
     it("should allow Windows-style paths that look like drive letters but aren't", () => {
@@ -203,17 +219,19 @@ describe("safeJoin", () => {
   describe("boundary conditions", () => {
     it("should allow paths at the exact boundary", () => {
       const result = safeJoin(testBaseDir, ".");
-      expect(result).toBe(path.join(testBaseDir, "."));
+      expect(result).toBe(normalizePath(path.join(testBaseDir, ".")));
     });
 
     it("should handle paths that approach but don't cross boundary", () => {
       const result = safeJoin(testBaseDir, "deep/nested/../file.txt");
-      expect(result).toBe(path.join(testBaseDir, "deep/nested/../file.txt"));
+      expect(result).toBe(
+        normalizePath(path.join(testBaseDir, "deep/nested/../file.txt")),
+      );
     });
 
     it("should handle root directory as base", () => {
       const result = safeJoin("/", "tmp/file.txt");
-      expect(result).toBe(path.join("/", "tmp/file.txt"));
+      expect(result).toBe(normalizePath(path.join("/", "tmp/file.txt")));
     });
 
     it("should throw when trying to escape root", () => {

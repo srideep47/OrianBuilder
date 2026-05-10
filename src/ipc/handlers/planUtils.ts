@@ -1,4 +1,7 @@
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 export function slugify(text: string): string {
   const result = text
     .toLowerCase()
@@ -18,7 +21,10 @@ export function buildFrontmatter(meta: Record<string, string>): string {
 
 export function validatePlanId(planId: string): void {
   if (!/^[a-z0-9-]+$/.test(planId)) {
-    throw new DyadError("Invalid plan ID", DyadErrorKind.Validation);
+    throw new OrianBuilderError(
+      "Invalid plan ID",
+      OrianBuilderErrorKind.Validation,
+    );
   }
 }
 

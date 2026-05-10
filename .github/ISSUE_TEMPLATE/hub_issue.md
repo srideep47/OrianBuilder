@@ -1,6 +1,6 @@
 ---
-name: Dyad Hub Issue
-about: Found an issue with dyad.sh/hub?
+name: OrianBuilder Hub Issue
+about: Found an issue with orianbuilder.sh/hub?
 title: "[hub]"
 labels: "hub"
 assignees: ""

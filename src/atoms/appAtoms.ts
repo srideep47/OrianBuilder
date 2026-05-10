@@ -43,6 +43,9 @@ export const previewPanelKeyAtom = atom<number>(0);
 export const previewCurrentUrlAtom = atom<Record<number, string>>({});
 
 export const previewErrorMessageAtom = atom<
-  | { message: string; source: "preview-app" | "dyad-app" | "dyad-sync" }
+  | {
+      message: string;
+      source: "preview-app" | "orianbuilder-app" | "orianbuilder-sync";
+    }
   | undefined
 >(undefined);

@@ -91,6 +91,17 @@ export const queryKeys = {
       ["missions", "checkpoints", missionId] as const,
     artifacts: ({ missionId }: { missionId: number | null }) =>
       ["missions", "artifacts", missionId] as const,
+    interrupts: ({ missionId }: { missionId: number | null }) =>
+      ["missions", "interrupts", missionId] as const,
+    memories: ({
+      appId,
+      missionId,
+    }: {
+      appId: number | null;
+      missionId: number | null;
+    }) => ["missions", "memories", appId, missionId] as const,
+    permissionRequests: ({ missionId }: { missionId: number | null }) =>
+      ["missions", "permission-requests", missionId] as const,
   },
 
   // ─────────────────────────────────────────────────────────────────────────────

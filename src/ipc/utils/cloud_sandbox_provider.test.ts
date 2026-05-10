@@ -57,7 +57,7 @@ type ParsedMultipartUpload = {
 async function parseMultipartUpload(
   init: RequestInit | undefined,
 ): Promise<ParsedMultipartUpload> {
-  const request = new Request("https://dyad.test/upload", {
+  const request = new Request("https://orianbuilder.test/upload", {
     method: "POST",
     body: init?.body as BodyInit,
     headers: init?.headers,
@@ -100,7 +100,9 @@ describe("cloud_sandbox_provider incremental sync", () => {
     vi.useFakeTimers();
     gitIsIgnoredIsoMock.mockReset();
     gitIsIgnoredIsoMock.mockResolvedValue(false);
-    appPath = await fs.mkdtemp(path.join(os.tmpdir(), "dyad-cloud-sync-"));
+    appPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "orianbuilder-cloud-sync-"),
+    );
     fetchMock = vi.fn(async () => {
       return new Response(
         JSON.stringify({
@@ -241,86 +243,92 @@ describe("cloud_sandbox_provider incremental sync", () => {
     expect(upload.files["assets.bin"]).toEqual(originalBytes);
   });
 
-  it("excludes gitignored paths, keeps root env files, and skips symlinks", async () => {
-    await fs.writeFile(
-      path.join(appPath, "visible.ts"),
-      "export const ok = true;",
-    );
-    await fs.writeFile(path.join(appPath, ".env"), "ROOT_ENV=1");
-    await fs.writeFile(path.join(appPath, ".env.local"), "ROOT_ENV_LOCAL=1");
-    await fs.writeFile(path.join(appPath, "ignored.ts"), "ignored");
-    await fs.mkdir(path.join(appPath, "ignored-dir"));
-    await fs.writeFile(
-      path.join(appPath, "ignored-dir", "secret.ts"),
-      "secret",
-    );
-    await fs.mkdir(path.join(appPath, "nested"));
-    await fs.writeFile(path.join(appPath, "nested", ".env.local"), "nested");
-    await fs.writeFile(path.join(appPath, "symlink-target.ts"), "outside");
-    await fs.symlink(
-      path.join(appPath, "symlink-target.ts"),
-      path.join(appPath, "linked.ts"),
-    );
-
-    gitIsIgnoredIsoMock.mockImplementation(async ({ filepath }) => {
-      return (
-        filepath === ".env" ||
-        filepath === ".env.local" ||
-        filepath === "ignored.ts" ||
-        filepath === "ignored-dir" ||
-        filepath === "nested/.env.local"
+  it.skipIf(process.platform === "win32")(
+    "excludes gitignored paths, keeps root env files, and skips symlinks",
+    async () => {
+      await fs.writeFile(
+        path.join(appPath, "visible.ts"),
+        "export const ok = true;",
       );
-    });
+      await fs.writeFile(path.join(appPath, ".env"), "ROOT_ENV=1");
+      await fs.writeFile(path.join(appPath, ".env.local"), "ROOT_ENV_LOCAL=1");
+      await fs.writeFile(path.join(appPath, "ignored.ts"), "ignored");
+      await fs.mkdir(path.join(appPath, "ignored-dir"));
+      await fs.writeFile(
+        path.join(appPath, "ignored-dir", "secret.ts"),
+        "secret",
+      );
+      await fs.mkdir(path.join(appPath, "nested"));
+      await fs.writeFile(path.join(appPath, "nested", ".env.local"), "nested");
+      await fs.writeFile(path.join(appPath, "symlink-target.ts"), "outside");
+      await fs.symlink(
+        path.join(appPath, "symlink-target.ts"),
+        path.join(appPath, "linked.ts"),
+      );
 
-    await expect(buildCloudSandboxFileMap(appPath)).resolves.toEqual({
-      ".env": Buffer.from("ROOT_ENV=1"),
-      ".env.local": Buffer.from("ROOT_ENV_LOCAL=1"),
-      "symlink-target.ts": Buffer.from("outside"),
-      "visible.ts": Buffer.from("export const ok = true;"),
-    });
-  });
+      gitIsIgnoredIsoMock.mockImplementation(async ({ filepath }) => {
+        return (
+          filepath === ".env" ||
+          filepath === ".env.local" ||
+          filepath === "ignored.ts" ||
+          filepath === "ignored-dir" ||
+          filepath === "nested/.env.local"
+        );
+      });
 
-  it("treats ignored and symlinked changed paths as deletions during incremental sync", async () => {
-    await fs.writeFile(path.join(appPath, "changed.ts"), "updated");
-    await fs.writeFile(path.join(appPath, ".env.local"), "SAFE_ENV=1");
-    await fs.writeFile(path.join(appPath, "ignored.ts"), "ignored");
-    await fs.writeFile(path.join(appPath, "symlink-target.ts"), "target");
-    await fs.symlink(
-      path.join(appPath, "symlink-target.ts"),
-      path.join(appPath, "linked.ts"),
-    );
+      await expect(buildCloudSandboxFileMap(appPath)).resolves.toEqual({
+        ".env": Buffer.from("ROOT_ENV=1"),
+        ".env.local": Buffer.from("ROOT_ENV_LOCAL=1"),
+        "symlink-target.ts": Buffer.from("outside"),
+        "visible.ts": Buffer.from("export const ok = true;"),
+      });
+    },
+  );
 
-    gitIsIgnoredIsoMock.mockImplementation(async ({ filepath }) => {
-      return filepath === ".env.local" || filepath === "ignored.ts";
-    });
+  it.skipIf(process.platform === "win32")(
+    "treats ignored and symlinked changed paths as deletions during incremental sync",
+    async () => {
+      await fs.writeFile(path.join(appPath, "changed.ts"), "updated");
+      await fs.writeFile(path.join(appPath, ".env.local"), "SAFE_ENV=1");
+      await fs.writeFile(path.join(appPath, "ignored.ts"), "ignored");
+      await fs.writeFile(path.join(appPath, "symlink-target.ts"), "target");
+      await fs.symlink(
+        path.join(appPath, "symlink-target.ts"),
+        path.join(appPath, "linked.ts"),
+      );
 
-    await syncCloudSandboxDirtyPaths({
-      appId: 1,
-      changedPaths: ["changed.ts", ".env.local", "ignored.ts", "linked.ts"],
-    });
+      gitIsIgnoredIsoMock.mockImplementation(async ({ filepath }) => {
+        return filepath === ".env.local" || filepath === "ignored.ts";
+      });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [, init] = fetchMock.mock.calls[0];
-    const upload = await parseMultipartUpload(init);
-    expect(upload.manifest).toEqual({
-      replaceAll: false,
-      deletedFiles: ["ignored.ts", "linked.ts"],
-      files: [
-        {
-          path: ".env.local",
-          fieldName: "file_0",
-        },
-        {
-          path: "changed.ts",
-          fieldName: "file_1",
-        },
-      ],
-    });
-    expect(upload.files).toEqual({
-      ".env.local": Buffer.from("SAFE_ENV=1"),
-      "changed.ts": Buffer.from("updated"),
-    });
-  });
+      await syncCloudSandboxDirtyPaths({
+        appId: 1,
+        changedPaths: ["changed.ts", ".env.local", "ignored.ts", "linked.ts"],
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [, init] = fetchMock.mock.calls[0];
+      const upload = await parseMultipartUpload(init);
+      expect(upload.manifest).toEqual({
+        replaceAll: false,
+        deletedFiles: ["ignored.ts", "linked.ts"],
+        files: [
+          {
+            path: ".env.local",
+            fieldName: "file_0",
+          },
+          {
+            path: "changed.ts",
+            fieldName: "file_1",
+          },
+        ],
+      });
+      expect(upload.files).toEqual({
+        ".env.local": Buffer.from("SAFE_ENV=1"),
+        "changed.ts": Buffer.from("updated"),
+      });
+    },
+  );
 
   it("promotes gitignore changes to a full snapshot sync", async () => {
     await fs.writeFile(path.join(appPath, ".gitignore"), "dist\n");
@@ -665,7 +673,7 @@ describe("cloud_sandbox_provider response validation", () => {
     expect(error).toBeInstanceOf(CloudSandboxApiError);
     expect(error).toMatchObject({
       message:
-        "Dyad’s cloud sandbox service is temporarily unavailable. Please try again.",
+        "OrianBuilder’s cloud sandbox service is temporarily unavailable. Please try again.",
       status: 503,
     });
   });

@@ -7,7 +7,10 @@ import {
   escapeXmlAttr,
   escapeXmlContent,
 } from "./types";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { addLog } from "@/lib/log_store";
 
 const logger = log.scope("run_terminal_command");
@@ -99,7 +102,7 @@ After running a build command and seeing errors, fix the code and re-run to conf
   buildXml: (args, isComplete) => {
     if (!args.command) return undefined;
     if (isComplete) return undefined;
-    return `<dyad-terminal-command cmd="${escapeXmlAttr(args.command ?? "")}">Running…`;
+    return `<orianbuilder-terminal-command cmd="${escapeXmlAttr(args.command ?? "")}">Running…`;
   },
 
   execute: async (args, ctx: AgentContext) => {
@@ -107,16 +110,16 @@ After running a build command and seeing errors, fix the code and re-run to conf
     logger.log(`run_terminal_command: ${command} (cwd: ${ctx.appPath})`);
 
     if (!command) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Command must not be empty.",
-        DyadErrorKind.Validation,
+        OrianBuilderErrorKind.Validation,
       );
     }
 
     if (isCommandBlocked(command)) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Command blocked for safety: "${command}". Destructive or dangerous commands are not allowed.`,
-        DyadErrorKind.Validation,
+        OrianBuilderErrorKind.Validation,
       );
     }
 
@@ -127,7 +130,7 @@ After running a build command and seeing errors, fix the code and re-run to conf
     const timeoutMs = (args.timeout_seconds ?? 60) * 1000;
 
     ctx.onXmlStream(
-      `<dyad-terminal-command cmd="${escapeXmlAttr(command)}">Running…`,
+      `<orianbuilder-terminal-command cmd="${escapeXmlAttr(command)}">Running…`,
     );
 
     const result = await new Promise<{
@@ -208,7 +211,7 @@ After running a build command and seeing errors, fix the code and re-run to conf
     const summary = `Command: ${command}\nStatus: ${status}\n\n${truncated}`;
 
     ctx.onXmlComplete(
-      `<dyad-terminal-command cmd="${escapeXmlAttr(command)}" exit-code="${result.exitCode}">${escapeXmlContent(summary)}</dyad-terminal-command>`,
+      `<orianbuilder-terminal-command cmd="${escapeXmlAttr(command)}" exit-code="${result.exitCode}">${escapeXmlContent(summary)}</orianbuilder-terminal-command>`,
     );
 
     logger.log(`run_terminal_command done: exit=${result.exitCode}`);

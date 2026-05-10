@@ -1,14 +1,14 @@
-import { useAtom } from 'jotai';
-import { libFilterAtom, type LibFilter } from '@/lib/atoms';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { TabBar } from '@/components/ui/Tabs';
+import { useAtom } from "jotai";
+import { libFilterAtom, type LibFilter } from "@/lib/atoms";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { TabBar } from "@/components/ui/Tabs";
 
 const FILTERS: { id: LibFilter; icon: string; label: string }[] = [
-  { id: 'all',     icon: '⊞', label: 'All' },
-  { id: 'themes',  icon: '◎', label: 'Themes' },
-  { id: 'prompts', icon: '◫', label: 'Prompts' },
-  { id: 'media',   icon: '✦', label: 'Media' },
+  { id: "all", icon: "⊞", label: "All" },
+  { id: "themes", icon: "◎", label: "Themes" },
+  { id: "prompts", icon: "◫", label: "Prompts" },
+  { id: "media", icon: "✦", label: "Media" },
 ];
 
 export function LibraryPage() {
@@ -21,7 +21,7 @@ export function LibraryPage() {
         {FILTERS.map((f) => (
           <button
             key={f.id}
-            className={`lib-item ${filter === f.id ? 'active' : ''}`}
+            className={`lib-item ${filter === f.id ? "active" : ""}`}
             onClick={() => setFilter(f.id)}
             type="button"
           >
@@ -31,12 +31,19 @@ export function LibraryPage() {
       </aside>
 
       <div className="lib-content">
-        <div className="row between" style={{ marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+        <div
+          className="row between"
+          style={{ marginBottom: 14, flexWrap: "wrap", gap: 10 }}
+        >
           <div>
             <span className="eyebrow">⊟ Archive</span>
-            <h1 className="page-title" style={{ fontSize: 22, marginTop: 5 }}>Library</h1>
+            <h1 className="page-title" style={{ fontSize: 22, marginTop: 5 }}>
+              Library
+            </h1>
           </div>
-          <Button variant="primary" size="sm">+ New ▾</Button>
+          <Button variant="primary" size="sm">
+            + New ▾
+          </Button>
         </div>
 
         <div className="search-pill" style={{ marginBottom: 14 }}>
@@ -55,7 +62,9 @@ export function LibraryPage() {
           <div className="galaxy-mini" aria-hidden />
           <h3>No items in your library yet</h3>
           <p>Create or import themes, prompts, and media to get started.</p>
-          <Button variant="primary" size="sm">+ Add First Item</Button>
+          <Button variant="primary" size="sm">
+            + Add First Item
+          </Button>
         </div>
       </div>
     </div>

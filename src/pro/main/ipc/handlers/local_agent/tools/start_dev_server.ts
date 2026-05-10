@@ -53,13 +53,13 @@ Use this before visual QA, screenshots, accessibility checks, or console checks.
 
   buildXml: (_args, isComplete) => {
     if (isComplete) return undefined;
-    return `<dyad-runtime-session status="starting">Starting dev server...`;
+    return `<orianbuilder-runtime-session status="starting">Starting dev server...`;
   },
 
   execute: async (args, ctx: AgentContext) => {
     logger.log(`start_dev_server: appId=${ctx.appId}`);
     ctx.onXmlStream(
-      `<dyad-runtime-session status="starting">Starting dev server...`,
+      `<orianbuilder-runtime-session status="starting">Starting dev server...`,
     );
 
     if (args.restart) {
@@ -76,7 +76,7 @@ Use this before visual QA, screenshots, accessibility checks, or console checks.
     const output = readiness.recentOutput.slice(-10).join("\n");
 
     ctx.onXmlComplete(
-      `<dyad-runtime-session status="${status}" ready="${readiness.ready ? "true" : "false"}" url="${escapeXmlAttr(readiness.previewUrl ?? "")}" mode="${escapeXmlAttr(readiness.mode ?? "")}" process-id="${readiness.processId ?? ""}" pid="${readiness.pid ?? ""}" status-code="${readiness.statusCode ?? ""}" error="${escapeXmlAttr(readiness.error ?? "")}">${escapeXmlContent(output)}</dyad-runtime-session>`,
+      `<orianbuilder-runtime-session status="${status}" ready="${readiness.ready ? "true" : "false"}" url="${escapeXmlAttr(readiness.previewUrl ?? "")}" mode="${escapeXmlAttr(readiness.mode ?? "")}" process-id="${readiness.processId ?? ""}" pid="${readiness.pid ?? ""}" status-code="${readiness.statusCode ?? ""}" error="${escapeXmlAttr(readiness.error ?? "")}">${escapeXmlContent(output)}</orianbuilder-runtime-session>`,
     );
 
     if (!readiness.ready) {
@@ -99,13 +99,13 @@ export const stopDevServerTool: ToolDefinition<StopDevServerArgs> = {
 
   buildXml: (_args, isComplete) => {
     if (isComplete) return undefined;
-    return `<dyad-runtime-session status="stopping">Stopping dev server...`;
+    return `<orianbuilder-runtime-session status="stopping">Stopping dev server...`;
   },
 
   execute: async (_args, ctx: AgentContext) => {
     await stopAppById(ctx.appId);
     ctx.onXmlComplete(
-      `<dyad-runtime-session status="stopped" ready="false"></dyad-runtime-session>`,
+      `<orianbuilder-runtime-session status="stopped" ready="false"></orianbuilder-runtime-session>`,
     );
     return "Managed dev server stopped.";
   },
@@ -123,14 +123,14 @@ export const readDevServerOutputTool: ToolDefinition<ReadDevServerOutputArgs> =
 
     buildXml: (_args, isComplete) => {
       if (isComplete) return undefined;
-      return `<dyad-runtime-output>Reading dev-server output...`;
+      return `<orianbuilder-runtime-output>Reading dev-server output...`;
     },
 
     execute: async (args, ctx: AgentContext) => {
       const status = getManagedRuntimeStatus(ctx.appId);
       const output = status.recentOutput.slice(-(args.limit ?? 30)).join("\n");
       ctx.onXmlComplete(
-        `<dyad-runtime-output status="${status.status}" url="${escapeXmlAttr(status.previewUrl ?? "")}" mode="${escapeXmlAttr(status.mode ?? "")}" process-id="${status.processId ?? ""}" pid="${status.pid ?? ""}">${escapeXmlContent(output)}</dyad-runtime-output>`,
+        `<orianbuilder-runtime-output status="${status.status}" url="${escapeXmlAttr(status.previewUrl ?? "")}" mode="${escapeXmlAttr(status.mode ?? "")}" process-id="${status.processId ?? ""}" pid="${status.pid ?? ""}">${escapeXmlContent(output)}</orianbuilder-runtime-output>`,
       );
       return `Runtime status: ${status.status}\nPreview URL: ${status.previewUrl ?? "(not available)"}\n\n${output || "(no recent output)"}`;
     },

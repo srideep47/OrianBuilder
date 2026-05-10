@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode } from "react";
 
 interface TabBarProps {
   value: string;
@@ -8,13 +8,18 @@ interface TabBarProps {
 }
 
 /** Underlying styled tab-bar. We use a controlled custom tab strip to match design 1:1. */
-export function TabBar({ value, onValueChange, options, className }: TabBarProps) {
+export function TabBar({
+  value,
+  onValueChange,
+  options,
+  className,
+}: TabBarProps) {
   return (
-    <div className={`tab-bar ${className ?? ''}`}>
+    <div className={`tab-bar ${className ?? ""}`}>
       {options.map((o) => (
         <button
           key={o.value}
-          className={`tab ${value === o.value ? 'active' : ''}`}
+          className={`tab ${value === o.value ? "active" : ""}`}
           onClick={() => onValueChange(o.value)}
           type="button"
         >
@@ -32,7 +37,7 @@ export function Segmented({ value, onValueChange, options }: TabBarProps) {
       {options.map((o) => (
         <button
           key={o.value}
-          className={`seg-btn ${value === o.value ? 'active' : ''}`}
+          className={`seg-btn ${value === o.value ? "active" : ""}`}
           onClick={() => onValueChange(o.value)}
           type="button"
         >

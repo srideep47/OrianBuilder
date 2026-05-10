@@ -79,14 +79,14 @@
         "type": "function",
         "function": {
           "name": "copy_file",
-          "description": "Copy a file from one location to another. Can copy uploaded attachment files (from .dyad/media) into the codebase, or copy files within the codebase.",
+          "description": "Copy a file from one location to another. Can copy uploaded attachment files (from .orianbuilder/media) into the codebase, or copy files within the codebase.",
           "parameters": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "from": {
                 "type": "string",
-                "description": "The source file path (can be a .dyad/media path or a path relative to the app root)"
+                "description": "The source file path (can be a .orianbuilder/media path or a path relative to the app root)"
               },
               "to": {
                 "type": "string",
@@ -471,7 +471,7 @@
         "type": "function",
         "function": {
           "name": "generate_image",
-          "description": "Generate an image using AI based on a text prompt. The generated image is saved to the project's .dyad/media directory.\n\n### When to Use\n- User requests a custom image, illustration, icon, or graphic for their app\n- User wants a hero image, background, banner, or visual asset\n- Creating images that are more visually relevant than placeholder rectangles\n\n### Prompt Guidelines\nWrite detailed, descriptive prompts. Be specific about:\n- **Subject**: What is in the image (objects, people, scenes)\n- **Style**: Photography, illustration, flat design, 3D render, watercolor, etc.\n- **Composition**: Layout, perspective, framing\n- **Colors**: Specific color palette or mood\n- **Mood**: Cheerful, professional, dramatic, minimal, etc.\n\n### Examples\n- \"A modern flat illustration of a team collaborating around a laptop, using a blue and purple color palette, clean minimal style with subtle gradients, white background\"\n- \"Professional product photography of a sleek smartphone on a marble surface, soft studio lighting, shallow depth of field, warm neutral tones\"\n\n### After Generation\nThe tool returns the file path in .dyad/media. Use the copy_file tool to copy it to the appropriate location in the project (e.g., public/assets/) and reference that path in your code.\n",
+          "description": "Generate an image using AI based on a text prompt. The generated image is saved to the project's .orianbuilder/media directory.\n\n### When to Use\n- User requests a custom image, illustration, icon, or graphic for their app\n- User wants a hero image, background, banner, or visual asset\n- Creating images that are more visually relevant than placeholder rectangles\n\n### Prompt Guidelines\nWrite detailed, descriptive prompts. Be specific about:\n- **Subject**: What is in the image (objects, people, scenes)\n- **Style**: Photography, illustration, flat design, 3D render, watercolor, etc.\n- **Composition**: Layout, perspective, framing\n- **Colors**: Specific color palette or mood\n- **Mood**: Cheerful, professional, dramatic, minimal, etc.\n\n### Examples\n- \"A modern flat illustration of a team collaborating around a laptop, using a blue and purple color palette, clean minimal style with subtle gradients, white background\"\n- \"Professional product photography of a sleek smartphone on a marble surface, soft studio lighting, shallow depth of field, warm neutral tones\"\n\n### After Generation\nThe tool returns the file path in .orianbuilder/media. Use the copy_file tool to copy it to the appropriate location in the project (e.g., public/assets/) and reference that path in your code.\n",
           "parameters": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -654,6 +654,6 @@
     "stream": true
   },
   "headers": {
-    "authorization": "Bearer testdyadkey"
+    "authorization": "Bearer testorianbuilderkey"
   }
 }

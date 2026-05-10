@@ -1,6 +1,6 @@
 # Claude Implementation Prompt: Autonomous Agentic Builder Phase 2
 
-You are working in `D:\Work\LegionStudios\ProjectOrion\Builder\dyad`, the Orian Builder Electron app. Read `AGENTS.md`, `CONTRIBUTING.md`, and the relevant rule files before touching code:
+You are working in `D:\Work\LegionStudios\ProjectOrion\Builder\orianbuilder`, the Orian Builder Electron app. Read `AGENTS.md`, `CONTRIBUTING.md`, and the relevant rule files before touching code:
 
 - `rules/local-agent-tools.md`
 - `rules/electron-ipc.md`
@@ -78,10 +78,10 @@ Build Phase 2 around those primitives.
 
 2. Visual/runtime gate events:
    - Parse final local-agent XML output for:
-     - `<dyad-screenshot ...>`
-     - `<dyad-accessibility-tree ...>`
-     - `<dyad-console-output ...>`
-     - `<dyad-terminal-command ...>` when it represents app start/dev/preview
+     - `<orianbuilder-screenshot ...>`
+     - `<orianbuilder-accessibility-tree ...>`
+     - `<orianbuilder-console-output ...>`
+     - `<orianbuilder-terminal-command ...>` when it represents app start/dev/preview
    - Log structured mission events:
      - `visual_screenshot_captured`
      - `visual_accessibility_captured`

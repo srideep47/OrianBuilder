@@ -86,7 +86,7 @@ interface ErrorBannerProps {
   error:
     | {
         message: string;
-        source: "preview-app" | "dyad-app" | "dyad-sync";
+        source: "preview-app" | "orianbuilder-app" | "orianbuilder-sync";
       }
     | undefined;
   onDismiss: () => void;
@@ -98,8 +98,8 @@ const ErrorBanner = ({ error, onDismiss, onAIFix }: ErrorBannerProps) => {
   const { isStreaming } = useStreamChat();
   if (!error) return null;
   const isDockerError = error.message.includes("Cannot connect to the Docker");
-  const isInternalDyadError = error.source === "dyad-app";
-  const isSyncError = error.source === "dyad-sync";
+  const isInternalOrianBuilderError = error.source === "orianbuilder-app";
+  const isSyncError = error.source === "orianbuilder-sync";
 
   const getTruncatedError = () => {
     const firstLine = error.message.split("\n")[0];
@@ -123,7 +123,7 @@ const ErrorBanner = ({ error, onDismiss, onAIFix }: ErrorBannerProps) => {
         <X size={14} className="text-red-500 dark:text-red-400" />
       </button>
 
-      {(isInternalDyadError || isSyncError) && (
+      {(isInternalOrianBuilderError || isSyncError) && (
         <div className="absolute top-1 right-1 p-1 bg-red-100 dark:bg-red-900 rounded-md text-xs font-medium text-red-700 dark:text-red-300">
           {isSyncError ? "Cloud sync issue" : "Internal OrianBuilder error"}
         </div>
@@ -133,7 +133,7 @@ const ErrorBanner = ({ error, onDismiss, onAIFix }: ErrorBannerProps) => {
       <div
         className={cn(
           "px-6 py-1 text-sm",
-          (isInternalDyadError || isSyncError) && "pt-6",
+          (isInternalOrianBuilderError || isSyncError) && "pt-6",
         )}
       >
         <div
@@ -161,7 +161,7 @@ const ErrorBanner = ({ error, onDismiss, onAIFix }: ErrorBannerProps) => {
               ? "Make sure Docker Desktop is running and try restarting the app."
               : isSyncError
                 ? "OrianBuilder could not upload your latest local changes to the cloud sandbox. Check your network connection or wait for sync to recover."
-                : isInternalDyadError
+                : isInternalOrianBuilderError
                   ? "Try restarting the OrianBuilder app or restarting your computer to see if that fixes the error."
                   : "Check if restarting the app fixes the error."}
           </span>
@@ -367,7 +367,7 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
         commitHash,
       };
       contentWindow.postMessage(
-        { type: "dyad-take-screenshot", requestId },
+        { type: "orianbuilder-take-screenshot", requestId },
         "*",
       );
     }, SCREENSHOT_CAPTURE_DELAY_MS);
@@ -393,7 +393,7 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
     const requestId = crypto.randomUUID();
     pendingAnnotatorScreenshotRequestIdRef.current = requestId;
     iframeRef.current.contentWindow.postMessage(
-      { type: "dyad-take-screenshot", requestId },
+      { type: "orianbuilder-take-screenshot", requestId },
       "*",
     );
   };
@@ -461,7 +461,7 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
           : cloudSandboxStatus.terminationReason === "credits_exhausted"
             ? "This cloud sandbox was stopped because your OrianBuilder Pro credits ran out. Add credits and start it again."
             : "This cloud sandbox was stopped because OrianBuilder could not confirm billing. Please try starting it again.",
-        source: "dyad-app",
+        source: "orianbuilder-app",
       });
     }
   }, [cloudSandboxStatus, isCloudMode, setErrorMessage]);
@@ -475,18 +475,18 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
 
     if (localSyncErrorMessage) {
       setErrorMessage((current) =>
-        current && current.source !== "dyad-sync"
+        current && current.source !== "orianbuilder-sync"
           ? current
           : {
               message: localSyncErrorMessage,
-              source: "dyad-sync",
+              source: "orianbuilder-sync",
             },
       );
       return;
     }
 
     setErrorMessage((current) =>
-      current?.source === "dyad-sync" ? undefined : current,
+      current?.source === "orianbuilder-sync" ? undefined : current,
     );
   }, [cloudSandboxStatus, isCloudMode, setErrorMessage]);
 
@@ -523,7 +523,7 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
       if (result.hasStaticText && iframeRef.current?.contentWindow) {
         iframeRef.current.contentWindow.postMessage(
           {
-            type: "enable-dyad-text-editing",
+            type: "enable-orianbuilder-text-editing",
             data: {
               componentId: componentId,
               runtimeId: visualEditingSelectedComponent?.runtimeId,
@@ -587,7 +587,7 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
       // Send message to iframe to get current styles
       iframeRef.current.contentWindow.postMessage(
         {
-          type: "get-dyad-component-styles",
+          type: "get-orianbuilder-component-styles",
           data: {
             elementId: visualEditingSelectedComponent.id,
             runtimeId: visualEditingSelectedComponent.runtimeId,
@@ -621,7 +621,7 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
   useEffect(() => {
     if (iframeRef.current?.contentWindow && isComponentSelectorInitialized) {
       iframeRef.current.contentWindow.postMessage(
-        { type: "dyad-pro-mode", enabled: isProMode },
+        { type: "orianbuilder-pro-mode", enabled: isProMode },
         "*",
       );
     }
@@ -639,14 +639,14 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
     setIsRestoringQueuedSelection(false);
     if (selectedComponentsPreview.length === 0) {
       iframeRef.current.contentWindow.postMessage(
-        { type: "clear-dyad-component-overlays" },
+        { type: "clear-orianbuilder-component-overlays" },
         "*",
       );
       return;
     }
     iframeRef.current.contentWindow.postMessage(
       {
-        type: "restore-dyad-component-overlays",
+        type: "restore-orianbuilder-component-overlays",
         componentIds: selectedComponentsPreview.map((c) => c.id),
       },
       "*",
@@ -751,10 +751,10 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
         return;
       }
 
-      if (event.data?.type === "dyad-component-selector-initialized") {
+      if (event.data?.type === "orianbuilder-component-selector-initialized") {
         setIsComponentSelectorInitialized(true);
         iframeRef.current?.contentWindow?.postMessage(
-          { type: "dyad-pro-mode", enabled: isProMode },
+          { type: "orianbuilder-pro-mode", enabled: isProMode },
           "*",
         );
 
@@ -801,17 +801,17 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
         return;
       }
 
-      if (event.data?.type === "dyad-text-updated") {
+      if (event.data?.type === "orianbuilder-text-updated") {
         handleTextUpdated(event.data);
         return;
       }
 
-      if (event.data?.type === "dyad-text-finalized") {
+      if (event.data?.type === "orianbuilder-text-finalized") {
         handleTextUpdated(event.data);
         return;
       }
 
-      if (event.data?.type === "dyad-component-selected") {
+      if (event.data?.type === "orianbuilder-component-selected") {
         console.log("Component picked:", event.data);
 
         const component = parseComponentSelection(event.data);
@@ -849,14 +849,14 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
         return;
       }
 
-      if (event.data?.type === "dyad-component-deselected") {
+      if (event.data?.type === "orianbuilder-component-deselected") {
         const componentId = event.data.componentId;
         if (componentId) {
           // Disable text editing for the deselected component
           if (iframeRef.current?.contentWindow) {
             iframeRef.current.contentWindow.postMessage(
               {
-                type: "disable-dyad-text-editing",
+                type: "disable-orianbuilder-text-editing",
                 data: { componentId },
               },
               "*",
@@ -877,7 +877,7 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
         return;
       }
 
-      if (event.data?.type === "dyad-image-load-error") {
+      if (event.data?.type === "orianbuilder-image-load-error") {
         showError("Image failed to load. Please check the URL and try again.");
         // Remove the broken image from pending changes
         const { elementId } = event.data;
@@ -906,14 +906,14 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
         return;
       }
 
-      if (event.data?.type === "dyad-component-coordinates-updated") {
+      if (event.data?.type === "orianbuilder-component-coordinates-updated") {
         if (event.data.coordinates) {
           setCurrentComponentCoordinates(event.data.coordinates);
         }
         return;
       }
 
-      if (event.data?.type === "dyad-screenshot-response") {
+      if (event.data?.type === "orianbuilder-screenshot-response") {
         const requestId =
           typeof event.data.requestId === "string"
             ? event.data.requestId
@@ -1190,8 +1190,8 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
       iframeRef.current.contentWindow.postMessage(
         {
           type: newIsPicking
-            ? "activate-dyad-component-selector"
-            : "deactivate-dyad-component-selector",
+            ? "activate-orianbuilder-component-selector"
+            : "deactivate-orianbuilder-component-selector",
         },
         "*",
       );
@@ -1860,7 +1860,7 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
 };
 
 function parseComponentSelection(data: any): ComponentSelection | null {
-  if (!data || data.type !== "dyad-component-selected") {
+  if (!data || data.type !== "orianbuilder-component-selected") {
     return null;
   }
 

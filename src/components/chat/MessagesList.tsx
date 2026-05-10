@@ -252,7 +252,7 @@ function FooterComponent({ context }: { context?: FooterContext }) {
         </div>
       )}
       {isStreaming &&
-        !settings?.enableDyadPro &&
+        !settings?.enableOrianBuilderPro &&
         !userBudget &&
         messages.length > 0 && (
           <PromoMessage

@@ -208,16 +208,18 @@ export class Settings {
     await expect(this.page.getByText("test-api-key-12345")).toBeVisible();
   }
 
-  async setUpDyadProvider() {
+  async setUpOrianBuilderProvider() {
     await this.page
       .locator("div")
-      .filter({ hasText: /^DyadNeeds Setup$/ })
+      .filter({ hasText: /^OrianBuilderNeeds Setup$/ })
       .nth(1)
       .click();
-    await this.page.getByRole("textbox", { name: "Set Dyad API Key" }).click();
     await this.page
-      .getByRole("textbox", { name: "Set Dyad API Key" })
-      .fill("testdyadkey");
+      .getByRole("textbox", { name: "Set OrianBuilder API Key" })
+      .click();
+    await this.page
+      .getByRole("textbox", { name: "Set OrianBuilder API Key" })
+      .fill("testorianbuilderkey");
     await this.page.getByRole("button", { name: "Save Key" }).click();
   }
 }

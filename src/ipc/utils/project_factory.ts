@@ -51,7 +51,11 @@ export interface CreateGreenfieldProjectResult {
   output: string | null;
 }
 
-const IGNORED_EXISTING_ENTRIES = new Set([".git", ".dyad", ".DS_Store"]);
+const IGNORED_EXISTING_ENTRIES = new Set([
+  ".git",
+  ".orianbuilder",
+  ".DS_Store",
+]);
 const PACKAGE_MANAGER_VERSIONS: Record<GreenfieldPackageManager, string> = {
   npm: "10.8.0",
   pnpm: "9.0.0",

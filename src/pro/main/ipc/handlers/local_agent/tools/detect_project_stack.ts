@@ -8,7 +8,7 @@ import {
 } from "./types";
 import { resolveDirectoryWithinAppPath } from "./path_safety";
 import {
-  assertDyadInternalAccessAllowed,
+  assertOrianBuilderInternalAccessAllowed,
   resolveTargetAppPath,
 } from "./resolve_app_context";
 import { detectProjectStack } from "@/ipc/utils/project_stack_detector";
@@ -44,7 +44,7 @@ function getTargetPath(
     directory: args.directory,
   });
   const targetPath = path.join(targetAppPath, relativeDirectory);
-  assertDyadInternalAccessAllowed({
+  assertOrianBuilderInternalAccessAllowed({
     targetAppPath,
     fullFilePath: targetPath,
     appName: args.app_name,
@@ -99,7 +99,7 @@ Use this before working in an unfamiliar app, before greenfield setup decisions,
     const appNameAttr = args.app_name
       ? ` app_name="${escapeXmlAttr(args.app_name)}"`
       : "";
-    return `<dyad-project-stack${directoryAttr}${appNameAttr}>Detecting project stack...`;
+    return `<orianbuilder-project-stack${directoryAttr}${appNameAttr}>Detecting project stack...`;
   },
 
   execute: async (args, ctx: AgentContext) => {
@@ -108,7 +108,7 @@ Use this before working in an unfamiliar app, before greenfield setup decisions,
     const summary = buildSummary(detection);
 
     ctx.onXmlComplete(
-      `<dyad-project-stack framework="${escapeXmlAttr(detection.framework)}" kind="${escapeXmlAttr(detection.kind)}" package-manager="${escapeXmlAttr(detection.packageManager)}" confidence="${escapeXmlAttr(detection.confidence)}">${escapeXmlContent(summary)}</dyad-project-stack>`,
+      `<orianbuilder-project-stack framework="${escapeXmlAttr(detection.framework)}" kind="${escapeXmlAttr(detection.kind)}" package-manager="${escapeXmlAttr(detection.packageManager)}" confidence="${escapeXmlAttr(detection.confidence)}">${escapeXmlContent(summary)}</orianbuilder-project-stack>`,
     );
 
     return JSON.stringify(detection, null, 2);

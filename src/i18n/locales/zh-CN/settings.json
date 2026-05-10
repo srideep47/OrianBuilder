@@ -81,8 +81,8 @@
     "errorLoadingSettings": "加载设置出错",
     "couldNotLoadProvider": "无法加载提供商数据：{{message}}",
     "couldNotLoadSettings": "无法加载配置数据：{{message}}",
-    "enableDyadPro": "启用 OrianBuilder Pro",
-    "toggleDyadPro": "切换以启用 OrianBuilder Pro",
+    "enableOrianBuilderPro": "启用 OrianBuilder Pro",
+    "toggleOrianBuilderPro": "切换以启用 OrianBuilder Pro",
     "apiKeyEmpty": "API 密钥不能为空。",
     "errorTogglingPro": "切换 OrianBuilder Pro 时出错：{{error}}",
     "failedSaveApiKey": "保存 API 密钥失败。",
@@ -168,7 +168,7 @@
   },
   "azure": {
     "configured": "Azure OpenAI 已配置",
-    "configuredDescription": "Dyad 将使用设置中保存的凭据来访问 Azure OpenAI 模型。",
+    "configuredDescription": "OrianBuilder 将使用设置中保存的凭据来访问 Azure OpenAI 模型。",
     "usingEnvVars": "使用环境变量",
     "usingEnvVarsDescription": "AZURE_API_KEY 和 AZURE_RESOURCE_NAME 已设置。下方保存的值将覆盖它们。",
     "configRequired": "需要配置 Azure OpenAI",
@@ -183,8 +183,8 @@
     "configNeededDescription": "Azure OpenAI 请求需要资源名称和 API 密钥。请在上方输入，或提供环境变量。",
     "saveError": "保存错误",
     "envVarsOptional": "环境变量（可选）",
-    "envVarsHelpText": "您可以继续通过环境变量配置 Azure。如果两个变量都存在且未保存设置，Dyad 将自动使用它们。",
-    "envVarsPrecedence": "设置中保存的值优先于环境变量。更改环境变量后请重启 Dyad。"
+    "envVarsHelpText": "您可以继续通过环境变量配置 Azure。如果两个变量都存在且未保存设置，OrianBuilder 将自动使用它们。",
+    "envVarsPrecedence": "设置中保存的值优先于环境变量。更改环境变量后请重启 OrianBuilder。"
   },
   "vertex": {
     "projectId": "项目 ID",
@@ -258,6 +258,6 @@
     "updateProvider": "更新提供商",
     "failedCreate": "创建自定义提供商失败"
   },
-  "manageDyadPro": "管理 OrianBuilder Pro 订阅",
-  "setupDyadPro": "设置 OrianBuilder Pro 订阅"
+  "manageOrianBuilderPro": "管理 OrianBuilder Pro 订阅",
+  "setupOrianBuilderPro": "设置 OrianBuilder Pro 订阅"
 }

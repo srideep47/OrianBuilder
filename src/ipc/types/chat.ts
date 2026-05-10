@@ -118,9 +118,7 @@ export const ChatResponseChunkSchema = z.object({
   streamingMessageId: z.number().optional(),
   streamingContent: z.string().optional(),
   effectiveChatMode: ChatModeSchema.optional(),
-  chatModeFallbackReason: z
-    .enum(["pro-required", "quota-exhausted", "no-provider"])
-    .optional(),
+  chatModeFallbackReason: z.enum(["no-provider"]).optional(),
 });
 
 export type ChatResponseChunk = z.infer<typeof ChatResponseChunkSchema>;

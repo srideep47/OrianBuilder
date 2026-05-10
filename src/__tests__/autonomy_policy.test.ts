@@ -4,6 +4,7 @@ import {
   getAutonomyPolicyDecision,
   getToolRisk,
 } from "@/ipc/utils/autonomy_policy";
+import { getToolCapability } from "@/ipc/utils/tool_capabilities";
 
 describe("autonomy policy", () => {
   it("blocks critical destructive commands before consent", () => {
@@ -44,7 +45,7 @@ describe("autonomy policy", () => {
       }),
     ).toMatchObject({
       decision: "auto_approve",
-      risk: "low",
+      risk: "medium",
     });
   });
 
@@ -82,6 +83,103 @@ describe("autonomy policy", () => {
     ).toMatchObject({
       decision: "auto_approve",
       risk: "medium",
+    });
+  });
+
+  it("allows browser QA gate as a runtime tool in trusted workspace", () => {
+    expect(
+      getAutonomyPolicyDecision({
+        profile: "trusted-workspace",
+        runtimeMode: "host",
+        toolName: "browser_qa_gate",
+        inputPreview: "run full browser QA",
+      }),
+    ).toMatchObject({
+      decision: "auto_approve",
+      risk: "medium",
+    });
+  });
+
+  it("exposes explicit tool capabilities for project checks", () => {
+    expect(getToolCapability("run_project_check")).toMatchObject({
+      risk: "medium",
+      stateScope: "runtime",
+      isolation: "workspace",
+      expectedArtifacts: ["project_check_report"],
+    });
+  });
+
+  it("treats remote MCP write tool keys as consent-gated external tools", () => {
+    expect(getToolCapability("github__create_issue")).toMatchObject({
+      risk: "high",
+      stateScope: "external",
+      isolation: "sandbox",
+      expectedArtifacts: ["mcp_tool_result"],
+    });
+    expect(
+      getAutonomyPolicyDecision({
+        profile: "trusted-workspace",
+        runtimeMode: "host",
+        toolName: "github__create_issue",
+        inputPreview: "create issue",
+      }),
+    ).toMatchObject({
+      decision: "ask",
+      risk: "high",
+    });
+  });
+
+  it("auto-approves known read-only MCP tools in autopilot", () => {
+    expect(
+      getAutonomyPolicyDecision({
+        profile: "full-autopilot-sandbox",
+        runtimeMode: "cloud",
+        toolName: "github__list_issues",
+        inputPreview: "list issues",
+      }),
+    ).toMatchObject({
+      decision: "auto_approve",
+      risk: "low",
+    });
+  });
+
+  it("uses MCP trust overrides when deciding autonomy", () => {
+    expect(
+      getAutonomyPolicyDecision({
+        profile: "trusted-workspace",
+        runtimeMode: "cloud",
+        toolName: "unknown-server__mutate",
+        inputPreview: "workspace-safe custom MCP operation",
+        mcpToolTrustOverrides: {
+          "unknown-server__mutate": {
+            risk: "medium",
+            stateScope: "workspace",
+            requiresExplicitConsent: false,
+          },
+        },
+      }),
+    ).toMatchObject({
+      decision: "auto_approve",
+      risk: "medium",
+    });
+  });
+
+  it("requires consent for deploy preview because it touches external state", () => {
+    expect(getToolCapability("deploy_preview")).toMatchObject({
+      risk: "high",
+      stateScope: "external",
+      expectedArtifacts: ["deployment"],
+    });
+    expect(
+      getAutonomyPolicyDecision({
+        profile: "full-autopilot-sandbox",
+        runtimeMode: "cloud",
+        toolName: "deploy_preview",
+        inputPreview: "Create preview deployment",
+      }),
+    ).toMatchObject({
+      decision: "ask",
+      risk: "high",
     });
   });
 });

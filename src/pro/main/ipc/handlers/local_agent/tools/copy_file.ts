@@ -7,7 +7,7 @@ const copyFileSchema = z.object({
   from: z
     .string()
     .describe(
-      "The source file path (can be a .dyad/media path or a path relative to the app root)",
+      "The source file path (can be a .orianbuilder/media path or a path relative to the app root)",
     ),
   to: z.string().describe("The destination file path relative to the app root"),
   description: z
@@ -19,7 +19,7 @@ const copyFileSchema = z.object({
 export const copyFileTool: ToolDefinition<z.infer<typeof copyFileSchema>> = {
   name: "copy_file",
   description:
-    "Copy a file from one location to another. Can copy uploaded attachment files (from .dyad/media) into the codebase, or copy files within the codebase.",
+    "Copy a file from one location to another. Can copy uploaded attachment files (from .orianbuilder/media) into the codebase, or copy files within the codebase.",
   inputSchema: copyFileSchema,
   defaultConsent: "always",
   modifiesState: true,
@@ -28,7 +28,7 @@ export const copyFileTool: ToolDefinition<z.infer<typeof copyFileSchema>> = {
 
   buildXml: (args, _isComplete) => {
     if (!args.from || !args.to) return undefined;
-    return `<dyad-copy from="${escapeXmlAttr(args.from)}" to="${escapeXmlAttr(args.to)}" description="${escapeXmlAttr(args.description ?? "")}"></dyad-copy>`;
+    return `<orianbuilder-copy from="${escapeXmlAttr(args.from)}" to="${escapeXmlAttr(args.to)}" description="${escapeXmlAttr(args.description ?? "")}"></orianbuilder-copy>`;
   },
 
   execute: async (args, ctx: AgentContext) => {

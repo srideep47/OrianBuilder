@@ -1,5 +1,5 @@
 ---
-name: dyad:lint
+name: orianbuilder:lint
 description: Run pre-commit checks including formatting, linting, and type-checking, and fix any errors.
 ---
 

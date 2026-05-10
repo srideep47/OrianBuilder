@@ -27,7 +27,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
-  SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { ChatList } from "./ChatList";
 import { AppList } from "./AppList";
@@ -139,7 +138,9 @@ export function AppSidebar() {
               onClick={() => setIsHelpDialogOpen(true)}
             >
               <HelpCircle className="h-4 w-4 flex-shrink-0" />
-              <span className="group-data-[collapsible=icon]:hidden text-xs">Help</span>
+              <span className="group-data-[collapsible=icon]:hidden text-xs">
+                Help
+              </span>
             </SidebarMenuButton>
             <HelpDialog
               isOpen={isHelpDialogOpen}

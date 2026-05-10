@@ -7,7 +7,10 @@ import {
 } from "./types";
 import { getSupabaseTableSchema } from "../../../../../../supabase_admin/supabase_context";
 import { getNeonTableSchema } from "../../../../../../neon_admin/neon_context";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const getDatabaseTableSchemaSchema = z.object({
   tableName: z
@@ -42,7 +45,7 @@ export const getDatabaseTableSchemaTool: ToolDefinition<
 
     if (ctx.neonProjectId && ctx.neonActiveBranchId) {
       ctx.onXmlStream(
-        `<dyad-db-table-schema provider="Neon"${tableAttr}></dyad-db-table-schema>`,
+        `<orianbuilder-db-table-schema provider="Neon"${tableAttr}></orianbuilder-db-table-schema>`,
       );
 
       const schema = await getNeonTableSchema({
@@ -52,7 +55,7 @@ export const getDatabaseTableSchemaTool: ToolDefinition<
       });
 
       ctx.onXmlComplete(
-        `<dyad-db-table-schema provider="Neon"${tableAttr}>\n${escapeXmlContent(schema)}\n</dyad-db-table-schema>`,
+        `<orianbuilder-db-table-schema provider="Neon"${tableAttr}>\n${escapeXmlContent(schema)}\n</orianbuilder-db-table-schema>`,
       );
 
       return schema;
@@ -60,7 +63,7 @@ export const getDatabaseTableSchemaTool: ToolDefinition<
 
     if (ctx.supabaseProjectId) {
       ctx.onXmlStream(
-        `<dyad-db-table-schema provider="Supabase"${tableAttr}></dyad-db-table-schema>`,
+        `<orianbuilder-db-table-schema provider="Supabase"${tableAttr}></orianbuilder-db-table-schema>`,
       );
 
       const schema = await getSupabaseTableSchema({
@@ -70,15 +73,15 @@ export const getDatabaseTableSchemaTool: ToolDefinition<
       });
 
       ctx.onXmlComplete(
-        `<dyad-db-table-schema provider="Supabase"${tableAttr}>\n${escapeXmlContent(schema)}\n</dyad-db-table-schema>`,
+        `<orianbuilder-db-table-schema provider="Supabase"${tableAttr}>\n${escapeXmlContent(schema)}\n</orianbuilder-db-table-schema>`,
       );
 
       return schema;
     }
 
-    throw new DyadError(
+    throw new OrianBuilderError(
       "No database is connected to this app",
-      DyadErrorKind.Precondition,
+      OrianBuilderErrorKind.Precondition,
     );
   },
 };

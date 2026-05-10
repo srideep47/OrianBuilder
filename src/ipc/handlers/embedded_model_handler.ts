@@ -13,6 +13,7 @@ import {
   addLogListener,
   getRecentLogs,
   getCurrentStats,
+  startHardwareBroadcast,
 } from "../utils/embedded_inference_server";
 import { detectGpu } from "../utils/gpu_detection";
 import { readSettings, writeSettings } from "../../main/settings";
@@ -452,23 +453,23 @@ async function computeModelInfo(filePath: string, vramMb: number) {
               (effectiveKvContextForBudget / (realCtxLength ?? 131072))),
         )
       : 512;
-  // Dyad's system prompt (app codebase + instructions) is typically 30K–60K tokens.
+  // OrianBuilder's system prompt (app codebase + instructions) is typically 30K–60K tokens.
   // Recommend at least 32K so app building works correctly. Accept fewer GPU layers
   // as the trade-off — slower but correct beats fast with a 98-token response.
-  const DYAD_MIN_CTX = 32768;
+  const ORIANBUILDER_MIN_CTX = 32768;
   const ctxCap = realCtxLength ?? 131072;
   const rawCtx = nearestPower2(maxCtxFromVram);
 
   let recommendedContextSize: number;
-  if (rawCtx >= DYAD_MIN_CTX) {
+  if (rawCtx >= ORIANBUILDER_MIN_CTX) {
     recommendedContextSize = Math.min(ctxCap, rawCtx);
   } else {
     // Try nudging up: check if 32K fits with the current GPU layer count.
     const kvFor32K =
-      (DYAD_MIN_CTX * kvBytesPerTokenPerLayer * recommendedGpuLayers) /
+      (ORIANBUILDER_MIN_CTX * kvBytesPerTokenPerLayer * recommendedGpuLayers) /
       (1024 * 1024);
     if (kvFor32K <= vramAfterModelMb) {
-      recommendedContextSize = Math.min(ctxCap, DYAD_MIN_CTX);
+      recommendedContextSize = Math.min(ctxCap, ORIANBUILDER_MIN_CTX);
     } else if (
       (16384 * kvBytesPerTokenPerLayer * recommendedGpuLayers) /
         (1024 * 1024) <=
@@ -532,6 +533,9 @@ export function registerEmbeddedModelHandlers(): void {
   // broadcast them to all renderer windows so the Engine page stays live.
   addStatsListener((s) => broadcast(embeddedModelEvents.stats.channel, s));
   addLogListener((e) => broadcast(embeddedModelEvents.log.channel, e));
+
+  // Always-on hardware broadcast so CPU/RAM show even when idle
+  startHardwareBroadcast();
 
   ipcMain.handle("embedded-model:get-recent-logs", () => getRecentLogs());
   ipcMain.handle("embedded-model:get-stats", () => getCurrentStats());

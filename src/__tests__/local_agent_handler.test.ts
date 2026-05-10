@@ -89,7 +89,7 @@ function buildTestChat(
  */
 function buildTestSettings(
   overrides: {
-    enableDyadPro?: boolean;
+    enableOrianBuilderPro?: boolean;
     hasApiKey?: boolean;
     selectedModel?: string;
     enableContextCompaction?: boolean;
@@ -102,10 +102,10 @@ function buildTestSettings(
     autonomousMode: overrides.autonomousMode,
   };
 
-  if (overrides.enableDyadPro && overrides.hasApiKey !== false) {
+  if (overrides.enableOrianBuilderPro && overrides.hasApiKey !== false) {
     return {
       ...baseSettings,
-      enableDyadPro: true,
+      enableOrianBuilderPro: true,
       providerSettings: {
         auto: {
           apiKey: { value: "test-api-key" },
@@ -214,7 +214,7 @@ vi.mock("@/main/settings", () => ({
 }));
 
 vi.mock("@/paths/paths", () => ({
-  getDyadAppPath: vi.fn((appPath: string) => `/mock/apps/${appPath}`),
+  getOrianBuilderAppPath: vi.fn((appPath: string) => `/mock/apps/${appPath}`),
 }));
 
 // Track IPC messages sent via safeSend
@@ -256,7 +256,7 @@ vi.mock("@/ipc/utils/token_utils", () => ({
 vi.mock("@/ipc/utils/provider_options", () => ({
   getProviderOptions: vi.fn(() => ({})),
   getAiHeaders: vi.fn(() => ({})),
-  DYAD_INTERNAL_REQUEST_ID_HEADER: "x-dyad-internal-request-id",
+  ORIANBUILDER_INTERNAL_REQUEST_ID_HEADER: "x-orianbuilder-internal-request-id",
 }));
 
 vi.mock("@/ipc/utils/mcp_manager", () => ({
@@ -304,7 +304,10 @@ vi.mock("@/ipc/handlers/compaction/compaction_handler", () => ({
 // ============================================================================
 
 import { handleLocalAgentStream } from "@/pro/main/ipc/handlers/local_agent/local_agent_handler";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import {
   buildAgentToolSet,
   requireAgentToolConsent,
@@ -318,7 +321,7 @@ import {
 // Tests
 // ============================================================================
 
-const dyadRequestId = "test-request-id";
+const orianbuilderRequestId = "test-request-id";
 describe("handleLocalAgentStream", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -334,64 +337,11 @@ describe("handleLocalAgentStream", () => {
     vi.mocked(streamText).mockClear();
   });
 
-  describe("Pro status validation", () => {
-    it("should send error when Dyad Pro is not enabled", async () => {
-      // Arrange
-      const { event, getMessagesByChannel } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: false });
-
-      // Act
-      await handleLocalAgentStream(
-        event,
-        { chatId: 1, prompt: "test" },
-        new AbortController(),
-        {
-          placeholderMessageId: 10,
-          systemPrompt: "You are helpful",
-          dyadRequestId,
-        },
-      );
-
-      // Assert
-      const errorMessages = getMessagesByChannel("chat:response:error");
-      expect(errorMessages).toHaveLength(1);
-      expect(errorMessages[0].args[0]).toMatchObject({
-        chatId: 1,
-        error: expect.stringContaining("Agent v2 requires Dyad Pro"),
-      });
-    });
-
-    it("should send error when API key is missing even if Pro is enabled", async () => {
-      // Arrange
-      const { event, getMessagesByChannel } = createFakeEvent();
-      mockSettings = buildTestSettings({
-        enableDyadPro: true,
-        hasApiKey: false,
-      });
-
-      // Act
-      await handleLocalAgentStream(
-        event,
-        { chatId: 1, prompt: "test" },
-        new AbortController(),
-        {
-          placeholderMessageId: 10,
-          systemPrompt: "You are helpful",
-          dyadRequestId,
-        },
-      );
-
-      // Assert
-      const errorMessages = getMessagesByChannel("chat:response:error");
-      expect(errorMessages).toHaveLength(1);
-    });
-  });
-
   describe("Chat lookup", () => {
     it("should throw error when chat is not found", async () => {
       // Arrange
       const { event } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       mockChatData = null; // Chat not found
 
       // Act & Assert
@@ -403,7 +353,7 @@ describe("handleLocalAgentStream", () => {
           {
             placeholderMessageId: 10,
             systemPrompt: "You are helpful",
-            dyadRequestId,
+            orianbuilderRequestId,
           },
         ),
       ).rejects.toThrow("Chat not found: 999");
@@ -412,7 +362,7 @@ describe("handleLocalAgentStream", () => {
     it("should throw error when chat has no associated app", async () => {
       // Arrange
       const { event } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       mockChatData = { ...buildTestChat(), app: null } as any;
 
       // Act & Assert
@@ -424,7 +374,7 @@ describe("handleLocalAgentStream", () => {
           {
             placeholderMessageId: 10,
             systemPrompt: "You are helpful",
-            dyadRequestId,
+            orianbuilderRequestId,
           },
         ),
       ).rejects.toThrow("Chat not found: 1");
@@ -435,7 +385,7 @@ describe("handleLocalAgentStream", () => {
     it("auto-approves local-agent tools when autonomous mode is enabled", async () => {
       const { event, getMessagesByChannel } = createFakeEvent();
       mockSettings = buildTestSettings({
-        enableDyadPro: true,
+        enableOrianBuilderPro: true,
         autonomousMode: true,
       });
       mockChatData = buildTestChat();
@@ -478,7 +428,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 
@@ -491,7 +441,7 @@ describe("handleLocalAgentStream", () => {
 
     it("includes warning messages in the error payload when a tool fails after warning", async () => {
       const { event, getMessagesByChannel } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       mockChatData = buildTestChat();
 
       const warningMessage = "Firewall checks were skipped for this install.";
@@ -522,7 +472,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 
@@ -537,7 +487,7 @@ describe("handleLocalAgentStream", () => {
 
     it("persists successful shared-module Supabase deploy status into aiMessagesJson", async () => {
       const { event } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       mockChatData = buildTestChat({
         supabaseProjectId: "supabase-project-id",
       });
@@ -545,7 +495,7 @@ describe("handleLocalAgentStream", () => {
       vi.mocked(deployAllFunctionsIfNeeded).mockImplementationOnce(
         async (ctx) => {
           ctx.onXmlComplete(
-            '<dyad-status title="Supabase functions deployed: 2/2 complete" state="finished">\n2 succeeded\n0 failed\n</dyad-status>',
+            '<orianbuilder-status title="Supabase functions deployed: 2/2 complete" state="finished">\n2 succeeded\n0 failed\n</orianbuilder-status>',
           );
           return { success: true };
         },
@@ -558,7 +508,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 
@@ -568,7 +518,7 @@ describe("handleLocalAgentStream", () => {
       const finalContent = contentUpdates[contentUpdates.length - 1].data
         .content as string;
 
-      expect(finalContent).toContain("<dyad-status");
+      expect(finalContent).toContain("<orianbuilder-status");
       expect(finalContent).toContain(
         'title="Supabase functions deployed: 2/2 complete"',
       );
@@ -584,15 +534,15 @@ describe("handleLocalAgentStream", () => {
             .aiMessagesJson as { messages: unknown[] }
         ).messages,
       );
-      expect(persistedAiMessages).toContain("<dyad-status");
+      expect(persistedAiMessages).toContain("<orianbuilder-status");
       expect(persistedAiMessages).toContain(
         'title=\\"Supabase functions deployed: 2/2 complete\\"',
       );
     });
 
-    it("appends shared-module Supabase deploy warnings as dyad-output", async () => {
+    it("appends shared-module Supabase deploy warnings as orianbuilder-output", async () => {
       const { event } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       mockChatData = buildTestChat({
         supabaseProjectId: "supabase-project-id",
       });
@@ -610,7 +560,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 
@@ -620,7 +570,7 @@ describe("handleLocalAgentStream", () => {
       const finalContent = contentUpdates[contentUpdates.length - 1].data
         .content as string;
 
-      expect(finalContent).toContain('<dyad-output type="warning"');
+      expect(finalContent).toContain('<orianbuilder-output type="warning"');
       expect(finalContent).toContain(
         'message="Supabase function deploy warning"',
       );
@@ -640,15 +590,17 @@ describe("handleLocalAgentStream", () => {
             .aiMessagesJson as { messages: unknown[] }
         ).messages,
       );
-      expect(persistedAiMessages).toContain('<dyad-output type=\\"warning\\"');
+      expect(persistedAiMessages).toContain(
+        '<orianbuilder-output type=\\"warning\\"',
+      );
       expect(persistedAiMessages).toContain(
         'message=\\"Supabase function deploy warning\\"',
       );
     });
 
-    it("appends shared-module Supabase deploy failures as dyad-output and still commits", async () => {
+    it("appends shared-module Supabase deploy failures as orianbuilder-output and still commits", async () => {
       const { event, getMessagesByChannel } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       mockChatData = buildTestChat({
         supabaseProjectId: "supabase-project-id",
       });
@@ -666,7 +618,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 
@@ -679,7 +631,7 @@ describe("handleLocalAgentStream", () => {
       const finalContent = contentUpdates[contentUpdates.length - 1].data
         .content as string;
 
-      expect(finalContent).toContain('<dyad-output type="error"');
+      expect(finalContent).toContain('<orianbuilder-output type="error"');
       expect(finalContent).toContain(
         'message="Failed to deploy Supabase functions"',
       );
@@ -699,7 +651,9 @@ describe("handleLocalAgentStream", () => {
             .aiMessagesJson as { messages: unknown[] }
         ).messages,
       );
-      expect(persistedAiMessages).toContain('<dyad-output type=\\"error\\"');
+      expect(persistedAiMessages).toContain(
+        '<orianbuilder-output type=\\"error\\"',
+      );
       expect(persistedAiMessages).toContain(
         'message=\\"Failed to deploy Supabase functions\\"',
       );
@@ -711,7 +665,7 @@ describe("handleLocalAgentStream", () => {
       // Arrange
       const { event } = createFakeEvent();
       mockSettings = buildTestSettings({
-        enableDyadPro: true,
+        enableOrianBuilderPro: true,
         enableContextCompaction: false,
       });
       mockChatData = buildTestChat();
@@ -726,7 +680,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 
@@ -739,7 +693,7 @@ describe("handleLocalAgentStream", () => {
     it("should compact between steps when token usage crosses threshold", async () => {
       // Arrange
       const { event, getMessagesByChannel } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       const t0 = new Date("2025-01-01T00:00:00Z");
       const t1 = new Date("2025-01-01T00:01:00Z");
       const t2 = new Date("2025-01-01T00:02:00Z");
@@ -775,7 +729,7 @@ describe("handleLocalAgentStream", () => {
               id: 20,
               role: "assistant",
               content:
-                '<dyad-compaction title="Conversation compacted" state="finished">mid-turn summary</dyad-compaction>',
+                '<orianbuilder-compaction title="Conversation compacted" state="finished">mid-turn summary</orianbuilder-compaction>',
               isCompactionSummary: true,
               createdAt: new Date("2025-01-01T00:03:30Z"),
             },
@@ -784,7 +738,7 @@ describe("handleLocalAgentStream", () => {
         return {
           success: true,
           summary: "mid-turn summary",
-          backupPath: ".dyad/chats/1/compaction-test.md",
+          backupPath: ".orianbuilder/chats/1/compaction-test.md",
         };
       });
 
@@ -842,7 +796,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 
@@ -853,7 +807,7 @@ describe("handleLocalAgentStream", () => {
         expect.anything(),
         1,
         "/mock/apps/test-app-path",
-        dyadRequestId,
+        orianbuilderRequestId,
         expect.any(Function),
         { createdAtStrategy: "now" },
       );
@@ -885,7 +839,7 @@ describe("handleLocalAgentStream", () => {
       const compactionIndex = finalContent.indexOf("Conversation compacted");
       const doneIndex = finalContent.indexOf("done");
       const backupPathIndex = finalContent.indexOf(
-        ".dyad/chats/1/compaction-test.md",
+        ".orianbuilder/chats/1/compaction-test.md",
       );
 
       expect(beforeCompactionIndex).toBeGreaterThanOrEqual(0);
@@ -904,7 +858,7 @@ describe("handleLocalAgentStream", () => {
     it("should persist post-compaction response messages without reshaping", async () => {
       // Arrange
       const { event } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       const t0 = new Date("2025-01-01T00:00:00Z");
       const t1 = new Date("2025-01-01T00:01:00Z");
       const t2 = new Date("2025-01-01T00:02:00Z");
@@ -940,7 +894,7 @@ describe("handleLocalAgentStream", () => {
               id: 20,
               role: "assistant",
               content:
-                '<dyad-compaction title="Conversation compacted" state="finished">mid-turn summary</dyad-compaction>',
+                '<orianbuilder-compaction title="Conversation compacted" state="finished">mid-turn summary</orianbuilder-compaction>',
               isCompactionSummary: true,
               createdAt: new Date("2025-01-01T00:03:30Z"),
             },
@@ -949,7 +903,7 @@ describe("handleLocalAgentStream", () => {
         return {
           success: true,
           summary: "mid-turn summary",
-          backupPath: ".dyad/chats/1/compaction-test.md",
+          backupPath: ".orianbuilder/chats/1/compaction-test.md",
         };
       });
 
@@ -1071,7 +1025,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 
@@ -1091,7 +1045,7 @@ describe("handleLocalAgentStream", () => {
     it("should accumulate text-delta parts and update database", async () => {
       // Arrange
       const { event, getMessagesByChannel } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       mockChatData = buildTestChat({
         messages: [{ id: 1, role: "user", content: "Hello" }],
       });
@@ -1108,7 +1062,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 
@@ -1138,7 +1092,7 @@ describe("handleLocalAgentStream", () => {
     it("should retry and resume when a stream terminates transiently", async () => {
       // Arrange
       const { event, getMessagesByChannel } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       mockChatData = buildTestChat();
 
       const streamMessagesByAttempt: any[][] = [];
@@ -1182,7 +1136,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 
@@ -1219,7 +1173,7 @@ describe("handleLocalAgentStream", () => {
     it("should replay emitted tool events before retrying a terminated stream", async () => {
       // Arrange
       const { event, getMessagesByChannel } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       mockChatData = buildTestChat();
 
       const streamMessagesByAttempt: any[][] = [];
@@ -1275,7 +1229,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 
@@ -1316,7 +1270,7 @@ describe("handleLocalAgentStream", () => {
     it("should retry and resume when the provider emits a retryable server error", async () => {
       // Arrange
       const { event, getMessagesByChannel } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       mockChatData = buildTestChat();
 
       const streamMessagesByAttempt: any[][] = [];
@@ -1368,7 +1322,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 
@@ -1399,7 +1353,7 @@ describe("handleLocalAgentStream", () => {
     it("should wrap reasoning content in think tags", async () => {
       // Arrange
       const { event } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       mockChatData = buildTestChat();
       mockStreamResult = createFakeStream([
         { type: "reasoning-start" },
@@ -1416,7 +1370,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 
@@ -1437,7 +1391,7 @@ describe("handleLocalAgentStream", () => {
     it("should close thinking block when transitioning to text", async () => {
       // Arrange
       const { event } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       mockChatData = buildTestChat();
       // Simulate reasoning-delta without explicit reasoning-end before text
       mockStreamResult = createFakeStream([
@@ -1453,7 +1407,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 
@@ -1479,7 +1433,7 @@ describe("handleLocalAgentStream", () => {
     it("injects a non-persisted reflection message after invalid planning_questionnaire input", async () => {
       // Arrange
       const { event } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       mockChatData = buildTestChat({
         messages: [{ id: 1, role: "user", content: "Help me plan this app" }],
       });
@@ -1568,7 +1522,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 
@@ -1607,7 +1561,7 @@ describe("handleLocalAgentStream", () => {
     it("does not stop the stream when set_chat_summary is called", async () => {
       // Arrange
       const { event } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       mockChatData = buildTestChat();
       mockStreamResult = createFakeStream([]);
 
@@ -1619,7 +1573,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 
@@ -1633,7 +1587,7 @@ describe("handleLocalAgentStream", () => {
     it("runs a follow-up pass when the first pass ends with set_chat_summary and incomplete todos remain", async () => {
       // Arrange
       const { event } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       mockChatData = buildTestChat();
 
       vi.mocked(buildAgentToolSet).mockImplementation((ctx) => {
@@ -1735,7 +1689,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 
@@ -1762,7 +1716,7 @@ describe("handleLocalAgentStream", () => {
     it("should stop processing stream chunks when abort signal is triggered", async () => {
       // Arrange
       const { event } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       mockChatData = buildTestChat();
 
       const abortController = new AbortController();
@@ -1789,7 +1743,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 
@@ -1810,7 +1764,7 @@ describe("handleLocalAgentStream", () => {
     it("should save partial response with cancellation note when aborted", async () => {
       // Arrange
       const { event } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       mockChatData = buildTestChat();
 
       const abortController = new AbortController();
@@ -1820,7 +1774,10 @@ describe("handleLocalAgentStream", () => {
           yield { type: "text-delta", text: "Partial response" };
           abortController.abort();
           // This will not be processed due to abort
-          throw new DyadError("Simulated abort error", DyadErrorKind.Internal);
+          throw new OrianBuilderError(
+            "Simulated abort error",
+            OrianBuilderErrorKind.Internal,
+          );
         })(),
         response: Promise.resolve({ messages: [] }),
       };
@@ -1833,7 +1790,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 
@@ -1852,7 +1809,7 @@ describe("handleLocalAgentStream", () => {
     it("should save commit hash after successful stream", async () => {
       // Arrange
       const { event } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       mockChatData = buildTestChat();
       mockStreamResult = createFakeStream([
         { type: "text-delta", text: "Done" },
@@ -1866,7 +1823,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 
@@ -1881,7 +1838,7 @@ describe("handleLocalAgentStream", () => {
     it("should set approval state to approved after completion", async () => {
       // Arrange
       const { event } = createFakeEvent();
-      mockSettings = buildTestSettings({ enableDyadPro: true });
+      mockSettings = buildTestSettings({ enableOrianBuilderPro: true });
       mockChatData = buildTestChat();
       mockStreamResult = createFakeStream([
         { type: "text-delta", text: "Done" },
@@ -1895,7 +1852,7 @@ describe("handleLocalAgentStream", () => {
         {
           placeholderMessageId: 10,
           systemPrompt: "You are helpful",
-          dyadRequestId,
+          orianbuilderRequestId,
         },
       );
 

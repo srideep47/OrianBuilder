@@ -10,7 +10,7 @@ import { IS_TEST_BUILD } from "../utils/test_utils";
 import * as fs from "fs";
 import * as path from "path";
 import { CreateProjectFramework } from "@vercel/sdk/models/createprojectop.js";
-import { getDyadAppPath } from "@/paths/paths";
+import { getOrianBuilderAppPath } from "@/paths/paths";
 import { createTypedHandler } from "./base";
 import {
   vercelContracts,
@@ -23,7 +23,10 @@ import {
   VercelProject,
   VercelDeployment,
 } from "../types/vercel";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("vercel_handlers");
 
@@ -35,6 +38,11 @@ const VERCEL_API_BASE = IS_TEST_BUILD
   : "https://api.vercel.com";
 
 // --- Helper Functions ---
+
+function toHttpsUrl(hostOrUrl: string | null | undefined): string | null {
+  if (!hostOrUrl) return null;
+  return hostOrUrl.startsWith("http") ? hostOrUrl : `https://${hostOrUrl}`;
+}
 
 function createVercelClient(token: string): Vercel {
   return new Vercel({
@@ -124,12 +132,15 @@ async function getDefaultTeamId(token: string): Promise<string> {
       return data.teams[0].id;
     }
 
-    throw new DyadError("No teams found for this user", DyadErrorKind.NotFound);
+    throw new OrianBuilderError(
+      "No teams found for this user",
+      OrianBuilderErrorKind.NotFound,
+    );
   } catch (error) {
     logger.error("Error getting default team ID:", error);
-    throw new DyadError(
+    throw new OrianBuilderError(
       "Failed to get team information",
-      DyadErrorKind.External,
+      OrianBuilderErrorKind.External,
     );
   }
 }
@@ -202,7 +213,10 @@ async function handleSaveVercelToken(
   logger.debug("Saving Vercel access token");
 
   if (!token || token.trim() === "") {
-    throw new DyadError("Access token is required.", DyadErrorKind.Auth);
+    throw new OrianBuilderError(
+      "Access token is required.",
+      OrianBuilderErrorKind.Auth,
+    );
   }
 
   try {
@@ -223,9 +237,9 @@ async function handleSaveVercelToken(
     logger.log("Successfully saved Vercel access token.");
   } catch (error: any) {
     logger.error("Error saving Vercel token:", error);
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Failed to save access token: ${error.message}`,
-      DyadErrorKind.Auth,
+      OrianBuilderErrorKind.Auth,
     );
   }
 }
@@ -236,15 +250,18 @@ async function handleListVercelProjects(): Promise<VercelProject[]> {
     const settings = readSettings();
     const accessToken = settings.vercelAccessToken?.value;
     if (!accessToken) {
-      throw new DyadError("Not authenticated with Vercel.", DyadErrorKind.Auth);
+      throw new OrianBuilderError(
+        "Not authenticated with Vercel.",
+        OrianBuilderErrorKind.Auth,
+      );
     }
 
     const response = await getVercelProjects(accessToken);
 
     if (!response.projects) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Failed to retrieve projects from Vercel.",
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
 
@@ -254,7 +271,7 @@ async function handleListVercelProjects(): Promise<VercelProject[]> {
       framework: project.framework || null,
     }));
   } catch (err: any) {
-    if (err instanceof DyadError) throw err;
+    if (err instanceof OrianBuilderError) throw err;
     logger.error("[Vercel Handler] Failed to list projects:", err);
     throw new Error(err.message || "Failed to list Vercel projects.");
   }
@@ -303,7 +320,10 @@ async function handleCreateProject(
   const settings = readSettings();
   const accessToken = settings.vercelAccessToken?.value;
   if (!accessToken) {
-    throw new DyadError("Not authenticated with Vercel.", DyadErrorKind.Auth);
+    throw new OrianBuilderError(
+      "Not authenticated with Vercel.",
+      OrianBuilderErrorKind.Auth,
+    );
   }
 
   try {
@@ -312,18 +332,24 @@ async function handleCreateProject(
     // Get app details to determine the framework
     const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
     if (!app) {
-      throw new DyadError("App not found.", DyadErrorKind.NotFound);
+      throw new OrianBuilderError(
+        "App not found.",
+        OrianBuilderErrorKind.NotFound,
+      );
     }
 
     // Check if app has GitHub repository configured
     if (!app.githubOrg || !app.githubRepo) {
-      throw new Error(
+      throw new OrianBuilderError(
         "App must be connected to a GitHub repository before creating a Vercel project.",
+        OrianBuilderErrorKind.Precondition,
       );
     }
 
     // Detect the framework from the app's directory
-    const detectedFramework = await detectFramework(getDyadAppPath(app.path));
+    const detectedFramework = await detectFramework(
+      getOrianBuilderAppPath(app.path),
+    );
 
     logger.info(
       `Detected framework: ${detectedFramework || "none detected"} for app at ${app.path}`,
@@ -342,19 +368,26 @@ async function handleCreateProject(
       },
     });
     if (!projectData.id) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Failed to create project: No project ID returned.",
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
 
     // Get the default team ID
     const teamId = await getDefaultTeamId(accessToken);
 
-    const projectDomains = await vercel.projects.getProjectDomains({
-      idOrName: projectData.id,
-    });
-    const projectUrl = "https://" + projectDomains.domains[0].name;
+    let projectUrl: string | null = null;
+    try {
+      const projectDomains = await vercel.projects.getProjectDomains({
+        idOrName: projectData.id,
+      });
+      projectUrl = toHttpsUrl(projectDomains.domains?.[0]?.name);
+    } catch (domainError: any) {
+      logger.warn(
+        `Vercel project created, but domain lookup failed: ${domainError.message}`,
+      );
+    }
 
     // Store project info in the app's DB row
     await updateAppVercelProject({
@@ -388,7 +421,12 @@ async function handleCreateProject(
       });
 
       if (deploymentData.url) {
+        const deploymentUrl = toHttpsUrl(deploymentData.url);
         logger.info(`First deployment successful: ${deploymentData.url}`);
+        await db
+          .update(apps)
+          .set({ vercelDeploymentUrl: deploymentUrl })
+          .where(eq(apps.id, appId));
       } else {
         logger.warn("First deployment failed: No deployment URL returned");
       }
@@ -397,7 +435,7 @@ async function handleCreateProject(
       // Don't throw here - project creation was successful, deployment failure is non-critical
     }
   } catch (err: any) {
-    if (err instanceof DyadError) throw err;
+    if (err instanceof OrianBuilderError) throw err;
     logger.error("[Vercel Handler] Failed to create project:", err);
     throw new Error(err.message || "Failed to create Vercel project.");
   }
@@ -412,7 +450,10 @@ async function handleConnectToExistingProject(
     const settings = readSettings();
     const accessToken = settings.vercelAccessToken?.value;
     if (!accessToken) {
-      throw new DyadError("Not authenticated with Vercel.", DyadErrorKind.Auth);
+      throw new OrianBuilderError(
+        "Not authenticated with Vercel.",
+        OrianBuilderErrorKind.Auth,
+      );
     }
 
     logger.info(
@@ -426,9 +467,9 @@ async function handleConnectToExistingProject(
     );
 
     if (!projectData) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Project not found. Please check the project ID.",
-        DyadErrorKind.NotFound,
+        OrianBuilderErrorKind.NotFound,
       );
     }
 
@@ -448,7 +489,7 @@ async function handleConnectToExistingProject(
 
     logger.info(`Successfully connected to Vercel project: ${projectData.id}`);
   } catch (err: any) {
-    if (err instanceof DyadError) throw err;
+    if (err instanceof OrianBuilderError) throw err;
     logger.error(
       "[Vercel Handler] Failed to connect to existing project:",
       err,
@@ -466,14 +507,17 @@ async function handleGetVercelDeployments(
     const settings = readSettings();
     const accessToken = settings.vercelAccessToken?.value;
     if (!accessToken) {
-      throw new DyadError("Not authenticated with Vercel.", DyadErrorKind.Auth);
+      throw new OrianBuilderError(
+        "Not authenticated with Vercel.",
+        OrianBuilderErrorKind.Auth,
+      );
     }
 
     const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
     if (!app || !app.vercelProjectId) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "App is not linked to a Vercel project.",
-        DyadErrorKind.Precondition,
+        OrianBuilderErrorKind.Precondition,
       );
     }
 
@@ -490,9 +534,9 @@ async function handleGetVercelDeployments(
     });
 
     if (!deploymentsResponse.deployments) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Failed to retrieve deployments from Vercel.",
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
 
@@ -525,7 +569,7 @@ async function handleGetVercelDeployments(
       readyState: deployment.readyState || "unknown",
     }));
   } catch (err: any) {
-    if (err instanceof DyadError) throw err;
+    if (err instanceof OrianBuilderError) throw err;
     logger.error("[Vercel Handler] Failed to get deployments:", err);
     throw new Error(err.message || "Failed to get Vercel deployments.");
   }
@@ -542,7 +586,10 @@ async function handleDisconnectVercelProject(
   });
 
   if (!app) {
-    throw new DyadError("App not found", DyadErrorKind.NotFound);
+    throw new OrianBuilderError(
+      "App not found",
+      OrianBuilderErrorKind.NotFound,
+    );
   }
 
   // Update app in database to remove Vercel project info

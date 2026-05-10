@@ -1,7 +1,7 @@
-import type { ReactNode } from 'react';
-import { Cosmos } from './Cosmos';
-import { Sidebar } from './Sidebar';
-import { Topbar } from './Topbar';
+import type { ReactNode } from "react";
+import { Cosmos } from "./Cosmos";
+import { Sidebar } from "./Sidebar";
+import { Topbar } from "./Topbar";
 
 export function RootLayout({ children }: { children: ReactNode }) {
   return (

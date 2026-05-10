@@ -1,5 +1,5 @@
 ---
-name: dyad:e2e-rebase
+name: orianbuilder:e2e-rebase
 description: Rebase E2E test snapshots based on failed tests from the PR comments.
 ---
 

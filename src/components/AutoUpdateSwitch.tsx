@@ -25,9 +25,9 @@ export function AutoUpdateSwitch() {
             description:
               "You will need to restart OrianBuilder for your settings to take effect.",
             action: {
-              label: "Restart Dyad",
+              label: "Restart OrianBuilder",
               onClick: () => {
-                ipc.system.restartDyad();
+                ipc.system.restartOrianBuilder();
               },
             },
           });

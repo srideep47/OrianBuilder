@@ -17,8 +17,8 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v2
         with:
-          app-id: ${{ vars.DYAD_GITHUB_APP_ID }}
-          private-key: ${{ secrets.DYAD_GITHUB_APP_PRIVATE_KEY }}
+          app-id: ${{ vars.ORIANBUILDER_GITHUB_APP_ID }}
+          private-key: ${{ secrets.ORIANBUILDER_GITHUB_APP_PRIVATE_KEY }}
           permission-contents: read
           permission-pull-requests: write
 
@@ -26,7 +26,7 @@ jobs:
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
-            const allowedAuthors = ['wwwillchen', 'keppo-bot', 'keppo-bot[bot]', 'dyad-assistant'];
+            const allowedAuthors = ['wwwillchen', 'keppo-bot', 'keppo-bot[bot]', 'orianbuilder-assistant'];
 
             const prs = await github.paginate(github.rest.pulls.list, {
               owner: context.repo.owner,

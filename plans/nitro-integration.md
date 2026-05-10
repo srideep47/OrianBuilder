@@ -4,17 +4,17 @@
 
 ## Summary
 
-Add an opt-in server layer (Nitro) to Vite/React apps in Dyad, giving them filesystem-based API routes that deploy as Vercel Functions. This closes the architectural gap between Next.js (which has built-in API routes) and Vite for database-backed apps — specifically unblocking Neon database integration for Vite projects, which requires server-side access to `DATABASE_URL`.
+Add an opt-in server layer (Nitro) to Vite/React apps in OrianBuilder, giving them filesystem-based API routes that deploy as Vercel Functions. This closes the architectural gap between Next.js (which has built-in API routes) and Vite for database-backed apps — specifically unblocking Neon database integration for Vite projects, which requires server-side access to `DATABASE_URL`.
 
 ## Problem Statement
 
-Dyad users building React/Vite apps have no server layer. This creates three concrete problems:
+OrianBuilder users building React/Vite apps have no server layer. This creates three concrete problems:
 
 1. **No secure secrets management** — Vite apps can't safely hold `DATABASE_URL` or other server-side credentials. The AI agent cannot generate server-side database code for Vite apps.
 2. **Neon integration is blocked for Vite** — Neon's standard connection pattern uses `DATABASE_URL` with `@neondatabase/serverless`, which requires server-side code. The previously proposed workaround (Neon Data API + RLS) is non-standard and may require extra configuration from the users.
 3. **No Vercel Functions** — Without a server layer, Vite apps deployed to Vercel are static-only. Users who need webhook handlers, API proxies, or any server logic must switch to Next.js.
 
-Since Vite is the default template, this affects the majority of Dyad apps.
+Since Vite is the default template, this affects the majority of OrianBuilder apps.
 
 ## Scope
 
@@ -247,7 +247,7 @@ in client-side React components. Server code lives in `server/` only.
 - [ ] Integration test: deploy Nitro-enabled Vite app to Vercel → verify API route responds
 - [ ] Verify `vercel.json` catch-all rewrite doesn't interfere with Nitro's Build Output API
 - [ ] Verify Vite 6.x + `nitro/vite` compatibility
-- [ ] Verify `dyadComponentTagger` plugin doesn't conflict with Nitro plugin
+- [ ] Verify `orianbuilderComponentTagger` plugin doesn't conflict with Nitro plugin
 - [ ] Verify dev server serves both React app and API routes on same port (8080)
 - [ ] Regression test: existing Vite apps without Nitro still work unchanged
 
@@ -277,7 +277,7 @@ in client-side React components. Server code lives in `server/` only.
 | Vite 6.x incompatible with `nitro/vite` plugin                           | Low        | High   | Pin compatible Nitro version; verify in integration test                               |
 | AI agent fails to modify vite.config.ts correctly                        | Medium     | Medium | System prompt includes exact example; half-configured state is recoverable via re-chat |
 | pnpm install not triggered after package.json modification               | Medium     | Medium | Hook into existing install lifecycle; toast instructs user if needed                   |
-| `dyadComponentTagger` plugin conflicts with Nitro plugin                 | Low        | Low    | Test plugin ordering; Nitro should be first in plugins array                           |
+| `orianbuilderComponentTagger` plugin conflicts with Nitro plugin         | Low        | Low    | Test plugin ordering; Nitro should be first in plugins array                           |
 | Dev server port conflict (Nitro vs Vite port 8080)                       | Low        | Low    | `nitro/vite` integrates into Vite's dev middleware; verify in integration test         |
 | Half-configured state confuses users                                     | Medium     | Medium | Card shows "Open chat to finish setup" nudge; prompt auto-completes config             |
 | Nitro version drift causes breaking changes                              | Low        | Medium | Pin specific tested version in package.json modification                               |
@@ -286,7 +286,7 @@ in client-side React components. Server code lives in `server/` only.
 
 - **Nitro version**: Which specific version to pin? Must be tested against Vite 6.x and the Vercel preset. Determine during Phase 1.
 - **TypeScript types for server/**: Does the `nitro` package auto-generate types in `.nitro/`? If not, may need `server/tsconfig.json`. Verify during Phase 4.
-- **`DATABASE_URL` injection during local dev** (follow-up): When Neon is connected, how does the dev server get the connection string? Options: Dyad writes `.env` file, Dyad sets env var on process, or system prompt instructs agent. Resolve before Phase 5.
+- **`DATABASE_URL` injection during local dev** (follow-up): When Neon is connected, how does the dev server get the connection string? Options: OrianBuilder writes `.env` file, OrianBuilder sets env var on process, or system prompt instructs agent. Resolve before Phase 5.
 
 ## Decision Log
 
@@ -304,4 +304,4 @@ in client-side React components. Server code lives in `server/` only.
 
 ---
 
-_Generated by dyad:swarm-to-plan_
+_Generated by orianbuilder:swarm-to-plan_

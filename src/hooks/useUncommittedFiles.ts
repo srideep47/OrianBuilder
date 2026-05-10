@@ -1,7 +1,10 @@
 import { ipc, type UncommittedFile } from "@/ipc/types";
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 export type { UncommittedFile };
 
@@ -14,9 +17,9 @@ export function useUncommittedFiles(appId: number | null) {
     queryKey: queryKeys.uncommittedFiles.byApp({ appId }),
     queryFn: async (): Promise<UncommittedFile[]> => {
       if (appId === null) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "appId is null, cannot fetch uncommitted files.",
-          DyadErrorKind.Conflict,
+          OrianBuilderErrorKind.Conflict,
         );
       }
       return ipc.git.getUncommittedFiles({ appId });

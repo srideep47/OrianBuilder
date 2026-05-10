@@ -20,7 +20,7 @@ afterEach(async () => {
 describe("removeUnsupportedWindowsSigningFiles", () => {
   it("removes node-pty artifacts that Windows signtool should not touch", async () => {
     const buildPath = await fs.mkdtemp(
-      path.join(os.tmpdir(), "dyad-windows-signing-"),
+      path.join(os.tmpdir(), "orianbuilder-windows-signing-"),
     );
     tempDirectories.push(buildPath);
 

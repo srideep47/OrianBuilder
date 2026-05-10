@@ -25,7 +25,7 @@
 - text: file.png Copy
 - img
 - text: "Copied To: new/image/file.png Uploaded image to codebase"
-- paragraph: "[[dyad-dump-path=*]]"
+- paragraph: "[[orianbuilder-dump-path=*]]"
 - button "Copy":
   - img
 - img

@@ -15,6 +15,8 @@ import { executeSqlTool } from "./tools/execute_sql";
 import { getNeonProjectInfoTool } from "./tools/get_neon_project_info";
 import { getDatabaseTableSchemaTool } from "./tools/get_database_table_schema";
 import { browserControlTool } from "./tools/browser_control";
+import { browserQaGateTool } from "./tools/browser_qa_gate";
+import { deployPreviewTool } from "./tools/deploy_preview";
 
 import { readFileTool } from "./tools/read_file";
 import { listFilesTool } from "./tools/list_files";
@@ -40,9 +42,12 @@ import { webSearchTool } from "./tools/web_search";
 import { webCrawlTool } from "./tools/web_crawl";
 import { webFetchTool } from "./tools/web_fetch";
 import { generateImageTool } from "./tools/generate_image";
+import { generateMediaAssetTool } from "./tools/generate_media_asset";
 import { manageMcpServerTool } from "./tools/manage_mcp_server";
 import { updateTodosTool } from "./tools/update_todos";
+import { runProjectCheckTool } from "./tools/run_project_check";
 import { runTypeChecksTool } from "./tools/run_type_checks";
+import { listToolCapabilitiesTool } from "./tools/list_tool_capabilities";
 import { grepTool } from "./tools/grep";
 import { codeSearchTool } from "./tools/code_search";
 import { planningQuestionnaireTool } from "./tools/planning_questionnaire";
@@ -63,7 +68,10 @@ import {
 import { AgentToolConsent } from "@/lib/schemas";
 import { getSupabaseClientCode } from "@/supabase_admin/supabase_context";
 import { getNeonClientCode } from "@/neon_admin/neon_context";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { ExecuteAddDependencyError } from "@/ipc/processors/executeAddDependency";
 
 function getToolErrorDisplayDetails(error: unknown): string {
@@ -104,6 +112,8 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   getNeonProjectInfoTool,
   getDatabaseTableSchemaTool,
   browserControlTool,
+  browserQaGateTool,
+  deployPreviewTool,
   setChatSummaryTool,
   addIntegrationTool,
   readLogsTool,
@@ -122,8 +132,11 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   webCrawlTool,
   webFetchTool,
   generateImageTool,
+  generateMediaAssetTool,
   manageMcpServerTool,
   updateTodosTool,
+  listToolCapabilitiesTool,
+  runProjectCheckTool,
   runTypeChecksTool,
   readGuideTool,
   // Plan mode tools
@@ -307,9 +320,9 @@ export async function requireAgentToolConsent(
 
   if (current === "always") return true;
   if (current === "never")
-    throw new DyadError(
+    throw new OrianBuilderError(
       "Should not ask for consent for a tool marked as 'never'",
-      DyadErrorKind.Internal,
+      OrianBuilderErrorKind.Internal,
     );
 
   // Ask renderer for a decision via event bridge
@@ -408,9 +421,9 @@ function convertToolResultForAiSdk(
   if (typeof result === "string") {
     return { type: "text", value: result };
   }
-  throw new DyadError(
+  throw new OrianBuilderError(
     `Unsupported tool result type: ${typeof result}`,
-    DyadErrorKind.Internal,
+    OrianBuilderErrorKind.Internal,
   );
 }
 
@@ -537,9 +550,9 @@ export function buildAgentToolSet(
             inputPreview: tool.getConsentPreview?.(processedArgs) ?? null,
           });
           if (!allowed) {
-            throw new DyadError(
+            throw new OrianBuilderError(
               `User denied permission for ${tool.name}`,
-              DyadErrorKind.UserCancelled,
+              OrianBuilderErrorKind.UserCancelled,
             );
           }
 
@@ -578,7 +591,7 @@ export function buildAgentToolSet(
           });
 
           ctx.onXmlComplete(
-            `<dyad-output type="error" message="Tool '${tool.name}' failed: ${escapeXmlAttr(errorMessage)}">${escapeXmlContent(errorDetails)}</dyad-output>`,
+            `<orianbuilder-output type="error" message="Tool '${tool.name}' failed: ${escapeXmlAttr(errorMessage)}">${escapeXmlContent(errorDetails)}</orianbuilder-output>`,
           );
           throw error;
         }

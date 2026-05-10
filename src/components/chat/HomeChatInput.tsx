@@ -34,7 +34,6 @@ import { useLoadApps } from "@/hooks/useLoadApps";
 import { AppSearchDialog } from "../AppSearchDialog";
 import { useVoiceToText } from "@/hooks/useVoiceToText";
 import { useUserBudgetInfo } from "@/hooks/useUserBudgetInfo";
-import { ipc } from "@/ipc/types";
 import { useCallback, useEffect } from "react";
 import { showError } from "@/lib/toast";
 
@@ -52,7 +51,7 @@ export function HomeChatInput({
   }); // eslint-disable-line @typescript-eslint/no-unused-vars
   useChatModeToggle();
   const { userBudget } = useUserBudgetInfo();
-  const isProEnabled = !!userBudget && !!settings?.enableDyadPro;
+  const isProEnabled = !!userBudget && !!settings?.enableOrianBuilderPro;
 
   const handleTranscription = useCallback(
     (text: string) => {
@@ -264,7 +263,10 @@ export function HomeChatInput({
           </div>
           <div className="px-2 flex items-center justify-between pb-0.5 pt-0.5">
             <div className="flex items-center">
-              <ChatInputControls showContextFilesPicker={false} showProSelector={false} />
+              <ChatInputControls
+                showContextFilesPicker={false}
+                showProSelector={false}
+              />
               {settings?.enableSelectAppFromHomeChatInput && (
                 <Tooltip>
                   <TooltipTrigger

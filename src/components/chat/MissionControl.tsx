@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
 import {
   Bot,
+  BellRing,
   Camera,
   CheckCircle2,
   ChevronDown,
@@ -9,15 +10,23 @@ import {
   CirclePause,
   Clock3,
   Eye,
+  FileText,
   Image as ImageIcon,
+  Music,
   PackageCheck,
   Play,
+  Rocket,
   RotateCcw,
   Send,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldQuestion,
   GitBranch,
   Target,
   Terminal,
+  Trash2,
   UsersRound,
+  Video,
   XCircle,
 } from "lucide-react";
 
@@ -30,6 +39,8 @@ import {
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { MissionWorkerDashboard } from "@/components/chat/MissionWorkerDashboard";
+import { ToolCapabilitiesPanel } from "@/components/chat/ToolCapabilitiesPanel";
 import { useMissions } from "@/hooks/useMissions";
 import { useSettings } from "@/hooks/useSettings";
 import { cn } from "@/lib/utils";
@@ -45,6 +56,8 @@ import {
 
 export function MissionControl({ chatId }: { chatId?: number }) {
   const [showTimeline, setShowTimeline] = useState(false);
+  const [showWorkerReview, setShowWorkerReview] = useState(false);
+  const [showToolCapabilities, setShowToolCapabilities] = useState(false);
   const appId = useAtomValue(selectedAppIdAtom);
   const inputValue = useAtomValue(chatInputValueAtom);
   const [activeMissionByChatId, setActiveMissionByChatId] = useAtom(
@@ -67,6 +80,9 @@ export function MissionControl({ chatId }: { chatId?: number }) {
     workers,
     checkpoints,
     artifacts,
+    interrupts,
+    memories,
+    permissionRequests,
     createMission,
     updateMissionStatus,
     createMissionWorker,
@@ -75,6 +91,10 @@ export function MissionControl({ chatId }: { chatId?: number }) {
     markStaleMissionWorkers,
     prepareMissionWorkerWorkspace,
     setMissionWorkerIntegrationStatus,
+    runReadyMissionWorkers,
+    applyAcceptedMissionWorkerOutputs,
+    cleanupAppliedMissionWorkerWorkspaces,
+    resolveMissionPermissionRequest,
   } = useMissions(appId, activeMissionId);
 
   const latestMissionForChat = useMemo(() => {
@@ -88,6 +108,15 @@ export function MissionControl({ chatId }: { chatId?: number }) {
   const latestEvent = events[0];
   const latestRun = runs[0];
   const latestCheckpoint = checkpoints[0];
+  const pendingInterrupts = useMemo(
+    () => interrupts.filter((interrupt) => interrupt.status === "pending"),
+    [interrupts],
+  );
+  const latestInterrupt = interrupts[0];
+  const pendingPermissionRequests = useMemo(
+    () => permissionRequests.filter((request) => request.status === "pending"),
+    [permissionRequests],
+  );
   const goal = inputValue.trim() || "Autonomous development mission";
   const completedTaskCount = tasks.filter(
     (task) => task.status === "completed",
@@ -144,6 +173,19 @@ export function MissionControl({ chatId }: { chatId?: number }) {
       artifacts.filter((artifact) => artifact.artifactType === "screenshot"),
     [artifacts],
   );
+  const deploymentArtifacts = useMemo(
+    () =>
+      artifacts.filter((artifact) => artifact.artifactType === "deployment"),
+    [artifacts],
+  );
+  const mediaArtifacts = useMemo(
+    () =>
+      artifacts.filter((artifact) =>
+        ["image", "audio", "video"].includes(artifact.artifactType),
+      ),
+    [artifacts],
+  );
+  const latestArtifacts = useMemo(() => artifacts.slice(0, 3), [artifacts]);
   const workerConflicts = useMemo(
     () => detectWorkerScopeConflicts(workers),
     [workers],
@@ -193,6 +235,61 @@ export function MissionControl({ chatId }: { chatId?: number }) {
   );
   const workerIntegrationPlan = useMemo(
     () => buildWorkerIntegrationPlan(workers),
+    [workers],
+  );
+  const workerReviewItems = useMemo(
+    () =>
+      workers.map((worker) => {
+        const report = getWorkerReport(worker.metadata);
+        const diffEvent = events.find(
+          (event) =>
+            event.eventType === "mission_worker_diff_captured" &&
+            getMissionEventMetadataNumber(event.metadata, "workerId") ===
+              worker.id,
+        );
+        return {
+          worker,
+          report,
+          diffEvent,
+          integrationStatus: getWorkerIntegrationStatus(worker.metadata),
+          outputAppliedAt: getMissionEventMetadataString(
+            worker.metadata,
+            "outputAppliedAt",
+          ),
+          changedFiles:
+            report?.changedFiles.length && report.changedFiles.length > 0
+              ? report.changedFiles
+              : getMissionEventMetadataStringArray(
+                  diffEvent?.metadata,
+                  "changedFiles",
+                ),
+          workerEvents: events.filter(
+            (event) =>
+              getMissionEventMetadataNumber(event.metadata, "workerId") ===
+              worker.id,
+          ),
+        };
+      }),
+    [events, workers],
+  );
+  const acceptedUnappliedWorkers = useMemo(
+    () =>
+      workers.filter(
+        (worker) =>
+          getWorkerIntegrationStatus(worker.metadata) === "applied" &&
+          !getMissionEventMetadataString(worker.metadata, "outputAppliedAt"),
+      ),
+    [workers],
+  );
+  const cleanupReadyWorkers = useMemo(
+    () =>
+      workers.filter(
+        (worker) =>
+          worker.workspaceProvider === "worktree" &&
+          worker.workspaceRef &&
+          getMissionEventMetadataString(worker.metadata, "outputAppliedAt") &&
+          !getMissionEventMetadataString(worker.metadata, "workspaceCleanedAt"),
+      ),
     [workers],
   );
   const latestRuntimeEvent = events.find(
@@ -329,9 +426,16 @@ export function MissionControl({ chatId }: { chatId?: number }) {
 
   const handleDispatchWorkers = async () => {
     if (!visibleMission) return;
+    if (readyDispatchableWorkers.length > 0) {
+      await runReadyMissionWorkers({
+        missionId: visibleMission.id,
+        limit: 1,
+      });
+      return;
+    }
     await dispatchMissionWorkers({
       missionId: visibleMission.id,
-      status: queuedDispatchableWorkers.length > 0 ? "ready" : "running",
+      status: "ready",
     });
   };
 
@@ -372,6 +476,25 @@ export function MissionControl({ chatId }: { chatId?: number }) {
           ? "Accepted from Mission Control."
           : "Rejected from Mission Control.",
     });
+  };
+
+  const handleApplyAcceptedWorkerOutputs = async () => {
+    if (!visibleMission) return;
+    await applyAcceptedMissionWorkerOutputs({ missionId: visibleMission.id });
+  };
+
+  const handleCleanupAppliedWorkerWorkspaces = async () => {
+    if (!visibleMission) return;
+    await cleanupAppliedMissionWorkerWorkspaces({
+      missionId: visibleMission.id,
+    });
+  };
+
+  const handleResolvePermissionRequest = async (
+    requestId: number,
+    status: "approved" | "denied",
+  ) => {
+    await resolveMissionPermissionRequest({ requestId, status });
   };
 
   const handleCompleteMission = async () => {
@@ -509,6 +632,31 @@ export function MissionControl({ chatId }: { chatId?: number }) {
               <UsersRound className="size-4" />
             </Button>
           )}
+          {workerReviewItems.length > 0 && (
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-8"
+              onClick={() => setShowWorkerReview((value) => !value)}
+              title="Toggle worker review"
+            >
+              <FileText className="size-4" />
+            </Button>
+          )}
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className={cn(
+              "size-8",
+              showToolCapabilities && "bg-muted text-foreground",
+            )}
+            onClick={() => setShowToolCapabilities((value) => !value)}
+            title="Show tool capabilities"
+          >
+            <ShieldQuestion className="size-4" />
+          </Button>
           {dispatchableWorkers.length > 0 && (
             <Button
               type="button"
@@ -567,6 +715,34 @@ export function MissionControl({ chatId }: { chatId?: number }) {
               }`}
             >
               <RotateCcw className="size-4" />
+            </Button>
+          )}
+          {acceptedUnappliedWorkers.length > 0 && (
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-8"
+              onClick={handleApplyAcceptedWorkerOutputs}
+              title={`Apply ${acceptedUnappliedWorkers.length} accepted worker output${
+                acceptedUnappliedWorkers.length === 1 ? "" : "s"
+              }`}
+            >
+              <PackageCheck className="size-4" />
+            </Button>
+          )}
+          {cleanupReadyWorkers.length > 0 && (
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-8"
+              onClick={handleCleanupAppliedWorkerWorkspaces}
+              title={`Clean up ${cleanupReadyWorkers.length} applied worker workspace${
+                cleanupReadyWorkers.length === 1 ? "" : "s"
+              }`}
+            >
+              <Trash2 className="size-4" />
             </Button>
           )}
           {visibleMission.status === "running" ? (
@@ -658,22 +834,136 @@ export function MissionControl({ chatId }: { chatId?: number }) {
         })}
       </div>
       {(artifacts.length > 0 || screenshotArtifacts.length > 0) && (
-        <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
-          <ImageIcon className="size-3.5" />
-          <span>
-            {artifacts.length} artifact{artifacts.length === 1 ? "" : "s"}
-            {screenshotArtifacts.length > 0
-              ? ` (${screenshotArtifacts.length} screenshot${
-                  screenshotArtifacts.length === 1 ? "" : "s"
-                })`
-              : ""}
-          </span>
+        <div className="mt-1.5 space-y-1 text-xs text-muted-foreground">
+          <div className="flex min-w-0 items-center gap-2">
+            <ImageIcon className="size-3.5 shrink-0" />
+            <span className="truncate">
+              {artifacts.length} artifact{artifacts.length === 1 ? "" : "s"}
+              {screenshotArtifacts.length > 0
+                ? ` - ${screenshotArtifacts.length} screenshot${
+                    screenshotArtifacts.length === 1 ? "" : "s"
+                  }`
+                : ""}
+              {mediaArtifacts.length > 0
+                ? ` - ${mediaArtifacts.length} media`
+                : ""}
+              {deploymentArtifacts.length > 0
+                ? ` - ${deploymentArtifacts.length} deployment${
+                    deploymentArtifacts.length === 1 ? "" : "s"
+                  }`
+                : ""}
+            </span>
+          </div>
+          {latestArtifacts.length > 0 && (
+            <div className="grid gap-1 sm:grid-cols-3">
+              {latestArtifacts.map((artifact) => {
+                const Icon = getArtifactIcon(artifact.artifactType);
+                const provider = getMissionEventMetadataString(
+                  artifact.metadata,
+                  "provider",
+                );
+                const status = getMissionEventMetadataString(
+                  artifact.metadata,
+                  "status",
+                );
+                const state = getMissionEventMetadataString(
+                  artifact.metadata,
+                  "state",
+                );
+                return (
+                  <div
+                    key={artifact.id}
+                    className="flex min-w-0 items-start gap-1.5 rounded border bg-background/60 px-2 py-1"
+                    title={artifact.body ?? artifact.uri ?? artifact.title}
+                  >
+                    <Icon className="mt-0.5 size-3.5 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="truncate text-foreground">
+                        {artifact.title}
+                      </div>
+                      <div className="truncate">
+                        {[provider, status, state, artifact.uri]
+                          .filter(Boolean)
+                          .join(" - ")}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
       {previewUrl && (
         <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
           <Play className="size-3.5 shrink-0" />
           <span className="truncate">{previewUrl}</span>
+        </div>
+      )}
+      {deploymentArtifacts[0] && (
+        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          <Rocket className="size-3.5 shrink-0" />
+          <span className="truncate">
+            Latest deployment:{" "}
+            {[
+              getMissionEventMetadataString(
+                deploymentArtifacts[0].metadata,
+                "provider",
+              ),
+              getMissionEventMetadataString(
+                deploymentArtifacts[0].metadata,
+                "status",
+              ),
+              getMissionEventMetadataString(
+                deploymentArtifacts[0].metadata,
+                "state",
+              ),
+              deploymentArtifacts[0].uri,
+            ]
+              .filter(Boolean)
+              .join(" - ")}
+          </span>
+        </div>
+      )}
+      {interrupts.length > 0 && (
+        <div
+          className={cn(
+            "mt-1 flex min-w-0 items-center gap-2 text-xs",
+            pendingInterrupts.length > 0
+              ? "text-amber-700 dark:text-amber-300"
+              : "text-muted-foreground",
+          )}
+        >
+          <BellRing className="size-3.5 shrink-0" />
+          <span className="truncate">
+            {pendingInterrupts.length > 0
+              ? `${pendingInterrupts.length} pending interrupt${
+                  pendingInterrupts.length === 1 ? "" : "s"
+                }`
+              : `${interrupts.length} interrupt${
+                  interrupts.length === 1 ? "" : "s"
+                } handled`}
+            {latestInterrupt ? `: ${latestInterrupt.title}` : ""}
+          </span>
+        </div>
+      )}
+      {pendingPermissionRequests.length > 0 && (
+        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
+          <ShieldAlert className="size-3.5 shrink-0" />
+          <span className="truncate">
+            {pendingPermissionRequests.length} permission request
+            {pendingPermissionRequests.length === 1 ? "" : "s"} awaiting
+            approval: {pendingPermissionRequests[0].action}
+          </span>
+        </div>
+      )}
+      {memories.length > 0 && (
+        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          <ShieldCheck className="size-3.5 shrink-0" />
+          <span className="truncate">
+            {memories.length} memory record{memories.length === 1 ? "" : "s"}:
+            {` ${memories[0].title}`}
+          </span>
         </div>
       )}
       {workers.length > 0 && (
@@ -738,6 +1028,24 @@ export function MissionControl({ chatId }: { chatId?: number }) {
           </span>
         </div>
       )}
+      {acceptedUnappliedWorkers.length > 0 && (
+        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          <PackageCheck className="size-3.5 shrink-0" />
+          <span className="truncate">
+            {acceptedUnappliedWorkers.length} accepted worker output
+            {acceptedUnappliedWorkers.length === 1 ? "" : "s"} ready to apply
+          </span>
+        </div>
+      )}
+      {cleanupReadyWorkers.length > 0 && (
+        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          <Trash2 className="size-3.5 shrink-0" />
+          <span className="truncate">
+            {cleanupReadyWorkers.length} applied worker workspace
+            {cleanupReadyWorkers.length === 1 ? "" : "s"} ready for cleanup
+          </span>
+        </div>
+      )}
       {workerIntegrationPlan.conflicts.length > 0 && (
         <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
           <XCircle className="size-3.5 shrink-0" />
@@ -775,6 +1083,15 @@ export function MissionControl({ chatId }: { chatId?: number }) {
           </span>
         </div>
       )}
+      {showWorkerReview && workerReviewItems.length > 0 && (
+        <MissionWorkerDashboard
+          items={workerReviewItems}
+          acceptedUnappliedCount={acceptedUnappliedWorkers.length}
+          onApplyAccepted={handleApplyAcceptedWorkerOutputs}
+          onSetIntegrationStatus={handleSetWorkerIntegrationStatus}
+        />
+      )}
+      {showToolCapabilities && <ToolCapabilitiesPanel />}
       {showTimeline && (
         <div className="mt-2 max-h-48 overflow-y-auto border-t pt-2">
           {tasks.length > 0 && (
@@ -839,6 +1156,28 @@ export function MissionControl({ chatId }: { chatId?: number }) {
                           >
                             {getWorkerIntegrationStatus(worker.metadata)}
                           </Badge>
+                          {getMissionEventMetadataString(
+                            worker.metadata,
+                            "outputAppliedAt",
+                          ) && (
+                            <Badge
+                              variant="outline"
+                              className="h-5 px-1.5 text-[10px]"
+                            >
+                              output applied
+                            </Badge>
+                          )}
+                          {getMissionEventMetadataString(
+                            worker.metadata,
+                            "workspaceCleanedAt",
+                          ) && (
+                            <Badge
+                              variant="outline"
+                              className="h-5 px-1.5 text-[10px]"
+                            >
+                              workspace cleaned
+                            </Badge>
+                          )}
                           {getWorkerIntegrationStatus(worker.metadata) ===
                             "pending" && (
                             <>
@@ -877,6 +1216,116 @@ export function MissionControl({ chatId }: { chatId?: number }) {
                         </div>
                       </div>
                     )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {interrupts.length > 0 && (
+            <div className="mb-2 space-y-1.5">
+              {interrupts.slice(0, 4).map((interrupt) => (
+                <div
+                  key={interrupt.id}
+                  className="flex items-start gap-2 text-xs text-muted-foreground"
+                >
+                  <BellRing className="mt-0.5 size-3 shrink-0 text-amber-600 dark:text-amber-300" />
+                  <div className="min-w-0">
+                    <div className="truncate text-foreground">
+                      {interrupt.title}
+                    </div>
+                    <div className="truncate">
+                      {interrupt.source} - {interrupt.status} - {interrupt.body}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {permissionRequests.length > 0 && (
+            <div className="mb-2 space-y-1.5">
+              {permissionRequests.slice(0, 4).map((request) => (
+                <div
+                  key={request.id}
+                  className="flex items-start gap-2 text-xs text-muted-foreground"
+                >
+                  <ShieldAlert className="mt-0.5 size-3 shrink-0 text-amber-600 dark:text-amber-300" />
+                  <div className="min-w-0">
+                    <div className="truncate text-foreground">
+                      {request.action}
+                    </div>
+                    <div className="flex min-w-0 items-center gap-1">
+                      <Badge
+                        variant={
+                          request.status === "denied"
+                            ? "destructive"
+                            : "secondary"
+                        }
+                        className="h-5 px-1.5 text-[10px] capitalize"
+                      >
+                        {request.status}
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        className="h-5 px-1.5 text-[10px] capitalize"
+                      >
+                        {request.risk}
+                      </Badge>
+                      {request.status === "pending" && (
+                        <>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="size-5"
+                            title="Approve permission"
+                            onClick={() =>
+                              handleResolvePermissionRequest(
+                                request.id,
+                                "approved",
+                              )
+                            }
+                          >
+                            <CheckCircle2 className="size-3" />
+                          </Button>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="size-5"
+                            title="Deny permission"
+                            onClick={() =>
+                              handleResolvePermissionRequest(
+                                request.id,
+                                "denied",
+                              )
+                            }
+                          >
+                            <XCircle className="size-3" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                    <div className="truncate">{request.reason}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {memories.length > 0 && (
+            <div className="mb-2 space-y-1.5">
+              {memories.slice(0, 4).map((memory) => (
+                <div
+                  key={memory.id}
+                  className="flex items-start gap-2 text-xs text-muted-foreground"
+                >
+                  <ShieldCheck className="mt-0.5 size-3 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="truncate text-foreground">
+                      {memory.title}
+                    </div>
+                    <div className="truncate">
+                      {memory.category.replace(/_/g, " ")} - {memory.body}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -962,6 +1411,14 @@ function getMissionEventMetadataString(
   return typeof value === "string" ? value : undefined;
 }
 
+function getMissionEventMetadataNumber(
+  metadata: Record<string, unknown> | null | undefined,
+  key: string,
+) {
+  const value = metadata?.[key];
+  return typeof value === "number" ? value : undefined;
+}
+
 function getMissionEventMetadataStringArray(
   metadata: Record<string, unknown> | null | undefined,
   key: string,
@@ -983,5 +1440,24 @@ function getAutonomyProfileLabel(profile: string) {
       return "Autopilot sandbox";
     default:
       return profile;
+  }
+}
+
+function getArtifactIcon(artifactType: string) {
+  switch (artifactType) {
+    case "deployment":
+      return Rocket;
+    case "audio":
+      return Music;
+    case "video":
+      return Video;
+    case "runtime":
+      return Play;
+    case "accessibility_tree":
+      return Eye;
+    case "console_output":
+      return Terminal;
+    default:
+      return ImageIcon;
   }
 }

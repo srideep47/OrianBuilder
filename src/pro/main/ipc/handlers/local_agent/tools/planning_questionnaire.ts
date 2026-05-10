@@ -168,7 +168,7 @@ export const planningQuestionnaireTool: ToolDefinition<
       .join("\n");
 
     ctx.onXmlComplete(
-      `<dyad-questionnaire count="${questions.length}">\n${qaEntries}\n</dyad-questionnaire>`,
+      `<orianbuilder-questionnaire count="${questions.length}">\n${qaEntries}\n</orianbuilder-questionnaire>`,
     );
 
     return `User responses:\n\n${formattedAnswers}`;

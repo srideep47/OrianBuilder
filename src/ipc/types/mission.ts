@@ -154,6 +154,10 @@ export type MissionCheckpoint = z.infer<typeof MissionCheckpointSchema>;
 
 export const MissionArtifactTypeSchema = z.enum([
   "screenshot",
+  "image",
+  "audio",
+  "video",
+  "deployment",
   "accessibility_tree",
   "console_output",
   "runtime",
@@ -173,6 +177,85 @@ export const MissionArtifactSchema = z.object({
 });
 
 export type MissionArtifact = z.infer<typeof MissionArtifactSchema>;
+
+export const MissionInterruptSourceSchema = z.enum([
+  "user",
+  "worker",
+  "system",
+  "runtime",
+  "test",
+]);
+
+export const MissionInterruptStatusSchema = z.enum([
+  "pending",
+  "injected",
+  "cancelled",
+]);
+
+export const MissionInterruptSchema = z.object({
+  id: z.number(),
+  missionId: z.number(),
+  source: MissionInterruptSourceSchema,
+  title: z.string(),
+  body: z.string(),
+  status: MissionInterruptStatusSchema,
+  metadata: z.record(z.string(), z.unknown()).nullable(),
+  createdAt: z.date(),
+  injectedAt: z.date().nullable(),
+});
+
+export type MissionInterrupt = z.infer<typeof MissionInterruptSchema>;
+
+export const MissionMemoryCategorySchema = z.enum([
+  "decision",
+  "command",
+  "gotcha",
+  "preference",
+  "accepted_approach",
+  "rejected_approach",
+  "recurring_error",
+]);
+
+export const MissionMemorySchema = z.object({
+  id: z.number(),
+  appId: z.number(),
+  missionId: z.number().nullable(),
+  category: MissionMemoryCategorySchema,
+  title: z.string(),
+  body: z.string(),
+  metadata: z.record(z.string(), z.unknown()).nullable(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export type MissionMemory = z.infer<typeof MissionMemorySchema>;
+
+export const MissionPermissionRiskSchema = z.enum(["low", "medium", "high"]);
+
+export const MissionPermissionRequestStatusSchema = z.enum([
+  "pending",
+  "approved",
+  "denied",
+  "expired",
+  "cancelled",
+]);
+
+export const MissionPermissionRequestSchema = z.object({
+  id: z.number(),
+  missionId: z.number(),
+  runId: z.number().nullable(),
+  action: z.string(),
+  risk: MissionPermissionRiskSchema,
+  reason: z.string(),
+  status: MissionPermissionRequestStatusSchema,
+  metadata: z.record(z.string(), z.unknown()).nullable(),
+  createdAt: z.date(),
+  resolvedAt: z.date().nullable(),
+});
+
+export type MissionPermissionRequest = z.infer<
+  typeof MissionPermissionRequestSchema
+>;
 
 export const CreateMissionParamsSchema = z.object({
   appId: z.number(),
@@ -298,6 +381,111 @@ export type SetMissionWorkerIntegrationStatusParams = z.infer<
   typeof SetMissionWorkerIntegrationStatusParamsSchema
 >;
 
+export const RunReadyMissionWorkersParamsSchema = z.object({
+  missionId: z.number(),
+  limit: z.number().int().positive().max(5).optional().default(1),
+});
+
+export type RunReadyMissionWorkersParams = z.infer<
+  typeof RunReadyMissionWorkersParamsSchema
+>;
+
+export const ApplyAcceptedMissionWorkerOutputsParamsSchema = z.object({
+  missionId: z.number(),
+});
+
+export type ApplyAcceptedMissionWorkerOutputsParams = z.infer<
+  typeof ApplyAcceptedMissionWorkerOutputsParamsSchema
+>;
+
+export const CleanupAppliedMissionWorkerWorkspacesParamsSchema = z.object({
+  missionId: z.number(),
+});
+
+export type CleanupAppliedMissionWorkerWorkspacesParams = z.infer<
+  typeof CleanupAppliedMissionWorkerWorkspacesParamsSchema
+>;
+
+export const CreateMissionInterruptParamsSchema = z.object({
+  missionId: z.number(),
+  source: MissionInterruptSourceSchema.optional().default("user"),
+  title: z.string().trim().min(1),
+  body: z.string().trim().min(1),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+});
+
+export type CreateMissionInterruptParams = z.infer<
+  typeof CreateMissionInterruptParamsSchema
+>;
+
+export const MarkMissionInterruptsInjectedParamsSchema = z.object({
+  missionId: z.number(),
+  interruptIds: z.array(z.number()).min(1),
+});
+
+export type MarkMissionInterruptsInjectedParams = z.infer<
+  typeof MarkMissionInterruptsInjectedParamsSchema
+>;
+
+export const CreateMissionMemoryParamsSchema = z.object({
+  appId: z.number(),
+  missionId: z.number().nullable().optional(),
+  category: MissionMemoryCategorySchema,
+  title: z.string().trim().min(1),
+  body: z.string().trim().min(1),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+});
+
+export type CreateMissionMemoryParams = z.infer<
+  typeof CreateMissionMemoryParamsSchema
+>;
+
+export const ListMissionMemoriesParamsSchema = z.object({
+  appId: z.number(),
+  missionId: z.number().nullable().optional(),
+  query: z.string().trim().optional(),
+});
+
+export type ListMissionMemoriesParams = z.infer<
+  typeof ListMissionMemoriesParamsSchema
+>;
+
+export const CreateMissionPermissionRequestParamsSchema = z.object({
+  missionId: z.number(),
+  runId: z.number().nullable().optional(),
+  action: z.string().trim().min(1),
+  risk: MissionPermissionRiskSchema,
+  reason: z.string().trim().min(1),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+});
+
+export type CreateMissionPermissionRequestParams = z.infer<
+  typeof CreateMissionPermissionRequestParamsSchema
+>;
+
+export const ResolveMissionPermissionRequestParamsSchema = z.object({
+  requestId: z.number(),
+  status: z.enum(["approved", "denied", "expired", "cancelled"]),
+});
+
+export type ResolveMissionPermissionRequestParams = z.infer<
+  typeof ResolveMissionPermissionRequestParamsSchema
+>;
+
+export const ExpireMissionPermissionRequestsParamsSchema = z.object({
+  missionId: z.number(),
+  olderThanMs: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .default(30 * 60 * 1000),
+});
+
+export type ExpireMissionPermissionRequestsParams = z.infer<
+  typeof ExpireMissionPermissionRequestsParamsSchema
+>;
+
 export const missionContracts = {
   createMission: defineContract({
     channel: "mission:create",
@@ -401,6 +589,24 @@ export const missionContracts = {
     output: MissionWorkerSchema,
   }),
 
+  runReadyMissionWorkers: defineContract({
+    channel: "mission:run-ready-workers",
+    input: RunReadyMissionWorkersParamsSchema,
+    output: z.array(MissionWorkerSchema),
+  }),
+
+  applyAcceptedMissionWorkerOutputs: defineContract({
+    channel: "mission:apply-accepted-worker-outputs",
+    input: ApplyAcceptedMissionWorkerOutputsParamsSchema,
+    output: z.array(MissionWorkerSchema),
+  }),
+
+  cleanupAppliedMissionWorkerWorkspaces: defineContract({
+    channel: "mission:cleanup-applied-worker-workspaces",
+    input: CleanupAppliedMissionWorkerWorkspacesParamsSchema,
+    output: z.array(MissionWorkerSchema),
+  }),
+
   listMissionCheckpoints: defineContract({
     channel: "mission:list-checkpoints",
     input: z.object({ missionId: z.number() }),
@@ -411,6 +617,60 @@ export const missionContracts = {
     channel: "mission:list-artifacts",
     input: z.object({ missionId: z.number() }),
     output: z.array(MissionArtifactSchema),
+  }),
+
+  createMissionInterrupt: defineContract({
+    channel: "mission:create-interrupt",
+    input: CreateMissionInterruptParamsSchema,
+    output: MissionInterruptSchema,
+  }),
+
+  listMissionInterrupts: defineContract({
+    channel: "mission:list-interrupts",
+    input: z.object({ missionId: z.number() }),
+    output: z.array(MissionInterruptSchema),
+  }),
+
+  markMissionInterruptsInjected: defineContract({
+    channel: "mission:mark-interrupts-injected",
+    input: MarkMissionInterruptsInjectedParamsSchema,
+    output: z.array(MissionInterruptSchema),
+  }),
+
+  createMissionMemory: defineContract({
+    channel: "mission:create-memory",
+    input: CreateMissionMemoryParamsSchema,
+    output: MissionMemorySchema,
+  }),
+
+  listMissionMemories: defineContract({
+    channel: "mission:list-memories",
+    input: ListMissionMemoriesParamsSchema,
+    output: z.array(MissionMemorySchema),
+  }),
+
+  createMissionPermissionRequest: defineContract({
+    channel: "mission:create-permission-request",
+    input: CreateMissionPermissionRequestParamsSchema,
+    output: MissionPermissionRequestSchema,
+  }),
+
+  listMissionPermissionRequests: defineContract({
+    channel: "mission:list-permission-requests",
+    input: z.object({ missionId: z.number() }),
+    output: z.array(MissionPermissionRequestSchema),
+  }),
+
+  resolveMissionPermissionRequest: defineContract({
+    channel: "mission:resolve-permission-request",
+    input: ResolveMissionPermissionRequestParamsSchema,
+    output: MissionPermissionRequestSchema,
+  }),
+
+  expireMissionPermissionRequests: defineContract({
+    channel: "mission:expire-permission-requests",
+    input: ExpireMissionPermissionRequestsParamsSchema,
+    output: z.array(MissionPermissionRequestSchema),
   }),
 } as const;
 

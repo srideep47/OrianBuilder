@@ -1,7 +1,10 @@
 import path from "node:path";
 import { promises as fsPromises } from "node:fs";
 
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import type { MissionWorker } from "@/ipc/types/mission";
 import { execGit } from "@/ipc/utils/git_utils";
 
@@ -168,14 +171,14 @@ export function getMissionWorkspaceProvider(
       return gitWorktreeMissionWorkspaceProvider;
     case "docker":
     case "cloud":
-      throw new DyadError(
+      throw new OrianBuilderError(
         `${kind} mission worker workspaces are not implemented yet.`,
-        DyadErrorKind.Precondition,
+        OrianBuilderErrorKind.Precondition,
       );
     default:
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Unsupported mission worker workspace provider: ${kind}`,
-        DyadErrorKind.Validation,
+        OrianBuilderErrorKind.Validation,
       );
   }
 }
@@ -203,11 +206,11 @@ async function ensureGitWorktree(input: {
     : ["worktree", "add", "-b", input.branchName, input.worktreePath, "HEAD"];
   const result = await execGit(args, input.repositoryPath);
   if (result.exitCode !== 0) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Failed to create worker worktree '${input.worktreePath}' for branch '${input.branchName}': ${
         result.stderr.trim() || result.stdout.trim()
       }`,
-      DyadErrorKind.External,
+      OrianBuilderErrorKind.External,
     );
   }
 }

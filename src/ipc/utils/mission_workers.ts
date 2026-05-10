@@ -1,4 +1,9 @@
 import type { MissionTask, MissionWorker } from "@/ipc/types/mission";
+import {
+  truncateMissionWorkerReportItems,
+  truncateMissionWorkerReportText,
+  truncateWorkerSeedTasks,
+} from "./mission_budgets";
 
 export const DEFAULT_WORKER_STALE_AFTER_MS = 15 * 60 * 1000;
 
@@ -291,11 +296,15 @@ export function normalizeMissionWorkerReport(
   report: MissionWorkerReportInput,
 ): NormalizedMissionWorkerReport {
   return {
-    summary: report.summary.trim(),
-    changedFiles: uniqueTrimmed(report.changedFiles ?? []),
-    validation: normalizeOptionalText(report.validation),
-    blockers: normalizeOptionalText(report.blockers),
-    artifacts: uniqueTrimmed(report.artifacts ?? []),
+    summary: truncateMissionWorkerReportText(report.summary) ?? "",
+    changedFiles: truncateMissionWorkerReportItems(
+      uniqueTrimmed(report.changedFiles ?? []),
+    ),
+    validation: truncateMissionWorkerReportText(report.validation),
+    blockers: truncateMissionWorkerReportText(report.blockers),
+    artifacts: truncateMissionWorkerReportItems(
+      uniqueTrimmed(report.artifacts ?? []),
+    ),
   };
 }
 
@@ -374,16 +383,21 @@ export function buildWorkerSeedFromTasks(
   tasks: Pick<MissionTask, "externalId" | "title" | "status">[],
 ) {
   const activeTasks = tasks.filter((task) => task.status !== "completed");
+  const { selectedTasks, omittedTaskCount } =
+    truncateWorkerSeedTasks(activeTasks);
   return [
     {
       workerKey: "planner",
       role: "planner" as const,
       title: "Plan worker packages",
-      goal: "Turn the mission goal and active tasks into disjoint implementation packages.",
+      goal:
+        omittedTaskCount > 0
+          ? `Turn the first ${selectedTasks.length} active tasks into disjoint implementation packages. ${omittedTaskCount} lower-priority task(s) remain in the parent mission queue.`
+          : "Turn the mission goal and active tasks into disjoint implementation packages.",
       fileScopes: ["plans", "docs"],
       dependsOn: null,
     },
-    ...activeTasks.map((task, index) => ({
+    ...selectedTasks.map((task, index) => ({
       workerKey: `builder-${task.externalId}`,
       role: "builder" as const,
       title: task.title,
@@ -399,7 +413,7 @@ export function buildWorkerSeedFromTasks(
       fileScopes: ["tests", "e2e-tests"],
       dependsOn: [
         "planner",
-        ...activeTasks.map((task) => `builder-${task.externalId}`),
+        ...selectedTasks.map((task) => `builder-${task.externalId}`),
       ],
     },
     {
@@ -410,15 +424,10 @@ export function buildWorkerSeedFromTasks(
       fileScopes: ["."],
       dependsOn: [
         "qa",
-        ...activeTasks.map((task) => `builder-${task.externalId}`),
+        ...selectedTasks.map((task) => `builder-${task.externalId}`),
       ],
     },
   ];
-}
-
-function normalizeOptionalText(value: string | null | undefined) {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : null;
 }
 
 function uniqueTrimmed(values: readonly string[]) {

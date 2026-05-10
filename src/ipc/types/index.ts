@@ -96,6 +96,9 @@ export type {
   MissionWorkerReport,
   MissionCheckpoint,
   MissionArtifact,
+  MissionInterrupt,
+  MissionMemory,
+  MissionPermissionRequest,
   CreateMissionParams,
   UpdateMissionStatusParams,
   AddMissionEventParams,
@@ -107,6 +110,16 @@ export type {
   SubmitMissionWorkerReportParams,
   PrepareMissionWorkerWorkspaceParams,
   SetMissionWorkerIntegrationStatusParams,
+  RunReadyMissionWorkersParams,
+  ApplyAcceptedMissionWorkerOutputsParams,
+  CleanupAppliedMissionWorkerWorkspacesParams,
+  CreateMissionInterruptParams,
+  MarkMissionInterruptsInjectedParams,
+  CreateMissionMemoryParams,
+  ListMissionMemoriesParams,
+  CreateMissionPermissionRequestParams,
+  ResolveMissionPermissionRequestParams,
+  ExpireMissionPermissionRequestsParams,
 } from "./mission";
 
 // =============================================================================
@@ -225,6 +238,7 @@ export type {
   McpConsentValue,
   McpConsentDecision,
   SetMcpToolConsentParams,
+  SetMcpToolTrustOverrideParams,
   McpConsentRequestPayload,
   McpConsentResponseParams,
 } from "./mcp";

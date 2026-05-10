@@ -23,7 +23,7 @@ jobs:
     # https://github.com/anthropics/claude-code-action/blob/main/examples/pr-review-filtered-authors.yml
     if: >-
       contains(
-        fromJSON('["wwwillchen","keppo-bot","keppo-bot[bot]","dyad-assistant","azizmejri1","princeaden1","nourzakhama2003","ryangroch"]'),
+        fromJSON('["wwwillchen","keppo-bot","keppo-bot[bot]","orianbuilder-assistant","azizmejri1","princeaden1","nourzakhama2003","ryangroch"]'),
         github.event.pull_request.user.login
       )
     runs-on: ubuntu-latest
@@ -36,8 +36,8 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v2
         with:
-          app-id: ${{ vars.DYAD_GITHUB_APP_ID }}
-          private-key: ${{ secrets.DYAD_GITHUB_APP_PRIVATE_KEY }}
+          app-id: ${{ vars.ORIANBUILDER_GITHUB_APP_ID }}
+          private-key: ${{ secrets.ORIANBUILDER_GITHUB_APP_PRIVATE_KEY }}
           permission-pull-requests: write
 
       - name: Checkout repository
@@ -67,7 +67,7 @@ jobs:
           display_report: true
 
           prompt: |
-            /dyad:multi-pr-review ${{ github.event.pull_request.number }}
+            /orianbuilder:multi-pr-review ${{ github.event.pull_request.number }}
 
           # Uses .claude/settings.json for permissions; only add MCP tool not in settings
           claude_args: |

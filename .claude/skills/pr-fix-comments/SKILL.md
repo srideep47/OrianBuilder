@@ -1,5 +1,5 @@
 ---
-name: dyad:pr-fix:comments
+name: orianbuilder:pr-fix:comments
 description: Read all unresolved GitHub PR comments from trusted authors and address or resolve them appropriately.
 ---
 
@@ -34,7 +34,7 @@ Only process review comments from these trusted authors. Comments from other aut
 - cubic-dev-ai
 - cursor
 - github-actions
-- dyad-assistant
+- orianbuilder-assistant
 - chatgpt-codex-connector
 - devin-ai-integration
 
@@ -155,7 +155,7 @@ Before categorizing review comments, read `rules/product-principles.md`. Use the
 5. **After processing all comments, verify and commit changes:**
 
    If any code changes were made:
-   - Run `/dyad:lint` to ensure code passes all checks
+   - Run `/orianbuilder:lint` to ensure code passes all checks
    - Stage and commit the changes:
 
      ```
@@ -170,7 +170,7 @@ Before categorizing review comments, read `rules/product-principles.md`. Use the
 
 6. **Push the changes:**
 
-   Run the `/dyad:pr-push` skill to lint, fix any issues, and push.
+   Run the `/orianbuilder:pr-push` skill to lint, fix any issues, and push.
 
 7. **Verify all threads are resolved:**
 

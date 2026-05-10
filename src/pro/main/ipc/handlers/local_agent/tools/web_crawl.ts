@@ -1,7 +1,10 @@
 import { z } from "zod";
 import log from "electron-log";
 import { ToolDefinition, escapeXmlContent, AgentContext } from "./types";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("web_crawl");
 
@@ -124,9 +127,9 @@ async function crawlUrl(url: string): Promise<string> {
   });
 
   if (!response.ok) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Web crawl failed: ${response.status} ${response.statusText}`,
-      DyadErrorKind.External,
+      OrianBuilderErrorKind.External,
     );
   }
 
@@ -144,8 +147,8 @@ export const webCrawlTool: ToolDefinition<z.infer<typeof webCrawlSchema>> = {
 
   buildXml: (args, isComplete) => {
     if (!args.url) return undefined;
-    let xml = `<dyad-web-crawl>${escapeXmlContent(args.url)}`;
-    if (isComplete) xml += "</dyad-web-crawl>";
+    let xml = `<orianbuilder-web-crawl>${escapeXmlContent(args.url)}`;
+    if (isComplete) xml += "</orianbuilder-web-crawl>";
     return xml;
   },
 
@@ -155,9 +158,9 @@ export const webCrawlTool: ToolDefinition<z.infer<typeof webCrawlSchema>> = {
     const markdown = await crawlUrl(args.url);
 
     if (!markdown) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "No content available from web crawl",
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
 
@@ -174,7 +177,7 @@ export const webCrawlTool: ToolDefinition<z.infer<typeof webCrawlSchema>> = {
     ctx.appendUserMessage(messageContent);
 
     ctx.onXmlComplete(
-      `<dyad-web-crawl>${escapeXmlContent(args.url)}</dyad-web-crawl>`,
+      `<orianbuilder-web-crawl>${escapeXmlContent(args.url)}</orianbuilder-web-crawl>`,
     );
 
     return "Web crawl completed.";

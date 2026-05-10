@@ -128,15 +128,20 @@ export const InferenceStatsSchema = z.object({
   liveTps: z.number(),
   avgTps: z.number(),
   prefillTps: z.number(),
+  prefillComplete: z.boolean(),
   promptTokens: z.number(),
   prefillDurationMs: z.number(),
   decodeTps: z.number(),
+  recentDecodeTps: z.number(),
   peakTps: z.number(),
   lowestTps: z.number(),
   tokensGenerated: z.number(),
   sessionDurationMs: z.number(),
   totalSessions: z.number(),
   totalTokensAllTime: z.number(),
+  processCpuPercent: z.number(),
+  systemRamUsedMb: z.number(),
+  systemRamTotalMb: z.number(),
 });
 export type InferenceStats = z.infer<typeof InferenceStatsSchema>;
 

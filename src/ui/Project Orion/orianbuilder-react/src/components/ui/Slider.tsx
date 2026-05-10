@@ -1,4 +1,4 @@
-import { Slider as BaseSlider } from '@base-ui-components/react/slider';
+import { Slider as BaseSlider } from "@base-ui-components/react/slider";
 
 interface Props {
   value?: number;
@@ -10,13 +10,21 @@ interface Props {
   className?: string;
 }
 
-export function Slider({ value, defaultValue, onValueChange, min = 0, max = 100, step = 1, className }: Props) {
+export function Slider({
+  value,
+  defaultValue,
+  onValueChange,
+  min = 0,
+  max = 100,
+  step = 1,
+  className,
+}: Props) {
   return (
     <BaseSlider.Root
-      className={`bu-slider ${className ?? ''}`}
+      className={`bu-slider ${className ?? ""}`}
       value={value}
       defaultValue={defaultValue}
-      onValueChange={(v) => onValueChange?.(typeof v === 'number' ? v : v[0])}
+      onValueChange={(v) => onValueChange?.(typeof v === "number" ? v : v[0])}
       min={min}
       max={max}
       step={step}

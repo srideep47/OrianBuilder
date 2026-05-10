@@ -2,7 +2,10 @@ import { z } from "zod";
 import log from "electron-log";
 import { ToolDefinition, AgentContext } from "./types";
 import { safeSend } from "@/ipc/utils/safe_sender";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("exit_plan");
 
@@ -50,14 +53,14 @@ export const exitPlanTool: ToolDefinition<z.infer<typeof exitPlanSchema>> = {
   buildXml: (args) => {
     if (!args.confirmation) return undefined;
 
-    return `<dyad-exit-plan></dyad-exit-plan>`;
+    return `<orianbuilder-exit-plan></orianbuilder-exit-plan>`;
   },
 
   execute: async (args, ctx: AgentContext) => {
     if (!args.confirmation) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "User must confirm the plan before exiting plan mode",
-        DyadErrorKind.Precondition,
+        OrianBuilderErrorKind.Precondition,
       );
     }
 

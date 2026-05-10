@@ -18,7 +18,10 @@ import {
   escapeXmlContent,
   type AgentContext,
 } from "../tools/types";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("file_operations");
 
@@ -53,7 +56,7 @@ function renderSupabaseDeployStatus(progress: SupabaseDeployProgress): string {
     content.push(`Latest: ${progress.functionName}`);
   }
 
-  return `<dyad-status title="${escapeXmlAttr(title)}" state="${state}">\n${escapeXmlContent(content.join("\n"))}${isComplete ? "\n</dyad-status>" : ""}`;
+  return `<orianbuilder-status title="${escapeXmlAttr(title)}" state="${state}">\n${escapeXmlContent(content.join("\n"))}${isComplete ? "\n</orianbuilder-status>" : ""}`;
 }
 
 /**
@@ -123,8 +126,8 @@ export async function commitAllChanges(
       path: ctx.appPath,
     });
     const message = chatSummary
-      ? `[dyad] ${chatSummary}`
-      : `[dyad] (${uncommittedFiles.length} files changed)`;
+      ? `[orianbuilder] ${chatSummary}`
+      : `[orianbuilder] (${uncommittedFiles.length} files changed)`;
     let commitHash: string | undefined;
 
     if (uncommittedFiles.length > 0) {
@@ -147,9 +150,9 @@ export async function commitAllChanges(
     };
   } catch (error) {
     logger.error(`Failed to commit changes: ${error}`);
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Failed to commit changes: ${error}`,
-      DyadErrorKind.External,
+      OrianBuilderErrorKind.External,
     );
   }
 }

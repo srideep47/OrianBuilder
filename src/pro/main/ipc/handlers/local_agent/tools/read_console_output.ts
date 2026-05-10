@@ -5,7 +5,10 @@ import { getLogs } from "@/lib/log_store";
 import { db } from "@/db";
 import { chats } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("read_console_output");
 
@@ -100,7 +103,7 @@ If you see errors after writing code, fix them and re-read to confirm they're go
 
   buildXml: (_args, isComplete) => {
     if (isComplete) return undefined;
-    return `<dyad-console-output>Reading…`;
+    return `<orianbuilder-console-output>Reading…`;
   },
 
   execute: async (args, ctx: AgentContext) => {
@@ -114,9 +117,9 @@ If you see errors after writing code, fix them and re-read to confirm they're go
     });
 
     if (!chat?.app) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "App not found for this chat.",
-        DyadErrorKind.NotFound,
+        OrianBuilderErrorKind.NotFound,
       );
     }
 
@@ -173,7 +176,7 @@ If you see errors after writing code, fix them and re-read to confirm they're go
     }
 
     ctx.onXmlComplete(
-      `<dyad-console-output count="${recent.length}" filter="${filter}">${escapeXmlContent(output)}</dyad-console-output>`,
+      `<orianbuilder-console-output count="${recent.length}" filter="${filter}">${escapeXmlContent(output)}</orianbuilder-console-output>`,
     );
 
     logger.log(`read_console_output done: ${recent.length} entries`);

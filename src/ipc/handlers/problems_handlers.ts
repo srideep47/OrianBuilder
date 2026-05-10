@@ -2,11 +2,14 @@ import { db } from "../../db";
 import { apps } from "../../db/schema";
 import { eq } from "drizzle-orm";
 import { generateProblemReport } from "../processors/tsc";
-import { getDyadAppPath } from "@/paths/paths";
+import { getOrianBuilderAppPath } from "@/paths/paths";
 import log from "electron-log";
 import { createTypedHandler } from "./base";
 import { miscContracts } from "../types/misc";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("problems_handlers");
 
@@ -19,13 +22,13 @@ export function registerProblemsHandlers() {
       });
 
       if (!app) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `App not found: ${params.appId}`,
-          DyadErrorKind.NotFound,
+          OrianBuilderErrorKind.NotFound,
         );
       }
 
-      const appPath = getDyadAppPath(app.path);
+      const appPath = getOrianBuilderAppPath(app.path);
 
       // Call autofix with empty full response to just run TypeScript checking
       const problemReport = await generateProblemReport({

@@ -39,12 +39,12 @@ const fixedHeaders = workerData?.fixedHeaders || {};
 /* ---------- optional resources for HTML injection ---------------------- */
 
 let stacktraceJsContent = null;
-let dyadShimContent = null;
-let dyadComponentSelectorClientContent = null;
-let dyadScreenshotClientContent = null;
+let orianbuilderShimContent = null;
+let orianbuilderComponentSelectorClientContent = null;
+let orianbuilderScreenshotClientContent = null;
 let htmlToImageContent = null;
-let dyadVisualEditorClientContent = null;
-let dyadLogsContent = null;
+let orianbuilderVisualEditorClientContent = null;
+let orianbuilderLogsContent = null;
 
 try {
   const htmlToImagePath = path.join(
@@ -83,98 +83,106 @@ try {
 }
 
 try {
-  const dyadShimPath = path.join(__dirname, "dyad-shim.js");
-  dyadShimContent = fs.readFileSync(dyadShimPath, "utf-8");
-  parentPort?.postMessage("[proxy-worker] dyad-shim.js loaded.");
+  const orianbuilderShimPath = path.join(__dirname, "orianbuilder-shim.js");
+  orianbuilderShimContent = fs.readFileSync(orianbuilderShimPath, "utf-8");
+  parentPort?.postMessage("[proxy-worker] orianbuilder-shim.js loaded.");
 } catch (error) {
   parentPort?.postMessage(
-    `[proxy-worker] Failed to read dyad-shim.js: ${error.message}`,
+    `[proxy-worker] Failed to read orianbuilder-shim.js: ${error.message}`,
   );
 }
 
 try {
-  const dyadComponentSelectorClientPath = path.join(
+  const orianbuilderComponentSelectorClientPath = path.join(
     __dirname,
-    "dyad-component-selector-client.js",
+    "orianbuilder-component-selector-client.js",
   );
-  dyadComponentSelectorClientContent = fs.readFileSync(
-    dyadComponentSelectorClientPath,
+  orianbuilderComponentSelectorClientContent = fs.readFileSync(
+    orianbuilderComponentSelectorClientPath,
     "utf-8",
   );
   parentPort?.postMessage(
-    "[proxy-worker] dyad-component-selector-client.js loaded.",
+    "[proxy-worker] orianbuilder-component-selector-client.js loaded.",
   );
 } catch (error) {
   parentPort?.postMessage(
-    `[proxy-worker] Failed to read dyad-component-selector-client.js: ${error.message}`,
+    `[proxy-worker] Failed to read orianbuilder-component-selector-client.js: ${error.message}`,
   );
 }
 
 try {
-  const dyadScreenshotClientPath = path.join(
+  const orianbuilderScreenshotClientPath = path.join(
     __dirname,
-    "dyad-screenshot-client.js",
+    "orianbuilder-screenshot-client.js",
   );
-  dyadScreenshotClientContent = fs.readFileSync(
-    dyadScreenshotClientPath,
-    "utf-8",
-  );
-  parentPort?.postMessage("[proxy-worker] dyad-screenshot-client.js loaded.");
-} catch (error) {
-  parentPort?.postMessage(
-    `[proxy-worker] Failed to read dyad-screenshot-client.js: ${error.message}`,
-  );
-}
-
-try {
-  const dyadVisualEditorClientPath = path.join(
-    __dirname,
-    "dyad-visual-editor-client.js",
-  );
-  dyadVisualEditorClientContent = fs.readFileSync(
-    dyadVisualEditorClientPath,
+  orianbuilderScreenshotClientContent = fs.readFileSync(
+    orianbuilderScreenshotClientPath,
     "utf-8",
   );
   parentPort?.postMessage(
-    "[proxy-worker] dyad-visual-editor-client.js loaded.",
+    "[proxy-worker] orianbuilder-screenshot-client.js loaded.",
   );
 } catch (error) {
   parentPort?.postMessage(
-    `[proxy-worker] Failed to read dyad-visual-editor-client.js: ${error.message}`,
+    `[proxy-worker] Failed to read orianbuilder-screenshot-client.js: ${error.message}`,
   );
 }
 
 try {
-  const dyadLogsPath = path.join(__dirname, "dyad_logs.js");
-  dyadLogsContent = fs.readFileSync(dyadLogsPath, "utf-8");
-  parentPort?.postMessage("[proxy-worker] dyad_logs.js loaded.");
+  const orianbuilderVisualEditorClientPath = path.join(
+    __dirname,
+    "orianbuilder-visual-editor-client.js",
+  );
+  orianbuilderVisualEditorClientContent = fs.readFileSync(
+    orianbuilderVisualEditorClientPath,
+    "utf-8",
+  );
+  parentPort?.postMessage(
+    "[proxy-worker] orianbuilder-visual-editor-client.js loaded.",
+  );
 } catch (error) {
   parentPort?.postMessage(
-    `[proxy-worker] Failed to read dyad_logs.js: ${error.message}`,
+    `[proxy-worker] Failed to read orianbuilder-visual-editor-client.js: ${error.message}`,
+  );
+}
+
+try {
+  const orianbuilderLogsPath = path.join(__dirname, "orianbuilder_logs.js");
+  orianbuilderLogsContent = fs.readFileSync(orianbuilderLogsPath, "utf-8");
+  parentPort?.postMessage("[proxy-worker] orianbuilder_logs.js loaded.");
+} catch (error) {
+  parentPort?.postMessage(
+    `[proxy-worker] Failed to read orianbuilder_logs.js: ${error.message}`,
   );
 }
 
 // Load Service Worker files
-let dyadSwContent = null;
-let dyadSwRegisterContent = null;
+let orianbuilderSwContent = null;
+let orianbuilderSwRegisterContent = null;
 
 try {
-  const dyadSwPath = path.join(__dirname, "dyad-sw.js");
-  dyadSwContent = fs.readFileSync(dyadSwPath, "utf-8");
-  parentPort?.postMessage("[proxy-worker] dyad-sw.js loaded.");
+  const orianbuilderSwPath = path.join(__dirname, "orianbuilder-sw.js");
+  orianbuilderSwContent = fs.readFileSync(orianbuilderSwPath, "utf-8");
+  parentPort?.postMessage("[proxy-worker] orianbuilder-sw.js loaded.");
 } catch (error) {
   parentPort?.postMessage(
-    `[proxy-worker] Failed to read dyad-sw.js: ${error.message}`,
+    `[proxy-worker] Failed to read orianbuilder-sw.js: ${error.message}`,
   );
 }
 
 try {
-  const dyadSwRegisterPath = path.join(__dirname, "dyad-sw-register.js");
-  dyadSwRegisterContent = fs.readFileSync(dyadSwRegisterPath, "utf-8");
-  parentPort?.postMessage("[proxy-worker] dyad-sw-register.js loaded.");
+  const orianbuilderSwRegisterPath = path.join(
+    __dirname,
+    "orianbuilder-sw-register.js",
+  );
+  orianbuilderSwRegisterContent = fs.readFileSync(
+    orianbuilderSwRegisterPath,
+    "utf-8",
+  );
+  parentPort?.postMessage("[proxy-worker] orianbuilder-sw-register.js loaded.");
 } catch (error) {
   parentPort?.postMessage(
-    `[proxy-worker] Failed to read dyad-sw-register.js: ${error.message}`,
+    `[proxy-worker] Failed to read orianbuilder-sw-register.js: ${error.message}`,
   );
 }
 
@@ -187,8 +195,8 @@ function needsInjection(pathname) {
 
 function injectHTML(buf) {
   let txt = buf.toString("utf8");
-  // These are strings that were used since the first version of the dyad shim.
-  // If the dyad shim is used from legacy apps which came pre-baked with the shim
+  // These are strings that were used since the first version of the orianbuilder shim.
+  // If the orianbuilder shim is used from legacy apps which came pre-baked with the shim
   // as a vite plugin, then do not inject the shim twice to avoid weird behaviors.
   const legacyAppWithShim =
     txt.includes("window-error") && txt.includes("unhandled-rejection");
@@ -204,19 +212,21 @@ function injectHTML(buf) {
       );
     }
 
-    if (dyadShimContent) {
-      scripts.push(`<script>${dyadShimContent}</script>`);
+    if (orianbuilderShimContent) {
+      scripts.push(`<script>${orianbuilderShimContent}</script>`);
     } else {
       scripts.push(
-        '<script>console.warn("[proxy-worker] dyad shim was not injected.");</script>',
+        '<script>console.warn("[proxy-worker] orianbuilder shim was not injected.");</script>',
       );
     }
   }
-  if (dyadComponentSelectorClientContent) {
-    scripts.push(`<script>${dyadComponentSelectorClientContent}</script>`);
+  if (orianbuilderComponentSelectorClientContent) {
+    scripts.push(
+      `<script>${orianbuilderComponentSelectorClientContent}</script>`,
+    );
   } else {
     scripts.push(
-      '<script>console.warn("[proxy-worker] dyad component selector client was not injected.");</script>',
+      '<script>console.warn("[proxy-worker] orianbuilder component selector client was not injected.");</script>',
     );
   }
   if (htmlToImageContent) {
@@ -232,32 +242,32 @@ function injectHTML(buf) {
       "[proxy-worker] WARNING: html-to-image not injected!",
     );
   }
-  if (dyadScreenshotClientContent) {
-    scripts.push(`<script>${dyadScreenshotClientContent}</script>`);
+  if (orianbuilderScreenshotClientContent) {
+    scripts.push(`<script>${orianbuilderScreenshotClientContent}</script>`);
   } else {
     scripts.push(
-      '<script>console.warn("[proxy-worker] dyad screenshot client was not injected.");</script>',
+      '<script>console.warn("[proxy-worker] orianbuilder screenshot client was not injected.");</script>',
     );
   }
-  if (dyadVisualEditorClientContent) {
-    scripts.push(`<script>${dyadVisualEditorClientContent}</script>`);
+  if (orianbuilderVisualEditorClientContent) {
+    scripts.push(`<script>${orianbuilderVisualEditorClientContent}</script>`);
   } else {
     scripts.push(
-      '<script>console.warn("[proxy-worker] dyad visual editor client was not injected.");</script>',
+      '<script>console.warn("[proxy-worker] orianbuilder visual editor client was not injected.");</script>',
     );
   }
-  if (dyadLogsContent) {
-    scripts.push(`<script>${dyadLogsContent}</script>`);
+  if (orianbuilderLogsContent) {
+    scripts.push(`<script>${orianbuilderLogsContent}</script>`);
   } else {
     scripts.push(
-      '<script>console.warn("[proxy-worker] dyad_logs.js was not injected.");</script>',
+      '<script>console.warn("[proxy-worker] orianbuilder_logs.js was not injected.");</script>',
     );
   }
-  if (dyadSwRegisterContent) {
-    scripts.push(`<script>${dyadSwRegisterContent}</script>`);
+  if (orianbuilderSwRegisterContent) {
+    scripts.push(`<script>${orianbuilderSwRegisterContent}</script>`);
   } else {
     scripts.push(
-      '<script>console.warn("[proxy-worker] dyad-sw-register.js was not injected.");</script>',
+      '<script>console.warn("[proxy-worker] orianbuilder-sw-register.js was not injected.");</script>',
     );
   }
   const allScripts = scripts.join("\n");
@@ -307,14 +317,14 @@ function buildTargetURL(clientReq) {
 
 const server = http.createServer((clientReq, clientRes) => {
   // Special handling for Service Worker file
-  if (clientReq.url === "/dyad-sw.js") {
-    if (dyadSwContent) {
+  if (clientReq.url === "/orianbuilder-sw.js") {
+    if (orianbuilderSwContent) {
       clientRes.writeHead(200, {
         "content-type": "application/javascript",
         "service-worker-allowed": "/",
         "cache-control": "no-cache",
       });
-      clientRes.end(dyadSwContent);
+      clientRes.end(orianbuilderSwContent);
       return;
     } else {
       clientRes.writeHead(404, { "content-type": "text/plain" });

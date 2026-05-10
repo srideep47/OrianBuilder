@@ -8,7 +8,7 @@ test("new apps are stored in the user's custom folder", async ({ po }) => {
   await po.setUp({ autoApprove: true });
   await po.navigation.goToSettingsTab();
 
-  const defaultBasePath = path.join(po.userDataDir, "dyad-apps");
+  const defaultBasePath = path.join(po.userDataDir, "orianbuilder-apps");
   const newBasePath = path.join(po.userDataDir, "alt-app-storage");
 
   if (!fs.existsSync(newBasePath)) {
@@ -40,7 +40,7 @@ test("store apps in default folder after resetting path", async ({ po }) => {
   await po.setUp({ autoApprove: true });
   await po.navigation.goToSettingsTab();
 
-  const defaultBasePath = path.join(po.userDataDir, "dyad-apps");
+  const defaultBasePath = path.join(po.userDataDir, "orianbuilder-apps");
   const newBasePath = path.join(po.userDataDir, "alt-app-storage");
 
   if (!fs.existsSync(newBasePath)) {
@@ -80,7 +80,7 @@ test("custom folder change doesn't make apps inaccessible", async ({ po }) => {
   await po.setUp({ autoApprove: true });
   await po.navigation.goToSettingsTab();
 
-  const defaultBasePath = path.join(po.userDataDir, "dyad-apps");
+  const defaultBasePath = path.join(po.userDataDir, "orianbuilder-apps");
   const newBasePath = path.join(po.userDataDir, "alt-app-storage");
 
   if (!fs.existsSync(newBasePath)) {

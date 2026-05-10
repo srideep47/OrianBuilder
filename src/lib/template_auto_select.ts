@@ -19,7 +19,7 @@ const RULES: TemplateRule[] = [
   },
   // Chrome extension
   {
-    templateId: "tonedice/dyad-chrome-extension-template",
+    templateId: "tonedice/orianbuilder-chrome-extension-template",
     keywords: [/chrome\s*extension/i, /browser\s*extension/i, /manifest\s*v3/i],
   },
   // Mobile (official Expo scaffold — listed before community template so it takes priority)
@@ -58,17 +58,17 @@ const RULES: TemplateRule[] = [
   },
   // Angular
   {
-    templateId: "jeff-kazzee/dyad-template-angular",
+    templateId: "jeff-kazzee/orianbuilder-template-angular",
     keywords: [/\bangular\b/i],
   },
   // Vue
   {
-    templateId: "k1lgor/dyad-vue-template",
+    templateId: "k1lgor/orianbuilder-vue-template",
     keywords: [/\bvue\b/i, /\bpinia\b/i, /\bnuxt\b/i],
   },
   // Docker
   {
-    templateId: "stgreenb/docker-dyad-template",
+    templateId: "stgreenb/docker-orianbuilder-template",
     keywords: [
       /\bdocker\b/i,
       /\bcontainer(ize|ized|ization)?\b/i,
@@ -88,7 +88,7 @@ const RULES: TemplateRule[] = [
   },
   // React Router 7 / Full-stack with Prisma
   {
-    templateId: "sparkie-dev/dyad-react-router-7-fs-routes-template",
+    templateId: "sparkie-dev/orianbuilder-react-router-7-fs-routes-template",
     keywords: [
       /\bprisma\b/i,
       /\bfull[\s-]?stack\b/i,

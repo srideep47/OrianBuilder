@@ -39,8 +39,8 @@ import { NEON_TEMPLATE_IDS } from "@/shared/templates";
 import { neonTemplateHook } from "@/client_logic/template_hook";
 import { autoSelectTemplate } from "@/lib/template_auto_select";
 import { getEffectiveDefaultChatMode } from "@/lib/schemas";
-import { useFreeAgentQuota } from "@/hooks/useFreeAgentQuota";
 import { useInitialChatMode } from "@/hooks/useInitialChatMode";
+import { useFreeAgentQuota } from "@/hooks/useFreeAgentQuota";
 
 // Track whether we've already checked release notes this session (module-scoped
 // so it persists across component unmount/remount cycles).
@@ -288,7 +288,13 @@ export default function HomePage() {
         <SetupBanner />
 
         {/* Import + Prompt block */}
-        <div style={{ display: 'flex', justifyContent: 'center', margin: '14px 0' }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            margin: "14px 0",
+          }}
+        >
           <ImportAppButton className="btn primary" />
         </div>
 
@@ -303,7 +309,9 @@ export default function HomePage() {
                 onClick={() => setInputValue(item.label)}
                 role="button"
                 tabIndex={0}
-                onKeyDown={(e) => e.key === 'Enter' && setInputValue(item.label)}
+                onKeyDown={(e) =>
+                  e.key === "Enter" && setInputValue(item.label)
+                }
               >
                 {item.icon} {item.label}
               </span>
@@ -314,19 +322,28 @@ export default function HomePage() {
         {/* Promo */}
         <div className="promo">
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12, color: '#5fdfa3', fontWeight: 500 }}>
+            <div style={{ fontSize: 12, color: "#5fdfa3", fontWeight: 500 }}>
               {t("proBanner.upTo3xCheaper")}
             </div>
-            <div style={{ fontSize: 10, color: 'rgba(95,223,163,.65)' }}>
+            <div style={{ fontSize: 10, color: "rgba(95,223,163,.65)" }}>
               {t("proBanner.byUsingSmartContext")}
             </div>
           </div>
           <button
             className="btn sm"
-            style={{ background: 'rgba(60,200,140,.18)', borderColor: 'rgba(60,200,140,.35)', color: '#5fdfa3' }}
-            onClick={() => navigate({ to: providerSettingsRoute.id, params: { provider: "auto" } })}
+            style={{
+              background: "rgba(60,200,140,.18)",
+              borderColor: "rgba(60,200,140,.35)",
+              color: "#5fdfa3",
+            }}
+            onClick={() =>
+              navigate({
+                to: providerSettingsRoute.id,
+                params: { provider: "auto" },
+              })
+            }
           >
-            {t("proBanner.getDyadPro")} →
+            {t("proBanner.getOrianBuilderPro")} →
           </button>
         </div>
 
@@ -367,35 +384,6 @@ export default function HomePage() {
           </DialogContent>
         </Dialog>
       </div>
-    </div>
-  );
-}
-
-function PromoBanner() {
-  const { t } = useTranslation("home");
-  const navigate = useNavigate();
-
-  return (
-    <div className="galaxy-promo-banner flex items-center gap-3 px-4 py-3 rounded-lg border border-emerald-500/20 bg-emerald-500/10 w-fit mt-4 mb-2">
-      <div>
-        <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">
-          {t("proBanner.upTo3xCheaper")}
-        </p>
-        <p className="text-xs text-emerald-700/70 dark:text-emerald-400/70">
-          {t("proBanner.byUsingSmartContext")}
-        </p>
-      </div>
-      <button
-        onClick={() =>
-          navigate({
-            to: providerSettingsRoute.id,
-            params: { provider: "auto" },
-          })
-        }
-        className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-600 rounded-md hover:bg-emerald-700 transition-colors whitespace-nowrap dark:bg-emerald-600 dark:hover:bg-emerald-700"
-      >
-        {t("proBanner.getDyadPro")}
-      </button>
     </div>
   );
 }

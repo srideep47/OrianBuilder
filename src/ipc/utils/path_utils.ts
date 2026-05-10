@@ -1,6 +1,11 @@
 import path from "node:path";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { normalizePath } from "../../../shared/normalizePath";
+
+export { normalizePath };
 
 /**
  * Safely joins paths while ensuring the result stays within the base directory.
@@ -19,30 +24,30 @@ export function safeJoin(basePath: string, ...paths: string[]): string {
   // Check if any of the path segments are absolute paths (which would be unsafe)
   for (const pathSegment of normalizedPaths) {
     if (path.isAbsolute(pathSegment)) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Unsafe path: joining "${paths.join(", ")}" with base "${basePath}" would escape the base directory`,
-        DyadErrorKind.Validation,
+        OrianBuilderErrorKind.Validation,
       );
     }
     // Also check for home directory shortcuts which are effectively absolute
     if (pathSegment.startsWith("~/")) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Unsafe path: joining "${paths.join(", ")}" with base "${basePath}" would escape the base directory`,
-        DyadErrorKind.Validation,
+        OrianBuilderErrorKind.Validation,
       );
     }
     // Check for Windows-style absolute paths (C:\, D:\, etc.)
     if (/^[A-Za-z]:[/\\]/.test(pathSegment)) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Unsafe path: joining "${paths.join(", ")}" with base "${basePath}" would escape the base directory`,
-        DyadErrorKind.Validation,
+        OrianBuilderErrorKind.Validation,
       );
     }
     // Check for UNC paths (\\server\share)
     if (pathSegment.startsWith("\\\\")) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Unsafe path: joining "${paths.join(", ")}" with base "${basePath}" would escape the base directory`,
-        DyadErrorKind.Validation,
+        OrianBuilderErrorKind.Validation,
       );
     }
   }
@@ -60,11 +65,11 @@ export function safeJoin(basePath: string, ...paths: string[]): string {
 
   // If relativePath starts with ".." or is absolute, then resolvedJoinedPath is outside basePath
   if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Unsafe path: joining "${paths.join(", ")}" with base "${basePath}" would escape the base directory`,
-      DyadErrorKind.Validation,
+      OrianBuilderErrorKind.Validation,
     );
   }
 
-  return joinedPath;
+  return normalizePath(joinedPath);
 }

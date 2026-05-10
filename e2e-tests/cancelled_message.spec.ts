@@ -37,7 +37,7 @@ test("cancelled message shows cancelled indicator and is excluded from context",
   // Read the server dump to verify the cancelled message is NOT in the context
   const messagesListText = await messagesList.textContent();
   const dumpPathMatch = messagesListText?.match(
-    /\[\[dyad-dump-path=([^\]]+)\]\]/,
+    /\[\[orianbuilder-dump-path=([^\]]+)\]\]/,
   );
   expect(dumpPathMatch).toBeTruthy();
   const dumpContent = fs.readFileSync(dumpPathMatch![1], "utf-8");

@@ -13,7 +13,9 @@ let tempRoot: string;
 
 describe("greenfield project factory", () => {
   beforeEach(async () => {
-    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "dyad-factory-"));
+    tempRoot = await fs.mkdtemp(
+      path.join(os.tmpdir(), "orianbuilder-factory-"),
+    );
   });
 
   afterEach(async () => {

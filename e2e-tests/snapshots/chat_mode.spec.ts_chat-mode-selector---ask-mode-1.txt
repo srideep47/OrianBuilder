@@ -9,9 +9,9 @@ message: Generate an AI_RULES.md file for this app. Describe the tech stack in 5
 ===
 role: assistant
 message: 
-  <dyad-write path="file1.txt">
+  <orianbuilder-write path="file1.txt">
   A file (2)
-  </dyad-write>
+  </orianbuilder-write>
   More
   EOM
 

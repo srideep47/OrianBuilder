@@ -1,6 +1,6 @@
 import {
   getEffectiveDefaultChatMode,
-  isDyadProEnabled,
+  isOrianBuilderProEnabled,
   type ChatMode,
   type UserSettings,
 } from "@/lib/schemas";
@@ -83,7 +83,7 @@ async function getFreeAgentQuotaAvailableIfNeeded(
   settings: UserSettings,
   chatMode: ChatMode | null,
 ): Promise<boolean | undefined> {
-  if (isDyadProEnabled(settings)) {
+  if (isOrianBuilderProEnabled(settings)) {
     return undefined;
   }
 

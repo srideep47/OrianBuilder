@@ -8,7 +8,7 @@
 // ============================================================================
 
 const ROLE_BLOCK = `<role>
-You are Dyad, an AI assistant that creates and modifies web applications. You assist users by chatting with them and making changes to their code in real-time. You understand that users can see a live preview of their application in an iframe on the right side of the screen while you make code changes.
+You are OrianBuilder, an AI assistant that creates and modifies web applications. You assist users by chatting with them and making changes to their code in real-time. You understand that users can see a live preview of their application in an iframe on the right side of the screen while you make code changes.
 You make efficient and effective changes to codebases while following best practices for maintainability and readability. You take pride in keeping things simple and elegant. You are friendly and helpful, always aiming to provide clear explanations. 
 </role>`;
 
@@ -19,10 +19,10 @@ Do *not* tell the user to run shell commands. Instead, they can do one of the fo
 - **Restart**: This will restart the app server.
 - **Refresh**: This will refresh the app preview page.
 
-You can suggest one of these commands by using the <dyad-command> tag like this:
-<dyad-command type="rebuild"></dyad-command>
-<dyad-command type="restart"></dyad-command>
-<dyad-command type="refresh"></dyad-command>
+You can suggest one of these commands by using the <orianbuilder-command> tag like this:
+<orianbuilder-command type="rebuild"></orianbuilder-command>
+<orianbuilder-command type="restart"></orianbuilder-command>
+<orianbuilder-command type="refresh"></orianbuilder-command>
 
 If you output one of these commands, tell the user to look for the action button above the chat input.
 </app_commands>`;
@@ -170,7 +170,7 @@ const BASIC_DEVELOPMENT_WORKFLOW_BLOCK = `<development_workflow>
  */
 export const LOCAL_AGENT_ASK_SYSTEM_PROMPT = `
 <role>
-You are Dyad, an AI assistant that helps users understand their web applications. You assist users by answering questions about their code, explaining concepts, and providing guidance. You can read and analyze code in the codebase to provide accurate, context-aware answers.
+You are OrianBuilder, an AI assistant that helps users understand their web applications. You assist users by answering questions about their code, explaining concepts, and providing guidance. You can read and analyze code in the codebase to provide accurate, context-aware answers.
 You are friendly and helpful, always aiming to provide clear explanations. You take pride in giving thorough, accurate answers based on the actual code.
 </role>
 
@@ -219,7 +219,7 @@ When a user explicitly requests custom images, illustrations, or visual media fo
 - Use the \`generate_image\` tool instead of using placeholder images or broken external URLs
 - Do NOT generate images when an existing asset, SVG, or icon library (e.g., lucide-react) would suffice
 - Write detailed prompts that specify subject, style, colors, composition, mood, and aspect ratio
-- After generating, use \`copy_file\` to move the image from \`.dyad/media/\` to the project's public/static directory, giving it a descriptive filename (e.g., \`public/assets/hero-banner.png\`)
+- After generating, use \`copy_file\` to move the image from \`.orianbuilder/media/\` to the project's public/static directory, giving it a descriptive filename (e.g., \`public/assets/hero-banner.png\`)
 - Reference the copied path in code (e.g., \`<img src="/assets/hero-banner.png" />\`)
 </image_generation_guidelines>`;
 
@@ -228,8 +228,7 @@ When a user explicitly requests custom images, illustrations, or visual media fo
 // ============================================================================
 
 /**
- * System prompt for Local Agent v2 in Pro mode
- * Full access to all tools including code_search, web_search, web_crawl
+ * System prompt for the Local Agent
  */
 export const LOCAL_AGENT_SYSTEM_PROMPT = `
 ${ROLE_BLOCK}
@@ -305,15 +304,11 @@ export function constructLocalAgentPrompt(
   themePrompt?: string,
   options?: { readOnly?: boolean; basicAgentMode?: boolean },
 ): string {
-  // Select the appropriate base prompt
-  let basePrompt: string;
-  if (options?.readOnly) {
-    basePrompt = LOCAL_AGENT_ASK_SYSTEM_PROMPT;
-  } else if (options?.basicAgentMode) {
-    basePrompt = LOCAL_AGENT_BASIC_SYSTEM_PROMPT;
-  } else {
-    basePrompt = LOCAL_AGENT_SYSTEM_PROMPT;
-  }
+  const basePrompt = options?.readOnly
+    ? LOCAL_AGENT_ASK_SYSTEM_PROMPT
+    : options?.basicAgentMode
+      ? LOCAL_AGENT_BASIC_SYSTEM_PROMPT
+      : LOCAL_AGENT_SYSTEM_PROMPT;
 
   let prompt = basePrompt.replace("[[AI_RULES]]", aiRules ?? DEFAULT_AI_RULES);
 

@@ -305,7 +305,16 @@ export const missionArtifacts = sqliteTable("mission_artifacts", {
     onDelete: "set null",
   }),
   artifactType: text("artifact_type", {
-    enum: ["screenshot", "accessibility_tree", "console_output", "runtime"],
+    enum: [
+      "screenshot",
+      "image",
+      "audio",
+      "video",
+      "deployment",
+      "accessibility_tree",
+      "console_output",
+      "runtime",
+    ],
   }).notNull(),
   title: text("title").notNull(),
   uri: text("uri"),
@@ -319,6 +328,95 @@ export const missionArtifacts = sqliteTable("mission_artifacts", {
     .notNull()
     .default(sql`(unixepoch())`),
 });
+
+export const missionInterrupts = sqliteTable("mission_interrupts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  missionId: integer("mission_id")
+    .notNull()
+    .references(() => missions.id, { onDelete: "cascade" }),
+  source: text("source", {
+    enum: ["user", "worker", "system", "runtime", "test"],
+  })
+    .notNull()
+    .default("system"),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  status: text("status", {
+    enum: ["pending", "injected", "cancelled"],
+  })
+    .notNull()
+    .default("pending"),
+  metadata: text("metadata", { mode: "json" }).$type<Record<
+    string,
+    unknown
+  > | null>(),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  injectedAt: integer("injected_at", { mode: "timestamp" }),
+});
+
+export const missionMemories = sqliteTable("mission_memories", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  appId: integer("app_id")
+    .notNull()
+    .references(() => apps.id, { onDelete: "cascade" }),
+  missionId: integer("mission_id").references(() => missions.id, {
+    onDelete: "cascade",
+  }),
+  category: text("category", {
+    enum: [
+      "decision",
+      "command",
+      "gotcha",
+      "preference",
+      "accepted_approach",
+      "rejected_approach",
+      "recurring_error",
+    ],
+  }).notNull(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  metadata: text("metadata", { mode: "json" }).$type<Record<
+    string,
+    unknown
+  > | null>(),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+export const missionPermissionRequests = sqliteTable(
+  "mission_permission_requests",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    missionId: integer("mission_id")
+      .notNull()
+      .references(() => missions.id, { onDelete: "cascade" }),
+    runId: integer("run_id").references(() => missionRuns.id, {
+      onDelete: "set null",
+    }),
+    action: text("action").notNull(),
+    risk: text("risk", { enum: ["low", "medium", "high"] }).notNull(),
+    reason: text("reason").notNull(),
+    status: text("status", {
+      enum: ["pending", "approved", "denied", "expired", "cancelled"],
+    })
+      .notNull()
+      .default("pending"),
+    metadata: text("metadata", { mode: "json" }).$type<Record<
+      string,
+      unknown
+    > | null>(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    resolvedAt: integer("resolved_at", { mode: "timestamp" }),
+  },
+);
 
 export const versions = sqliteTable(
   "versions",
@@ -346,6 +444,7 @@ export const versions = sqliteTable(
 export const appsRelations = relations(apps, ({ many }) => ({
   chats: many(chats),
   missions: many(missions),
+  missionMemories: many(missionMemories),
   versions: many(versions),
 }));
 
@@ -380,6 +479,9 @@ export const missionsRelations = relations(missions, ({ one, many }) => ({
   workers: many(missionWorkers),
   checkpoints: many(missionCheckpoints),
   artifacts: many(missionArtifacts),
+  interrupts: many(missionInterrupts),
+  memories: many(missionMemories),
+  permissionRequests: many(missionPermissionRequests),
 }));
 
 export const missionEventsRelations = relations(missionEvents, ({ one }) => ({
@@ -411,6 +513,7 @@ export const missionRunsRelations = relations(missionRuns, ({ one, many }) => ({
   }),
   checkpoints: many(missionCheckpoints),
   workers: many(missionWorkers),
+  permissionRequests: many(missionPermissionRequests),
 }));
 
 export const missionWorkersRelations = relations(missionWorkers, ({ one }) => ({
@@ -447,6 +550,44 @@ export const missionArtifactsRelations = relations(
     }),
     run: one(missionRuns, {
       fields: [missionArtifacts.runId],
+      references: [missionRuns.id],
+    }),
+  }),
+);
+
+export const missionInterruptsRelations = relations(
+  missionInterrupts,
+  ({ one }) => ({
+    mission: one(missions, {
+      fields: [missionInterrupts.missionId],
+      references: [missions.id],
+    }),
+  }),
+);
+
+export const missionMemoriesRelations = relations(
+  missionMemories,
+  ({ one }) => ({
+    app: one(apps, {
+      fields: [missionMemories.appId],
+      references: [apps.id],
+    }),
+    mission: one(missions, {
+      fields: [missionMemories.missionId],
+      references: [missions.id],
+    }),
+  }),
+);
+
+export const missionPermissionRequestsRelations = relations(
+  missionPermissionRequests,
+  ({ one }) => ({
+    mission: one(missions, {
+      fields: [missionPermissionRequests.missionId],
+      references: [missions.id],
+    }),
+    run: one(missionRuns, {
+      fields: [missionPermissionRequests.runId],
       references: [missionRuns.id],
     }),
   }),
@@ -552,6 +693,12 @@ export const mcpToolConsents = sqliteTable(
       .references(() => mcpServers.id, { onDelete: "cascade" }),
     toolName: text("tool_name").notNull(),
     consent: text("consent").notNull().default("ask"), // ask | always | denied
+    riskOverride: text("risk_override"), // low | medium | high | critical
+    stateScopeOverride: text("state_scope_override"), // read_only | workspace | runtime | external | host
+    requiresExplicitConsentOverride: integer(
+      "requires_explicit_consent_override",
+      { mode: "boolean" },
+    ),
     updatedAt: integer("updated_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),

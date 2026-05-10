@@ -5,14 +5,22 @@ import { eq, and } from "drizzle-orm";
 import { createTypedHandler } from "./base";
 
 import { resolveConsent } from "../utils/mcp_consent";
-import { getStoredConsent } from "../utils/mcp_consent";
 import { mcpManager } from "../utils/mcp_manager";
 import {
   mcpContracts,
   type McpServer,
   type McpTransport,
   type McpConsentValue,
+  type SetMcpToolTrustOverrideParams,
 } from "../types/mcp";
+
+type McpRiskOverride = "low" | "medium" | "high" | "critical";
+type McpStateScopeOverride =
+  | "read_only"
+  | "workspace"
+  | "runtime"
+  | "external"
+  | "host";
 
 const logger = log.scope("mcp_handlers");
 
@@ -129,13 +137,19 @@ export function registerMcpHandlers() {
       const client = await mcpManager.getClient(serverId);
       const remoteTools = await client.tools();
       const tools = await Promise.all(
-        Object.entries(remoteTools).map(async ([name, mcpTool]) => ({
-          name,
-          description: mcpTool.description ?? null,
-          consent: (await getStoredConsent(serverId, name)) as
-            | McpConsentValue
-            | undefined,
-        })),
+        Object.entries(remoteTools).map(async ([name, mcpTool]) => {
+          const record = await getMcpToolConsentRecord(serverId, name);
+          const typedRecord = record ? toMcpToolConsentRecord(record) : null;
+          return {
+            name,
+            description: mcpTool.description ?? null,
+            consent: (typedRecord?.consent ?? "ask") as McpConsentValue,
+            riskOverride: typedRecord?.riskOverride,
+            stateScopeOverride: typedRecord?.stateScopeOverride,
+            requiresExplicitConsentOverride:
+              typedRecord?.requiresExplicitConsentOverride,
+          };
+        }),
       );
       return tools;
     } catch (e) {
@@ -147,51 +161,19 @@ export function registerMcpHandlers() {
   // Consents
   createTypedHandler(mcpContracts.getToolConsents, async () => {
     const consents = await db.select().from(mcpToolConsents);
-    return consents.map((c) => ({
-      ...c,
-      consent: c.consent as McpConsentValue,
-    }));
+    return consents.map(toMcpToolConsentRecord);
   });
 
   createTypedHandler(mcpContracts.setToolConsent, async (_, params) => {
-    const existing = await db
-      .select()
-      .from(mcpToolConsents)
-      .where(
-        and(
-          eq(mcpToolConsents.serverId, params.serverId),
-          eq(mcpToolConsents.toolName, params.toolName),
-        ),
-      );
-    if (existing.length > 0) {
-      const result = await db
-        .update(mcpToolConsents)
-        .set({ consent: params.consent })
-        .where(
-          and(
-            eq(mcpToolConsents.serverId, params.serverId),
-            eq(mcpToolConsents.toolName, params.toolName),
-          ),
-        )
-        .returning();
-      return {
-        ...result[0],
-        consent: result[0].consent as McpConsentValue,
-      };
-    } else {
-      const result = await db
-        .insert(mcpToolConsents)
-        .values({
-          serverId: params.serverId,
-          toolName: params.toolName,
-          consent: params.consent,
-        })
-        .returning();
-      return {
-        ...result[0],
-        consent: result[0].consent as McpConsentValue,
-      };
-    }
+    return toMcpToolConsentRecord(
+      await upsertMcpToolConsentRecord(params.serverId, params.toolName, {
+        consent: params.consent,
+      }),
+    );
+  });
+
+  createTypedHandler(mcpContracts.setToolTrustOverride, async (_, params) => {
+    return toMcpToolConsentRecord(await setMcpToolTrustOverride(params));
   });
 
   // Tool consent request/response handshake
@@ -201,4 +183,74 @@ export function registerMcpHandlers() {
   });
 
   logger.debug("Registered MCP IPC handlers");
+}
+
+async function getMcpToolConsentRecord(serverId: number, toolName: string) {
+  const [record] = await db
+    .select()
+    .from(mcpToolConsents)
+    .where(
+      and(
+        eq(mcpToolConsents.serverId, serverId),
+        eq(mcpToolConsents.toolName, toolName),
+      ),
+    );
+  return record ?? null;
+}
+
+async function upsertMcpToolConsentRecord(
+  serverId: number,
+  toolName: string,
+  values: Partial<typeof mcpToolConsents.$inferInsert>,
+) {
+  const existing = await getMcpToolConsentRecord(serverId, toolName);
+  if (existing) {
+    const [result] = await db
+      .update(mcpToolConsents)
+      .set(values)
+      .where(
+        and(
+          eq(mcpToolConsents.serverId, serverId),
+          eq(mcpToolConsents.toolName, toolName),
+        ),
+      )
+      .returning();
+    return result;
+  }
+
+  const [result] = await db
+    .insert(mcpToolConsents)
+    .values({
+      serverId,
+      toolName,
+      consent: "ask",
+      ...values,
+    })
+    .returning();
+  return result;
+}
+
+async function setMcpToolTrustOverride(params: SetMcpToolTrustOverrideParams) {
+  const values: Partial<typeof mcpToolConsents.$inferInsert> = {};
+  if ("riskOverride" in params) {
+    values.riskOverride = params.riskOverride ?? null;
+  }
+  if ("stateScopeOverride" in params) {
+    values.stateScopeOverride = params.stateScopeOverride ?? null;
+  }
+  if ("requiresExplicitConsentOverride" in params) {
+    values.requiresExplicitConsentOverride =
+      params.requiresExplicitConsentOverride ?? null;
+  }
+  return upsertMcpToolConsentRecord(params.serverId, params.toolName, values);
+}
+
+function toMcpToolConsentRecord(record: typeof mcpToolConsents.$inferSelect) {
+  return {
+    ...record,
+    consent: record.consent as McpConsentValue,
+    riskOverride: record.riskOverride as McpRiskOverride | null,
+    stateScopeOverride:
+      record.stateScopeOverride as McpStateScopeOverride | null,
+  };
 }

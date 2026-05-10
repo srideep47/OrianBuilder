@@ -1,5 +1,8 @@
 import { IpcMainInvokeEvent } from "electron";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { readSettings } from "../../main/settings";
 import {
   gitMergeAbort,
@@ -22,7 +25,7 @@ import {
   gitCommit,
   gitDiscardAllChanges,
 } from "../utils/git_utils";
-import { getDyadAppPath } from "../../paths/paths";
+import { getOrianBuilderAppPath } from "../../paths/paths";
 import { db } from "../../db";
 import { apps } from "../../db/schema";
 import { eq } from "drizzle-orm";
@@ -46,8 +49,12 @@ async function handleAbortMerge(
   { appId }: GitBranchAppIdParams,
 ): Promise<void> {
   const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
-  if (!app) throw new DyadError("App not found", DyadErrorKind.NotFound);
-  const appPath = getDyadAppPath(app.path);
+  if (!app)
+    throw new OrianBuilderError(
+      "App not found",
+      OrianBuilderErrorKind.NotFound,
+    );
+  const appPath = getOrianBuilderAppPath(app.path);
 
   await gitMergeAbort({ path: appPath });
 }
@@ -60,16 +67,19 @@ async function handleFetchFromGithub(
   const settings = readSettings();
   const accessToken = settings.githubAccessToken?.value;
   if (!accessToken) {
-    throw new DyadError("Not authenticated with GitHub.", DyadErrorKind.Auth);
+    throw new OrianBuilderError(
+      "Not authenticated with GitHub.",
+      OrianBuilderErrorKind.Auth,
+    );
   }
   const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
   if (!app || !app.githubOrg || !app.githubRepo) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "App is not linked to a GitHub repo.",
-      DyadErrorKind.Precondition,
+      OrianBuilderErrorKind.Precondition,
     );
   }
-  const appPath = getDyadAppPath(app.path);
+  const appPath = getOrianBuilderAppPath(app.path);
 
   await gitFetch({
     path: appPath,
@@ -85,15 +95,15 @@ async function handleCreateBranch(
 ): Promise<void> {
   // Validate branch name
   if (!branch || branch.length === 0 || branch.length > 255) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "Branch name must be between 1 and 255 characters",
-      DyadErrorKind.Validation,
+      OrianBuilderErrorKind.Validation,
     );
   }
   if (!/^[a-zA-Z0-9/_.-]+$/.test(branch) || /\.\./.test(branch)) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "Branch name contains invalid characters",
-      DyadErrorKind.Validation,
+      OrianBuilderErrorKind.Validation,
     );
   }
   if (
@@ -105,11 +115,18 @@ async function handleCreateBranch(
     branch.endsWith("/") ||
     branch.includes("@{")
   ) {
-    throw new DyadError("Invalid branch name", DyadErrorKind.Validation);
+    throw new OrianBuilderError(
+      "Invalid branch name",
+      OrianBuilderErrorKind.Validation,
+    );
   }
   const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
-  if (!app) throw new DyadError("App not found", DyadErrorKind.NotFound);
-  const appPath = getDyadAppPath(app.path);
+  if (!app)
+    throw new OrianBuilderError(
+      "App not found",
+      OrianBuilderErrorKind.NotFound,
+    );
+  const appPath = getOrianBuilderAppPath(app.path);
 
   await gitCreateBranch({
     path: appPath,
@@ -123,8 +140,12 @@ export async function handleDeleteBranch(
   { appId, branch }: GitBranchParams,
 ): Promise<void> {
   const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
-  if (!app) throw new DyadError("App not found", DyadErrorKind.NotFound);
-  const appPath = getDyadAppPath(app.path);
+  if (!app)
+    throw new OrianBuilderError(
+      "App not found",
+      OrianBuilderErrorKind.NotFound,
+    );
+  const appPath = getOrianBuilderAppPath(app.path);
 
   // Check if branch exists locally
   const localBranches = await gitListBranches({ path: appPath });
@@ -147,9 +168,9 @@ export async function handleDeleteBranch(
         `Failed to list remote branches while checking for branch '${branch}' to delete.`,
         error,
       );
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Branch '${branch}' does not exist locally and remote branches could not be checked. Please try again later.`,
-        DyadErrorKind.Conflict,
+        OrianBuilderErrorKind.Conflict,
       );
     }
 
@@ -163,14 +184,14 @@ export async function handleDeleteBranch(
 
     // Branch only exists remotely - inform user they need to delete it on GitHub
     if (app.githubOrg && app.githubRepo) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Branch '${branch}' only exists on the remote. To delete it, please delete the branch on GitHub directly. Visit https://github.com/${app.githubOrg}/${app.githubRepo}/branches to manage remote branches.`,
-        DyadErrorKind.Conflict,
+        OrianBuilderErrorKind.Conflict,
       );
     }
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Branch '${branch}' only exists on the remote and cannot be deleted locally. Please delete it from your remote Git hosting provider.`,
-      DyadErrorKind.Conflict,
+      OrianBuilderErrorKind.Conflict,
     );
   }
 }
@@ -180,8 +201,12 @@ async function handleSwitchBranch(
   { appId, branch }: GitBranchParams,
 ): Promise<void> {
   const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
-  if (!app) throw new DyadError("App not found", DyadErrorKind.NotFound);
-  const appPath = getDyadAppPath(app.path);
+  if (!app)
+    throw new OrianBuilderError(
+      "App not found",
+      OrianBuilderErrorKind.NotFound,
+    );
+  const appPath = getOrianBuilderAppPath(app.path);
 
   // Check for merge or rebase in progress before attempting to switch
   // This provides structured error codes instead of relying on string matching
@@ -217,10 +242,10 @@ async function handleSwitchBranch(
       lowerMessage.includes("would be overwritten") ||
       lowerMessage.includes("please commit or stash")
     ) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to switch branch: uncommitted changes detected. ` +
           "Please commit or stash your changes manually and try again.",
-        DyadErrorKind.Conflict,
+        OrianBuilderErrorKind.Conflict,
       );
     }
     throw checkoutError;
@@ -240,8 +265,12 @@ async function handleRenameBranch(
   { appId, oldBranch, newBranch }: RenameGitBranchParams,
 ): Promise<void> {
   const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
-  if (!app) throw new DyadError("App not found", DyadErrorKind.NotFound);
-  const appPath = getDyadAppPath(app.path);
+  if (!app)
+    throw new OrianBuilderError(
+      "App not found",
+      OrianBuilderErrorKind.NotFound,
+    );
+  const appPath = getOrianBuilderAppPath(app.path);
 
   // Check if we're renaming the current branch BEFORE renaming to avoid race conditions
   const currentBranch = await gitCurrentBranch({ path: appPath });
@@ -266,9 +295,9 @@ async function handleRenameBranch(
 }
 
 // Custom error class for merge conflicts (name kept for UI checks)
-class MergeConflictError extends DyadError {
+class MergeConflictError extends OrianBuilderError {
   constructor(message: string) {
-    super(message, DyadErrorKind.Conflict);
+    super(message, OrianBuilderErrorKind.Conflict);
     this.name = "MergeConflictError";
   }
 }
@@ -278,8 +307,12 @@ async function handleMergeBranch(
   { appId, branch }: GitBranchParams,
 ): Promise<void> {
   const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
-  if (!app) throw new DyadError("App not found", DyadErrorKind.NotFound);
-  const appPath = getDyadAppPath(app.path);
+  if (!app)
+    throw new OrianBuilderError(
+      "App not found",
+      OrianBuilderErrorKind.NotFound,
+    );
+  const appPath = getOrianBuilderAppPath(app.path);
 
   // Check if branch exists locally, if not, check if it's a remote branch
   const localBranches = await gitListBranches({ path: appPath });
@@ -323,10 +356,10 @@ async function handleMergeBranch(
       lowerMessage.includes("would be overwritten") ||
       lowerMessage.includes("please commit or stash")
     ) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to merge branch: uncommitted changes detected. ` +
           "Please commit or stash your changes manually and try again.",
-        DyadErrorKind.Conflict,
+        OrianBuilderErrorKind.Conflict,
       );
     }
 
@@ -340,8 +373,12 @@ async function handleListLocalBranches(
   { appId }: GitBranchAppIdParams,
 ): Promise<{ branches: string[]; current: string | null }> {
   const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
-  if (!app) throw new DyadError("App not found", DyadErrorKind.NotFound);
-  const appPath = getDyadAppPath(app.path);
+  if (!app)
+    throw new OrianBuilderError(
+      "App not found",
+      OrianBuilderErrorKind.NotFound,
+    );
+  const appPath = getOrianBuilderAppPath(app.path);
 
   const branches = await gitListBranches({ path: appPath });
   const current = await gitCurrentBranch({ path: appPath });
@@ -353,8 +390,12 @@ async function handleListRemoteBranches(
   { appId, remote = "origin" }: { appId: number; remote?: string },
 ): Promise<string[]> {
   const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
-  if (!app) throw new DyadError("App not found", DyadErrorKind.NotFound);
-  const appPath = getDyadAppPath(app.path);
+  if (!app)
+    throw new OrianBuilderError(
+      "App not found",
+      OrianBuilderErrorKind.NotFound,
+    );
+  const appPath = getOrianBuilderAppPath(app.path);
 
   const branches = await gitListRemoteBranches({ path: appPath, remote });
   return branches;
@@ -365,8 +406,12 @@ async function handleGetUncommittedFiles(
   { appId }: GitBranchAppIdParams,
 ): Promise<UncommittedFile[]> {
   const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
-  if (!app) throw new DyadError("App not found", DyadErrorKind.NotFound);
-  const appPath = getDyadAppPath(app.path);
+  if (!app)
+    throw new OrianBuilderError(
+      "App not found",
+      OrianBuilderErrorKind.NotFound,
+    );
+  const appPath = getOrianBuilderAppPath(app.path);
 
   return getGitUncommittedFilesWithStatus({ path: appPath });
 }
@@ -377,8 +422,12 @@ async function withAppGitOp<T>(
   fn: (appPath: string) => Promise<T>,
 ): Promise<T> {
   const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
-  if (!app) throw new DyadError("App not found", DyadErrorKind.NotFound);
-  const appPath = getDyadAppPath(app.path);
+  if (!app)
+    throw new OrianBuilderError(
+      "App not found",
+      OrianBuilderErrorKind.NotFound,
+    );
+  const appPath = getOrianBuilderAppPath(app.path);
 
   return withLock(appId, async () => {
     if (isGitMergeInProgress({ path: appPath })) {
@@ -426,16 +475,19 @@ async function handlePullFromGithub(
   const settings = readSettings();
   const accessToken = settings.githubAccessToken?.value;
   if (!accessToken) {
-    throw new DyadError("Not authenticated with GitHub.", DyadErrorKind.Auth);
+    throw new OrianBuilderError(
+      "Not authenticated with GitHub.",
+      OrianBuilderErrorKind.Auth,
+    );
   }
   const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
   if (!app || !app.githubOrg || !app.githubRepo) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "App is not linked to a GitHub repo.",
-      DyadErrorKind.Precondition,
+      OrianBuilderErrorKind.Precondition,
     );
   }
-  const appPath = getDyadAppPath(app.path);
+  const appPath = getOrianBuilderAppPath(app.path);
   const currentBranch = await gitCurrentBranch({ path: appPath });
 
   try {

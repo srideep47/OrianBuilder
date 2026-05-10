@@ -38,8 +38,8 @@ jobs:
         id: base-app-token
         uses: actions/create-github-app-token@v2
         with:
-          app-id: ${{ vars.DYAD_GITHUB_APP_ID }}
-          private-key: ${{ secrets.DYAD_GITHUB_APP_PRIVATE_KEY }}
+          app-id: ${{ vars.ORIANBUILDER_GITHUB_APP_ID }}
+          private-key: ${{ secrets.ORIANBUILDER_GITHUB_APP_PRIVATE_KEY }}
           permission-actions: write
           permission-contents: write
           permission-pull-requests: write
@@ -65,7 +65,7 @@ jobs:
 
               // Check that the person who applied the label is a trusted actor
               const actor = context.actor;
-              const allowedActors = ['wwwillchen', 'keppo-bot', 'keppo-bot[bot]', 'dyad-assistant'];
+              const allowedActors = ['wwwillchen', 'keppo-bot', 'keppo-bot[bot]', 'orianbuilder-assistant'];
               if (!allowedActors.includes(actor)) {
                 console.log(`Label applied by ${actor} who is not in the allowed actors list`);
                 core.setOutput('should_continue', 'false');
@@ -128,7 +128,7 @@ jobs:
               prAuthor = pr.user.login;
             }
 
-            const allowedAuthors = ['wwwillchen', 'keppo-bot', 'keppo-bot[bot]', 'dyad-assistant', 'princeaden1'];
+            const allowedAuthors = ['wwwillchen', 'keppo-bot', 'keppo-bot[bot]', 'orianbuilder-assistant', 'princeaden1'];
             if (!allowedAuthors.includes(prAuthor)) {
               console.log(`PR #${prNumber} author ${prAuthor} is not allowed to use this workflow`);
               core.setOutput('should_continue', 'false');
@@ -220,8 +220,8 @@ jobs:
         id: head-app-token
         uses: actions/create-github-app-token@v2
         with:
-          app-id: ${{ vars.DYAD_GITHUB_APP_ID }}
-          private-key: ${{ secrets.DYAD_GITHUB_APP_PRIVATE_KEY }}
+          app-id: ${{ vars.ORIANBUILDER_GITHUB_APP_ID }}
+          private-key: ${{ secrets.ORIANBUILDER_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.owner.login || github.event.workflow_run.head_repository.owner.login }}
           repositories: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.name || github.event.workflow_run.head_repository.name }}
           permission-contents: write
@@ -247,7 +247,7 @@ jobs:
       - name: Configure push remote for fork PRs
         if: steps.pr-info.outputs.should_continue == 'true'
         run: |
-          # claude-code-action overwrites origin's fetch URL to point to dyad-sh/dyad
+          # claude-code-action overwrites origin's fetch URL to point to orianbuilder-sh/orianbuilder
           # (using GITHUB_REPOSITORY which is always the base repo in workflow_run events).
           # Setting pushurl separately ensures git push still targets the fork,
           # because git uses pushurl over url when both are configured.
@@ -287,7 +287,7 @@ jobs:
           prompt: |
             Run the following skill end-to-end. Execute every step sequentially. Do not skip, summarize, or stop early.
 
-            /dyad:pr-fix ${{ steps.pr-info.outputs.pr_number }}
+            /orianbuilder:pr-fix ${{ steps.pr-info.outputs.pr_number }}
 
       - name: Push any unpushed changes
         # In case the previous step accidentally forgot to push its changes

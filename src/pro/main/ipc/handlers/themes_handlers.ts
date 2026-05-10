@@ -37,7 +37,10 @@ import {
 import { getServerStatus } from "@/ipc/utils/embedded_inference_server";
 import { fetchOllamaModels } from "@/ipc/handlers/local_model_ollama_handler";
 import { fetchLMStudioModels } from "@/ipc/handlers/local_model_lmstudio_handler";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 /**
  * Parse a local model ID of the form "local:<provider>:<modelName>".
@@ -56,7 +59,7 @@ function parseLocalModelId(id: string): LargeLanguageModel | null {
 
 /**
  * Resolve a theme model selection to a LargeLanguageModel.
- * Accepts both builtin aliases (e.g. "dyad/theme-generator/google") and
+ * Accepts both builtin aliases (e.g. "orianbuilder/theme-generator/google") and
  * local model IDs (e.g. "local:embedded:mymodel.gguf").
  */
 async function resolveThemeModel(modelId: string): Promise<LargeLanguageModel> {
@@ -156,7 +159,10 @@ function sanitizeKeywords(keywords: string): string {
 }
 
 // Directory for storing temporary theme images
-const THEME_IMAGES_TEMP_DIR = path.join(os.tmpdir(), "dyad-theme-images");
+const THEME_IMAGES_TEMP_DIR = path.join(
+  os.tmpdir(),
+  "orianbuilder-theme-images",
+);
 
 // Ensure temp directory exists
 if (!fs.existsSync(THEME_IMAGES_TEMP_DIR)) {
@@ -434,34 +440,37 @@ export function registerThemesHandlers() {
 
       // Validate name
       if (!trimmedName) {
-        throw new DyadError("Theme name is required", DyadErrorKind.Validation);
+        throw new OrianBuilderError(
+          "Theme name is required",
+          OrianBuilderErrorKind.Validation,
+        );
       }
       if (trimmedName.length > 100) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Theme name must be less than 100 characters",
-          DyadErrorKind.Validation,
+          OrianBuilderErrorKind.Validation,
         );
       }
 
       // Validate description
       if (trimmedDescription && trimmedDescription.length > 500) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Theme description must be less than 500 characters",
-          DyadErrorKind.Validation,
+          OrianBuilderErrorKind.Validation,
         );
       }
 
       // Validate prompt
       if (!trimmedPrompt) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Theme prompt is required",
-          DyadErrorKind.Validation,
+          OrianBuilderErrorKind.Validation,
         );
       }
       if (trimmedPrompt.length > 50000) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Theme prompt must be less than 50,000 characters",
-          DyadErrorKind.Validation,
+          OrianBuilderErrorKind.Validation,
         );
       }
 
@@ -516,22 +525,25 @@ export function registerThemesHandlers() {
       });
 
       if (!currentTheme) {
-        throw new DyadError("Theme not found", DyadErrorKind.NotFound);
+        throw new OrianBuilderError(
+          "Theme not found",
+          OrianBuilderErrorKind.NotFound,
+        );
       }
 
       // Validate and sanitize name if provided
       if (params.name !== undefined) {
         const trimmedName = params.name.trim();
         if (!trimmedName) {
-          throw new DyadError(
+          throw new OrianBuilderError(
             "Theme name is required",
-            DyadErrorKind.Validation,
+            OrianBuilderErrorKind.Validation,
           );
         }
         if (trimmedName.length > 100) {
-          throw new DyadError(
+          throw new OrianBuilderError(
             "Theme name must be less than 100 characters",
-            DyadErrorKind.Validation,
+            OrianBuilderErrorKind.Validation,
           );
         }
 
@@ -553,9 +565,9 @@ export function registerThemesHandlers() {
       if (params.description !== undefined) {
         const trimmedDescription = params.description.trim();
         if (trimmedDescription.length > 500) {
-          throw new DyadError(
+          throw new OrianBuilderError(
             "Theme description must be less than 500 characters",
-            DyadErrorKind.Validation,
+            OrianBuilderErrorKind.Validation,
           );
         }
         updateData.description = trimmedDescription || null;
@@ -565,15 +577,15 @@ export function registerThemesHandlers() {
       if (params.prompt !== undefined) {
         const trimmedPrompt = params.prompt.trim();
         if (!trimmedPrompt) {
-          throw new DyadError(
+          throw new OrianBuilderError(
             "Theme prompt is required",
-            DyadErrorKind.Validation,
+            OrianBuilderErrorKind.Validation,
           );
         }
         if (trimmedPrompt.length > 50000) {
-          throw new DyadError(
+          throw new OrianBuilderError(
             "Theme prompt must be less than 50,000 characters",
-            DyadErrorKind.Validation,
+            OrianBuilderErrorKind.Validation,
           );
         }
         updateData.prompt = trimmedPrompt;
@@ -587,7 +599,10 @@ export function registerThemesHandlers() {
 
       const theme = result[0];
       if (!theme) {
-        throw new DyadError("Theme not found", DyadErrorKind.NotFound);
+        throw new OrianBuilderError(
+          "Theme not found",
+          OrianBuilderErrorKind.NotFound,
+        );
       }
 
       return {
@@ -617,7 +632,10 @@ export function registerThemesHandlers() {
 
       // Validate base64 data
       if (!data || typeof data !== "string") {
-        throw new DyadError("Invalid image data", DyadErrorKind.Validation);
+        throw new OrianBuilderError(
+          "Invalid image data",
+          OrianBuilderErrorKind.Validation,
+        );
       }
 
       // Validate and extract extension
@@ -636,9 +654,9 @@ export function registerThemesHandlers() {
       // Validate size (base64 to bytes approximation)
       const sizeInBytes = (data.length * 3) / 4;
       if (sizeInBytes > 10 * 1024 * 1024) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Image size exceeds 10MB limit",
-          DyadErrorKind.Validation,
+          OrianBuilderErrorKind.Validation,
         );
       }
 
@@ -677,9 +695,9 @@ export function registerThemesHandlers() {
           // File might already be deleted (ENOENT), that's okay
           // But other errors (permissions, etc.) should be reported
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-            throw new DyadError(
+            throw new OrianBuilderError(
               "Failed to cleanup temporary image file",
-              DyadErrorKind.External,
+              OrianBuilderErrorKind.External,
             );
           }
         }
@@ -710,29 +728,32 @@ Modern dark theme with purple accents for testing.
 
       // Validate inputs - image paths are required
       if (params.imagePaths.length === 0) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Please upload at least one image to generate a theme",
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
 
       if (params.imagePaths.length > 5) {
-        throw new DyadError("Maximum 5 images allowed", DyadErrorKind.External);
+        throw new OrianBuilderError(
+          "Maximum 5 images allowed",
+          OrianBuilderErrorKind.External,
+        );
       }
 
       // Validate keywords length
       if (params.keywords.length > 500) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Keywords must be less than 500 characters",
-          DyadErrorKind.Validation,
+          OrianBuilderErrorKind.Validation,
         );
       }
 
       // Validate generation mode
       if (!["inspired", "high-fidelity"].includes(params.generationMode)) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Invalid generation mode",
-          DyadErrorKind.Validation,
+          OrianBuilderErrorKind.Validation,
         );
       }
 
@@ -841,9 +862,9 @@ Modern theme extracted from website for testing.
       try {
         parsedUrl = new URL(params.url);
       } catch {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Invalid URL format. Please enter a valid URL.",
-          DyadErrorKind.Validation,
+          OrianBuilderErrorKind.Validation,
         );
       }
 
@@ -867,45 +888,46 @@ Modern theme extracted from website for testing.
         /\.local$/i,
       ];
       if (blockedPatterns.some((p) => p.test(hostname))) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Cannot crawl internal network addresses.",
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
 
       // Validate keywords length
       if (params.keywords.length > 500) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Keywords must be less than 500 characters",
-          DyadErrorKind.Validation,
+          OrianBuilderErrorKind.Validation,
         );
       }
 
       // Validate generation mode
       if (!["inspired", "high-fidelity"].includes(params.generationMode)) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Invalid generation mode",
-          DyadErrorKind.Validation,
+          OrianBuilderErrorKind.Validation,
         );
       }
 
       // Validate and map model selection (supports both cloud aliases and local:provider:name)
       const resolvedModel = await resolveThemeModel(params.model);
 
-      // Get API key for Dyad Engine (required for web crawl)
+      // Get API key for OrianBuilder Engine (required for web crawl)
       const apiKey = settings.providerSettings?.auto?.apiKey?.value;
       if (!apiKey) {
-        throw new DyadError(
-          "Dyad Pro API key is required for website crawling",
-          DyadErrorKind.Auth,
+        throw new OrianBuilderError(
+          "OrianBuilder Pro API key is required for website crawling",
+          OrianBuilderErrorKind.Auth,
         );
       }
 
       // Crawl the website
       logger.log(`Crawling website for theme: ${params.url}`);
 
-      const DYAD_ENGINE_URL =
-        process.env.DYAD_ENGINE_URL ?? "https://engine.dyad.sh/v1";
+      const ORIANBUILDER_ENGINE_URL =
+        process.env.ORIANBUILDER_ENGINE_URL ??
+        "https://engine.orianbuilder.sh/v1";
 
       // Create AbortController for timeout
       const controller = new AbortController();
@@ -916,16 +938,19 @@ Modern theme extracted from website for testing.
 
       let crawlResponse: Response;
       try {
-        crawlResponse = await fetch(`${DYAD_ENGINE_URL}/tools/web-crawl`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-            "X-Dyad-Request-Id": `theme-crawl-${uuidv4()}`,
+        crawlResponse = await fetch(
+          `${ORIANBUILDER_ENGINE_URL}/tools/web-crawl`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${apiKey}`,
+              "X-OrianBuilder-Request-Id": `theme-crawl-${uuidv4()}`,
+            },
+            body: JSON.stringify({ url: params.url }),
+            signal: controller.signal,
           },
-          body: JSON.stringify({ url: params.url }),
-          signal: controller.signal,
-        });
+        );
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
           throw new Error(

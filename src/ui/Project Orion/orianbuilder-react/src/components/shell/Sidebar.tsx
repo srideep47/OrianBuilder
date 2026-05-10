@@ -1,15 +1,15 @@
-import { Link, useRouterState } from '@tanstack/react-router';
+import { Link, useRouterState } from "@tanstack/react-router";
 
 const NAV = [
-  { to: '/apps',        icon: '⊞', label: 'Apps' },
-  { to: '/chat',        icon: '◎', label: 'Chat' },
-  { to: '/engine',      icon: '⚡', label: 'Engine' },
-  { to: '/models',      icon: '◫', label: 'Models' },
-  { to: '/marketplace', icon: '⊕', label: 'Marketplace' },
-  { to: '/media',       icon: '✦', label: 'Media AI' },
-  { to: '/settings',    icon: '⊙', label: 'Settings' },
-  { to: '/library',     icon: '⊟', label: 'Library' },
-  { to: '/hub',         icon: '⌘', label: 'Hub' },
+  { to: "/apps", icon: "⊞", label: "Apps" },
+  { to: "/chat", icon: "◎", label: "Chat" },
+  { to: "/engine", icon: "⚡", label: "Engine" },
+  { to: "/models", icon: "◫", label: "Models" },
+  { to: "/marketplace", icon: "⊕", label: "Marketplace" },
+  { to: "/media", icon: "✦", label: "Media AI" },
+  { to: "/settings", icon: "⊙", label: "Settings" },
+  { to: "/library", icon: "⊟", label: "Library" },
+  { to: "/hub", icon: "⌘", label: "Hub" },
 ] as const;
 
 export function Sidebar() {
@@ -29,7 +29,7 @@ export function Sidebar() {
             <Link
               key={item.to}
               to={item.to}
-              className={`nav-item ${active ? 'active' : ''}`}
+              className={`nav-item ${active ? "active" : ""}`}
             >
               <span className="nav-icon">{item.icon}</span>
               <span className="nav-label">{item.label}</span>

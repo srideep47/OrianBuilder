@@ -1,6 +1,9 @@
 import log from "electron-log";
 import { z } from "zod";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import type {
   LanguageModel,
   LanguageModelProvider,
@@ -28,15 +31,15 @@ const DEFAULT_CACHE_TTL_MS = 60 * 60 * 1000;
 const FALLBACK_CACHE_TTL_MS = 30 * 1000;
 
 function getRemoteLanguageModelCatalogUrl() {
-  if (process.env.DYAD_LANGUAGE_MODEL_CATALOG_URL) {
-    return process.env.DYAD_LANGUAGE_MODEL_CATALOG_URL;
+  if (process.env.ORIANBUILDER_LANGUAGE_MODEL_CATALOG_URL) {
+    return process.env.ORIANBUILDER_LANGUAGE_MODEL_CATALOG_URL;
   }
 
   if (process.env.E2E_TEST_BUILD === "true" && process.env.FAKE_LLM_PORT) {
     return `http://localhost:${process.env.FAKE_LLM_PORT}/api/language-model-catalog`;
   }
 
-  return "https://api.dyad.sh/v1/language-model-catalog";
+  return "https://api.orianbuilder.sh/v1/language-model-catalog";
 }
 
 export type { ThemeGenerationModelOption };
@@ -70,13 +73,13 @@ const CatalogModelSchema = z.object({
 });
 
 const KNOWN_BUILTIN_MODEL_ALIASES = [
-  "dyad/theme-generator/google",
-  "dyad/theme-generator/anthropic",
-  "dyad/theme-generator/openai",
-  "dyad/auto/openai",
-  "dyad/auto/anthropic",
-  "dyad/auto/google",
-  "dyad/help-bot/default",
+  "orianbuilder/theme-generator/google",
+  "orianbuilder/theme-generator/anthropic",
+  "orianbuilder/theme-generator/openai",
+  "orianbuilder/auto/openai",
+  "orianbuilder/auto/anthropic",
+  "orianbuilder/auto/google",
+  "orianbuilder/help-bot/default",
 ] as const;
 
 export type BuiltinModelAlias = (typeof KNOWN_BUILTIN_MODEL_ALIASES)[number];
@@ -128,9 +131,9 @@ let builtinCatalogFetchPromise: Promise<BuiltinLanguageModelCatalog> | null =
   null;
 
 const DEFAULT_THEME_GENERATION_OPTIONS: ThemeGenerationModelOption[] = [
-  { id: "dyad/theme-generator/google", label: "Google" },
-  { id: "dyad/theme-generator/anthropic", label: "Anthropic" },
-  { id: "dyad/theme-generator/openai", label: "OpenAI" },
+  { id: "orianbuilder/theme-generator/google", label: "Google" },
+  { id: "orianbuilder/theme-generator/anthropic", label: "Anthropic" },
+  { id: "orianbuilder/theme-generator/openai", label: "OpenAI" },
 ];
 
 function buildFallbackCatalog(): BuiltinLanguageModelCatalog {
@@ -170,7 +173,7 @@ function buildFallbackCatalog(): BuiltinLanguageModelCatalog {
     modelsByProvider,
     aliases: [
       {
-        id: "dyad/theme-generator/google",
+        id: "orianbuilder/theme-generator/google",
         resolvedModel: {
           providerId: "google",
           apiName: GEMINI_3_1_PRO_PREVIEW,
@@ -179,7 +182,7 @@ function buildFallbackCatalog(): BuiltinLanguageModelCatalog {
         purpose: "theme-generation",
       },
       {
-        id: "dyad/theme-generator/anthropic",
+        id: "orianbuilder/theme-generator/anthropic",
         resolvedModel: {
           providerId: "anthropic",
           apiName: OPUS_4_6,
@@ -188,7 +191,7 @@ function buildFallbackCatalog(): BuiltinLanguageModelCatalog {
         purpose: "theme-generation",
       },
       {
-        id: "dyad/theme-generator/openai",
+        id: "orianbuilder/theme-generator/openai",
         resolvedModel: {
           providerId: "openai",
           apiName: GPT_5_2_MODEL_NAME,
@@ -197,7 +200,7 @@ function buildFallbackCatalog(): BuiltinLanguageModelCatalog {
         purpose: "theme-generation",
       },
       {
-        id: "dyad/auto/openai",
+        id: "orianbuilder/auto/openai",
         resolvedModel: {
           providerId: "openai",
           apiName: GPT_5_2_MODEL_NAME,
@@ -206,7 +209,7 @@ function buildFallbackCatalog(): BuiltinLanguageModelCatalog {
         purpose: "auto-mode",
       },
       {
-        id: "dyad/auto/anthropic",
+        id: "orianbuilder/auto/anthropic",
         resolvedModel: {
           providerId: "anthropic",
           apiName: SONNET_4_6,
@@ -215,7 +218,7 @@ function buildFallbackCatalog(): BuiltinLanguageModelCatalog {
         purpose: "auto-mode",
       },
       {
-        id: "dyad/auto/google",
+        id: "orianbuilder/auto/google",
         resolvedModel: {
           providerId: "google",
           apiName: GEMINI_3_FLASH,
@@ -224,7 +227,7 @@ function buildFallbackCatalog(): BuiltinLanguageModelCatalog {
         purpose: "auto-mode",
       },
       {
-        id: "dyad/help-bot/default",
+        id: "orianbuilder/help-bot/default",
         resolvedModel: {
           providerId: "openai",
           apiName: GPT_5_NANO,
@@ -328,9 +331,9 @@ async function fetchRemoteCatalog(): Promise<BuiltinLanguageModelCatalog | null>
     });
 
     if (!response.ok) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to fetch language model catalog: ${response.status} ${response.statusText}`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
 

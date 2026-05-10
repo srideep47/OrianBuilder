@@ -1,7 +1,13 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef } from "react";
 
 interface Star {
-  x: number; y: number; r: number; s: number; a: number; p: number; pf: number;
+  x: number;
+  y: number;
+  r: number;
+  s: number;
+  a: number;
+  p: number;
+  pf: number;
 }
 
 export function Cosmos() {
@@ -13,10 +19,13 @@ export function Cosmos() {
   useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
-    const ctx = c.getContext('2d');
+    const ctx = c.getContext("2d");
     if (!ctx) return;
 
-    let w = 0, h = 0, t = 0, raf = 0;
+    let w = 0,
+      h = 0,
+      t = 0,
+      raf = 0;
     let stars: Star[] = [];
 
     const dpr = () => window.devicePixelRatio || 1;
@@ -25,8 +34,8 @@ export function Cosmos() {
       stars = [];
       const layers = [
         { n: 120, s: 0.3, r: 0.4, a: 0.4 },
-        { n: 80,  s: 0.6, r: 0.8, a: 0.7 },
-        { n: 40,  s: 1.0, r: 1.4, a: 1.0 },
+        { n: 80, s: 0.6, r: 0.8, a: 0.7 },
+        { n: 40, s: 1.0, r: 1.4, a: 1.0 },
       ];
       layers.forEach((L) => {
         for (let i = 0; i < L.n; i++) {
@@ -61,7 +70,7 @@ export function Cosmos() {
         if (st.x < -4) st.x = w + 4;
         const tw = 0.5 + Math.sin(t * st.pf + st.p) * 0.5;
         ctx!.globalAlpha = st.a * (0.4 + tw * 0.6);
-        ctx!.fillStyle = '#fff';
+        ctx!.fillStyle = "#fff";
         ctx!.beginPath();
         ctx!.arc(st.x, st.y, st.r * d, 0, Math.PI * 2);
         ctx!.fill();
@@ -75,12 +84,12 @@ export function Cosmos() {
       raf = requestAnimationFrame(loop);
     }
 
-    window.addEventListener('resize', resize);
+    window.addEventListener("resize", resize);
     resize();
     loop();
 
     return () => {
-      window.removeEventListener('resize', resize);
+      window.removeEventListener("resize", resize);
       cancelAnimationFrame(raf);
     };
   }, []);
@@ -89,8 +98,8 @@ export function Cosmos() {
   useEffect(() => {
     function fireShooter(el: HTMLDivElement | null) {
       if (!el) return;
-      const top = Math.random() * 60 + 'vh';
-      const left = Math.random() * 40 + 'vw';
+      const top = Math.random() * 60 + "vh";
+      const left = Math.random() * 40 + "vw";
       const ang = 20 + Math.random() * 15;
       el.style.cssText =
         `position:absolute;top:${top};left:${left};transform:rotate(${ang}deg);width:140px;height:1px;` +
@@ -103,7 +112,7 @@ export function Cosmos() {
           { opacity: 1, offset: 0.8 },
           { opacity: 0, transform: `rotate(${ang}deg) translateX(700px)` },
         ],
-        { duration: 1100, easing: 'cubic-bezier(.2,.6,.4,1)' },
+        { duration: 1100, easing: "cubic-bezier(.2,.6,.4,1)" },
       );
     }
 
@@ -127,7 +136,10 @@ export function Cosmos() {
       return () => clearTimeout(id);
     })();
 
-    return () => { t1(); t2(); };
+    return () => {
+      t1();
+      t2();
+    };
   }, []);
 
   return (

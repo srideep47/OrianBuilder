@@ -22,7 +22,7 @@ type DumpJson = {
   body: {
     input?: DumpMessage[];
     messages?: DumpMessage[];
-    dyad_options?: {
+    orianbuilder_options?: {
       enable_smart_files_context?: boolean;
       smart_context_mode?: string;
       files?: DumpFileReference[];
@@ -79,14 +79,16 @@ const FORCED_SMART_EXCLUDE_PATHS = ["a.ts", "exclude/exclude.tsx"];
 async function readDump(po: PageObject, dumpIndex = -1): Promise<DumpJson> {
   await po.chatActions.waitForChatCompletion();
   await expect(po.page.getByTestId("messages-list")).toContainText(
-    "[[dyad-dump-path=",
+    "[[orianbuilder-dump-path=",
   );
 
   const messagesListText = await po.page
     .getByTestId("messages-list")
     .textContent();
   const dumpPathMatches = [
-    ...(messagesListText?.matchAll(/\[\[dyad-dump-path=([^\]]+)\]\]/g) ?? []),
+    ...(messagesListText?.matchAll(
+      /\[\[orianbuilder-dump-path=([^\]]+)\]\]/g,
+    ) ?? []),
   ];
   const selectedIndex =
     dumpIndex < 0 ? dumpPathMatches.length + dumpIndex : dumpIndex;
@@ -107,21 +109,23 @@ function getMessageText(content: DumpMessage["content"]): string {
 
 function getIncludedFiles(dump: DumpJson): DumpFileReference[] {
   const versionedFiles =
-    dump.body.dyad_options?.versioned_files?.fileReferences;
+    dump.body.orianbuilder_options?.versioned_files?.fileReferences;
   if (versionedFiles?.length) {
     return versionedFiles;
   }
 
-  const files = dump.body.dyad_options?.files;
+  const files = dump.body.orianbuilder_options?.files;
   if (files?.length) {
     return files;
   }
 
   const messages = dump.body.input ?? dump.body.messages ?? [];
   const messagePaths = messages.flatMap(({ content }) =>
-    [...getMessageText(content).matchAll(/<dyad-file path="([^"]+)">/g)].map(
-      (match) => match[1],
-    ),
+    [
+      ...getMessageText(content).matchAll(
+        /<orianbuilder-file path="([^"]+)">/g,
+      ),
+    ].map((match) => match[1]),
   );
 
   return [...new Set(messagePaths)].map((path) => ({ path, force: false }));
@@ -192,7 +196,7 @@ test("manage context - default", async ({ po }) => {
 
   const dialog = await po.openContextFilesPicker();
   await expect(po.page.getByRole("dialog")).toContainText(
-    "Dyad will use the entire codebase as context.",
+    "OrianBuilder will use the entire codebase as context.",
   );
   await addPathAndWait(
     po,
@@ -223,7 +227,7 @@ test("manage context - default", async ({ po }) => {
 });
 
 test("manage context - smart context", async ({ po }) => {
-  await po.setUpDyadPro();
+  await po.setUpOrianBuilderPro();
   await po.modelPicker.selectModel({
     provider: "Google",
     model: "Gemini 2.5 Pro",
@@ -232,7 +236,7 @@ test("manage context - smart context", async ({ po }) => {
 
   let dialog = await po.openContextFilesPicker();
   await expect(po.page.getByRole("dialog")).toContainText(
-    "Dyad will use Smart Context to automatically find the most relevant files to use as context.",
+    "OrianBuilder will use Smart Context to automatically find the most relevant files to use as context.",
   );
   await expect(po.page.getByRole("dialog")).toContainText(
     "Smart Context Auto-includes",
@@ -275,10 +279,12 @@ test("manage context - smart context", async ({ po }) => {
   await po.sendPrompt("[dump]");
 
   const smartContextDump = await readDump(po);
-  expect(smartContextDump.body.dyad_options?.enable_smart_files_context).toBe(
-    true,
+  expect(
+    smartContextDump.body.orianbuilder_options?.enable_smart_files_context,
+  ).toBe(true);
+  expect(smartContextDump.body.orianbuilder_options?.smart_context_mode).toBe(
+    "deep",
   );
-  expect(smartContextDump.body.dyad_options?.smart_context_mode).toBe("deep");
   expectIncludedPaths(smartContextDump, MANUAL_AND_SMART_CONTEXT_PATHS);
   expectForcedPaths(smartContextDump, FORCED_AUTO_INCLUDE_PATHS);
 
@@ -290,10 +296,12 @@ test("manage context - smart context", async ({ po }) => {
 
   await po.sendPrompt("[dump]");
   const balancedDump = await readDump(po);
-  expect(balancedDump.body.dyad_options?.enable_smart_files_context).toBe(
-    false,
+  expect(
+    balancedDump.body.orianbuilder_options?.enable_smart_files_context,
+  ).toBe(false);
+  expect(balancedDump.body.orianbuilder_options?.smart_context_mode).toBe(
+    "balanced",
   );
-  expect(balancedDump.body.dyad_options?.smart_context_mode).toBe("balanced");
   expectIncludedPaths(balancedDump, MANUAL_SRC_CONTEXT_PATHS);
 
   // Removing manual context files will result in all files being included.
@@ -309,14 +317,14 @@ test("manage context - smart context", async ({ po }) => {
 
   await po.sendPrompt("[dump]");
   const fullCodebaseDump = await readDump(po);
-  expect(fullCodebaseDump.body.dyad_options?.enable_smart_files_context).toBe(
-    false,
-  );
+  expect(
+    fullCodebaseDump.body.orianbuilder_options?.enable_smart_files_context,
+  ).toBe(false);
   expectIncludedPaths(fullCodebaseDump, FULL_CODEBASE_PATHS);
 });
 
 test("manage context - smart context - auto-includes only", async ({ po }) => {
-  await po.setUpDyadPro();
+  await po.setUpOrianBuilderPro();
   await po.modelPicker.selectModel({
     provider: "Google",
     model: "Gemini 2.5 Pro",
@@ -347,8 +355,8 @@ test("manage context - smart context - auto-includes only", async ({ po }) => {
   await po.sendPrompt("[dump]");
 
   const dump = await readDump(po);
-  expect(dump.body.dyad_options?.enable_smart_files_context).toBe(true);
-  expect(dump.body.dyad_options?.smart_context_mode).toBe("deep");
+  expect(dump.body.orianbuilder_options?.enable_smart_files_context).toBe(true);
+  expect(dump.body.orianbuilder_options?.smart_context_mode).toBe("deep");
   expectForcedPaths(dump, FORCED_AUTO_INCLUDE_PATHS);
 });
 
@@ -427,7 +435,7 @@ test("manage context - exclude paths", async ({ po }) => {
 });
 
 test("manage context - exclude paths with smart context", async ({ po }) => {
-  await po.setUpDyadPro();
+  await po.setUpOrianBuilderPro();
   await po.modelPicker.selectModel({
     provider: "Google",
     model: "Gemini 2.5 Pro",
@@ -486,7 +494,7 @@ test("manage context - exclude paths with smart context", async ({ po }) => {
   const dump = await readDump(po);
   const includedPaths = getIncludedPaths(dump);
 
-  expect(dump.body.dyad_options?.enable_smart_files_context).toBe(true);
+  expect(dump.body.orianbuilder_options?.enable_smart_files_context).toBe(true);
   expect(includedPaths).toEqual(
     expect.arrayContaining([
       "a.ts",

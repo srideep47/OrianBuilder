@@ -6,7 +6,7 @@ Guidelines for the LLM-driven workflows in `.github/workflows/` that invoke `ant
 
 If a workflow's behavior depends on a deterministic check (identity comparisons, label presence, file paths, actor type, etc.), do the check in a workflow-level `if:` condition and split into separate jobs — do not leave it to the prompt.
 
-**Why:** LLMs can conflate branches when the comment/PR body @mentions or describes the "other" party. A prior bug (see `closed-issue-comment.yml` history, dyad-sh/dyad#3228): the prompt told Claude "if COMMENT_AUTHOR == ISSUE_AUTHOR do X, else do Y," but when a maintainer closed an issue with a comment that mentioned `@original-author` and described the symptom, Claude fell into the author branch and re-opened the issue.
+**Why:** LLMs can conflate branches when the comment/PR body @mentions or describes the "other" party. A prior bug (see `closed-issue-comment.yml` history, orianbuilder-sh/orianbuilder#3228): the prompt told Claude "if COMMENT_AUTHOR == ISSUE_AUTHOR do X, else do Y," but when a maintainer closed an issue with a comment that mentioned `@original-author` and described the symptom, Claude fell into the author branch and re-opened the issue.
 
 **How to apply:**
 

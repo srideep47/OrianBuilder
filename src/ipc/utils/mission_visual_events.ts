@@ -13,6 +13,7 @@ export type MissionVisualEvent = {
     | "visual_screenshot_captured"
     | "visual_accessibility_captured"
     | "visual_console_checked"
+    | "browser_action_recorded"
     | "runtime_preview_checked";
   summary: string;
   gate: MissionVisualGate;
@@ -23,6 +24,10 @@ export type MissionVisualEvent = {
 export type MissionVisualArtifact = {
   artifactType:
     | "screenshot"
+    | "image"
+    | "audio"
+    | "video"
+    | "deployment"
     | "accessibility_tree"
     | "console_output"
     | "runtime";
@@ -70,7 +75,7 @@ export function extractMissionVisualEventsForXml(
   const events: MissionVisualEvent[] = [];
   const artifacts: MissionVisualArtifact[] = [];
 
-  if (xml.startsWith("<dyad-screenshot")) {
+  if (xml.startsWith("<orianbuilder-screenshot")) {
     const url = getXmlAttribute(xml, "url");
     const path = getXmlAttribute(xml, "path");
     const error = getXmlAttribute(xml, "error");
@@ -105,10 +110,10 @@ export function extractMissionVisualEventsForXml(
     }
   }
 
-  if (xml.startsWith("<dyad-accessibility-tree")) {
+  if (xml.startsWith("<orianbuilder-accessibility-tree")) {
     const url = getXmlAttribute(xml, "url");
     const error = getXmlAttribute(xml, "error");
-    const body = extractTagBody(xml, "dyad-accessibility-tree");
+    const body = extractTagBody(xml, "orianbuilder-accessibility-tree");
     const trimmed = body?.trim();
     const isPlaceholder = !trimmed || trimmed === "Reading…";
     const status: MissionVisualGateStatus = error
@@ -142,11 +147,11 @@ export function extractMissionVisualEventsForXml(
     }
   }
 
-  if (xml.startsWith("<dyad-console-output")) {
+  if (xml.startsWith("<orianbuilder-console-output")) {
     const filter = getXmlAttribute(xml, "filter");
     const countRaw = getXmlAttribute(xml, "count");
     const count = countRaw === undefined ? undefined : Number(countRaw);
-    const body = extractTagBody(xml, "dyad-console-output");
+    const body = extractTagBody(xml, "orianbuilder-console-output");
     const trimmedBody = body?.trim() ?? "";
     const lower = trimmedBody.toLowerCase();
     const looksClean =
@@ -196,7 +201,7 @@ export function extractMissionVisualEventsForXml(
     }
   }
 
-  if (xml.startsWith("<dyad-terminal-command")) {
+  if (xml.startsWith("<orianbuilder-terminal-command")) {
     const command = getXmlAttribute(xml, "cmd");
     if (isRuntimeCommand(command)) {
       const exitCodeRaw = getXmlAttribute(xml, "exit-code");
@@ -226,7 +231,7 @@ export function extractMissionVisualEventsForXml(
     }
   }
 
-  if (xml.startsWith("<dyad-runtime-session")) {
+  if (xml.startsWith("<orianbuilder-runtime-session")) {
     const runtimeStatus = getXmlAttribute(xml, "status");
     const ready = getXmlAttribute(xml, "ready") === "true";
     const url = getXmlAttribute(xml, "url");
@@ -237,7 +242,8 @@ export function extractMissionVisualEventsForXml(
       : runtimeStatus === "failed"
         ? "failed"
         : "unknown";
-    const body = extractTagBody(xml, "dyad-runtime-session")?.trim() ?? "";
+    const body =
+      extractTagBody(xml, "orianbuilder-runtime-session")?.trim() ?? "";
     events.push({
       eventType: "runtime_preview_checked",
       summary: ready
@@ -277,10 +283,11 @@ export function extractMissionVisualEventsForXml(
     }
   }
 
-  if (xml.startsWith("<dyad-runtime-output")) {
+  if (xml.startsWith("<orianbuilder-runtime-output")) {
     const runtimeStatus = getXmlAttribute(xml, "status");
     const url = getXmlAttribute(xml, "url");
-    const body = extractTagBody(xml, "dyad-runtime-output")?.trim() ?? "";
+    const body =
+      extractTagBody(xml, "orianbuilder-runtime-output")?.trim() ?? "";
     artifacts.push({
       artifactType: "runtime",
       title: `Runtime output (${runtimeStatus ?? "unknown"})`,
@@ -296,11 +303,12 @@ export function extractMissionVisualEventsForXml(
     });
   }
 
-  if (xml.startsWith("<dyad-browser-action")) {
+  if (xml.startsWith("<orianbuilder-browser-action")) {
     const action = getXmlAttribute(xml, "action");
     const url = getXmlAttribute(xml, "url");
     const path = getXmlAttribute(xml, "path");
-    const body = extractTagBody(xml, "dyad-browser-action")?.trim() ?? "";
+    const body =
+      extractTagBody(xml, "orianbuilder-browser-action")?.trim() ?? "";
     if (action === "screenshot" && path) {
       events.push({
         eventType: "visual_screenshot_captured",
@@ -338,6 +346,244 @@ export function extractMissionVisualEventsForXml(
         body,
         mimeType: "text/plain",
         metadata: { url: url ?? null, source: "browser_control" },
+      });
+    }
+    events.push({
+      eventType: "browser_action_recorded",
+      summary: `Browser action: ${action ?? "unknown"}`,
+      gate:
+        action === "screenshot"
+          ? "screenshot"
+          : action === "snapshot"
+            ? "accessibility"
+            : "runtime",
+      status: "passed",
+      metadata: {
+        action: action ?? null,
+        url: url ?? null,
+        path: path || null,
+        chars: body.length,
+        source: "browser_control",
+      },
+    });
+  }
+
+  if (xml.startsWith("<orianbuilder-browser-qa")) {
+    const status = getXmlAttribute(xml, "status");
+    const runtimeStatus = getXmlAttribute(xml, "runtime-status");
+    const runtimeUrl = getXmlAttribute(xml, "runtime-url");
+    const runtimeError = getXmlAttribute(xml, "runtime-error");
+    const browserError = getXmlAttribute(xml, "browser-error");
+    const screenshotStatus = getXmlAttribute(xml, "screenshot-status");
+    const desktopPath = getXmlAttribute(xml, "desktop-path");
+    const mobilePath = getXmlAttribute(xml, "mobile-path");
+    const accessibilityStatus = getXmlAttribute(xml, "accessibility-status");
+    const consoleStatus = getXmlAttribute(xml, "console-status");
+    const body = extractTagBody(xml, "orianbuilder-browser-qa")?.trim() ?? "";
+
+    if (runtimeStatus) {
+      events.push({
+        eventType: "runtime_preview_checked",
+        summary:
+          runtimeStatus === "passed"
+            ? `Runtime ready: ${runtimeUrl ?? "preview"}`
+            : `Runtime failed: ${runtimeError || "browser QA gate failed"}`,
+        gate: "runtime",
+        status: runtimeStatus === "passed" ? "passed" : "failed",
+        metadata: {
+          source: "browser_qa_gate",
+          status: status ?? null,
+          url: runtimeUrl ?? null,
+          error: runtimeError || browserError || null,
+        },
+      });
+      artifacts.push({
+        artifactType: "runtime",
+        title: "Browser QA runtime",
+        body: body || null,
+        uri: runtimeUrl ?? null,
+        mimeType: body ? "text/plain" : null,
+        metadata: {
+          source: "browser_qa_gate",
+          status: runtimeStatus,
+          error: runtimeError || browserError || null,
+        },
+      });
+    }
+
+    for (const [viewport, screenshotPath] of [
+      ["desktop", desktopPath],
+      ["mobile", mobilePath],
+    ] as const) {
+      if (!screenshotPath) continue;
+      events.push({
+        eventType: "visual_screenshot_captured",
+        summary: `Browser QA ${viewport} screenshot captured (${screenshotPath})`,
+        gate: "screenshot",
+        status: screenshotStatus === "passed" ? "passed" : "failed",
+        metadata: {
+          source: "browser_qa_gate",
+          viewport,
+          path: screenshotPath,
+          url: runtimeUrl ?? null,
+        },
+      });
+      artifacts.push({
+        artifactType: "screenshot",
+        title: `Browser QA ${viewport} screenshot`,
+        uri: screenshotPath,
+        mimeType: "image/png",
+        metadata: {
+          source: "browser_qa_gate",
+          viewport,
+          url: runtimeUrl ?? null,
+        },
+      });
+    }
+
+    if (accessibilityStatus) {
+      events.push({
+        eventType: "visual_accessibility_captured",
+        summary:
+          accessibilityStatus === "passed"
+            ? "Browser QA accessibility snapshot captured"
+            : "Browser QA accessibility snapshot failed",
+        gate: "accessibility",
+        status: accessibilityStatus === "passed" ? "passed" : "failed",
+        metadata: {
+          source: "browser_qa_gate",
+          url: runtimeUrl ?? null,
+          chars: body.length,
+        },
+      });
+      if (body.length > 0) {
+        artifacts.push({
+          artifactType: "accessibility_tree",
+          title: "Browser QA accessibility snapshot",
+          body,
+          mimeType: "text/plain",
+          metadata: {
+            source: "browser_qa_gate",
+            url: runtimeUrl ?? null,
+          },
+        });
+      }
+    }
+
+    if (consoleStatus) {
+      events.push({
+        eventType: "visual_console_checked",
+        summary:
+          consoleStatus === "passed"
+            ? "Browser QA console clean"
+            : "Browser QA console reported errors",
+        gate: "console",
+        status: consoleStatus === "passed" ? "passed" : "failed",
+        metadata: {
+          source: "browser_qa_gate",
+          url: runtimeUrl ?? null,
+        },
+      });
+      if (body.length > 0) {
+        artifacts.push({
+          artifactType: "console_output",
+          title: "Browser QA console report",
+          body,
+          mimeType: "text/plain",
+          metadata: {
+            source: "browser_qa_gate",
+            url: runtimeUrl ?? null,
+            status: consoleStatus,
+          },
+        });
+      }
+    }
+  }
+
+  if (xml.startsWith("<orianbuilder-image-generation")) {
+    const prompt = getXmlAttribute(xml, "prompt");
+    const path = getXmlAttribute(xml, "path");
+    const body =
+      extractTagBody(xml, "orianbuilder-image-generation")?.trim() ?? "";
+    if (path) {
+      artifacts.push({
+        artifactType: "image",
+        title: "Generated image",
+        uri: path,
+        body: body || null,
+        mimeType: "image/png",
+        metadata: {
+          prompt: prompt ?? null,
+          source: "generate_image",
+        },
+      });
+    }
+  }
+
+  if (xml.startsWith("<orianbuilder-media-generation")) {
+    const kind = getXmlAttribute(xml, "kind");
+    const prompt = getXmlAttribute(xml, "prompt");
+    const path = getXmlAttribute(xml, "path");
+    const mimeType = getXmlAttribute(xml, "mime-type");
+    const provider = getXmlAttribute(xml, "provider");
+    const error = getXmlAttribute(xml, "error");
+    const body =
+      extractTagBody(xml, "orianbuilder-media-generation")?.trim() ?? "";
+    if (path && (kind === "image" || kind === "audio" || kind === "video")) {
+      artifacts.push({
+        artifactType: kind,
+        title: `Generated ${kind}`,
+        uri: path,
+        body: body || null,
+        mimeType: mimeType ?? null,
+        metadata: {
+          prompt: prompt ?? null,
+          source: "generate_media_asset",
+          provider: provider ?? null,
+          error: error || null,
+        },
+      });
+    }
+  }
+
+  if (xml.startsWith("<orianbuilder-deploy-preview")) {
+    const provider = getXmlAttribute(xml, "provider");
+    const target = getXmlAttribute(xml, "target");
+    const ref = getXmlAttribute(xml, "ref");
+    const status = getXmlAttribute(xml, "status");
+    const url = getXmlAttribute(xml, "url");
+    const projectId = getXmlAttribute(xml, "project-id");
+    const projectName = getXmlAttribute(xml, "project-name");
+    const state = getXmlAttribute(xml, "state");
+    const initialState = getXmlAttribute(xml, "initial-state");
+    const error = getXmlAttribute(xml, "error");
+    const buildLogStatus = getXmlAttribute(xml, "build-log-status");
+    const buildLogCountRaw = getXmlAttribute(xml, "build-log-count");
+    const buildLogCount =
+      buildLogCountRaw === undefined ? undefined : Number(buildLogCountRaw);
+    const body =
+      extractTagBody(xml, "orianbuilder-deploy-preview")?.trim() ?? "";
+    if (url) {
+      artifacts.push({
+        artifactType: "deployment",
+        title: `${provider ?? "Vercel"} ${target ?? "preview"} deployment`,
+        uri: url,
+        body: body || null,
+        mimeType: body ? "text/plain" : null,
+        metadata: {
+          source: "deploy_preview",
+          provider: provider ?? "vercel",
+          target: target ?? null,
+          ref: ref ?? null,
+          status: status ?? null,
+          state: state ?? null,
+          initialState: initialState ?? null,
+          error: error || null,
+          buildLogStatus: buildLogStatus ?? null,
+          buildLogCount: Number.isFinite(buildLogCount) ? buildLogCount : null,
+          projectId: projectId ?? null,
+          projectName: projectName ?? null,
+        },
       });
     }
   }

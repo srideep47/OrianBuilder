@@ -17,7 +17,7 @@ jobs:
       matrix:
         os: [
             { name: "windows", image: "windows-latest" },
-            # See https://github.com/dyad-sh/dyad/issues/96
+            # See https://github.com/orianbuilder-sh/orianbuilder/issues/96
             { name: "linux", image: "ubuntu-22.04" },
             { name: "macos-intel", image: "macos-15-intel" },
             { name: "macos", image: "macos-latest" },
@@ -89,8 +89,8 @@ jobs:
           @'
           {
             "Endpoint": "https://eus.codesigning.azure.net/",
-            "CodeSigningAccountName": "dyad",
-            "CertificateProfileName": "dyad-tech"
+            "CodeSigningAccountName": "orianbuilder",
+            "CertificateProfileName": "orianbuilder-tech"
           }
           '@ | Out-File -Encoding utf8 signing-metadata.json
 

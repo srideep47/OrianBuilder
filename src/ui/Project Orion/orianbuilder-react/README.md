@@ -4,17 +4,17 @@ Desktop app shell that mirrors the OrianBuilder design 1:1.
 
 ## Stack
 
-| Layer                | Tech                                      |
-| -------------------- | ----------------------------------------- |
-| Framework            | React 18 + TypeScript                     |
-| App shell            | Electron 33                               |
-| Routing              | TanStack Router (memory history)          |
-| State                | Jotai atoms (with `atomWithStorage`)      |
-| Server state         | TanStack Query                            |
-| Styling              | Tailwind CSS v4 (`@theme` + custom CSS)   |
-| UI primitives        | Base UI (`@base-ui-components/react`)     |
-| Build tool           | Vite 6                                    |
-| Database             | Drizzle ORM + better-sqlite3              |
+| Layer         | Tech                                    |
+| ------------- | --------------------------------------- |
+| Framework     | React 18 + TypeScript                   |
+| App shell     | Electron 33                             |
+| Routing       | TanStack Router (memory history)        |
+| State         | Jotai atoms (with `atomWithStorage`)    |
+| Server state  | TanStack Query                          |
+| Styling       | Tailwind CSS v4 (`@theme` + custom CSS) |
+| UI primitives | Base UI (`@base-ui-components/react`)   |
+| Build tool    | Vite 6                                  |
+| Database      | Drizzle ORM + better-sqlite3            |
 
 ## Getting Started
 
@@ -63,8 +63,8 @@ src/
 ## Design Notes
 
 - **Animated cosmos** — `Cosmos.tsx` runs a 240-star parallax canvas with twinkle
-  + drift, plus DOM-animated nebula gradient, drifting grid overlay, and two
-  shooting stars firing every 3–10 s.
+  - drift, plus DOM-animated nebula gradient, drifting grid overlay, and two
+    shooting stars firing every 3–10 s.
 - **Glass system** — three blur tiers (`.glass`, `.glass-deep`, `.glass-soft`)
   applied across every page for consistency.
 - **Frameless window** — `BrowserWindow` is frameless on Windows/Linux; the

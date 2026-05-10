@@ -3,7 +3,10 @@ import { ipc } from "@/ipc/types";
 import { useSetAtom } from "jotai";
 import { activeCheckoutCounterAtom } from "@/store/appAtoms";
 import { queryKeys } from "@/lib/queryKeys";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { useRunApp } from "./useRunApp";
 import { useSettings } from "./useSettings";
 
@@ -23,9 +26,9 @@ export function useCheckoutVersion() {
       mutationFn: async ({ appId, versionId }) => {
         if (appId === null) {
           // Should be caught by UI logic before calling, but as a safeguard.
-          throw new DyadError(
+          throw new OrianBuilderError(
             "App ID is null, cannot checkout version.",
-            DyadErrorKind.External,
+            OrianBuilderErrorKind.External,
           );
         }
         setActiveCheckouts((prev) => prev + 1); // Increment counter

@@ -110,7 +110,7 @@ export function VisualEditingToolbar({
     if (iframeRef.current?.contentWindow) {
       iframeRef.current.contentWindow.postMessage(
         {
-          type: "remove-dyad-component-overlay",
+          type: "remove-orianbuilder-component-overlay",
           componentId: selectedComponent.id,
         },
         "*",
@@ -130,7 +130,7 @@ export function VisualEditingToolbar({
 
     iframeRef.current.contentWindow.postMessage(
       {
-        type: "modify-dyad-component-styles",
+        type: "modify-orianbuilder-component-styles",
         data: {
           elementId: selectedComponent.id,
           runtimeId: selectedComponent.runtimeId,
@@ -142,7 +142,7 @@ export function VisualEditingToolbar({
 
     iframeRef.current.contentWindow.postMessage(
       {
-        type: "update-dyad-overlay-positions",
+        type: "update-orianbuilder-overlay-positions",
       },
       "*",
     );
@@ -189,7 +189,7 @@ export function VisualEditingToolbar({
     try {
       iframeRef.current.contentWindow.postMessage(
         {
-          type: "get-dyad-component-styles",
+          type: "get-orianbuilder-component-styles",
           data: {
             elementId: selectedComponent.id,
             runtimeId: selectedComponent.runtimeId,
@@ -222,7 +222,7 @@ export function VisualEditingToolbar({
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === "dyad-component-styles") {
+      if (event.data?.type === "orianbuilder-component-styles") {
         const { margin, padding, border, backgroundColor, text } =
           event.data.data;
 
@@ -321,7 +321,7 @@ export function VisualEditingToolbar({
     if (iframeRef.current?.contentWindow && selectedComponent) {
       iframeRef.current.contentWindow.postMessage(
         {
-          type: "modify-dyad-image-src",
+          type: "modify-orianbuilder-image-src",
           data: {
             elementId: selectedComponent.id,
             runtimeId: selectedComponent.runtimeId,

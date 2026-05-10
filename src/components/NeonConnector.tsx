@@ -130,7 +130,7 @@ export function NeonConnector({ appId }: { appId: number }) {
         await ipc.neon.fakeConnect();
       } else {
         await ipc.system.openExternalUrl(
-          "https://oauth.dyad.sh/api/integrations/neon/login",
+          "https://oauth.orianbuilder.sh/api/integrations/neon/login",
         );
       }
       // Reset after 20s if the OAuth return never arrives

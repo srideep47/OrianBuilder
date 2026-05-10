@@ -6,7 +6,7 @@ describe("mission XML structured events", () => {
   it("extracts file mutation events", () => {
     expect(
       getMissionStructuredEventsForXml(
-        '<dyad-write path="src/App.tsx" description="Update app">code</dyad-write>',
+        '<orianbuilder-write path="src/App.tsx" description="Update app">code</orianbuilder-write>',
       ),
     ).toMatchObject([
       {
@@ -24,7 +24,7 @@ describe("mission XML structured events", () => {
   it("extracts terminal command events", () => {
     expect(
       getMissionStructuredEventsForXml(
-        '<dyad-terminal-command cmd="npm run build" exit-code="1">failed</dyad-terminal-command>',
+        '<orianbuilder-terminal-command cmd="npm run build" exit-code="1">failed</orianbuilder-terminal-command>',
       ),
     ).toMatchObject([
       {
@@ -42,7 +42,7 @@ describe("mission XML structured events", () => {
   it("extracts dependency events", () => {
     expect(
       getMissionStructuredEventsForXml(
-        '<dyad-add-dependency packages="react zod"></dyad-add-dependency>',
+        '<orianbuilder-add-dependency packages="react zod"></orianbuilder-add-dependency>',
       ),
     ).toMatchObject([
       {
@@ -58,7 +58,7 @@ describe("mission XML structured events", () => {
   it("extracts project creation and post-create verification events", () => {
     expect(
       getMissionStructuredEventsForXml(
-        '<dyad-create-project created="true" name="Customer Portal" stack="vite-react-ts" package-manager="pnpm" scaffold-method="starter_files" scaffold-command="" install-command="pnpm install" typecheck-command="pnpm typecheck" build-command="pnpm build" dev-command="pnpm dev" required-checks="install,typecheck,build,runtime,console,screenshot,accessibility">Created</dyad-create-project>',
+        '<orianbuilder-create-project created="true" name="Customer Portal" stack="vite-react-ts" package-manager="pnpm" scaffold-method="starter_files" scaffold-command="" install-command="pnpm install" typecheck-command="pnpm typecheck" build-command="pnpm build" dev-command="pnpm dev" required-checks="install,typecheck,build,runtime,console,screenshot,accessibility">Created</orianbuilder-create-project>',
       ),
     ).toMatchObject([
       {
@@ -99,7 +99,7 @@ describe("mission XML structured events", () => {
   it("extracts project verification runner events", () => {
     expect(
       getMissionStructuredEventsForXml(
-        '<dyad-project-verification status="passed" framework="vite" package-manager="pnpm" runtime-status="passed" runtime-url="http://localhost:3000" install-command="pnpm install" install-status="passed" install-exit-code="0" typecheck-command="pnpm typecheck" typecheck-status="passed" typecheck-exit-code="0" build-command="pnpm build" build-status="passed" build-exit-code="0">ok</dyad-project-verification>',
+        '<orianbuilder-project-verification status="passed" framework="vite" package-manager="pnpm" runtime-status="passed" runtime-url="http://localhost:3000" install-command="pnpm install" install-status="passed" install-exit-code="0" typecheck-command="pnpm typecheck" typecheck-status="passed" typecheck-exit-code="0" build-command="pnpm build" build-status="passed" build-exit-code="0">ok</orianbuilder-project-verification>',
       ),
     ).toMatchObject([
       {

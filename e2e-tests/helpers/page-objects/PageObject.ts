@@ -120,7 +120,7 @@ export class PageObject {
     await this.modelPicker.selectTestModel();
   }
 
-  async setUpDyadPro({
+  async setUpOrianBuilderPro({
     autoApprove = false,
     localAgent = false,
     localAgentUseAutoModel = false,
@@ -134,7 +134,7 @@ export class PageObject {
     if (autoApprove) {
       await this.settings.toggleAutoApprove();
     }
-    await this.settings.setUpDyadProvider();
+    await this.settings.setUpOrianBuilderProvider();
     await this.navigation.goToAppsTab();
     if (!localAgent) {
       await this.chatActions.selectChatMode("build");
@@ -156,7 +156,7 @@ export class PageObject {
       await this.settings.toggleAutoApprove();
     }
     // Azure should already be configured via environment variables
-    // so we don't need additional setup steps like setUpDyadProvider
+    // so we don't need additional setup steps like setUpOrianBuilderProvider
     await this.navigation.goToAppsTab();
   }
 
@@ -338,15 +338,15 @@ export class PageObject {
           throw new Error("Messages list not found");
         }
         // Scrub compaction backup paths embedded in message text
-        // e.g. .dyad/chats/1/compaction-2026-02-05T21-25-24-285Z.md
+        // e.g. .orianbuilder/chats/1/compaction-2026-02-05T21-25-24-285Z.md
         messagesList.innerHTML = messagesList.innerHTML.replace(
-          /\.dyad\/chats\/\d+\/compaction-[^\s<"]+\.md/g,
+          /\.orianbuilder\/chats\/\d+\/compaction-[^\s<"]+\.md/g,
           "[[compaction-backup-path]]",
         );
 
         messagesList.innerHTML = messagesList.innerHTML.replace(
-          /\[\[dyad-dump-path=([^\]]+)\]\]/g,
-          "[[dyad-dump-path=*]]",
+          /\[\[orianbuilder-dump-path=([^\]]+)\]\]/g,
+          "[[orianbuilder-dump-path=*]]",
         );
       });
     }
@@ -367,7 +367,7 @@ export class PageObject {
 
     // Find ALL dump paths using global regex
     const dumpPathMatches = messagesListText?.match(
-      /\[\[dyad-dump-path=([^\]]+)\]\]/g,
+      /\[\[orianbuilder-dump-path=([^\]]+)\]\]/g,
     );
 
     if (!dumpPathMatches || dumpPathMatches.length === 0) {
@@ -377,7 +377,9 @@ export class PageObject {
     // Extract the actual paths from the matches
     const dumpPaths = dumpPathMatches
       .map((match) => {
-        const pathMatch = match.match(/\[\[dyad-dump-path=([^\]]+)\]\]/);
+        const pathMatch = match.match(
+          /\[\[orianbuilder-dump-path=([^\]]+)\]\]/,
+        );
         return pathMatch ? pathMatch[1] : null;
       })
       .filter(Boolean);
@@ -401,11 +403,14 @@ export class PageObject {
 
     // Read the JSON file
     const dumpContent: string = (fs.readFileSync(dumpFilePath, "utf-8") as any)
-      .replaceAll(/\[\[dyad-dump-path=([^\]]+)\]\]/g, "[[dyad-dump-path=*]]")
-      // Stabilize compaction backup file paths embedded in message text
-      // e.g. .dyad/chats/1/compaction-2026-02-05T21-25-24-285Z.md
       .replaceAll(
-        /\.dyad\/chats\/\d+\/compaction-[^\s"\\]+\.md/g,
+        /\[\[orianbuilder-dump-path=([^\]]+)\]\]/g,
+        "[[orianbuilder-dump-path=*]]",
+      )
+      // Stabilize compaction backup file paths embedded in message text
+      // e.g. .orianbuilder/chats/1/compaction-2026-02-05T21-25-24-285Z.md
+      .replaceAll(
+        /\.orianbuilder\/chats\/\d+\/compaction-[^\s"\\]+\.md/g,
         "[[compaction-backup-path]]",
       );
 

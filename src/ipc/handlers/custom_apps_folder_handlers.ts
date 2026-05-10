@@ -9,9 +9,9 @@ import { createTypedHandler } from "./base";
 import { systemContracts } from "../types/system";
 import {
   getCustomFolderCache,
-  getDefaultDyadAppsDirectory,
-  getDyadAppsBaseDirectory,
-  invalidateDyadAppsBaseDirectoryCache,
+  getDefaultOrianBuilderAppsDirectory,
+  getOrianBuilderAppsBaseDirectory,
+  invalidateOrianBuilderAppsBaseDirectoryCache,
   isDirectoryAccessible,
 } from "@/paths/paths";
 import { gitAddSafeDirectory } from "../utils/git_utils";
@@ -21,8 +21,8 @@ const logger = log.scope("custom_apps_folder_handlers");
 
 export function registerCustomAppsFolderHandlers() {
   createTypedHandler(systemContracts.getCustomAppsFolder, async () => {
-    invalidateDyadAppsBaseDirectoryCache(); // ensure UI is up-to-date
-    const directory = getDyadAppsBaseDirectory();
+    invalidateOrianBuilderAppsBaseDirectoryCache(); // ensure UI is up-to-date
+    const directory = getOrianBuilderAppsBaseDirectory();
 
     return {
       path: directory,
@@ -35,7 +35,7 @@ export function registerCustomAppsFolderHandlers() {
     const { filePaths, canceled } = await dialog.showOpenDialog({
       title: "Select Custom Apps Folder",
       properties: ["openDirectory"],
-      message: "Select the folder where Dyad apps should be stored",
+      message: "Select the folder where OrianBuilder apps should be stored",
     });
 
     if (canceled) {
@@ -52,10 +52,10 @@ export function registerCustomAppsFolderHandlers() {
 
   createTypedHandler(systemContracts.setCustomAppsFolder, async (_, input) => {
     // Ensure fresh settings read
-    invalidateDyadAppsBaseDirectoryCache();
+    invalidateOrianBuilderAppsBaseDirectoryCache();
 
-    const prevPath = getDyadAppsBaseDirectory();
-    let newDyadAppsBaseDir = getDefaultDyadAppsDirectory();
+    const prevPath = getOrianBuilderAppsBaseDirectory();
+    let newOrianBuilderAppsBaseDir = getDefaultOrianBuilderAppsDirectory();
     let updatedSettingValue = null;
 
     if (input) {
@@ -66,16 +66,16 @@ export function registerCustomAppsFolderHandlers() {
       if (!isDirectoryAccessible(input))
         throw new Error("Path is not a directory");
 
-      newDyadAppsBaseDir = normalize(input);
-      updatedSettingValue = newDyadAppsBaseDir;
+      newOrianBuilderAppsBaseDir = normalize(input);
+      updatedSettingValue = newOrianBuilderAppsBaseDir;
     } else {
       // Resetting to default
-      await mkdir(newDyadAppsBaseDir, { recursive: true });
+      await mkdir(newOrianBuilderAppsBaseDir, { recursive: true });
     }
 
     // Only convert paths and make git config changes if the user selected
     // a directory different from the one they're currently using
-    if (newDyadAppsBaseDir !== prevPath) {
+    if (newOrianBuilderAppsBaseDir !== prevPath) {
       logger.info("Beginning path updates");
 
       // We don't want to make current apps inaccessible after changing the directory.
@@ -107,7 +107,8 @@ export function registerCustomAppsFolderHandlers() {
       // The trailing /* allows access to all repositories under the named directory.
       // See: https://git-scm.com/docs/git-config#Documentation/git-config.txt-safedirectory
       if (readSettings().enableNativeGit) {
-        const directory = updatedSettingValue ?? getDefaultDyadAppsDirectory();
+        const directory =
+          updatedSettingValue ?? getDefaultOrianBuilderAppsDirectory();
         await gitAddSafeDirectory(`${directory}/*`);
       }
     }
@@ -115,6 +116,6 @@ export function registerCustomAppsFolderHandlers() {
     writeSettings({
       customAppsFolder: updatedSettingValue,
     });
-    invalidateDyadAppsBaseDirectoryCache();
+    invalidateOrianBuilderAppsBaseDirectoryCache();
   });
 }

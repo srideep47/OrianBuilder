@@ -20,8 +20,8 @@ import { getLanguageModelProviders } from "../shared/language_model_helpers";
 import { resolveBuiltinModelAlias } from "../shared/remote_language_model_catalog";
 import { LanguageModelProvider } from "@/ipc/types";
 import {
-  createDyadEngine,
-  type DyadEngineProvider,
+  createOrianBuilderEngine,
+  type OrianBuilderEngineProvider,
 } from "./llm_engine_provider";
 
 import { LM_STUDIO_BASE_URL } from "./lm_studio_utils";
@@ -29,15 +29,18 @@ import { createOllamaProvider } from "./ollama_provider";
 import { getOllamaApiUrl } from "../handlers/local_model_ollama_handler";
 import { localModelFetch } from "./local_model_fetch";
 import { createFallback } from "./fallback_ai_model";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { getServerStatus } from "./embedded_inference_server";
 
-const dyadEngineUrl = process.env.DYAD_ENGINE_URL;
+const orianbuilderEngineUrl = process.env.ORIANBUILDER_ENGINE_URL;
 
 const AUTO_MODEL_ALIASES = [
-  "dyad/auto/openai",
-  "dyad/auto/anthropic",
-  "dyad/auto/google",
+  "orianbuilder/auto/openai",
+  "orianbuilder/auto/anthropic",
+  "orianbuilder/auto/google",
 ] as const;
 
 export interface ModelClient {
@@ -57,30 +60,30 @@ export async function getModelClient(
 }> {
   const allProviders = await getLanguageModelProviders();
 
-  const dyadApiKey = settings.providerSettings?.auto?.apiKey?.value;
+  const orianbuilderApiKey = settings.providerSettings?.auto?.apiKey?.value;
 
   // --- Handle specific provider ---
   const providerConfig = allProviders.find((p) => p.id === model.provider);
 
   if (!providerConfig) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Configuration not found for provider: ${model.provider}`,
-      DyadErrorKind.NotFound,
+      OrianBuilderErrorKind.NotFound,
     );
   }
 
-  // Handle Dyad Pro override
-  if (dyadApiKey && settings.enableDyadPro) {
-    // Check if the selected provider supports Dyad Pro (has a gateway prefix) OR
+  // Handle OrianBuilder Pro override
+  if (orianbuilderApiKey && settings.enableOrianBuilderPro) {
+    // Check if the selected provider supports OrianBuilder Pro (has a gateway prefix) OR
     // we're using local engine.
     // IMPORTANT: some providers like OpenAI have an empty string gateway prefix,
     // so we do a nullish and not a truthy check here.
-    if (providerConfig.gatewayPrefix != null || dyadEngineUrl) {
+    if (providerConfig.gatewayPrefix != null || orianbuilderEngineUrl) {
       const enableSmartFilesContext = settings.enableProSmartFilesContextMode;
-      const provider = createDyadEngine({
-        apiKey: dyadApiKey,
-        baseURL: dyadEngineUrl ?? "https://engine.dyad.sh/v1",
-        dyadOptions: {
+      const provider = createOrianBuilderEngine({
+        apiKey: orianbuilderApiKey,
+        baseURL: orianbuilderEngineUrl ?? "https://engine.orianbuilder.sh/v1",
+        orianbuilderOptions: {
           enableLazyEdits:
             settings.selectedChatMode === "ask"
               ? false
@@ -93,11 +96,11 @@ export async function getModelClient(
       });
 
       logger.info(
-        `\x1b[1;97;44m Using Dyad Pro API key for model: ${model.name} \x1b[0m`,
+        `\x1b[1;97;44m Using OrianBuilder Pro API key for model: ${model.name} \x1b[0m`,
       );
 
       logger.info(
-        `\x1b[1;30;42m Using Dyad Pro engine: ${dyadEngineUrl ?? "<prod>"} \x1b[0m`,
+        `\x1b[1;30;42m Using OrianBuilder Pro engine: ${orianbuilderEngineUrl ?? "<prod>"} \x1b[0m`,
       );
 
       // Do not use free variant (for openrouter).
@@ -116,7 +119,7 @@ export async function getModelClient(
       };
     } else {
       logger.warn(
-        `Dyad Pro enabled, but provider ${model.provider} does not have a gateway prefix defined. Falling back to direct provider connection.`,
+        `OrianBuilder Pro enabled, but provider ${model.provider} does not have a gateway prefix defined. Falling back to direct provider connection.`,
       );
       // Fall through to regular provider logic if gateway prefix is missing
     }
@@ -128,9 +131,9 @@ export async function getModelClient(
         (p) => p.id === "openrouter",
       );
       if (!openRouterProvider) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "OpenRouter provider not found",
-          DyadErrorKind.NotFound,
+          OrianBuilderErrorKind.NotFound,
         );
       }
       return {
@@ -195,7 +198,7 @@ async function getProModelClient({
 }: {
   model: LargeLanguageModel;
   settings: UserSettings;
-  provider: DyadEngineProvider;
+  provider: OrianBuilderEngineProvider;
   modelId: string;
 }): Promise<ModelClient> {
   if (
@@ -234,9 +237,9 @@ async function getProModelClient({
       (candidate) => candidate !== null,
     );
     if (validModels.length === 0) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "No auto-mode models could be resolved from the catalog",
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
 
@@ -475,9 +478,9 @@ function getRegularModelClient(
       ) {
         const status = getServerStatus();
         if (status.backend === "tensorrt-native") {
-          throw new DyadError(
+          throw new OrianBuilderError(
             "The embedded TensorRT backend does not support app-building agent tool calls yet. Reload the model with the llama.cpp backend, or choose Ollama, LM Studio, or a cloud model for Build/Ask/Plan mode.",
-            DyadErrorKind.Precondition,
+            OrianBuilderErrorKind.Precondition,
           );
         }
       }
@@ -546,9 +549,9 @@ function getRegularModelClient(
         };
       }
       // If it's not a known ID and not type 'custom', it's unsupported
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Unsupported model provider: ${model.provider}`,
-        DyadErrorKind.Validation,
+        OrianBuilderErrorKind.Validation,
       );
     }
   }

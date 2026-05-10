@@ -61,7 +61,7 @@ Use this only when the user asks to start a new project or the current app is em
 
   buildXml: (args, isComplete) => {
     if (isComplete) return undefined;
-    return `<dyad-create-project name="${escapeXmlAttr(args.project_name ?? "")}" stack="${escapeXmlAttr(args.stack ?? "")}">Creating project...`;
+    return `<orianbuilder-create-project name="${escapeXmlAttr(args.project_name ?? "")}" stack="${escapeXmlAttr(args.stack ?? "")}">Creating project...`;
   },
 
   execute: async (args, ctx: AgentContext) => {
@@ -106,7 +106,7 @@ Use this only when the user asks to start a new project or the current app is em
     ].join(" ");
 
     ctx.onXmlComplete(
-      `<dyad-create-project created="${result.created}" name="${escapeXmlAttr(args.project_name)}" stack="${escapeXmlAttr(result.stack)}" package-manager="${escapeXmlAttr(result.packageManager)}" scaffold-method="${escapeXmlAttr(result.scaffoldMethod)}" scaffold-command="${escapeXmlAttr(result.scaffoldCommand ?? "")}" ${commandAttrs}>${escapeXmlContent(`${body}\n\nCommands:\n${commandSummary}${outputBlock}`)}</dyad-create-project>`,
+      `<orianbuilder-create-project created="${result.created}" name="${escapeXmlAttr(args.project_name)}" stack="${escapeXmlAttr(result.stack)}" package-manager="${escapeXmlAttr(result.packageManager)}" scaffold-method="${escapeXmlAttr(result.scaffoldMethod)}" scaffold-command="${escapeXmlAttr(result.scaffoldCommand ?? "")}" ${commandAttrs}>${escapeXmlContent(`${body}\n\nCommands:\n${commandSummary}${outputBlock}`)}</orianbuilder-create-project>`,
     );
 
     if (result.created) {

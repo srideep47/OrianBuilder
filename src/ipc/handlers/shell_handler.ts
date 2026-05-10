@@ -3,15 +3,18 @@ import log from "electron-log";
 import path from "node:path";
 import { createLoggedHandler } from "./safe_handle";
 import { IS_TEST_BUILD } from "../utils/test_utils";
-import { isFileWithinAnyDyadMediaDir } from "../utils/media_path_utils";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import { isFileWithinAnyOrianBuilderMediaDir } from "../utils/media_path_utils";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("shell_handlers");
 const handle = createLoggedHandler(logger);
 
 // Only allow opening files with known safe media extensions via shell.openPath.
 // This prevents execution of arbitrary executables even if they reside under a
-// .dyad/media directory.
+// .orianbuilder/media directory.
 const ALLOWED_MEDIA_EXTENSIONS = new Set([
   ".png",
   ".jpg",
@@ -37,7 +40,10 @@ const ALLOWED_MEDIA_EXTENSIONS = new Set([
 export function registerShellHandlers() {
   handle("open-external-url", async (_event, url: string) => {
     if (!url) {
-      throw new DyadError("No URL provided.", DyadErrorKind.External);
+      throw new OrianBuilderError(
+        "No URL provided.",
+        OrianBuilderErrorKind.External,
+      );
     }
     if (!url.startsWith("http://") && !url.startsWith("https://")) {
       throw new Error("Attempted to open invalid or non-http URL: " + url);
@@ -54,7 +60,10 @@ export function registerShellHandlers() {
   handle("show-item-in-folder", async (_event, fullPath: string) => {
     // Validate that a path was provided
     if (!fullPath) {
-      throw new DyadError("No file path provided.", DyadErrorKind.External);
+      throw new OrianBuilderError(
+        "No file path provided.",
+        OrianBuilderErrorKind.External,
+      );
     }
 
     shell.showItemInFolder(fullPath);
@@ -63,18 +72,21 @@ export function registerShellHandlers() {
 
   handle("open-file-path", async (_event, fullPath: string) => {
     if (!fullPath) {
-      throw new DyadError("No file path provided.", DyadErrorKind.External);
+      throw new OrianBuilderError(
+        "No file path provided.",
+        OrianBuilderErrorKind.External,
+      );
     }
 
-    // Security: only allow opening files within .dyad/media subdirectories.
-    // The dyad-apps tree contains AI-generated code, so opening arbitrary files
+    // Security: only allow opening files within .orianbuilder/media subdirectories.
+    // The orianbuilder-apps tree contains AI-generated code, so opening arbitrary files
     // there via shell.openPath could execute malicious executables.
-    // App paths may be under the default dyad-apps base directory (normal) or
+    // App paths may be under the default orianbuilder-apps base directory (normal) or
     // at an external location (imported with skipCopy).
-    if (!isFileWithinAnyDyadMediaDir(fullPath)) {
-      throw new DyadError(
-        "Can only open files within .dyad/media directories.",
-        DyadErrorKind.External,
+    if (!isFileWithinAnyOrianBuilderMediaDir(fullPath)) {
+      throw new OrianBuilderError(
+        "Can only open files within .orianbuilder/media directories.",
+        OrianBuilderErrorKind.External,
       );
     }
     const resolvedPath = path.resolve(fullPath);
@@ -90,9 +102,9 @@ export function registerShellHandlers() {
     const result = await shell.openPath(resolvedPath);
     if (result) {
       // shell.openPath returns an error string if it fails, empty string on success
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to open file: ${result}`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
     logger.debug("Opened file:", resolvedPath);

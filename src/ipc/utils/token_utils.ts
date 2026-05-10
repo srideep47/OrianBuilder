@@ -62,7 +62,7 @@ export async function getContextWindow() {
   }
 
   // For the embedded node-llama-cpp engine, query the actual loaded context size.
-  // Without this, Dyad falls back to 128K and sends 40K+ token codebase payloads
+  // Without this, OrianBuilder falls back to 128K and sends 40K+ token codebase payloads
   // to a model loaded with 8K context — causing silent truncation and ~98-token outputs.
   if (model.provider === "embedded") {
     const embeddedWindow = await getEmbeddedContextWindow();

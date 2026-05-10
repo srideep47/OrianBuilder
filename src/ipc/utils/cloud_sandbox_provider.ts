@@ -9,8 +9,8 @@ import { gitIsIgnoredIso } from "./git_utils";
 
 const logger = log.scope("cloud_sandbox_provider");
 
-const DYAD_ENGINE_URL =
-  process.env.DYAD_ENGINE_URL ?? "https://engine.dyad.sh/v1";
+const ORIANBUILDER_ENGINE_URL =
+  process.env.ORIANBUILDER_ENGINE_URL ?? "https://engine.orianbuilder.sh/v1";
 const CLOUD_SANDBOX_EXCLUDED_DIRS = new Set(["node_modules", ".git", ".next"]);
 const CLOUD_SANDBOX_ROOT_ALLOWLIST = new Set([".env", ".env.local"]);
 
@@ -136,7 +136,7 @@ function getDefaultStartCommand(): string {
 
 function getDefaultCloudSandboxErrorMessage(status: number): string {
   if (status === 401 || status === 403) {
-    return "Dyad couldn’t authorize the cloud sandbox request. Please try again.";
+    return "OrianBuilder couldn’t authorize the cloud sandbox request. Please try again.";
   }
 
   if (status === 404) {
@@ -144,11 +144,11 @@ function getDefaultCloudSandboxErrorMessage(status: number): string {
   }
 
   if (status === 429) {
-    return "Dyad is rate limiting cloud sandbox requests right now. Please try again.";
+    return "OrianBuilder is rate limiting cloud sandbox requests right now. Please try again.";
   }
 
   if (status >= 500) {
-    return "Dyad’s cloud sandbox service is temporarily unavailable. Please try again.";
+    return "OrianBuilder’s cloud sandbox service is temporarily unavailable. Please try again.";
   }
 
   return `Cloud sandbox request failed with ${status}.`;
@@ -210,12 +210,14 @@ let cloudSandboxSyncUpdateListener:
   | ((update: CloudSandboxSyncUpdate) => void)
   | undefined;
 
-function getDyadEngineApiKey() {
+function getOrianBuilderEngineApiKey() {
   const settings = readSettings();
   const apiKey = settings.providerSettings?.auto?.apiKey?.value;
 
   if (!apiKey && !IS_TEST_BUILD) {
-    throw new Error("Dyad Pro API key is required for cloud sandboxes.");
+    throw new Error(
+      "OrianBuilder Pro API key is required for cloud sandboxes.",
+    );
   }
 
   return apiKey;
@@ -225,7 +227,7 @@ async function cloudSandboxFetch(
   endpoint: string,
   init: RequestInit = {},
 ): Promise<Response> {
-  const apiKey = getDyadEngineApiKey();
+  const apiKey = getOrianBuilderEngineApiKey();
   const headers = new Headers(init.headers);
   const isMultipartBody =
     typeof FormData !== "undefined" && init.body instanceof FormData;
@@ -237,7 +239,7 @@ async function cloudSandboxFetch(
     headers.set("Authorization", `Bearer ${apiKey}`);
   }
 
-  const response = await fetch(`${DYAD_ENGINE_URL}${endpoint}`, {
+  const response = await fetch(`${ORIANBUILDER_ENGINE_URL}${endpoint}`, {
     ...init,
     headers,
   });
@@ -688,8 +690,8 @@ export async function syncCloudSandboxDirtyPaths(input: {
   }
 }
 
-class DyadEngineCloudSandboxProvider implements CloudSandboxProvider {
-  name = "dyad-engine";
+class OrianBuilderEngineCloudSandboxProvider implements CloudSandboxProvider {
+  name = "orianbuilder-engine";
 
   async createSandbox(input: {
     appId: number;
@@ -806,7 +808,7 @@ class DyadEngineCloudSandboxProvider implements CloudSandboxProvider {
 }
 
 const defaultProvider: CloudSandboxProvider =
-  new DyadEngineCloudSandboxProvider();
+  new OrianBuilderEngineCloudSandboxProvider();
 
 export async function destroyCloudSandbox(sandboxId: string): Promise<void> {
   await defaultProvider.destroySandbox(sandboxId);

@@ -1,7 +1,7 @@
 No description!
 
-<dyad-execute-sql>
+<orianbuilder-execute-sql>
 DROP TABLE users;
-</dyad-execute-sql>
+</orianbuilder-execute-sql>
 
 Done.

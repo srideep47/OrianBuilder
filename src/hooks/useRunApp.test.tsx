@@ -110,7 +110,7 @@ describe("useAppOutputSubscription", () => {
     expect(showErrorMock).toHaveBeenCalledTimes(1);
     expect(store.get(previewErrorMessageAtom)).toEqual({
       message: "Cloud sandbox sync failed: network down",
-      source: "dyad-sync",
+      source: "orianbuilder-sync",
     });
     expect(store.get(appConsoleEntriesAtom)).toHaveLength(1);
 

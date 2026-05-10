@@ -9,10 +9,13 @@ import {
 } from "./types";
 import { extractCodebase } from "../../../../../../utils/codebase";
 import { resolveDirectoryWithinAppPath } from "./path_safety";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import {
-  DYAD_INTERNAL_GLOB,
-  filterDyadInternalFiles,
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
+import {
+  ORIANBUILDER_INTERNAL_GLOB,
+  filterOrianBuilderInternalFiles,
   resolveTargetAppPath,
 } from "./resolve_app_context";
 
@@ -65,8 +68,8 @@ function looksLikeDirectoryPath(value: string): boolean {
     normalized === ".." ||
     normalized.startsWith("./") ||
     normalized.startsWith("../") ||
-    normalized === ".dyad" ||
-    normalized.startsWith(".dyad/") ||
+    normalized === ".orianbuilder" ||
+    normalized.startsWith(".orianbuilder/") ||
     normalized.includes("/")
   );
 }
@@ -77,9 +80,9 @@ function normalizeListFilesArgs(args: ListFilesArgs): ListFilesArgs {
   }
 
   if (args.directory) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "app_name must be a referenced app name, not a path. Put paths in the directory parameter.",
-      DyadErrorKind.Validation,
+      OrianBuilderErrorKind.Validation,
     );
   }
 
@@ -129,7 +132,7 @@ export const listFilesTool: ToolDefinition<ListFilesArgs> = {
     if (isComplete) {
       return undefined;
     }
-    return `<dyad-list-files${getXmlAttributes(args)}></dyad-list-files>`;
+    return `<orianbuilder-list-files${getXmlAttributes(args)}></orianbuilder-list-files>`;
   },
 
   execute: async (args, ctx: AgentContext) => {
@@ -159,9 +162,9 @@ export const listFilesTool: ToolDefinition<ListFilesArgs> = {
       normalizedArgs.recursive &&
       !sanitizedDirectory
     ) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "include_ignored=true with recursive=true requires a non-root directory to avoid listing too many files.",
-        DyadErrorKind.Validation,
+        OrianBuilderErrorKind.Validation,
       );
     }
 
@@ -177,7 +180,7 @@ export const listFilesTool: ToolDefinition<ListFilesArgs> = {
       const normalizedAppPath = targetAppPath.replace(/\\/g, "/");
       const globPattern = `${normalizedAppPath}/${globPath}`;
       const ignoredGlobs = normalizedArgs.app_name
-        ? ["**/.git", "**/.git/**", DYAD_INTERNAL_GLOB]
+        ? ["**/.git", "**/.git/**", ORIANBUILDER_INTERNAL_GLOB]
         : ["**/.git", "**/.git/**"];
       const ignoredPaths = await glob(globPattern, {
         withFileTypes: true,
@@ -204,7 +207,7 @@ export const listFilesTool: ToolDefinition<ListFilesArgs> = {
         },
       });
 
-      const filteredFiles = filterDyadInternalFiles(
+      const filteredFiles = filterOrianBuilderInternalFiles(
         files,
         normalizedArgs.app_name,
       );
@@ -243,7 +246,7 @@ export const listFilesTool: ToolDefinition<ListFilesArgs> = {
 
     // Write abbreviated list to UI
     ctx.onXmlComplete(
-      `<dyad-list-files${getXmlAttributes(normalizedArgs, cappedPaths.length, totalCount)}>${escapeXmlContent(abbreviatedList + countInfo)}</dyad-list-files>`,
+      `<orianbuilder-list-files${getXmlAttributes(normalizedArgs, cappedPaths.length, totalCount)}>${escapeXmlContent(abbreviatedList + countInfo)}</orianbuilder-list-files>`,
     );
 
     // Return full file list for LLM

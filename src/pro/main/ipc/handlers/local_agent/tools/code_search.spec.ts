@@ -21,16 +21,6 @@ vi.mock("./engine_fetch", () => ({
   engineFetch: (...args: any[]) => engineFetchMock(...args),
 }));
 
-function mockEngineResponse(relevantFiles: string[]) {
-  engineFetchMock.mockResolvedValue({
-    ok: true,
-    status: 200,
-    statusText: "OK",
-    text: async () => "",
-    json: async () => ({ relevantFiles }),
-  } as any);
-}
-
 describe("codeSearchTool", () => {
   let testDir: string;
   let otherAppDir: string;
@@ -66,9 +56,9 @@ describe("codeSearchTool", () => {
       frameworkType: null,
       messageId: 1,
       isSharedModulesChanged: false,
-      isDyadPro: true,
+      isOrianBuilderPro: true,
       todos: [],
-      dyadRequestId: "test-request",
+      orianbuilderRequestId: "test-request",
       fileEditTracker: {},
       onXmlStream: vi.fn(),
       onXmlComplete: vi.fn(),
@@ -142,22 +132,15 @@ describe("codeSearchTool", () => {
   describe("execute - app_name (referenced apps)", () => {
     it("routes to the referenced app's path when app_name matches", async () => {
       mockContext.referencedApps.set("other-app", otherAppDir);
-      mockEngineResponse(["other.ts"]);
 
-      await codeSearchTool.execute(
-        { query: "bar", app_name: "other-app" },
+      const result = await codeSearchTool.execute(
+        { query: "other-app-file", app_name: "other-app" },
         mockContext,
       );
 
-      expect(engineFetchMock).toHaveBeenCalledTimes(1);
-      const [, , opts] = engineFetchMock.mock.calls[0];
-      const body = JSON.parse(opts.body);
-      // The referenced app's file should be the one searched — not the current app's file.
-      const searchedPaths = body.filesContext.map(
-        (f: { path: string }) => f.path,
-      );
-      expect(searchedPaths).toContain("other.ts");
-      expect(searchedPaths).not.toContain("current.ts");
+      // The referenced app's file should appear in results — not the current app's file.
+      expect(result).toContain("other.ts");
+      expect(result).not.toContain("current.ts");
     });
 
     it("throws a clear error when app_name is not in the allow-list", async () => {
@@ -168,26 +151,22 @@ describe("codeSearchTool", () => {
           mockContext,
         ),
       ).rejects.toThrow(/Unknown app_name 'does-not-exist'/);
-      expect(engineFetchMock).not.toHaveBeenCalled();
     });
 
     it("emits app_name in the final XML output", async () => {
       mockContext.referencedApps.set("other-app", otherAppDir);
-      mockEngineResponse(["other.ts"]);
 
       await codeSearchTool.execute(
-        { query: "bar", app_name: "other-app" },
+        { query: "other-app-file", app_name: "other-app" },
         mockContext,
       );
 
       const xmlCall = (mockContext.onXmlComplete as any).mock.calls[0]?.[0];
       expect(xmlCall).toContain('app_name="other-app"');
-      expect(xmlCall).toContain('query="bar"');
+      expect(xmlCall).toContain('query="other-app-file"');
     });
 
     it("omits app_name from final XML when not provided", async () => {
-      mockEngineResponse(["current.ts"]);
-
       await codeSearchTool.execute({ query: "foo" }, mockContext);
 
       const xmlCall = (mockContext.onXmlComplete as any).mock.calls[0]?.[0];

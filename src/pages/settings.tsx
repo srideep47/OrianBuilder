@@ -17,7 +17,6 @@ import { VercelIntegration } from "@/components/VercelIntegration";
 import { SupabaseIntegration } from "@/components/SupabaseIntegration";
 import { CustomAppsFolderSelector } from "@/components/CustomAppsFolderSelector";
 import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 import { AutoFixProblemsSwitch } from "@/components/AutoFixProblemsSwitch";
 import { AutoExpandPreviewSwitch } from "@/components/AutoExpandPreviewSwitch";
 import { KeepPreviewsRunningSwitch } from "@/components/KeepPreviewsRunningSwitch";
@@ -41,21 +40,23 @@ import { SECTION_IDS, SETTING_IDS } from "@/lib/settingsSearchIndex";
 import { BraveSearchSettings } from "@/components/settings/BraveSearchSettings";
 
 const SETTINGS_NAV = [
-  { id: SECTION_IDS.general,          label: '⚙ General' },
-  { id: SECTION_IDS.workflow,         label: '⟳ Workflow' },
-  { id: SECTION_IDS.ai,               label: '✦ AI' },
-  { id: SECTION_IDS.providers,        label: '▣ Model Providers' },
-  { id: SECTION_IDS.telemetry,        label: '📊 Telemetry' },
-  { id: SECTION_IDS.integrations,     label: '🔌 Integrations' },
-  { id: SECTION_IDS.agentPermissions, label: '🔐 Permissions' },
-  { id: SECTION_IDS.toolsMcp,         label: '🛠 Tools (MCP)' },
-  { id: SECTION_IDS.experiments,      label: '⚗ Experiments' },
+  { id: SECTION_IDS.general, label: "⚙ General" },
+  { id: SECTION_IDS.workflow, label: "⟳ Workflow" },
+  { id: SECTION_IDS.ai, label: "✦ AI" },
+  { id: SECTION_IDS.providers, label: "▣ Model Providers" },
+  { id: SECTION_IDS.telemetry, label: "📊 Telemetry" },
+  { id: SECTION_IDS.integrations, label: "🔌 Integrations" },
+  { id: SECTION_IDS.agentPermissions, label: "🔐 Permissions" },
+  { id: SECTION_IDS.toolsMcp, label: "🛠 Tools (MCP)" },
+  { id: SECTION_IDS.experiments, label: "⚗ Experiments" },
 ];
 
 export default function SettingsPage() {
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
-  const [activeSection, setActiveSection] = useState<string>(SECTION_IDS.general);
+  const [activeSection, setActiveSection] = useState<string>(
+    SECTION_IDS.general,
+  );
   const appVersion = useAppVersion();
   const { settings, updateSettings } = useSettings();
   const router = useRouter();
@@ -69,7 +70,7 @@ export default function SettingsPage() {
   const scrollToSection = (id: string) => {
     setActiveSection(id);
     const el = document.getElementById(id);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const handleResetEverything = async () => {
@@ -96,7 +97,7 @@ export default function SettingsPage() {
         {SETTINGS_NAV.map((nav) => (
           <button
             key={nav.id}
-            className={`set-item ${activeSection === nav.id ? 'active' : ''}`}
+            className={`set-item ${activeSection === nav.id ? "active" : ""}`}
             onClick={() => scrollToSection(nav.id)}
             type="button"
           >
@@ -114,7 +115,11 @@ export default function SettingsPage() {
 
       {/* ── Right scrollable content ── */}
       <div className="settings-content" ref={contentRef}>
-        <button className="back-link" onClick={() => router.history.back()} type="button">
+        <button
+          className="back-link"
+          onClick={() => router.history.back()}
+          type="button"
+        >
           ← Go Back
         </button>
 
@@ -144,7 +149,15 @@ export default function SettingsPage() {
           </div>
           <div className="set-row">
             <span className="lbl">Telemetry ID</span>
-            <span className="mono" style={{ fontSize: 11, color: 'rgba(168,140,255,.8)', marginTop: 4, display: 'block' }}>
+            <span
+              className="mono"
+              style={{
+                fontSize: 11,
+                color: "rgba(168,140,255,.8)",
+                marginTop: 4,
+                display: "block",
+              }}
+            >
               {settings ? settings.telemetryUserId : "n/a"}
             </span>
           </div>
@@ -153,11 +166,21 @@ export default function SettingsPage() {
         {/* Integrations */}
         <div id={SECTION_IDS.integrations} className="glass set-section">
           <h2>🔌 Integrations</h2>
-          <div className="set-row" id={SETTING_IDS.github}><GitHubIntegration /></div>
-          <div className="set-row" id={SETTING_IDS.vercel}><VercelIntegration /></div>
-          <div className="set-row" id={SETTING_IDS.supabase}><SupabaseIntegration /></div>
-          <div className="set-row" id={SETTING_IDS.neon}><NeonIntegration /></div>
-          <div className="set-row" id={SETTING_IDS.braveSearch}><BraveSearchSettings /></div>
+          <div className="set-row" id={SETTING_IDS.github}>
+            <GitHubIntegration />
+          </div>
+          <div className="set-row" id={SETTING_IDS.vercel}>
+            <VercelIntegration />
+          </div>
+          <div className="set-row" id={SETTING_IDS.supabase}>
+            <SupabaseIntegration />
+          </div>
+          <div className="set-row" id={SETTING_IDS.neon}>
+            <NeonIntegration />
+          </div>
+          <div className="set-row" id={SETTING_IDS.braveSearch}>
+            <BraveSearchSettings />
+          </div>
         </div>
 
         {/* Agent Permissions */}
@@ -179,13 +202,18 @@ export default function SettingsPage() {
             <div className="row between">
               <div>
                 <div className="lbl">Enable Native Git</div>
-                <div className="desc">Faster, native-Git performance — no external installation required.</div>
+                <div className="desc">
+                  Faster, native-Git performance — no external installation
+                  required.
+                </div>
               </div>
               <Switch
                 id="enable-native-git"
                 aria-label="Enable Native Git"
                 checked={!!settings?.enableNativeGit}
-                onCheckedChange={(checked) => updateSettings({ enableNativeGit: checked })}
+                onCheckedChange={(checked) =>
+                  updateSettings({ enableNativeGit: checked })
+                }
               />
             </div>
           </div>
@@ -195,31 +223,47 @@ export default function SettingsPage() {
           <div className="set-row" id={SETTING_IDS.blockUnsafeNpmPackages}>
             <BlockUnsafeNpmPackagesSwitch />
           </div>
-          <div className="set-row" id={SETTING_IDS.enableMcpServersForBuildMode}>
+          <div
+            className="set-row"
+            id={SETTING_IDS.enableMcpServersForBuildMode}
+          >
             <div className="row between">
               <div>
                 <div className="lbl">Enable MCP servers for Build mode</div>
-                <div className="desc">MCP servers are always enabled in Agent mode.</div>
+                <div className="desc">
+                  MCP servers are always enabled in Agent mode.
+                </div>
               </div>
               <Switch
                 id="enable-mcp-servers-for-build-mode"
                 aria-label="Enable MCP servers for Build mode"
                 checked={!!settings?.enableMcpServersForBuildMode}
-                onCheckedChange={(checked) => updateSettings({ enableMcpServersForBuildMode: checked })}
+                onCheckedChange={(checked) =>
+                  updateSettings({ enableMcpServersForBuildMode: checked })
+                }
               />
             </div>
           </div>
-          <div className="set-row" id={SETTING_IDS.enableSelectAppFromHomeChatInput}>
+          <div
+            className="set-row"
+            id={SETTING_IDS.enableSelectAppFromHomeChatInput}
+          >
             <div className="row between">
               <div>
-                <div className="lbl">Enable Select App from Home Chat Input</div>
-                <div className="desc">Show an app selector in the home chat input.</div>
+                <div className="lbl">
+                  Enable Select App from Home Chat Input
+                </div>
+                <div className="desc">
+                  Show an app selector in the home chat input.
+                </div>
               </div>
               <Switch
                 id="enable-select-app-from-home-chat-input"
                 aria-label="Enable Select App from Home Chat Input"
                 checked={!!settings?.enableSelectAppFromHomeChatInput}
-                onCheckedChange={(checked) => updateSettings({ enableSelectAppFromHomeChatInput: checked })}
+                onCheckedChange={(checked) =>
+                  updateSettings({ enableSelectAppFromHomeChatInput: checked })
+                }
               />
             </div>
           </div>
@@ -229,20 +273,26 @@ export default function SettingsPage() {
         <div
           id={SECTION_IDS.dangerZone}
           className="glass set-section"
-          style={{ borderColor: 'rgba(255,80,90,.3)' }}
+          style={{ borderColor: "rgba(255,80,90,.3)" }}
         >
-          <h2 style={{ color: '#ff8794' }}>⚠ Danger Zone</h2>
+          <h2 style={{ color: "#ff8794" }}>⚠ Danger Zone</h2>
           <div className="set-row" id={SETTING_IDS.reset}>
-            <div className="row between" style={{ flexWrap: 'wrap', gap: 12 }}>
+            <div className="row between" style={{ flexWrap: "wrap", gap: 12 }}>
               <div>
                 <div className="lbl">Reset Everything</div>
-                <div className="desc">Deletes all apps, chats, and settings. Cannot be undone.</div>
+                <div className="desc">
+                  Deletes all apps, chats, and settings. Cannot be undone.
+                </div>
               </div>
               <button
                 onClick={() => setIsResetDialogOpen(true)}
                 disabled={isResetting}
                 className="btn"
-                style={{ background: 'rgba(255,80,90,.18)', borderColor: 'rgba(255,80,90,.35)', color: '#ff8794' }}
+                style={{
+                  background: "rgba(255,80,90,.18)",
+                  borderColor: "rgba(255,80,90,.35)",
+                  color: "#ff8794",
+                }}
               >
                 {isResetting ? "Resetting…" : "Reset Everything"}
               </button>
@@ -269,13 +319,8 @@ export function GeneralSettings({ appVersion }: { appVersion: string | null }) {
   const { theme, setTheme } = useTheme();
 
   return (
-    <div
-      id={SECTION_IDS.general}
-      className="glass set-section"
-    >
-      <h2>
-        General Settings
-      </h2>
+    <div id={SECTION_IDS.general} className="glass set-section">
+      <h2>General Settings</h2>
 
       <div className="space-y-4 mb-4">
         <div id={SETTING_IDS.theme} className="flex items-center gap-4">
@@ -347,13 +392,8 @@ export function GeneralSettings({ appVersion }: { appVersion: string | null }) {
 
 export function WorkflowSettings() {
   return (
-    <div
-      id={SECTION_IDS.workflow}
-      className="glass set-section"
-    >
-      <h2>
-        Workflow Settings
-      </h2>
+    <div id={SECTION_IDS.workflow} className="glass set-section">
+      <h2>Workflow Settings</h2>
 
       <div id={SETTING_IDS.defaultChatMode} className="mt-4">
         <DefaultChatModeSelector />
@@ -400,13 +440,8 @@ export function WorkflowSettings() {
 }
 export function AISettings() {
   return (
-    <div
-      id={SECTION_IDS.ai}
-      className="glass set-section"
-    >
-      <h2>
-        AI Settings
-      </h2>
+    <div id={SECTION_IDS.ai} className="glass set-section">
+      <h2>AI Settings</h2>
 
       <div id={SETTING_IDS.thinkingBudget} className="mt-4">
         <ThinkingBudgetSelector />

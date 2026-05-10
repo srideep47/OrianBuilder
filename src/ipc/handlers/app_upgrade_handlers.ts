@@ -4,13 +4,16 @@ import { AppUpgrade } from "@/ipc/types";
 import { db } from "../../db";
 import { apps } from "../../db/schema";
 import { eq } from "drizzle-orm";
-import { getDyadAppPath } from "../../paths/paths";
+import { getOrianBuilderAppPath } from "../../paths/paths";
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { gitAddAll, gitCommit } from "../utils/git_utils";
 import { simpleSpawn } from "../utils/simpleSpawn";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 export const logger = log.scope("app_upgrade_handlers");
 const handle = createLoggedHandler(logger);
@@ -20,15 +23,16 @@ const availableUpgrades: Omit<AppUpgrade, "isNeeded">[] = [
     id: "component-tagger",
     title: "Enable select component to edit",
     description:
-      "Installs the Dyad component tagger Vite plugin and its dependencies.",
-    manualUpgradeUrl: "https://dyad.sh/docs/upgrades/select-component",
+      "Installs the OrianBuilder component tagger Vite plugin and its dependencies.",
+    manualUpgradeUrl: "https://orianbuilder.sh/docs/upgrades/select-component",
   },
   {
     id: "capacitor",
     title: "Upgrade to hybrid mobile app with Capacitor",
     description:
       "Adds Capacitor to your app lets it run on iOS and Android in addition to the web.",
-    manualUpgradeUrl: "https://dyad.sh/docs/guides/mobile-app#upgrade-your-app",
+    manualUpgradeUrl:
+      "https://orianbuilder.sh/docs/guides/mobile-app#upgrade-your-app",
   },
 ];
 
@@ -37,9 +41,9 @@ async function getApp(appId: number) {
     where: eq(apps.id, appId),
   });
   if (!app) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `App with id ${appId} not found`,
-      DyadErrorKind.NotFound,
+      OrianBuilderErrorKind.NotFound,
     );
   }
   return app;
@@ -67,7 +71,9 @@ function isComponentTaggerUpgradeNeeded(appPath: string): boolean {
 
   try {
     const viteConfigContent = fs.readFileSync(viteConfigPath, "utf-8");
-    return !viteConfigContent.includes("@dyad-sh/react-vite-component-tagger");
+    return !viteConfigContent.includes(
+      "@orianbuilder-sh/react-vite-component-tagger",
+    );
   } catch (e) {
     logger.error("Error reading vite config", e);
     return false;
@@ -107,9 +113,9 @@ async function applyComponentTagger(appPath: string) {
   } else if (fs.existsSync(viteConfigPathJs)) {
     viteConfigPath = viteConfigPathJs;
   } else {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "Could not find vite.config.js or vite.config.ts",
-      DyadErrorKind.External,
+      OrianBuilderErrorKind.External,
     );
   }
 
@@ -118,7 +124,7 @@ async function applyComponentTagger(appPath: string) {
   // Add import statement if not present
   if (
     !content.includes(
-      "import dyadComponentTagger from '@dyad-sh/react-vite-component-tagger';",
+      "import orianbuilderComponentTagger from '@orianbuilder-sh/react-vite-component-tagger';",
     )
   ) {
     // Add it after the last import statement
@@ -133,17 +139,17 @@ async function applyComponentTagger(appPath: string) {
     lines.splice(
       lastImportIndex + 1,
       0,
-      "import dyadComponentTagger from '@dyad-sh/react-vite-component-tagger';",
+      "import orianbuilderComponentTagger from '@orianbuilder-sh/react-vite-component-tagger';",
     );
     content = lines.join("\n");
   }
 
   // Add plugin to plugins array
   if (content.includes("plugins: [")) {
-    if (!content.includes("dyadComponentTagger()")) {
+    if (!content.includes("orianbuilderComponentTagger()")) {
       content = content.replace(
         "plugins: [",
-        "plugins: [dyadComponentTagger(), ",
+        "plugins: [orianbuilderComponentTagger(), ",
       );
     }
   } else {
@@ -158,7 +164,7 @@ async function applyComponentTagger(appPath: string) {
   await new Promise<void>((resolve, reject) => {
     logger.info("Installing component-tagger dependency");
     const process = spawn(
-      "pnpm add -D @dyad-sh/react-vite-component-tagger || npm install --save-dev --legacy-peer-deps @dyad-sh/react-vite-component-tagger",
+      "pnpm add -D @orianbuilder-sh/react-vite-component-tagger || npm install --save-dev --legacy-peer-deps @orianbuilder-sh/react-vite-component-tagger",
       {
         cwd: appPath,
         shell: true,
@@ -191,7 +197,7 @@ async function applyComponentTagger(appPath: string) {
     await gitAddAll({ path: appPath });
     await gitCommit({
       path: appPath,
-      message: "[dyad] add Dyad component tagger",
+      message: "[orianbuilder] add OrianBuilder component tagger",
     });
     logger.info("Successfully committed changes");
   } catch (err) {
@@ -240,7 +246,7 @@ async function applyCapacitor({
     await gitAddAll({ path: appPath });
     await gitCommit({
       path: appPath,
-      message: "[dyad] add Capacitor for mobile app support",
+      message: "[orianbuilder] add Capacitor for mobile app support",
     });
     logger.info("Successfully committed Capacitor changes");
   } catch (err) {
@@ -260,7 +266,7 @@ export function registerAppUpgradeHandlers() {
     "get-app-upgrades",
     async (_, { appId }: { appId: number }): Promise<AppUpgrade[]> => {
       const app = await getApp(appId);
-      const appPath = getDyadAppPath(app.path);
+      const appPath = getOrianBuilderAppPath(app.path);
 
       const upgradesWithStatus = availableUpgrades.map((upgrade) => {
         let isNeeded = false;
@@ -280,20 +286,23 @@ export function registerAppUpgradeHandlers() {
     "execute-app-upgrade",
     async (_, { appId, upgradeId }: { appId: number; upgradeId: string }) => {
       if (!upgradeId) {
-        throw new DyadError("upgradeId is required", DyadErrorKind.Validation);
+        throw new OrianBuilderError(
+          "upgradeId is required",
+          OrianBuilderErrorKind.Validation,
+        );
       }
 
       const app = await getApp(appId);
-      const appPath = getDyadAppPath(app.path);
+      const appPath = getOrianBuilderAppPath(app.path);
 
       if (upgradeId === "component-tagger") {
         await applyComponentTagger(appPath);
       } else if (upgradeId === "capacitor") {
         await applyCapacitor({ appName: app.name, appPath });
       } else {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `Unknown upgrade id: ${upgradeId}`,
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
     },

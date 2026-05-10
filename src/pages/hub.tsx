@@ -28,7 +28,7 @@ const HubPage: React.FC = () => {
     templates?.filter((template) => !template.isOfficial) || [];
 
   return (
-    <div className="hub-page"  style={{ color: '#fff' }}>
+    <div className="hub-page" style={{ color: "#fff" }}>
       <div className="max-w-5xl mx-auto pb-12">
         <Button
           onClick={() => router.history.back()}
@@ -80,7 +80,9 @@ const HubPage: React.FC = () => {
                 <div
                   key={template.id}
                   className="galaxy-card overflow-hidden"
-                  style={{ animationDelay: `${(officialTemplates.length + i) * 0.06}s` }}
+                  style={{
+                    animationDelay: `${(officialTemplates.length + i) * 0.06}s`,
+                  }}
                 >
                   <TemplateCard
                     template={template}

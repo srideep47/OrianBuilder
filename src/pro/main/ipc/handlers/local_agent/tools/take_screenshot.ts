@@ -4,10 +4,13 @@ import path from "node:path";
 import crypto from "node:crypto";
 import log from "electron-log";
 import { ToolDefinition, AgentContext, escapeXmlAttr } from "./types";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { runningApps } from "@/ipc/utils/process_manager";
 import { getAppPort } from "../../../../../../../shared/ports";
-import { DYAD_MEDIA_DIR_NAME } from "@/ipc/utils/media_path_utils";
+import { ORIANBUILDER_MEDIA_DIR_NAME } from "@/ipc/utils/media_path_utils";
 import { db } from "@/db";
 import { chats } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -120,7 +123,7 @@ You can see colours, layout, text, and component positions to reason about visua
 
   buildXml: (_args, isComplete) => {
     if (isComplete) return undefined;
-    return `<dyad-screenshot>Capturing…`;
+    return `<orianbuilder-screenshot>Capturing…`;
   },
 
   execute: async (args, ctx: AgentContext) => {
@@ -132,9 +135,9 @@ You can see colours, layout, text, and component positions to reason about visua
     });
 
     if (!chat?.app) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "App not found for this chat.",
-        DyadErrorKind.NotFound,
+        OrianBuilderErrorKind.NotFound,
       );
     }
 
@@ -142,7 +145,7 @@ You can see colours, layout, text, and component positions to reason about visua
     const previewUrl = getPreviewUrl(appId);
 
     ctx.onXmlStream(
-      `<dyad-screenshot url="${escapeXmlAttr(previewUrl)}">Capturing…`,
+      `<orianbuilder-screenshot url="${escapeXmlAttr(previewUrl)}">Capturing…`,
     );
 
     let screenshotBuffer: Buffer;
@@ -151,21 +154,21 @@ You can see colours, layout, text, and component positions to reason about visua
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       ctx.onXmlComplete(
-        `<dyad-screenshot url="${escapeXmlAttr(previewUrl)}" error="${escapeXmlAttr(msg)}"></dyad-screenshot>`,
+        `<orianbuilder-screenshot url="${escapeXmlAttr(previewUrl)}" error="${escapeXmlAttr(msg)}"></orianbuilder-screenshot>`,
       );
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Screenshot failed: ${msg}. Make sure the app is running and the preview is accessible at ${previewUrl}.`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
 
-    // Save to .dyad/media so the renderer can display it
-    const mediaDir = path.join(ctx.appPath, DYAD_MEDIA_DIR_NAME);
+    // Save to .orianbuilder/media so the renderer can display it
+    const mediaDir = path.join(ctx.appPath, ORIANBUILDER_MEDIA_DIR_NAME);
     await fs.mkdir(mediaDir, { recursive: true });
     const hash = crypto.randomBytes(6).toString("hex");
     const fileName = `screenshot-${Date.now()}-${hash}.png`;
     const filePath = path.join(mediaDir, fileName);
-    const relativePath = path.join(DYAD_MEDIA_DIR_NAME, fileName);
+    const relativePath = path.join(ORIANBUILDER_MEDIA_DIR_NAME, fileName);
     await fs.writeFile(filePath, screenshotBuffer);
 
     const base64 = screenshotBuffer.toString("base64");
@@ -180,7 +183,7 @@ You can see colours, layout, text, and component positions to reason about visua
     ]);
 
     ctx.onXmlComplete(
-      `<dyad-screenshot url="${escapeXmlAttr(previewUrl)}" path="${escapeXmlAttr(relativePath)}"></dyad-screenshot>`,
+      `<orianbuilder-screenshot url="${escapeXmlAttr(previewUrl)}" path="${escapeXmlAttr(relativePath)}"></orianbuilder-screenshot>`,
     );
 
     logger.log(`take_screenshot: saved to ${relativePath}`);

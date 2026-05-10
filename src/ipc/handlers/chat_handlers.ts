@@ -4,8 +4,11 @@ import { desc, eq, and, like } from "drizzle-orm";
 import type { ChatSearchResult, ChatSummary } from "../../lib/schemas";
 
 import log from "electron-log";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
-import { getDyadAppPath } from "../../paths/paths";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
+import { getOrianBuilderAppPath } from "../../paths/paths";
 import { getCurrentCommitHash } from "../utils/git_utils";
 import { createTypedHandler } from "./base";
 import { chatContracts } from "../types/chat";
@@ -32,14 +35,17 @@ export function registerChatHandlers() {
     });
 
     if (!app) {
-      throw new DyadError("App not found", DyadErrorKind.NotFound);
+      throw new OrianBuilderError(
+        "App not found",
+        OrianBuilderErrorKind.NotFound,
+      );
     }
 
     let initialCommitHash = null;
     try {
       // Get the current git revision of the currently checked-out branch
       initialCommitHash = await getCurrentCommitHash({
-        path: getDyadAppPath(app.path),
+        path: getOrianBuilderAppPath(app.path),
       });
     } catch (error) {
       logger.error("Error getting git revision:", error);
@@ -79,7 +85,10 @@ export function registerChatHandlers() {
     });
 
     if (!chat) {
-      throw new DyadError("Chat not found", DyadErrorKind.NotFound);
+      throw new OrianBuilderError(
+        "Chat not found",
+        OrianBuilderErrorKind.NotFound,
+      );
     }
 
     return {

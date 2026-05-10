@@ -15,16 +15,19 @@ import {
 import log from "electron-log";
 
 import { db } from "@/db";
-import { chats, messages, missions } from "@/db/schema";
-import { eq } from "drizzle-orm";
-
 import {
-  isDyadProEnabled,
-  isBasicAgentMode,
-  type UserSettings,
-} from "@/lib/schemas";
+  chats,
+  messages,
+  missionInterrupts,
+  missionMemories,
+  missionPermissionRequests,
+  missions,
+} from "@/db/schema";
+import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
+
+import { isOrianBuilderProEnabled, type UserSettings } from "@/lib/schemas";
 import { readSettings } from "@/main/settings";
-import { getDyadAppPath } from "@/paths/paths";
+import { getOrianBuilderAppPath } from "@/paths/paths";
 import { detectFrameworkType } from "@/ipc/utils/framework_utils";
 import { getModelClient } from "@/ipc/utils/get_model_client";
 import { safeSend } from "@/ipc/utils/safe_sender";
@@ -36,7 +39,7 @@ import {
 import {
   getProviderOptions,
   getAiHeaders,
-  DYAD_INTERNAL_REQUEST_ID_HEADER,
+  ORIANBUILDER_INTERNAL_REQUEST_ID_HEADER,
 } from "@/ipc/utils/provider_options";
 
 import {
@@ -53,7 +56,10 @@ import {
 import { storeDbTimestampAtCurrentVersion } from "@/ipc/utils/neon_timestamp_utils";
 import { mcpManager } from "@/ipc/utils/mcp_manager";
 import { mcpServers } from "@/db/schema";
-import { requireMcpToolConsent } from "@/ipc/utils/mcp_consent";
+import {
+  getMcpToolTrustOverridesByToolKey,
+  requireMcpToolConsent,
+} from "@/ipc/utils/mcp_consent";
 import { getAiMessagesJsonIfWithinLimit } from "@/ipc/utils/ai_messages_utils";
 
 import type { ChatStreamParams, ChatResponseEnd } from "@/ipc/types";
@@ -74,8 +80,10 @@ import {
   ensureToolResultOrdering,
   type InjectedMessage,
 } from "./prepare_step_utils";
+import { buildMissionInterruptMessage } from "@/ipc/utils/mission_interrupts";
+import { buildMissionMemoryMessage } from "@/ipc/utils/mission_memories";
 import { loadTodos } from "./todo_persistence";
-import { ensureDyadGitignored } from "@/ipc/handlers/gitignoreUtils";
+import { ensureOrianBuilderGitignored } from "@/ipc/handlers/gitignoreUtils";
 import { TOOL_DEFINITIONS } from "./tool_definitions";
 import {
   parseAiMessagesJson,
@@ -96,7 +104,10 @@ import {
 } from "@/ipc/handlers/compaction/compaction_handler";
 import { getPostCompactionMessages } from "@/ipc/handlers/compaction/compaction_utils";
 import { DEFAULT_MAX_TOOL_CALL_STEPS } from "@/constants/settings_constants";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import {
   type RetryReplayEvent,
   maybeCaptureRetryReplayEvent,
@@ -107,6 +118,7 @@ import { setChatSummaryTool } from "./tools/set_chat_summary";
 import {
   createMissionArtifact,
   createMissionCheckpoint,
+  createMissionInterrupt,
   finishMissionRun,
   logMissionEvent,
   startMissionRun,
@@ -119,7 +131,17 @@ import { syncMissionTasksFromTodos } from "@/ipc/utils/mission_tasks";
 import { getMissionStructuredEventsForXml } from "@/ipc/utils/mission_xml_events";
 import { extractMissionVisualEventsForXml } from "@/ipc/utils/mission_visual_events";
 import { getAutonomyPolicyDecision } from "@/ipc/utils/autonomy_policy";
+import type { McpToolTrustOverrideMap } from "@/ipc/utils/mcp_tool_capabilities";
 import type { MissionAutonomyProfile } from "@/ipc/types/mission";
+import {
+  createToolFailureBudgetState,
+  getMissionRuntimeBudgetStatus,
+  MISSION_REPEATED_STEP_LOOP_LIMIT,
+  MISSION_RUNTIME_BUDGET_MS,
+  recordToolFailureForBudget,
+  recordToolSuccessForBudget,
+  type ToolFailureBudgetDecision,
+} from "@/ipc/utils/mission_budgets";
 
 const logger = log.scope("local_agent_handler");
 const PLANNING_QUESTIONNAIRE_TOOL_NAME = "planning_questionnaire";
@@ -315,16 +337,18 @@ export async function handleLocalAgentStream(
   {
     placeholderMessageId,
     systemPrompt,
-    dyadRequestId,
+    orianbuilderRequestId,
     readOnly = false,
     planModeOnly = false,
     messageOverride,
     settingsOverride,
     referencedApps = [],
+    workspacePathOverride,
+    workerId,
   }: {
     placeholderMessageId: number;
     systemPrompt: string;
-    dyadRequestId: string;
+    orianbuilderRequestId: string;
     /**
      * If true, the agent operates in read-only mode (e.g., ask mode).
      * State-modifying tools are disabled, and no commits/deploys are made.
@@ -349,14 +373,30 @@ export async function handleLocalAgentStream(
       appName: string;
       appPath: string;
     }[];
+    /**
+     * Override the filesystem workspace used by local-agent tools. Mission
+     * workers use this to operate inside an isolated git worktree while keeping
+     * the parent app/chat identity for mission logging.
+     */
+    workspacePathOverride?: string;
+    workerId?: number;
   },
 ): Promise<boolean> {
   const settings = settingsOverride ?? readSettings();
   const missionId = req.missionId;
   let missionRunId: number | null = null;
   let totalStepsExecuted = 0;
+  const missionStartedAtMs = Date.now();
   const maxToolCallSteps =
     settings.maxToolCallSteps ?? DEFAULT_MAX_TOOL_CALL_STEPS;
+  let toolFailureBudget = createToolFailureBudgetState();
+  const missionBudgetAbort: {
+    tool: Extract<ToolFailureBudgetDecision, { exceeded: true }> | null;
+    runtime: ReturnType<typeof getMissionRuntimeBudgetStatus> | null;
+  } = {
+    tool: null,
+    runtime: null,
+  };
   let fullResponse = "";
   let streamingPreview = ""; // Temporary preview for current tool, not persisted
   let activeRetryReplayEvents: RetryReplayEvent[] | null = null;
@@ -373,7 +413,7 @@ export async function handleLocalAgentStream(
       summary && summary.trim().length > 0
         ? summary
         : "Conversation compacted.";
-    const inlineCompaction = `<dyad-compaction title="Conversation compacted" state="finished">\n${escapeXmlContent(summaryText)}\n</dyad-compaction>`;
+    const inlineCompaction = `<orianbuilder-compaction title="Conversation compacted" state="finished">\n${escapeXmlContent(summaryText)}\n</orianbuilder-compaction>`;
     const backupPathNote = backupPath
       ? `\nIf you need to retrieve earlier parts of the conversation history, you can read the backup file at: ${backupPath}\nNote: This file may be large. Read only the sections you need or use grep to search for specific content rather than reading the entire file.`
       : "";
@@ -398,9 +438,9 @@ export async function handleLocalAgentStream(
   const initialChat = await loadChat();
 
   if (!initialChat || !initialChat.app) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Chat not found: ${req.chatId}`,
-      DyadErrorKind.NotFound,
+      OrianBuilderErrorKind.NotFound,
     );
   }
 
@@ -410,7 +450,8 @@ export async function handleLocalAgentStream(
     hiddenMessageIdsForStreaming.add(id);
   }
 
-  const appPath = getDyadAppPath(chat.app.path);
+  const appPath =
+    workspacePathOverride ?? getOrianBuilderAppPath(chat.app.path);
   const activeMission = missionId
     ? await db.query.missions.findFirst({
         where: eq(missions.id, missionId),
@@ -420,12 +461,17 @@ export async function handleLocalAgentStream(
     activeMission?.autonomyProfile ??
     settings.defaultMissionAutonomyProfile ??
     (settings.autonomousMode ? "full-autopilot-sandbox" : "supervised");
+  const mcpToolTrustOverrides: McpToolTrustOverrideMap =
+    await getMcpToolTrustOverridesByToolKey().catch((err) => {
+      logger.warn("Failed to load MCP tool trust overrides:", err);
+      return {};
+    });
   const missionRun = await startMissionRun({
     missionId,
     chatId: req.chatId,
     messageId: placeholderMessageId,
     model: settings.selectedModel.name,
-    requestId: dyadRequestId,
+    requestId: orianbuilderRequestId,
     metadata: {
       appId: chat.app.id,
       provider: settings.selectedModel.provider,
@@ -433,16 +479,22 @@ export async function handleLocalAgentStream(
       planModeOnly,
       autonomyProfile,
       maxToolCallSteps,
+      runtimeBudgetMs: MISSION_RUNTIME_BUDGET_MS,
       retryPolicy: {
         maxRetries: MAX_TERMINATED_STREAM_RETRIES,
         baseDelayMs: STREAM_RETRY_BASE_DELAY_MS,
       },
+      workspacePathOverride: workspacePathOverride ?? null,
+      workerId: workerId ?? null,
     },
   }).catch((err) => {
     logger.warn("Failed to start mission run:", err);
     return null;
   });
   missionRunId = missionRun?.id ?? null;
+  const mcpSessionId = missionRunId
+    ? `mission-run:${missionRunId}`
+    : `chat:${req.chatId}:${orianbuilderRequestId}`;
   await logMissionEvent({
     missionId,
     eventType: "agent_stream_started",
@@ -454,6 +506,7 @@ export async function handleLocalAgentStream(
       planModeOnly,
       autonomyProfile,
       maxToolCallSteps,
+      runtimeBudgetMs: MISSION_RUNTIME_BUDGET_MS,
     },
   }).catch((err) => logger.warn("Failed to log mission start event:", err));
 
@@ -478,11 +531,11 @@ export async function handleLocalAgentStream(
       event,
       req.chatId,
       appPath,
-      dyadRequestId,
+      orianbuilderRequestId,
       (accumulatedSummary: string) => {
         // Stream compaction summary to the frontend in real-time.
         // During mid-turn compaction, keep already streamed content visible.
-        const compactionPreview = `<dyad-compaction title="Compacting conversation">\n${escapeXmlContent(accumulatedSummary)}\n</dyad-compaction>`;
+        const compactionPreview = `<orianbuilder-compaction title="Compacting conversation">\n${escapeXmlContent(accumulatedSummary)}\n</orianbuilder-compaction>`;
         const previewContent = options?.showOnTopOfCurrentResponse
           ? `${fullResponse}${streamingPreview ? streamingPreview : ""}\n${compactionPreview}`
           : compactionPreview;
@@ -580,11 +633,11 @@ export async function handleLocalAgentStream(
 
     // Load persisted todos from a previous turn (if any)
     const persistedTodos = await loadTodos(appPath, chat.id);
-    // Ensure .dyad/ is gitignored (idempotent; also done by compaction/plans)
+    // Ensure .orianbuilder/ is gitignored (idempotent; also done by compaction/plans)
     // Skip in read-only/plan-only mode to avoid modifying the workspace
     if (!readOnly && !planModeOnly) {
-      await ensureDyadGitignored(appPath).catch((err: unknown) =>
-        logger.warn("Failed to ensure .dyad gitignored:", err),
+      await ensureOrianBuilderGitignored(appPath).catch((err: unknown) =>
+        logger.warn("Failed to ensure .orianbuilder gitignored:", err),
       );
     }
     if (persistedTodos.length > 0) {
@@ -615,9 +668,9 @@ export async function handleLocalAgentStream(
       messageId: placeholderMessageId,
       isSharedModulesChanged: false,
       todos: persistedTodos,
-      dyadRequestId,
+      orianbuilderRequestId,
       fileEditTracker,
-      isDyadPro: isDyadProEnabled(settings),
+      isOrianBuilderPro: isOrianBuilderProEnabled(settings),
       onXmlStream: (accumulatedXml: string) => {
         // Stream accumulated XML to UI without persisting
         streamingPreview = accumulatedXml;
@@ -638,6 +691,7 @@ export async function handleLocalAgentStream(
         logMissionEventsForXml({
           missionId,
           missionRunId,
+          workerId,
           chatId: req.chatId,
           xml: finalXml,
         }).catch((err) =>
@@ -663,6 +717,7 @@ export async function handleLocalAgentStream(
           runtimeMode: settings.runtimeMode2 ?? "host",
           toolName: params.toolName,
           inputPreview: params.inputPreview,
+          mcpToolTrustOverrides,
         });
         logMissionEvent({
           missionId,
@@ -676,13 +731,19 @@ export async function handleLocalAgentStream(
             reason: policy.reason,
             autonomyProfile,
             runtimeMode: settings.runtimeMode2 ?? "host",
+            mcpTrustOverrideApplied: mcpToolTrustOverrides[params.toolName]
+              ? true
+              : undefined,
           },
         }).catch((err) =>
           logger.warn("Failed to log autonomy policy decision:", err),
         );
 
         if (policy.decision === "deny") {
-          throw new DyadError(policy.reason, DyadErrorKind.Precondition);
+          throw new OrianBuilderError(
+            policy.reason,
+            OrianBuilderErrorKind.Precondition,
+          );
         }
 
         if (policy.decision === "auto_approve") {
@@ -692,12 +753,34 @@ export async function handleLocalAgentStream(
           return true;
         }
 
-        return requireAgentToolConsent(event, {
+        const permissionRequest = missionId
+          ? await createMissionPermissionRequestForTool({
+              missionId,
+              runId: missionRunId,
+              toolName: params.toolName,
+              inputPreview: params.inputPreview,
+              risk: policy.risk === "critical" ? "high" : policy.risk,
+              reason: policy.reason,
+            }).catch((err) => {
+              logger.warn("Failed to persist permission request:", err);
+              return null;
+            })
+          : null;
+        const allowed = await requireAgentToolConsent(event, {
           chatId: chat.id,
           toolName: params.toolName as AgentToolName,
           toolDescription: params.toolDescription,
           inputPreview: params.inputPreview,
         });
+        if (permissionRequest) {
+          await resolveMissionPermissionRequestForTool({
+            requestId: permissionRequest.id,
+            status: allowed ? "approved" : "denied",
+          }).catch((err) =>
+            logger.warn("Failed to resolve permission request:", err),
+          );
+        }
+        return allowed;
       },
       appendUserMessage: (content: UserMessageContentPart[]) => {
         pendingUserMessages.push(content);
@@ -722,6 +805,7 @@ export async function handleLocalAgentStream(
           metadata: {
             chatId: chat.id,
             runId: missionRunId,
+            workerId: workerId ?? null,
             toolName: params.toolName,
             inputPreview: params.inputPreview ?? null,
             modifiesState: params.modifiesState,
@@ -731,15 +815,37 @@ export async function handleLocalAgentStream(
         );
       },
       onToolExecutionComplete: (params) => {
+        if (params.status === "failed") {
+          const decision = recordToolFailureForBudget({
+            state: toolFailureBudget,
+            toolName: params.toolName,
+          });
+          toolFailureBudget = decision.state;
+          if (decision.exceeded && !missionBudgetAbort.tool) {
+            missionBudgetAbort.tool = decision;
+            abortController.abort();
+          }
+        } else {
+          toolFailureBudget = recordToolSuccessForBudget({
+            state: toolFailureBudget,
+            toolName: params.toolName,
+          });
+        }
         const metadata = {
           chatId: chat.id,
           runId: missionRunId,
+          workerId: workerId ?? null,
           toolName: params.toolName,
           status: params.status,
           durationMs: params.durationMs,
           outputPreview: params.outputPreview ?? null,
           error: params.error ?? null,
           modifiesState: params.modifiesState,
+          failureBudget: {
+            totalFailures: toolFailureBudget.totalFailures,
+            consecutiveFailures:
+              toolFailureBudget.consecutiveFailuresByTool[params.toolName] ?? 0,
+          },
         };
         logMissionEvent({
           missionId,
@@ -767,10 +873,11 @@ export async function handleLocalAgentStream(
     const agentTools = buildAgentToolSet(ctx, {
       readOnly,
       planModeOnly,
-      basicAgentMode: !readOnly && !planModeOnly && isBasicAgentMode(settings),
     });
     const mcpTools =
-      readOnly || planModeOnly ? {} : await getMcpTools(event, ctx);
+      readOnly || planModeOnly
+        ? {}
+        : await getMcpTools(event, ctx, mcpSessionId);
     const allTools: ToolSet = { ...agentTools, ...mcpTools };
 
     // Prepare message history with graceful fallback
@@ -807,6 +914,7 @@ export async function handleLocalAgentStream(
     const maxTodoFollowUpLoops = 1;
     let todoFollowUpLoops = 0;
     let hasInjectedPlanningQuestionnaireReflection = false;
+    let hasInjectedMissionMemories = false;
     let currentMessageHistory = messageHistory;
     const accumulatedAiMessages: ModelMessage[] = [];
     // Track total steps across all passes to detect step limit
@@ -891,12 +999,12 @@ export async function handleLocalAgentStream(
               ...getAiHeaders({
                 builtinProviderId: modelClient.builtinProviderId,
               }),
-              [DYAD_INTERNAL_REQUEST_ID_HEADER]: dyadRequestId,
+              [ORIANBUILDER_INTERNAL_REQUEST_ID_HEADER]: orianbuilderRequestId,
             },
             providerOptions: getProviderOptions({
-              dyadAppId: chat.app.id,
-              dyadRequestId,
-              dyadDisableFiles: true, // Local agent uses tools, not file injection
+              orianbuilderAppId: chat.app.id,
+              orianbuilderRequestId,
+              orianbuilderDisableFiles: true, // Local agent uses tools, not file injection
               files: [],
               mentionedAppsCodebases: [],
               builtinProviderId: modelClient.builtinProviderId,
@@ -989,6 +1097,73 @@ export async function handleLocalAgentStream(
                 } else {
                   // Prevent repeated compaction attempts if the first one fails.
                   compactionFailedMidTurn = true;
+                }
+              }
+
+              if (
+                !messageOverride &&
+                missionId &&
+                activeMission &&
+                !hasInjectedMissionMemories
+              ) {
+                const missionMemoryMessage = buildMissionMemoryMessage(
+                  await loadMissionMemoriesForInjection({
+                    appId: activeMission.appId,
+                    missionId,
+                  }),
+                );
+                if (missionMemoryMessage) {
+                  stepOptions = {
+                    ...stepOptions,
+                    messages: [...stepOptions.messages, missionMemoryMessage],
+                  };
+                  await logMissionEvent({
+                    missionId,
+                    eventType: "mission_memories_injected",
+                    summary: "Mission memories injected into agent loop",
+                    metadata: {
+                      runId: missionRunId,
+                      chatId: req.chatId,
+                    },
+                  }).catch((err) =>
+                    logger.warn("Failed to log memory injection:", err),
+                  );
+                }
+                hasInjectedMissionMemories = true;
+              }
+
+              if (!messageOverride && missionId) {
+                const pendingInterrupts =
+                  await loadPendingMissionInterrupts(missionId);
+                const interruptMessage =
+                  buildMissionInterruptMessage(pendingInterrupts);
+                if (interruptMessage) {
+                  stepOptions = {
+                    ...stepOptions,
+                    messages: [...stepOptions.messages, interruptMessage],
+                  };
+                  await markMissionInterruptsInjected({
+                    missionId,
+                    interruptIds: pendingInterrupts.map(
+                      (interrupt) => interrupt.id,
+                    ),
+                  });
+                  await logMissionEvent({
+                    missionId,
+                    eventType: "mission_interrupts_injected",
+                    summary: `${pendingInterrupts.length} interrupt${pendingInterrupts.length === 1 ? "" : "s"} injected into agent loop`,
+                    metadata: {
+                      runId: missionRunId,
+                      interruptIds: pendingInterrupts.map(
+                        (interrupt) => interrupt.id,
+                      ),
+                      sources: pendingInterrupts.map(
+                        (interrupt) => interrupt.source,
+                      ),
+                    },
+                  }).catch((err) =>
+                    logger.warn("Failed to log interrupt injection:", err),
+                  );
                 }
               }
 
@@ -1093,11 +1268,14 @@ export async function handleLocalAgentStream(
 
               if (stepSignature) {
                 recentStepSignatures.push(stepSignature);
-                if (recentStepSignatures.length > 3) {
+                if (
+                  recentStepSignatures.length > MISSION_REPEATED_STEP_LOOP_LIMIT
+                ) {
                   recentStepSignatures.shift();
                 }
                 const isRepeatedLoop =
-                  recentStepSignatures.length === 3 &&
+                  recentStepSignatures.length ===
+                    MISSION_REPEATED_STEP_LOOP_LIMIT &&
                   recentStepSignatures.every(
                     (signature) => signature === stepSignature,
                   );
@@ -1110,6 +1288,7 @@ export async function handleLocalAgentStream(
                     ...stepMetadata,
                     signature: stepSignature,
                     repeatedCount: recentStepSignatures.length,
+                    repeatedStepLoopLimit: MISSION_REPEATED_STEP_LOOP_LIMIT,
                   };
                   await logMissionEvent({
                     missionId,
@@ -1131,6 +1310,15 @@ export async function handleLocalAgentStream(
                     ),
                   );
                 }
+              }
+
+              const runtimeBudgetStatus = getMissionRuntimeBudgetStatus({
+                startedAtMs: missionStartedAtMs,
+                nowMs: Date.now(),
+              });
+              if (runtimeBudgetStatus.exceeded) {
+                missionBudgetAbort.runtime = runtimeBudgetStatus;
+                abortController.abort();
               }
 
               if (
@@ -1369,7 +1557,7 @@ export async function handleLocalAgentStream(
                 STREAM_RETRY_BASE_DELAY_MS * terminatedRetryCount;
               sendTelemetryEvent("local_agent:terminated_stream_retry", {
                 chatId: req.chatId,
-                dyadRequestId,
+                orianbuilderRequestId,
                 retryCount: terminatedRetryCount,
                 error: String(streamError),
                 phase: "stream_iteration",
@@ -1393,7 +1581,7 @@ export async function handleLocalAgentStream(
               "local_agent:terminated_stream_retries_exhausted",
               {
                 chatId: req.chatId,
-                dyadRequestId,
+                orianbuilderRequestId,
                 retryCount: terminatedRetryCount,
                 error: String(streamError),
                 phase: "stream_iteration",
@@ -1427,7 +1615,7 @@ export async function handleLocalAgentStream(
                 STREAM_RETRY_BASE_DELAY_MS * terminatedRetryCount;
               sendTelemetryEvent("local_agent:terminated_stream_retry", {
                 chatId: req.chatId,
-                dyadRequestId,
+                orianbuilderRequestId,
                 retryCount: terminatedRetryCount,
                 error: String(err),
                 phase: "response_finalization",
@@ -1452,7 +1640,7 @@ export async function handleLocalAgentStream(
                 "local_agent:terminated_stream_retries_exhausted",
                 {
                   chatId: req.chatId,
-                  dyadRequestId,
+                  orianbuilderRequestId,
                   retryCount: terminatedRetryCount,
                   error: String(err),
                   phase: "response_finalization",
@@ -1544,6 +1732,67 @@ export async function handleLocalAgentStream(
 
     // Handle cancellation paths where stream processing exits cleanly after abort.
     if (abortController.signal.aborted) {
+      const toolBudgetAbortReason = missionBudgetAbort.tool;
+      const runtimeBudgetAbortReason = missionBudgetAbort.runtime;
+      if (toolBudgetAbortReason) {
+        const budgetXml = `<orianbuilder-step-limit steps="${totalStepsExecuted}" limit="${maxToolCallSteps}">Automatically paused because ${escapeXmlContent(toolBudgetAbortReason.reason)}</orianbuilder-step-limit>`;
+        fullResponse += `\n\n${budgetXml}`;
+        const metadata = {
+          chatId: req.chatId,
+          runId: missionRunId,
+          workerId: workerId ?? null,
+          budgetType: toolBudgetAbortReason.budgetType,
+          toolName: toolBudgetAbortReason.toolName,
+          count: toolBudgetAbortReason.count,
+          limit: toolBudgetAbortReason.limit,
+          reason: toolBudgetAbortReason.reason,
+          totalStepsExecuted,
+        };
+        await logMissionEvent({
+          missionId,
+          eventType: "mission_budget_limit_reached",
+          summary: `Tool failure budget reached: ${toolBudgetAbortReason.reason}`,
+          metadata,
+        }).catch((err) =>
+          logger.warn("Failed to log mission tool-failure budget:", err),
+        );
+        await createMissionCheckpoint({
+          missionId,
+          runId: missionRunId,
+          summary: `Tool failure budget reached: ${toolBudgetAbortReason.reason}`,
+          metadata,
+        }).catch((err) =>
+          logger.warn("Failed to checkpoint mission tool-failure budget:", err),
+        );
+      } else if (runtimeBudgetAbortReason) {
+        const budgetXml = `<orianbuilder-step-limit steps="${totalStepsExecuted}" limit="${maxToolCallSteps}">Automatically paused after exceeding the mission runtime budget.</orianbuilder-step-limit>`;
+        fullResponse += `\n\n${budgetXml}`;
+        const metadata = {
+          chatId: req.chatId,
+          runId: missionRunId,
+          workerId: workerId ?? null,
+          budgetType: "runtime",
+          elapsedMs: runtimeBudgetAbortReason.elapsedMs,
+          limitMs: runtimeBudgetAbortReason.limit,
+          totalStepsExecuted,
+        };
+        await logMissionEvent({
+          missionId,
+          eventType: "mission_budget_limit_reached",
+          summary: `Runtime budget reached after ${runtimeBudgetAbortReason.elapsedMs}ms`,
+          metadata,
+        }).catch((err) =>
+          logger.warn("Failed to log mission runtime budget:", err),
+        );
+        await createMissionCheckpoint({
+          missionId,
+          runId: missionRunId,
+          summary: "Runtime budget reached",
+          metadata,
+        }).catch((err) =>
+          logger.warn("Failed to checkpoint mission runtime budget:", err),
+        );
+      }
       await db
         .update(messages)
         .set({
@@ -1575,6 +1824,7 @@ export async function handleLocalAgentStream(
       }).catch((err) =>
         logger.warn("Failed to create mission checkpoint:", err),
       );
+      releaseMcpSession(mcpSessionId);
       return false; // Cancelled - don't consume quota
     }
 
@@ -1583,9 +1833,9 @@ export async function handleLocalAgentStream(
       accumulatedAiMessages.length === 0 &&
       totalStepsExecuted === 0
     ) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "The model stream ended without producing any text or tool calls. This is usually a local model/provider issue; try again or switch to a larger tool-capable model.",
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
 
@@ -1601,7 +1851,7 @@ export async function handleLocalAgentStream(
       logger.info(
         `Chat ${req.chatId} hit step limit of ${maxToolCallSteps} steps`,
       );
-      const stepLimitXml = `<dyad-step-limit steps="${totalStepsExecuted}" limit="${maxToolCallSteps}">Automatically paused after ${totalStepsExecuted} tool calls.</dyad-step-limit>`;
+      const stepLimitXml = `<orianbuilder-step-limit steps="${totalStepsExecuted}" limit="${maxToolCallSteps}">Automatically paused after ${totalStepsExecuted} tool calls.</orianbuilder-step-limit>`;
       postTurnXmlParts.push(stepLimitXml);
       fullResponse += `\n\n${stepLimitXml}`;
       const stepLimitMetadata = {
@@ -1649,12 +1899,12 @@ export async function handleLocalAgentStream(
         },
       });
       if (deployResult.warning) {
-        const warningXml = `<dyad-output type="warning" message="${escapeXmlAttr("Supabase function deploy warning")}">${escapeXmlContent(deployResult.warning)}</dyad-output>`;
+        const warningXml = `<orianbuilder-output type="warning" message="${escapeXmlAttr("Supabase function deploy warning")}">${escapeXmlContent(deployResult.warning)}</orianbuilder-output>`;
         postTurnXmlParts.push(warningXml);
         ctx.onXmlComplete(warningXml);
       }
       if (!deployResult.success) {
-        const errorXml = `<dyad-output type="error" message="${escapeXmlAttr("Failed to deploy Supabase functions")}">${escapeXmlContent(deployResult.error ?? "Unknown deploy error")}</dyad-output>`;
+        const errorXml = `<orianbuilder-output type="error" message="${escapeXmlAttr("Failed to deploy Supabase functions")}">${escapeXmlContent(deployResult.error ?? "Unknown deploy error")}</orianbuilder-output>`;
         postTurnXmlParts.push(errorXml);
         ctx.onXmlComplete(errorXml);
       }
@@ -1772,6 +2022,7 @@ export async function handleLocalAgentStream(
       },
     }).catch((err) => logger.warn("Failed to create mission checkpoint:", err));
 
+    releaseMcpSession(mcpSessionId);
     return true; // Success
   } catch (error) {
     // Clean up any pending consent/questionnaire requests for this chat to prevent
@@ -1812,6 +2063,7 @@ export async function handleLocalAgentStream(
       }).catch((err) =>
         logger.warn("Failed to create mission checkpoint:", err),
       );
+      releaseMcpSession(mcpSessionId);
       return false; // Cancelled - don't consume quota
     }
 
@@ -1846,6 +2098,7 @@ export async function handleLocalAgentStream(
         responseLength: fullResponse.length,
       },
     }).catch((err) => logger.warn("Failed to create mission checkpoint:", err));
+    releaseMcpSession(mcpSessionId);
     return false; // Error - don't consume quota
   }
 }
@@ -1853,10 +2106,11 @@ export async function handleLocalAgentStream(
 async function logMissionEventsForXml(input: {
   missionId: number | undefined;
   missionRunId?: number | null;
+  workerId?: number | null;
   chatId: number;
   xml: string;
 }) {
-  const { missionId, missionRunId, chatId, xml } = input;
+  const { missionId, missionRunId, workerId, chatId, xml } = input;
   if (!missionId) {
     return;
   }
@@ -1866,7 +2120,11 @@ async function logMissionEventsForXml(input: {
     eventType: "agent_output",
     summary: getMissionEventSummaryForXml(xml),
     body: xml,
-    metadata: { chatId },
+    metadata: {
+      chatId,
+      runId: missionRunId ?? null,
+      workerId: workerId ?? null,
+    },
   });
 
   for (const event of getMissionStructuredEventsForXml(xml)) {
@@ -1877,6 +2135,7 @@ async function logMissionEventsForXml(input: {
       body: xml,
       metadata: {
         chatId,
+        workerId: workerId ?? null,
         ...event.metadata,
       },
     });
@@ -1891,11 +2150,29 @@ async function logMissionEventsForXml(input: {
       body: xml,
       metadata: {
         chatId,
+        workerId: workerId ?? null,
         gate: event.gate,
         status: event.status,
         ...event.metadata,
       },
     });
+    if (event.status === "failed") {
+      await createMissionInterrupt({
+        missionId,
+        source: "runtime",
+        title: `${getMissionVisualGateLabel(event.gate)} failed`,
+        body: event.summary,
+        metadata: {
+          producer: event.eventType,
+          runId: missionRunId ?? null,
+          workerId: workerId ?? null,
+          chatId,
+          gate: event.gate,
+          status: event.status,
+          ...event.metadata,
+        },
+      });
+    }
   }
   for (const artifact of visual.artifacts) {
     await createMissionArtifact({
@@ -1908,6 +2185,7 @@ async function logMissionEventsForXml(input: {
       mimeType: artifact.mimeType ?? null,
       metadata: {
         chatId,
+        workerId: workerId ?? null,
         ...artifact.metadata,
       },
     });
@@ -1925,6 +2203,7 @@ async function logMissionEventsForXml(input: {
     body: xml,
     metadata: {
       chatId,
+      workerId: workerId ?? null,
       status: verification.status,
       check: verification.check,
       command: verification.command,
@@ -1932,6 +2211,57 @@ async function logMissionEventsForXml(input: {
       exitCode: verification.exitCode,
     },
   });
+  if (verification.status === "failed") {
+    await createMissionInterrupt({
+      missionId,
+      source: verification.check === "test" ? "test" : "runtime",
+      title: `${getMissionVerificationCheckLabel(verification.check)} failed`,
+      body: verification.summary,
+      metadata: {
+        producer: verification.eventType,
+        runId: missionRunId ?? null,
+        workerId: workerId ?? null,
+        chatId,
+        status: verification.status,
+        check: verification.check,
+        command: verification.command,
+        problemCount: verification.problemCount,
+        exitCode: verification.exitCode,
+      },
+    });
+  }
+}
+
+function getMissionVisualGateLabel(gate: string) {
+  switch (gate) {
+    case "screenshot":
+      return "Screenshot gate";
+    case "accessibility":
+      return "Accessibility gate";
+    case "console":
+      return "Console gate";
+    case "runtime":
+      return "Runtime gate";
+    default:
+      return "Visual gate";
+  }
+}
+
+function getMissionVerificationCheckLabel(check: string) {
+  switch (check) {
+    case "install":
+      return "Install";
+    case "typecheck":
+      return "Type check";
+    case "build":
+      return "Build";
+    case "test":
+      return "Tests";
+    case "start_app":
+      return "App start";
+    default:
+      return "Verification";
+  }
 }
 
 async function logMissionRetryScheduled(input: {
@@ -2224,9 +2554,148 @@ function shouldRunTodoFollowUpPass(params: {
   );
 }
 
+async function loadPendingMissionInterrupts(missionId: number) {
+  return db
+    .select()
+    .from(missionInterrupts)
+    .where(
+      and(
+        eq(missionInterrupts.missionId, missionId),
+        eq(missionInterrupts.status, "pending"),
+      ),
+    )
+    .orderBy(asc(missionInterrupts.createdAt))
+    .limit(8);
+}
+
+function releaseMcpSession(sessionId: string) {
+  try {
+    mcpManager.releaseSession(sessionId);
+  } catch (err) {
+    logger.warn("Failed to release MCP session:", err);
+  }
+}
+
+async function markMissionInterruptsInjected(input: {
+  missionId: number;
+  interruptIds: number[];
+}) {
+  if (input.interruptIds.length === 0) {
+    return [];
+  }
+
+  return db
+    .update(missionInterrupts)
+    .set({
+      status: "injected",
+      injectedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(missionInterrupts.missionId, input.missionId),
+        inArray(missionInterrupts.id, input.interruptIds),
+      ),
+    )
+    .returning();
+}
+
+async function loadMissionMemoriesForInjection(input: {
+  appId: number;
+  missionId: number;
+}) {
+  return db
+    .select()
+    .from(missionMemories)
+    .where(
+      and(
+        eq(missionMemories.appId, input.appId),
+        or(
+          eq(missionMemories.missionId, input.missionId),
+          isNull(missionMemories.missionId),
+        ),
+      ),
+    )
+    .orderBy(desc(missionMemories.updatedAt))
+    .limit(8);
+}
+
+async function createMissionPermissionRequestForTool(input: {
+  missionId: number;
+  runId: number | null;
+  toolName: string;
+  inputPreview?: string | null;
+  risk: "low" | "medium" | "high";
+  reason: string;
+}) {
+  const [request] = await db
+    .insert(missionPermissionRequests)
+    .values({
+      missionId: input.missionId,
+      runId: input.runId,
+      action: input.toolName,
+      risk: input.risk,
+      reason: input.reason,
+      metadata: {
+        inputPreview: input.inputPreview ?? null,
+      },
+      createdAt: new Date(),
+    })
+    .returning();
+
+  await logMissionEvent({
+    missionId: input.missionId,
+    eventType: "mission_permission_requested",
+    summary: `Permission requested: ${input.toolName}`,
+    body: input.reason,
+    metadata: {
+      requestId: request.id,
+      runId: input.runId,
+      risk: input.risk,
+      status: request.status,
+      inputPreview: input.inputPreview ?? null,
+    },
+  }).catch((err) => logger.warn("Failed to log permission request:", err));
+
+  return request;
+}
+
+async function resolveMissionPermissionRequestForTool(input: {
+  requestId: number;
+  status: "approved" | "denied";
+}) {
+  const [request] = await db
+    .update(missionPermissionRequests)
+    .set({
+      status: input.status,
+      resolvedAt: new Date(),
+    })
+    .where(eq(missionPermissionRequests.id, input.requestId))
+    .returning();
+
+  if (!request) {
+    return null;
+  }
+
+  await logMissionEvent({
+    missionId: request.missionId,
+    eventType: "mission_permission_resolved",
+    summary: `Permission ${input.status}: ${request.action}`,
+    body: request.reason,
+    metadata: {
+      requestId: request.id,
+      runId: request.runId,
+      risk: request.risk,
+      status: request.status,
+    },
+  }).catch((err) => logger.warn("Failed to log permission resolution:", err));
+
+  return request;
+}
+
 async function getMcpTools(
   event: IpcMainInvokeEvent,
   ctx: AgentContext,
+  mcpSessionId: string,
 ): Promise<ToolSet> {
   const mcpToolSet: ToolSet = {};
 
@@ -2237,7 +2706,7 @@ async function getMcpTools(
       .where(eq(mcpServers.enabled, true as any));
 
     for (const s of servers) {
-      const client = await mcpManager.getClient(s.id);
+      const client = await mcpManager.acquireClient(s.id, mcpSessionId);
       const toolSet = await client.tools();
 
       for (const [name, mcpTool] of Object.entries(toolSet)) {
@@ -2269,7 +2738,7 @@ async function getMcpTools(
               const { serverName, toolName } = parseMcpToolKey(key);
               const content = JSON.stringify(args, null, 2);
               ctx.onXmlComplete(
-                `<dyad-mcp-tool-call server="${serverName}" tool="${toolName}">\n${content}\n</dyad-mcp-tool-call>`,
+                `<orianbuilder-mcp-tool-call server="${serverName}" tool="${toolName}">\n${content}\n</orianbuilder-mcp-tool-call>`,
               );
 
               const res = await mcpTool.execute(args, execCtx);
@@ -2277,7 +2746,7 @@ async function getMcpTools(
                 typeof res === "string" ? res : JSON.stringify(res);
 
               ctx.onXmlComplete(
-                `<dyad-mcp-tool-result server="${serverName}" tool="${toolName}">\n${resultStr}\n</dyad-mcp-tool-result>`,
+                `<orianbuilder-mcp-tool-result server="${serverName}" tool="${toolName}">\n${resultStr}\n</orianbuilder-mcp-tool-result>`,
               );
 
               return resultStr;
@@ -2287,7 +2756,7 @@ async function getMcpTools(
               const errorStack =
                 error instanceof Error && error.stack ? error.stack : "";
               ctx.onXmlComplete(
-                `<dyad-output type="error" message="MCP tool '${key}' failed: ${escapeXmlAttr(errorMessage)}">${escapeXmlContent(errorStack || errorMessage)}</dyad-output>`,
+                `<orianbuilder-output type="error" message="MCP tool '${key}' failed: ${escapeXmlAttr(errorMessage)}">${escapeXmlContent(errorStack || errorMessage)}</orianbuilder-output>`,
               );
               throw error;
             }

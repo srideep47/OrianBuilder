@@ -113,11 +113,13 @@ export function RuntimeModeSelector() {
       </div>
       {showCloudSandboxOption && !hasCloudSandboxAccess && (
         <div className="text-sm text-muted-foreground bg-muted/40 p-2 rounded">
-          Cloud sandboxes are a Dyad Pro feature.{" "}
+          Cloud sandboxes are a OrianBuilder Pro feature.{" "}
           <button
             type="button"
             className="underline font-medium cursor-pointer text-primary"
-            onClick={() => ipc.system.openExternalUrl("https://dyad.sh/pro#ai")}
+            onClick={() =>
+              ipc.system.openExternalUrl("https://orianbuilder.sh/pro#ai")
+            }
           >
             Upgrade to Pro
           </button>

@@ -7,7 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import log from "electron-log";
-import { ensureDyadGitignored } from "@/ipc/handlers/gitignoreUtils";
+import { ensureOrianBuilderGitignored } from "@/ipc/handlers/gitignoreUtils";
 
 const logger = log.scope("compaction_storage");
 
@@ -25,26 +25,26 @@ export interface CompactionMessage {
 }
 
 /**
- * Get the backup directory for a specific chat within the app's .dyad/chats/ directory.
+ * Get the backup directory for a specific chat within the app's .orianbuilder/chats/ directory.
  */
 function getChatBackupDir(appPath: string, chatId: number): string {
-  return path.join(appPath, ".dyad", "chats", String(chatId));
+  return path.join(appPath, ".orianbuilder", "chats", String(chatId));
 }
 
 /**
- * Transform dyad-specific tool XML tags to shorter, LLM-friendly equivalents
+ * Transform orianbuilder-specific tool XML tags to shorter, LLM-friendly equivalents
  * and truncate large tool results for token efficiency.
  */
 export function transformToolTags(content: string): string {
-  // Transform <dyad-mcp-tool-call> to <tool-use>
+  // Transform <orianbuilder-mcp-tool-call> to <tool-use>
   let result = content.replace(
-    /<dyad-mcp-tool-call server="([^"]*)" tool="([^"]*)">\n([\s\S]*?)\n<\/dyad-mcp-tool-call>/g,
+    /<orianbuilder-mcp-tool-call server="([^"]*)" tool="([^"]*)">\n([\s\S]*?)\n<\/orianbuilder-mcp-tool-call>/g,
     '<tool-use name="$2" server="$1">\n$3\n</tool-use>',
   );
 
-  // Transform <dyad-mcp-tool-result> to <tool-result> with truncation
+  // Transform <orianbuilder-mcp-tool-result> to <tool-result> with truncation
   result = result.replace(
-    /<dyad-mcp-tool-result server="([^"]*)" tool="([^"]*)">\n([\s\S]*?)\n<\/dyad-mcp-tool-result>/g,
+    /<orianbuilder-mcp-tool-result server="([^"]*)" tool="([^"]*)">\n([\s\S]*?)\n<\/orianbuilder-mcp-tool-result>/g,
     (_match, server, tool, resultContent: string) => {
       const chars = resultContent.length;
       const truncated = chars > TOOL_RESULT_TRUNCATION_LIMIT;
@@ -99,11 +99,11 @@ export async function storePreCompactionMessages(
 ): Promise<string> {
   const chatBackupDir = getChatBackupDir(appPath, chatId);
 
-  // Ensure directory exists and .dyad is gitignored
+  // Ensure directory exists and .orianbuilder is gitignored
   if (!fs.existsSync(chatBackupDir)) {
     fs.mkdirSync(chatBackupDir, { recursive: true });
   }
-  await ensureDyadGitignored(appPath);
+  await ensureOrianBuilderGitignored(appPath);
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const backupFileName = `compaction-${timestamp}.md`;

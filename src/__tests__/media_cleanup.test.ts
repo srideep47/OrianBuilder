@@ -33,10 +33,10 @@ vi.mock("electron-log", () => ({
 }));
 
 vi.mock("@/paths/paths", () => ({
-  getDyadAppPath: vi.fn((appPath: string) => {
+  getOrianBuilderAppPath: vi.fn((appPath: string) => {
     const path = require("node:path");
     if (path.isAbsolute(appPath)) return appPath;
-    return `/home/user/dyad-apps/${appPath}`;
+    return `/home/user/orianbuilder-apps/${appPath}`;
   }),
 }));
 
@@ -49,7 +49,7 @@ vi.mock("@/db/schema", () => ({
 }));
 
 vi.mock("@/ipc/utils/media_path_utils", () => ({
-  DYAD_MEDIA_DIR_NAME: ".dyad/media",
+  ORIANBUILDER_MEDIA_DIR_NAME: ".orianbuilder/media",
 }));
 
 import {
@@ -87,7 +87,9 @@ describe("cleanupOldMediaFiles", () => {
     dbMocks.from.mockResolvedValue([{ path: "my-app" }]);
 
     fsMocks.readdir.mockImplementation((dirPath: string) => {
-      if (dirPath === "/home/user/dyad-apps/my-app/.dyad/media") {
+      if (
+        dirPath === "/home/user/orianbuilder-apps/my-app/.orianbuilder/media"
+      ) {
         return Promise.resolve(["old-image.png", "recent-image.png"]);
       }
       return Promise.reject(new Error("ENOENT"));
@@ -112,7 +114,7 @@ describe("cleanupOldMediaFiles", () => {
 
     expect(fsMocks.unlink).toHaveBeenCalledTimes(1);
     expect(fsMocks.unlink).toHaveBeenCalledWith(
-      "/home/user/dyad-apps/my-app/.dyad/media/old-image.png",
+      "/home/user/orianbuilder-apps/my-app/.orianbuilder/media/old-image.png",
     );
     expect(logMocks.log).toHaveBeenCalledWith("Cleaned up 1 old media files");
     expect(logMocks.warn).not.toHaveBeenCalled();
@@ -127,7 +129,7 @@ describe("cleanupOldMediaFiles", () => {
     expect(logMocks.warn).not.toHaveBeenCalled();
   });
 
-  it("should skip apps without .dyad/media directory", async () => {
+  it("should skip apps without .orianbuilder/media directory", async () => {
     dbMocks.from.mockResolvedValue([{ path: "app-no-media" }]);
 
     fsMocks.readdir.mockRejectedValue(new Error("ENOENT"));
@@ -158,7 +160,7 @@ describe("cleanupOldMediaFiles", () => {
     expect(logMocks.warn.mock.calls[0][1]).toBe(statError);
   });
 
-  it("should skip subdirectories inside .dyad/media", async () => {
+  it("should skip subdirectories inside .orianbuilder/media", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2025-01-31T00:00:00.000Z"));
 
@@ -214,7 +216,9 @@ describe("cleanupOldMediaFiles", () => {
     ]);
 
     fsMocks.readdir.mockImplementation((dirPath: string) => {
-      if (dirPath === "/external/projects/my-imported-app/.dyad/media") {
+      if (
+        dirPath === "/external/projects/my-imported-app/.orianbuilder/media"
+      ) {
         return Promise.resolve(["old-image.png"]);
       }
       return Promise.reject(new Error("ENOENT"));
@@ -227,7 +231,7 @@ describe("cleanupOldMediaFiles", () => {
 
     expect(fsMocks.unlink).toHaveBeenCalledTimes(1);
     expect(fsMocks.unlink).toHaveBeenCalledWith(
-      "/external/projects/my-imported-app/.dyad/media/old-image.png",
+      "/external/projects/my-imported-app/.orianbuilder/media/old-image.png",
     );
   });
 });

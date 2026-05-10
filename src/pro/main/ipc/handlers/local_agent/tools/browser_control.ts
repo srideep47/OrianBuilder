@@ -6,7 +6,7 @@ import log from "electron-log";
 
 import { runningApps } from "@/ipc/utils/process_manager";
 import { getAppPort } from "../../../../../../../shared/ports";
-import { DYAD_MEDIA_DIR_NAME } from "@/ipc/utils/media_path_utils";
+import { ORIANBUILDER_MEDIA_DIR_NAME } from "@/ipc/utils/media_path_utils";
 import {
   AgentContext,
   escapeXmlAttr,
@@ -57,7 +57,7 @@ Actions:
 - snapshot: return a compact accessibility snapshot
 - click/type/press/scroll: perform the interaction, then return a snapshot
 - eval: run JavaScript in the page for focused diagnostics
-- screenshot: capture a PNG, persist it under .dyad/media, and attach it for visual reasoning
+- screenshot: capture a PNG, persist it under .orianbuilder/media, and attach it for visual reasoning
 
 Use this for end-to-end UI verification when a screenshot alone is not enough. Prefer start_dev_server first so the managed preview URL is ready.`,
   inputSchema: browserControlSchema,
@@ -69,14 +69,14 @@ Use this for end-to-end UI verification when a screenshot alone is not enough. P
 
   buildXml: (args, isComplete) => {
     if (isComplete) return undefined;
-    return `<dyad-browser-action action="${escapeXmlAttr(args.action ?? "")}">Running browser action...`;
+    return `<orianbuilder-browser-action action="${escapeXmlAttr(args.action ?? "")}">Running browser action...`;
   },
 
   execute: async (args, ctx: AgentContext) => {
     logger.log(`browser_control: action=${args.action}, appId=${ctx.appId}`);
     const targetUrl = args.url ?? getPreviewUrl(ctx.appId);
     ctx.onXmlStream(
-      `<dyad-browser-action action="${escapeXmlAttr(args.action)}" url="${escapeXmlAttr(targetUrl)}">Running browser action...`,
+      `<orianbuilder-browser-action action="${escapeXmlAttr(args.action)}" url="${escapeXmlAttr(targetUrl)}">Running browser action...`,
     );
 
     const { chromium } = await import("playwright");
@@ -173,12 +173,12 @@ function requireSelector(args: BrowserControlArgs) {
 }
 
 async function saveScreenshot(appPath: string, screenshotBuffer: Buffer) {
-  const mediaDir = path.join(appPath, DYAD_MEDIA_DIR_NAME);
+  const mediaDir = path.join(appPath, ORIANBUILDER_MEDIA_DIR_NAME);
   await fs.mkdir(mediaDir, { recursive: true });
   const hash = crypto.randomBytes(6).toString("hex");
   const fileName = `browser-${Date.now()}-${hash}.png`;
   const filePath = path.join(mediaDir, fileName);
-  const relativePath = path.join(DYAD_MEDIA_DIR_NAME, fileName);
+  const relativePath = path.join(ORIANBUILDER_MEDIA_DIR_NAME, fileName);
   await fs.writeFile(filePath, screenshotBuffer);
   return relativePath;
 }
@@ -190,7 +190,7 @@ function completeBrowserAction(
   output: { result: string; path?: string },
 ) {
   ctx.onXmlComplete(
-    `<dyad-browser-action action="${escapeXmlAttr(args.action)}" url="${escapeXmlAttr(targetUrl)}" path="${escapeXmlAttr(output.path ?? "")}">${escapeXmlContent(output.result)}</dyad-browser-action>`,
+    `<orianbuilder-browser-action action="${escapeXmlAttr(args.action)}" url="${escapeXmlAttr(targetUrl)}" path="${escapeXmlAttr(output.path ?? "")}">${escapeXmlContent(output.result)}</orianbuilder-browser-action>`,
   );
   return output.result;
 }

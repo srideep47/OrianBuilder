@@ -7,7 +7,10 @@ import {
   executeAddDependency,
   ExecuteAddDependencyError,
 } from "@/ipc/processors/executeAddDependency";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const addDependencySchema = z.object({
   packages: z.array(z.string()).describe("Array of package names to install"),
@@ -26,7 +29,7 @@ export const addDependencyTool: ToolDefinition<
 
   buildXml: (args, _isComplete) => {
     if (!args.packages || args.packages.length === 0) return undefined;
-    return `<dyad-add-dependency packages="${escapeXmlAttr(args.packages.join(" "))}"></dyad-add-dependency>`;
+    return `<orianbuilder-add-dependency packages="${escapeXmlAttr(args.packages.join(" "))}"></orianbuilder-add-dependency>`;
   },
 
   execute: async (args, ctx: AgentContext) => {
@@ -37,9 +40,9 @@ export const addDependencyTool: ToolDefinition<
       : undefined;
 
     if (!message) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Message not found for adding dependencies",
-        DyadErrorKind.NotFound,
+        OrianBuilderErrorKind.NotFound,
       );
     }
 

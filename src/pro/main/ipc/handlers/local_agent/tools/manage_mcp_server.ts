@@ -41,14 +41,14 @@ Use list before relying on external MCP tools. Use reload after a server configu
 
   buildXml: (args, isComplete) => {
     if (isComplete) return undefined;
-    return `<dyad-mcp-runtime action="${escapeXmlAttr(args.action ?? "")}" server-id="${args.server_id ?? ""}">Managing MCP runtime...`;
+    return `<orianbuilder-mcp-runtime action="${escapeXmlAttr(args.action ?? "")}" server-id="${args.server_id ?? ""}">Managing MCP runtime...`;
   },
 
   execute: async (args, ctx: AgentContext) => {
     if (args.action === "list") {
       const servers = await listServers();
       ctx.onXmlComplete(
-        `<dyad-mcp-runtime action="list">${escapeXmlContent(JSON.stringify(servers, null, 2))}</dyad-mcp-runtime>`,
+        `<orianbuilder-mcp-runtime action="list">${escapeXmlContent(JSON.stringify(servers, null, 2))}</orianbuilder-mcp-runtime>`,
       );
       return JSON.stringify(servers, null, 2);
     }
@@ -77,7 +77,7 @@ Use list before relying on external MCP tools. Use reload after a server configu
       connected: mcpManager.isConnected(server.id),
     };
     ctx.onXmlComplete(
-      `<dyad-mcp-runtime action="${escapeXmlAttr(args.action)}" server-id="${server.id}" connected="${result.connected ? "true" : "false"}">${escapeXmlContent(JSON.stringify(result, null, 2))}</dyad-mcp-runtime>`,
+      `<orianbuilder-mcp-runtime action="${escapeXmlAttr(args.action)}" server-id="${server.id}" connected="${result.connected ? "true" : "false"}">${escapeXmlContent(JSON.stringify(result, null, 2))}</orianbuilder-mcp-runtime>`,
     );
     return JSON.stringify(result, null, 2);
   },
@@ -85,6 +85,9 @@ Use list before relying on external MCP tools. Use reload after a server configu
 
 async function listServers() {
   const connectedServerIds = new Set(mcpManager.listConnectedServerIds());
+  const connectionStates = new Map(
+    mcpManager.listConnectionStates().map((state) => [state.serverId, state]),
+  );
   const servers = await db.select().from(mcpServers);
   return servers.map((server) => ({
     id: server.id,
@@ -92,6 +95,9 @@ async function listServers() {
     transport: server.transport,
     enabled: server.enabled,
     connected: connectedServerIds.has(server.id),
+    refCount: connectionStates.get(server.id)?.refCount ?? 0,
+    sessionIds: connectionStates.get(server.id)?.sessionIds ?? [],
+    lastUsedAt: connectionStates.get(server.id)?.lastUsedAt ?? null,
   }));
 }
 

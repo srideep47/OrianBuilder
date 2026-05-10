@@ -1,4 +1,7 @@
-import { isDyadProEnabled, type LargeLanguageModel } from "@/lib/schemas";
+import {
+  isOrianBuilderProEnabled,
+  type LargeLanguageModel,
+} from "@/lib/schemas";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -125,14 +128,14 @@ export function ModelPicker() {
       ? modelsByProviders["auto"].filter((model) => {
           if (
             settings &&
-            !isDyadProEnabled(settings) &&
+            !isOrianBuilderProEnabled(settings) &&
             ["turbo", "value"].includes(model.apiName)
           ) {
             return false;
           }
           if (
             settings &&
-            isDyadProEnabled(settings) &&
+            isOrianBuilderProEnabled(settings) &&
             model.apiName === "free"
           ) {
             return false;
@@ -164,7 +167,7 @@ export function ModelPicker() {
     const provider = providers?.find((p) => p.id === providerId);
     return !(provider && provider.secondary);
   });
-  if (settings && isDyadProEnabled(settings)) {
+  if (settings && isOrianBuilderProEnabled(settings)) {
     primaryProviders.unshift(["auto", TURBO_MODELS]);
   }
   const secondaryProviders = providerEntries.filter(([providerId, models]) => {
@@ -260,7 +263,7 @@ export function ModelPicker() {
                 // we will use the paid models (in OrianBuilder Pro backend) which
                 // don't have the free limitations.
                 if (
-                  isDyadProEnabled(settings) &&
+                  isOrianBuilderProEnabled(settings) &&
                   model.apiName.endsWith(":free")
                 ) {
                   return false;

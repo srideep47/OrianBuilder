@@ -2,7 +2,10 @@ import log from "electron-log";
 import fetch from "node-fetch";
 import { createTypedHandler } from "./base";
 import { systemContracts } from "../types/system";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("upload_handlers");
 
@@ -13,17 +16,17 @@ export function registerUploadHandlers() {
 
     // Validate the signed URL
     if (!url || typeof url !== "string" || !url.startsWith("https://")) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Invalid signed URL provided",
-        DyadErrorKind.Validation,
+        OrianBuilderErrorKind.Validation,
       );
     }
 
     // Validate content type
     if (!contentType || typeof contentType !== "string") {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Invalid content type provided",
-        DyadErrorKind.Validation,
+        OrianBuilderErrorKind.Validation,
       );
     }
 

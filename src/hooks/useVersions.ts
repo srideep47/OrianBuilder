@@ -7,7 +7,10 @@ import { chatMessagesByIdAtom, selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
 import { toast } from "sonner";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { useRunApp } from "./useRunApp";
 import { useSettings } from "./useSettings";
 
@@ -60,7 +63,10 @@ export function useVersions(appId: number | null) {
     }) => {
       const currentAppId = appId;
       if (currentAppId === null) {
-        throw new DyadError("App ID is null", DyadErrorKind.External);
+        throw new OrianBuilderError(
+          "App ID is null",
+          OrianBuilderErrorKind.External,
+        );
       }
       return ipc.version.revertVersion({
         appId: currentAppId,

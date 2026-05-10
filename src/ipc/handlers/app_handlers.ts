@@ -10,12 +10,12 @@ import { systemContracts } from "../types/system";
 import fs from "node:fs";
 import path from "node:path";
 import {
-  getDyadAppPath,
-  getDefaultDyadAppsDirectory,
+  getOrianBuilderAppPath,
+  getDefaultOrianBuilderAppsDirectory,
   isAppLocationAccessible,
   getUserDataPath,
-  getDyadAppsBaseDirectory,
-  invalidateDyadAppsBaseDirectoryCache,
+  getOrianBuilderAppsBaseDirectory,
+  invalidateOrianBuilderAppsBaseDirectoryCache,
 } from "../../paths/paths";
 import { ChildProcess, spawn } from "node:child_process";
 import { promises as fsPromises } from "node:fs";
@@ -36,7 +36,7 @@ import { getEnvVar } from "../utils/read_env";
 import { readSettings } from "../../main/settings";
 import { addLog, clearLogs } from "../../lib/log_store";
 import {
-  DYAD_SCREENSHOT_DIR_NAME,
+  ORIANBUILDER_SCREENSHOT_DIR_NAME,
   MAX_SCREENSHOTS_PER_APP,
   SCREENSHOT_FILENAME_REGEX,
 } from "../utils/media_path_utils";
@@ -124,7 +124,10 @@ import {
   MAX_FILE_SEARCH_SIZE,
   RIPGREP_EXCLUDED_GLOBS,
 } from "../utils/ripgrep_utils";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { detectFrameworkType } from "../utils/framework_utils";
 
 const logger = log.scope("app_handlers");
@@ -137,11 +140,11 @@ function formatCloudSandboxError(error: unknown) {
 
   switch (error.code) {
     case "sandbox_pro_required":
-      return "Dyad Pro is required to use cloud sandboxes.";
+      return "OrianBuilder Pro is required to use cloud sandboxes.";
     case "sandbox_insufficient_credits":
       return "You need at least 1 credit available to start a cloud sandbox.";
     case "sandbox_billing_unavailable":
-      return "Dyad couldn’t verify sandbox billing right now. Please try again.";
+      return "OrianBuilder couldn’t verify sandbox billing right now. Please try again.";
     case "sandbox_credits_exhausted":
       return "This cloud sandbox stopped because your credits ran out.";
     default:
@@ -149,13 +152,13 @@ function formatCloudSandboxError(error: unknown) {
         return "This cloud sandbox is no longer available.";
       }
       if (error.status === 401 || error.status === 403) {
-        return "Dyad couldn’t authorize the cloud sandbox request. Please try again.";
+        return "OrianBuilder couldn’t authorize the cloud sandbox request. Please try again.";
       }
       if (error.status === 429) {
-        return "Dyad is rate limiting cloud sandbox requests right now. Please try again.";
+        return "OrianBuilder is rate limiting cloud sandbox requests right now. Please try again.";
       }
       if (typeof error.status === "number" && error.status >= 500) {
-        return "Dyad’s cloud sandbox service is temporarily unavailable. Please try again.";
+        return "OrianBuilder’s cloud sandbox service is temporarily unavailable. Please try again.";
       }
       return error.message;
   }
@@ -307,7 +310,7 @@ function emitProxyServerStarted({
 }) {
   safeSend(event.sender, "app:output", {
     type: "stdout",
-    message: `[dyad-proxy-server]started=[${proxyUrl}] original=[${originalUrl}] mode=[${mode}]`,
+    message: `[orianbuilder-proxy-server]started=[${proxyUrl}] original=[${originalUrl}] mode=[${mode}]`,
     appId,
   });
 }
@@ -605,7 +608,7 @@ function listenToProcess({
     // This is a hacky heuristic to pick up when drizzle is asking for user
     // to select from one of a few choices. We automatically pick the first
     // option because it's usually a good default choice. We guard this with
-    // isNeon because: 1) only Neon apps (for the official Dyad templates) should
+    // isNeon because: 1) only Neon apps (for the official OrianBuilder templates) should
     // get this template and 2) it's safer to do this with Neon apps because
     // their databases have point in time restore built-in.
     if (isNeon && message.includes("created or renamed from another")) {
@@ -716,12 +719,15 @@ export async function runAppById(
     });
 
     if (!app) {
-      throw new DyadError("App not found", DyadErrorKind.NotFound);
+      throw new OrianBuilderError(
+        "App not found",
+        OrianBuilderErrorKind.NotFound,
+      );
     }
 
     logger.debug(`Starting app ${appId} in path ${app.path}`);
 
-    const appPath = getDyadAppPath(app.path);
+    const appPath = getOrianBuilderAppPath(app.path);
     try {
       // There may have been a previous run that left a process on this port.
       await cleanUpPort(getAppPort(appId));
@@ -744,9 +750,9 @@ export async function runAppById(
       ) {
         runningApps.delete(appId);
       }
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to run app ${appId}: ${error.message}`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
   });
@@ -800,9 +806,9 @@ export async function stopAppById(appId: number): Promise<void> {
       } else if (appInfo.mode !== "cloud") {
         runningApps.delete(appId);
       }
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to stop app ${appId}: ${error.message}`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
   });
@@ -823,7 +829,7 @@ async function executeAppInDocker({
   installCommand?: string | null;
   startCommand?: string | null;
 }): Promise<void> {
-  const containerName = `dyad-app-${appId}`;
+  const containerName = `orianbuilder-app-${appId}`;
 
   // First, check if Docker is available
   try {
@@ -868,7 +874,7 @@ async function executeAppInDocker({
   }
 
   // Create a Dockerfile in the app directory if it doesn't exist
-  const dockerfilePath = path.join(appPath, "Dockerfile.dyad");
+  const dockerfilePath = path.join(appPath, "Dockerfile.orianbuilder");
   if (!fs.existsSync(dockerfilePath)) {
     const dockerfileContent = `FROM node:22-alpine
 
@@ -880,9 +886,9 @@ RUN npm install -g pnpm
       await fsPromises.writeFile(dockerfilePath, dockerfileContent, "utf-8");
     } catch (error) {
       logger.error(`Failed to create Dockerfile for app ${appId}:`, error);
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to create Dockerfile: ${error}`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
   }
@@ -890,7 +896,14 @@ RUN npm install -g pnpm
   // Build the Docker image
   const buildProcess = spawn(
     "docker",
-    ["build", "-f", "Dockerfile.dyad", "-t", `dyad-app-${appId}`, "."],
+    [
+      "build",
+      "-f",
+      "Dockerfile.orianbuilder",
+      "-t",
+      `orianbuilder-app-${appId}`,
+      ".",
+    ],
     {
       cwd: appPath,
       stdio: "pipe",
@@ -929,12 +942,12 @@ RUN npm install -g pnpm
       "-v",
       `${appPath}:/app`,
       "-v",
-      `dyad-pnpm-${appId}:/app/.pnpm-store`,
+      `orianbuilder-pnpm-${appId}:/app/.pnpm-store`,
       "-e",
       "PNPM_STORE_PATH=/app/.pnpm-store",
       "-w",
       "/app",
-      `dyad-app-${appId}`,
+      `orianbuilder-app-${appId}`,
       "sh",
       "-c",
       getCommand({ appId, installCommand, startCommand }),
@@ -1327,14 +1340,14 @@ async function searchAppFilesWithRipgrep({
 export function registerAppHandlers() {
   registerCloudSandboxSyncUpdateListener();
 
-  createTypedHandler(systemContracts.restartDyad, async () => {
+  createTypedHandler(systemContracts.restartOrianBuilder, async () => {
     app.relaunch();
     app.quit();
   });
 
   createTypedHandler(appContracts.createApp, async (_, params) => {
     const appPath = params.name;
-    const fullAppPath = getDyadAppPath(appPath);
+    const fullAppPath = getOrianBuilderAppPath(appPath);
 
     if (!isAppLocationAccessible(fullAppPath)) {
       throw new Error(
@@ -1343,9 +1356,9 @@ export function registerAppHandlers() {
     }
 
     if (fs.existsSync(fullAppPath)) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `App already exists at: ${fullAppPath}`,
-        DyadErrorKind.Conflict,
+        OrianBuilderErrorKind.Conflict,
       );
     }
     // Create a new app
@@ -1386,7 +1399,7 @@ export function registerAppHandlers() {
     // Create initial commit
     const commitHash = await gitCommit({
       path: fullAppPath,
-      message: "Init Dyad app",
+      message: "Init OrianBuilder app",
     });
 
     // Update chat with initial commit hash
@@ -1412,9 +1425,9 @@ export function registerAppHandlers() {
     });
 
     if (existingApp) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `An app named "${newAppName}" already exists.`,
-        DyadErrorKind.Conflict,
+        OrianBuilderErrorKind.Conflict,
       );
     }
 
@@ -1424,11 +1437,14 @@ export function registerAppHandlers() {
     });
 
     if (!originalApp) {
-      throw new DyadError("Original app not found.", DyadErrorKind.NotFound);
+      throw new OrianBuilderError(
+        "Original app not found.",
+        OrianBuilderErrorKind.NotFound,
+      );
     }
 
-    const originalAppPath = getDyadAppPath(originalApp.path);
-    const newAppPath = getDyadAppPath(newAppName);
+    const originalAppPath = getOrianBuilderAppPath(originalApp.path);
+    const newAppPath = getOrianBuilderAppPath(newAppName);
 
     if (!isAppLocationAccessible(newAppPath)) {
       throw new Error(
@@ -1451,9 +1467,9 @@ export function registerAppHandlers() {
       );
     } catch (error) {
       logger.error("Failed to copy app directory:", error);
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Failed to copy app directory.",
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
 
@@ -1467,7 +1483,7 @@ export function registerAppHandlers() {
       // Create initial commit
       await gitCommit({
         path: newAppPath,
-        message: "Init Dyad app",
+        message: "Init OrianBuilder app",
       });
     }
 
@@ -1497,11 +1513,14 @@ export function registerAppHandlers() {
     });
 
     if (!app) {
-      throw new DyadError("App not found", DyadErrorKind.NotFound);
+      throw new OrianBuilderError(
+        "App not found",
+        OrianBuilderErrorKind.NotFound,
+      );
     }
 
     // Get app files
-    const appPath = getDyadAppPath(app.path);
+    const appPath = getOrianBuilderAppPath(app.path);
     let files: string[] = [];
 
     try {
@@ -1550,7 +1569,7 @@ export function registerAppHandlers() {
     });
     const appsWithResolvedPath = allApps.map((app) => ({
       ...app,
-      resolvedPath: getDyadAppPath(app.path),
+      resolvedPath: getOrianBuilderAppPath(app.path),
     }));
     return {
       apps: appsWithResolvedPath,
@@ -1564,19 +1583,28 @@ export function registerAppHandlers() {
     });
 
     if (!app) {
-      throw new DyadError("App not found", DyadErrorKind.NotFound);
+      throw new OrianBuilderError(
+        "App not found",
+        OrianBuilderErrorKind.NotFound,
+      );
     }
 
-    const appPath = getDyadAppPath(app.path);
+    const appPath = getOrianBuilderAppPath(app.path);
     const fullPath = path.join(appPath, filePath);
 
     // Check if the path is within the app directory (security check)
     if (!fullPath.startsWith(appPath)) {
-      throw new DyadError("Invalid file path", DyadErrorKind.Validation);
+      throw new OrianBuilderError(
+        "Invalid file path",
+        OrianBuilderErrorKind.Validation,
+      );
     }
 
     if (!fs.existsSync(fullPath)) {
-      throw new DyadError("File not found", DyadErrorKind.NotFound);
+      throw new OrianBuilderError(
+        "File not found",
+        OrianBuilderErrorKind.NotFound,
+      );
     }
 
     try {
@@ -1584,7 +1612,10 @@ export function registerAppHandlers() {
       return contents;
     } catch (error) {
       logger.error(`Error reading file ${filePath} for app ${appId}:`, error);
-      throw new DyadError("Failed to read file", DyadErrorKind.External);
+      throw new OrianBuilderError(
+        "Failed to read file",
+        OrianBuilderErrorKind.External,
+      );
     }
   });
 
@@ -1646,9 +1677,9 @@ export function registerAppHandlers() {
           `Failed to fetch cloud sandbox status for app ${appId}:`,
           error,
         );
-        throw new DyadError(
+        throw new OrianBuilderError(
           formatCloudSandboxError(error),
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
     },
@@ -1661,9 +1692,9 @@ export function registerAppHandlers() {
       const appInfo = runningApps.get(appId);
 
       if (!appInfo || appInfo.mode !== "cloud" || !appInfo.cloudSandboxId) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `App ${appId} is not running in cloud mode`,
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
 
@@ -1676,9 +1707,9 @@ export function registerAppHandlers() {
           `Failed to create cloud sandbox share link for app ${appId}:`,
           error,
         );
-        throw new DyadError(
+        throw new OrianBuilderError(
           formatCloudSandboxError(error),
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
     },
@@ -1694,10 +1725,13 @@ export function registerAppHandlers() {
         });
 
         if (!app) {
-          throw new DyadError("App not found", DyadErrorKind.NotFound);
+          throw new OrianBuilderError(
+            "App not found",
+            OrianBuilderErrorKind.NotFound,
+          );
         }
 
-        const appPath = getDyadAppPath(app.path);
+        const appPath = getOrianBuilderAppPath(app.path);
 
         // First stop the app if it's running
         const appInfo = runningApps.get(appId);
@@ -1770,12 +1804,12 @@ export function registerAppHandlers() {
           // If running in Docker mode, also remove container volumes so deps reinstall freshly
           if (runtimeMode === "docker") {
             logger.log(
-              `Docker mode detected for app ${appId}. Removing Docker volumes dyad-pnpm-${appId}...`,
+              `Docker mode detected for app ${appId}. Removing Docker volumes orianbuilder-pnpm-${appId}...`,
             );
             try {
               await removeDockerVolumesForApp(appId);
               logger.log(
-                `Removed Docker volumes for app ${appId} (dyad-pnpm-${appId}).`,
+                `Removed Docker volumes for app ${appId} (orianbuilder-pnpm-${appId}).`,
               );
             } catch (e) {
               // Best-effort cleanup; log and continue
@@ -1817,15 +1851,21 @@ export function registerAppHandlers() {
     });
 
     if (!app) {
-      throw new DyadError("App not found", DyadErrorKind.NotFound);
+      throw new OrianBuilderError(
+        "App not found",
+        OrianBuilderErrorKind.NotFound,
+      );
     }
 
-    const appPath = getDyadAppPath(app.path);
+    const appPath = getOrianBuilderAppPath(app.path);
     const fullPath = path.join(appPath, filePath);
 
     // Check if the path is within the app directory (security check)
     if (!fullPath.startsWith(appPath)) {
-      throw new DyadError("Invalid file path", DyadErrorKind.Validation);
+      throw new OrianBuilderError(
+        "Invalid file path",
+        OrianBuilderErrorKind.Validation,
+      );
     }
 
     if (app.neonProjectId && app.neonDevelopmentBranchId) {
@@ -1860,9 +1900,9 @@ export function registerAppHandlers() {
       }
     } catch (error: any) {
       logger.error(`Error writing file ${filePath} for app ${appId}:`, error);
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to write file: ${error.message}`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
 
@@ -1932,7 +1972,10 @@ export function registerAppHandlers() {
       });
 
       if (!app) {
-        throw new DyadError("App not found", DyadErrorKind.NotFound);
+        throw new OrianBuilderError(
+          "App not found",
+          OrianBuilderErrorKind.NotFound,
+        );
       }
 
       // Stop the app if it's running
@@ -1956,14 +1999,14 @@ export function registerAppHandlers() {
         // Note: Associated chats will cascade delete
       } catch (error: any) {
         logger.error(`Error deleting app ${appId} from database:`, error);
-        throw new DyadError(
+        throw new OrianBuilderError(
           `Failed to delete app from database: ${error.message}`,
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
 
       // Delete app files
-      const appPath = getDyadAppPath(app.path);
+      const appPath = getOrianBuilderAppPath(app.path);
       try {
         await fsPromises.rm(appPath, { recursive: true, force: true });
       } catch (error: any) {
@@ -1987,9 +2030,9 @@ export function registerAppHandlers() {
           .limit(1);
 
         if (result.length === 0) {
-          throw new DyadError(
+          throw new OrianBuilderError(
             `App with ID ${appId} not found.`,
-            DyadErrorKind.NotFound,
+            OrianBuilderErrorKind.NotFound,
           );
         }
 
@@ -2015,9 +2058,9 @@ export function registerAppHandlers() {
           `Error in add-to-favorite handler for app ID ${appId}:`,
           error,
         );
-        throw new DyadError(
+        throw new OrianBuilderError(
           `Failed to toggle favorite status: ${error.message}`,
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
     });
@@ -2033,7 +2076,10 @@ export function registerAppHandlers() {
       });
 
       if (!app) {
-        throw new DyadError("App not found", DyadErrorKind.NotFound);
+        throw new OrianBuilderError(
+          "App not found",
+          OrianBuilderErrorKind.NotFound,
+        );
       }
 
       const pathChanged = appPath !== app.path;
@@ -2066,18 +2112,18 @@ export function registerAppHandlers() {
       });
 
       if (nameConflict && nameConflict.id !== appId) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `An app with the name '${appName}' already exists`,
-          DyadErrorKind.Conflict,
+          OrianBuilderErrorKind.Conflict,
         );
       }
 
       // If the current path is absolute, preserve the directory and only change the folder name
       // Otherwise, resolve the new path using the default base path
-      const currentResolvedPath = getDyadAppPath(app.path);
+      const currentResolvedPath = getOrianBuilderAppPath(app.path);
       const newAppPath = path.isAbsolute(app.path)
         ? path.join(path.dirname(app.path), appPath)
-        : getDyadAppPath(appPath);
+        : getOrianBuilderAppPath(appPath);
 
       let hasPathConflict = false;
       if (pathChanged) {
@@ -2086,14 +2132,14 @@ export function registerAppHandlers() {
           if (existingApp.id === appId) {
             return false;
           }
-          return getDyadAppPath(existingApp.path) === newAppPath;
+          return getOrianBuilderAppPath(existingApp.path) === newAppPath;
         });
       }
 
       if (hasPathConflict) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `An app with the path '${newAppPath}' already exists`,
-          DyadErrorKind.Conflict,
+          OrianBuilderErrorKind.Conflict,
         );
       }
 
@@ -2117,9 +2163,9 @@ export function registerAppHandlers() {
         try {
           // Check if destination directory already exists
           if (fs.existsSync(newAppPath)) {
-            throw new DyadError(
+            throw new OrianBuilderError(
               `Destination path '${newAppPath}' already exists`,
-              DyadErrorKind.Conflict,
+              OrianBuilderErrorKind.Conflict,
             );
           }
 
@@ -2151,9 +2197,9 @@ export function registerAppHandlers() {
               );
             }
           }
-          throw new DyadError(
+          throw new OrianBuilderError(
             `Failed to move app files: ${error.message}`,
-            DyadErrorKind.External,
+            OrianBuilderErrorKind.External,
           );
         }
 
@@ -2203,9 +2249,9 @@ export function registerAppHandlers() {
         }
 
         logger.error(`Error updating app ${appId} in database:`, error);
-        throw new DyadError(
+        throw new OrianBuilderError(
           `Failed to update app in database: ${error.message}`,
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
     });
@@ -2231,7 +2277,7 @@ export function registerAppHandlers() {
     // it allows us to do the deletion last after removing the database
     const allAppPaths = await db.select({ appPath: apps.path }).from(apps);
     // To resolve app paths later
-    const basePath = getDyadAppsBaseDirectory();
+    const basePath = getOrianBuilderAppsBaseDirectory();
     logger.log("deleting database...");
     // 1. Drop the database by deleting the SQLite file
     const dbPath = getDatabasePath();
@@ -2254,7 +2300,7 @@ export function registerAppHandlers() {
       logger.log(`Settings file deleted: ${settingsPath}`);
     }
     // Reset base directory cache to default, because settings are gone anyway
-    invalidateDyadAppsBaseDirectoryCache();
+    invalidateOrianBuilderAppsBaseDirectoryCache();
     logger.log("settings deleted.");
     // 3. Remove all app files recursively
     // Doing this last because it's the most time-consuming and the least important
@@ -2262,7 +2308,7 @@ export function registerAppHandlers() {
     logger.log("removing all app files...");
     // Delete any app paths that were in the database before we deleted it
     for (const { appPath } of allAppPaths) {
-      // We don't rely on getDyadAppPath here because we've already cleared the settings
+      // We don't rely on getOrianBuilderAppPath here because we've already cleared the settings
       const resolvedAppPath = path.isAbsolute(appPath)
         ? appPath
         : path.join(basePath, appPath);
@@ -2271,12 +2317,15 @@ export function registerAppHandlers() {
         force: true,
       });
     }
-    const dyadAppPath = getDefaultDyadAppsDirectory();
-    // Delete the default `dyad-apps` folder, even if the user no longer uses it
-    if (fs.existsSync(dyadAppPath)) {
-      await fsPromises.rm(dyadAppPath, { recursive: true, force: true });
+    const orianbuilderAppPath = getDefaultOrianBuilderAppsDirectory();
+    // Delete the default `orianbuilder-apps` folder, even if the user no longer uses it
+    if (fs.existsSync(orianbuilderAppPath)) {
+      await fsPromises.rm(orianbuilderAppPath, {
+        recursive: true,
+        force: true,
+      });
       // Recreate the base directory
-      await fsPromises.mkdir(dyadAppPath, { recursive: true });
+      await fsPromises.mkdir(orianbuilderAppPath, { recursive: true });
     }
     logger.log("all app files removed.");
     logger.log("reset all complete.");
@@ -2296,19 +2345,22 @@ export function registerAppHandlers() {
     });
 
     if (!app) {
-      throw new DyadError("App not found", DyadErrorKind.NotFound);
+      throw new OrianBuilderError(
+        "App not found",
+        OrianBuilderErrorKind.NotFound,
+      );
     }
 
-    const appPath = getDyadAppPath(app.path);
+    const appPath = getOrianBuilderAppPath(app.path);
 
     return withLock(appId, async () => {
       try {
         // Check if the old branch exists
         const branches = await gitListBranches({ path: appPath });
         if (!branches.includes(oldBranchName)) {
-          throw new DyadError(
+          throw new OrianBuilderError(
             `Branch '${oldBranchName}' not found.`,
-            DyadErrorKind.NotFound,
+            OrianBuilderErrorKind.NotFound,
           );
         }
 
@@ -2345,17 +2397,17 @@ export function registerAppHandlers() {
   createTypedHandler(appContracts.respondToAppInput, async (_, params) => {
     const { appId, response } = params;
     if (response !== "y" && response !== "n") {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Invalid response: ${response}`,
-        DyadErrorKind.Validation,
+        OrianBuilderErrorKind.Validation,
       );
     }
     const appInfo = runningApps.get(appId);
 
     if (!appInfo) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `App ${appId} is not running`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
 
@@ -2367,9 +2419,9 @@ export function registerAppHandlers() {
     }
 
     if (!process.stdin) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `App ${appId} process has no stdin available`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
 
@@ -2379,9 +2431,9 @@ export function registerAppHandlers() {
       logger.debug(`Sent response '${response}' to app ${appId} stdin`);
     } catch (error: any) {
       logger.error(`Error sending response to app ${appId}:`, error);
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to send response to app: ${error.message}`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
   });
@@ -2398,10 +2450,13 @@ export function registerAppHandlers() {
     });
 
     if (!appRecord) {
-      throw new DyadError("App not found", DyadErrorKind.NotFound);
+      throw new OrianBuilderError(
+        "App not found",
+        OrianBuilderErrorKind.NotFound,
+      );
     }
 
-    const appPath = getDyadAppPath(appRecord.path);
+    const appPath = getOrianBuilderAppPath(appRecord.path);
 
     // Search file contents with ripgrep
     const contentMatches = await searchAppFilesWithRipgrep({
@@ -2537,7 +2592,10 @@ export function registerAppHandlers() {
     });
 
     if (!app) {
-      throw new DyadError("App not found", DyadErrorKind.NotFound);
+      throw new OrianBuilderError(
+        "App not found",
+        OrianBuilderErrorKind.NotFound,
+      );
     }
 
     const trimmedInstall = installCommand?.trim() || null;
@@ -2565,16 +2623,16 @@ export function registerAppHandlers() {
     const { appId, parentDirectory } = params;
 
     if (!parentDirectory) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "No destination folder provided.",
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
 
     if (!path.isAbsolute(parentDirectory)) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Please select an absolute destination folder.",
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
 
@@ -2586,10 +2644,13 @@ export function registerAppHandlers() {
       });
 
       if (!app) {
-        throw new DyadError("App not found", DyadErrorKind.NotFound);
+        throw new OrianBuilderError(
+          "App not found",
+          OrianBuilderErrorKind.NotFound,
+        );
       }
 
-      const currentResolvedPath = getDyadAppPath(app.path);
+      const currentResolvedPath = getOrianBuilderAppPath(app.path);
       // Extract app folder name from current path (works for both absolute and relative paths)
       const appFolderName = path.basename(
         path.isAbsolute(app.path) ? app.path : currentResolvedPath,
@@ -2613,7 +2674,7 @@ export function registerAppHandlers() {
       const conflict = allApps.some(
         (existingApp) =>
           existingApp.id !== appId &&
-          getDyadAppPath(existingApp.path) === nextResolvedPath,
+          getOrianBuilderAppPath(existingApp.path) === nextResolvedPath,
       );
 
       if (conflict) {
@@ -2649,9 +2710,9 @@ export function registerAppHandlers() {
           await stopAppByInfo(appId, appInfo);
         } catch (error: any) {
           logger.error(`Error stopping app ${appId} before moving:`, error);
-          throw new DyadError(
+          throw new OrianBuilderError(
             `Failed to stop app before moving: ${error.message}`,
-            DyadErrorKind.External,
+            OrianBuilderErrorKind.External,
           );
         }
       }
@@ -2704,9 +2765,9 @@ export function registerAppHandlers() {
           `Error moving app files from ${currentResolvedPath} to ${nextResolvedPath}:`,
           error,
         );
-        throw new DyadError(
+        throw new OrianBuilderError(
           `Failed to move app files: ${error.message}`,
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
     });
@@ -2732,10 +2793,13 @@ export function registerAppHandlers() {
       where: eq(apps.id, appId),
     });
     if (!appRecord) {
-      throw new DyadError("App not found", DyadErrorKind.NotFound);
+      throw new OrianBuilderError(
+        "App not found",
+        OrianBuilderErrorKind.NotFound,
+      );
     }
 
-    const appPath = getDyadAppPath(appRecord.path);
+    const appPath = getOrianBuilderAppPath(appRecord.path);
     try {
       const commitHash = await getCurrentCommitHash({ path: appPath });
       return { commitHash };
@@ -2749,18 +2813,18 @@ export function registerAppHandlers() {
 
     // Validate data URL format
     if (!/^data:image\/(png|jpe?g|webp);base64,/.test(dataUrl)) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Invalid screenshot data URL format",
-        DyadErrorKind.Validation,
+        OrianBuilderErrorKind.Validation,
       );
     }
 
     // Enforce a max size of 5 MB
     const MAX_DATA_URL_LENGTH = 5 * 1024 * 1024;
     if (dataUrl.length > MAX_DATA_URL_LENGTH) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Screenshot data URL exceeds maximum allowed size",
-        DyadErrorKind.Validation,
+        OrianBuilderErrorKind.Validation,
       );
     }
 
@@ -2768,10 +2832,13 @@ export function registerAppHandlers() {
       where: eq(apps.id, appId),
     });
     if (!appRecord) {
-      throw new DyadError("App not found", DyadErrorKind.NotFound);
+      throw new OrianBuilderError(
+        "App not found",
+        OrianBuilderErrorKind.NotFound,
+      );
     }
 
-    const appPath = getDyadAppPath(appRecord.path);
+    const appPath = getOrianBuilderAppPath(appRecord.path);
 
     if (!SCREENSHOT_FILENAME_REGEX.test(`${commitHash}.png`)) {
       logger.warn(
@@ -2780,7 +2847,7 @@ export function registerAppHandlers() {
       return;
     }
 
-    const screenshotDir = path.join(appPath, DYAD_SCREENSHOT_DIR_NAME);
+    const screenshotDir = path.join(appPath, ORIANBUILDER_SCREENSHOT_DIR_NAME);
     await fsPromises.mkdir(screenshotDir, { recursive: true });
 
     const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, "");
@@ -2811,16 +2878,19 @@ export function registerAppHandlers() {
       where: eq(apps.id, appId),
     });
     if (!appRecord) {
-      throw new DyadError("App not found", DyadErrorKind.NotFound);
+      throw new OrianBuilderError(
+        "App not found",
+        OrianBuilderErrorKind.NotFound,
+      );
     }
 
-    const appPath = getDyadAppPath(appRecord.path);
-    const screenshotDir = path.join(appPath, DYAD_SCREENSHOT_DIR_NAME);
+    const appPath = getOrianBuilderAppPath(appRecord.path);
+    const screenshotDir = path.join(appPath, ORIANBUILDER_SCREENSHOT_DIR_NAME);
 
     const entries = await readScreenshotEntries(screenshotDir);
     const screenshots = entries.map(({ name }) => ({
       commitHash: name.slice(0, -".png".length),
-      url: `orian-media://media/${encodeURIComponent(appRecord.path)}/${DYAD_SCREENSHOT_DIR_NAME}/${name}`,
+      url: `orian-media://media/${encodeURIComponent(appRecord.path)}/${ORIANBUILDER_SCREENSHOT_DIR_NAME}/${name}`,
     }));
     return { screenshots };
   });
@@ -2842,14 +2912,17 @@ export function registerAppHandlers() {
         if (!record) {
           return { appId, thumbnailUrl: null };
         }
-        const appPath = getDyadAppPath(record.path);
-        const screenshotDir = path.join(appPath, DYAD_SCREENSHOT_DIR_NAME);
+        const appPath = getOrianBuilderAppPath(record.path);
+        const screenshotDir = path.join(
+          appPath,
+          ORIANBUILDER_SCREENSHOT_DIR_NAME,
+        );
         const entries = await readScreenshotEntries(screenshotDir);
         const latest = entries[0];
         if (!latest) {
           return { appId, thumbnailUrl: null };
         }
-        const thumbnailUrl = `orian-media://media/${encodeURIComponent(record.path)}/${DYAD_SCREENSHOT_DIR_NAME}/${latest.name}`;
+        const thumbnailUrl = `orian-media://media/${encodeURIComponent(record.path)}/${ORIANBUILDER_SCREENSHOT_DIR_NAME}/${latest.name}`;
         return { appId, thumbnailUrl };
       }),
     );

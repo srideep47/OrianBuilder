@@ -1,6 +1,9 @@
 import { ipcMain, IpcMainInvokeEvent } from "electron";
 import { z } from "zod";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import type { IpcContract } from "../contracts/core";
 import { sendTelemetryException } from "../utils/telemetry";
 
@@ -36,9 +39,9 @@ export function createTypedHandler<
         const errorMessage = parsed.error.issues
           .map((e) => `${e.path.join(".")}: ${e.message}`)
           .join("; ");
-        throw new DyadError(
+        throw new OrianBuilderError(
           `[${contract.channel}] Invalid input: ${errorMessage}`,
-          DyadErrorKind.Validation,
+          OrianBuilderErrorKind.Validation,
         );
       }
 
@@ -102,9 +105,9 @@ export function createLoggedTypedHandler(logger: {
           const errorMessage = parsed.error.issues
             .map((e) => `${e.path.join(".")}: ${e.message}`)
             .join("; ");
-          const error = new DyadError(
+          const error = new OrianBuilderError(
             `[${contract.channel}] Invalid input: ${errorMessage}`,
-            DyadErrorKind.Validation,
+            OrianBuilderErrorKind.Validation,
           );
           logger.error(`[${contract.channel}] Invalid input`, error);
           throw error;

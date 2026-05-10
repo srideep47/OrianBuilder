@@ -1,64 +1,26 @@
 import type { MissionAutonomyProfile } from "@/ipc/types/mission";
 import type { RuntimeMode2 } from "@/lib/schemas";
+import {
+  getToolCapability,
+  isExternalStateTool,
+  isReadOnlyTool,
+  isWorkspaceScopedTool,
+  type ToolCapabilityRisk,
+} from "./tool_capabilities";
+import {
+  isMcpToolKey,
+  shouldRequireExplicitMcpConsent,
+  type McpToolTrustOverrideMap,
+} from "./mcp_tool_capabilities";
 
 export type AutonomyPolicyDecision = {
   decision: "auto_approve" | "ask" | "deny";
   reason: string;
-  risk: "low" | "medium" | "high" | "critical";
+  risk: ToolCapabilityRisk;
 };
 
-const READ_ONLY_TOOLS = new Set([
-  "read_file",
-  "list_files",
-  "grep",
-  "code_search",
-  "get_repo_map",
-  "detect_project_stack",
-  "read_logs",
-  "read_console_output",
-  "read_dev_server_output",
-  "get_accessibility_tree",
-  "get_database_table_schema",
-  "get_supabase_project_info",
-  "get_neon_project_info",
-  "web_search",
-  "web_fetch",
-  "web_crawl",
-  "read_guide",
-  "set_chat_summary",
-]);
-
-const WORKSPACE_WRITE_TOOLS = new Set([
-  "write_file",
-  "search_replace",
-  "edit_ast",
-  "copy_file",
-  "rename_file",
-  "add_dependency",
-  "create_project",
-  "update_todos",
-  "write_plan",
-  "exit_plan",
-]);
-
-const RUNTIME_TOOLS = new Set([
-  "start_dev_server",
-  "stop_dev_server",
-  "verify_project",
-  "run_type_checks",
-  "take_screenshot",
-  "browser_control",
-  "generate_image",
-]);
-
-const EXTERNAL_STATE_TOOLS = new Set([
-  "run_terminal_command",
-  "execute_sql",
-  "add_integration",
-  "manage_mcp_server",
-]);
-
 const DESTRUCTIVE_TOOL_NAMES = new Set(["delete_file", "execute_sql"]);
+const ALWAYS_ASK_TOOLS = new Set(["deploy_preview"]);
 
 const CRITICAL_PATTERNS = [
   /\brm\s+-rf\b/i,
@@ -85,7 +47,8 @@ const HIGH_RISK_PATTERNS = [
 export function getToolRisk(params: {
   toolName: string;
   inputPreview?: string | null;
-}): AutonomyPolicyDecision["risk"] {
+  mcpToolTrustOverrides?: McpToolTrustOverrideMap;
+}): ToolCapabilityRisk {
   const haystack = `${params.toolName}\n${params.inputPreview ?? ""}`;
   if (CRITICAL_PATTERNS.some((pattern) => pattern.test(haystack))) {
     return "critical";
@@ -96,13 +59,9 @@ export function getToolRisk(params: {
   ) {
     return "high";
   }
-  if (
-    EXTERNAL_STATE_TOOLS.has(params.toolName) ||
-    RUNTIME_TOOLS.has(params.toolName)
-  ) {
-    return "medium";
-  }
-  return "low";
+  return getToolCapability(params.toolName, {
+    mcpToolTrustOverrides: params.mcpToolTrustOverrides,
+  }).risk;
 }
 
 export function getAutonomyPolicyDecision(params: {
@@ -110,6 +69,7 @@ export function getAutonomyPolicyDecision(params: {
   runtimeMode: RuntimeMode2;
   toolName: string;
   inputPreview?: string | null;
+  mcpToolTrustOverrides?: McpToolTrustOverrideMap;
 }): AutonomyPolicyDecision {
   const risk = getToolRisk(params);
   if (risk === "critical") {
@@ -128,7 +88,11 @@ export function getAutonomyPolicyDecision(params: {
     };
   }
 
-  if (READ_ONLY_TOOLS.has(params.toolName)) {
+  const capabilityOptions = {
+    mcpToolTrustOverrides: params.mcpToolTrustOverrides,
+  };
+
+  if (isReadOnlyTool(params.toolName, capabilityOptions)) {
     return {
       decision: "auto_approve",
       risk,
@@ -136,10 +100,34 @@ export function getAutonomyPolicyDecision(params: {
     };
   }
 
+  if (ALWAYS_ASK_TOOLS.has(params.toolName)) {
+    return {
+      decision: "ask",
+      risk,
+      reason:
+        "This tool affects external deployment state and requires explicit consent.",
+    };
+  }
+
+  if (
+    isMcpToolKey(params.toolName) &&
+    shouldRequireExplicitMcpConsent(
+      params.toolName,
+      params.mcpToolTrustOverrides,
+    )
+  ) {
+    return {
+      decision: "ask",
+      risk,
+      reason:
+        "This MCP tool can affect an external or unknown system and requires explicit consent.",
+    };
+  }
+
   if (params.profile === "trusted-workspace") {
     if (
       risk === "high" ||
-      EXTERNAL_STATE_TOOLS.has(params.toolName) ||
+      isExternalStateTool(params.toolName, capabilityOptions) ||
       params.toolName === "delete_file"
     ) {
       return {
@@ -149,10 +137,7 @@ export function getAutonomyPolicyDecision(params: {
           "Trusted workspace profile requires consent for high-risk or external-state actions.",
       };
     }
-    if (
-      WORKSPACE_WRITE_TOOLS.has(params.toolName) ||
-      RUNTIME_TOOLS.has(params.toolName)
-    ) {
+    if (isWorkspaceScopedTool(params.toolName, capabilityOptions)) {
       return {
         decision: "auto_approve",
         risk,

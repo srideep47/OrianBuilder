@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { listFilesTool } from "./list_files";
 import type { AgentContext } from "./types";
-import { DyadErrorKind } from "@/errors/dyad_error";
+import { OrianBuilderErrorKind } from "@/errors/orianbuilder_error";
 
 vi.mock("electron-log", () => ({
   default: {
@@ -51,9 +51,11 @@ describe("listFilesTool", () => {
       path.join(testDir, "node_modules", "pkg", "index.js"),
       "dependency",
     );
-    await fs.promises.mkdir(path.join(testDir, ".dyad"), { recursive: true });
+    await fs.promises.mkdir(path.join(testDir, ".orianbuilder"), {
+      recursive: true,
+    });
     await fs.promises.writeFile(
-      path.join(testDir, ".dyad", "snapshot.json"),
+      path.join(testDir, ".orianbuilder", "snapshot.json"),
       "{}",
     );
     await fs.promises.mkdir(path.join(testDir, ".git"), { recursive: true });
@@ -72,10 +74,10 @@ describe("listFilesTool", () => {
       "export const inside = 2;",
     );
 
-    // Hidden .dyad directory in the referenced app for include_ignored tests
-    await fs.promises.mkdir(path.join(otherAppDir, ".dyad"));
+    // Hidden .orianbuilder directory in the referenced app for include_ignored tests
+    await fs.promises.mkdir(path.join(otherAppDir, ".orianbuilder"));
     await fs.promises.writeFile(
-      path.join(otherAppDir, ".dyad", "rules.md"),
+      path.join(otherAppDir, ".orianbuilder", "rules.md"),
       "# rules",
     );
 
@@ -92,9 +94,9 @@ describe("listFilesTool", () => {
       frameworkType: null,
       messageId: 1,
       isSharedModulesChanged: false,
-      isDyadPro: false,
+      isOrianBuilderPro: false,
       todos: [],
-      dyadRequestId: "test-request",
+      orianbuilderRequestId: "test-request",
       fileEditTracker: {},
       onXmlStream: vi.fn(),
       onXmlComplete: vi.fn(),
@@ -159,7 +161,7 @@ describe("listFilesTool", () => {
         mockContext,
       ),
     ).rejects.toMatchObject({
-      kind: DyadErrorKind.Validation,
+      kind: OrianBuilderErrorKind.Validation,
       message:
         "include_ignored=true with recursive=true requires a non-root directory to avoid listing too many files.",
     });
@@ -172,7 +174,7 @@ describe("listFilesTool", () => {
         mockContext,
       ),
     ).rejects.toMatchObject({
-      kind: DyadErrorKind.Validation,
+      kind: OrianBuilderErrorKind.Validation,
       message:
         "include_ignored=true with recursive=true requires a non-root directory to avoid listing too many files.",
     });
@@ -275,24 +277,24 @@ describe("listFilesTool", () => {
   describe("execute - app_name (referenced apps)", () => {
     it("treats a path-like app_name as a current-app directory", async () => {
       const result = await listFilesTool.execute(
-        { app_name: ".dyad", include_ignored: true },
+        { app_name: ".orianbuilder", include_ignored: true },
         mockContext,
       );
 
-      expect(result).toContain(" - .dyad/snapshot.json");
+      expect(result).toContain(" - .orianbuilder/snapshot.json");
       const xmlCall = (mockContext.onXmlComplete as any).mock.calls[0]?.[0];
-      expect(xmlCall).toContain('directory=".dyad"');
+      expect(xmlCall).toContain('directory=".orianbuilder"');
       expect(xmlCall).not.toContain("app_name=");
     });
 
     it("rejects path-like app_name when directory is also provided", async () => {
       await expect(
         listFilesTool.execute(
-          { app_name: ".dyad/snapshots", directory: "src" },
+          { app_name: ".orianbuilder/snapshots", directory: "src" },
           mockContext,
         ),
       ).rejects.toMatchObject({
-        kind: DyadErrorKind.Validation,
+        kind: OrianBuilderErrorKind.Validation,
         message:
           "app_name must be a referenced app name, not a path. Put paths in the directory parameter.",
       });
@@ -325,27 +327,27 @@ describe("listFilesTool", () => {
       ).rejects.toThrow(/Unknown app_name 'does-not-exist'/);
     });
 
-    it("excludes .dyad files from referenced apps even when include_ignored is true", async () => {
+    it("excludes .orianbuilder files from referenced apps even when include_ignored is true", async () => {
       mockContext.referencedApps.set("other-app", otherAppDir);
       const result = await listFilesTool.execute(
         {
           app_name: "other-app",
-          directory: ".dyad",
+          directory: ".orianbuilder",
           include_ignored: true,
           recursive: true,
         },
         mockContext,
       );
-      expect(result).not.toContain(".dyad/rules.md");
+      expect(result).not.toContain(".orianbuilder/rules.md");
     });
 
-    it("excludes .dyad files from referenced apps in the default (non-include_ignored) listing", async () => {
+    it("excludes .orianbuilder files from referenced apps in the default (non-include_ignored) listing", async () => {
       mockContext.referencedApps.set("other-app", otherAppDir);
       const result = await listFilesTool.execute(
         { app_name: "other-app", recursive: true },
         mockContext,
       );
-      expect(result).not.toContain(".dyad/rules.md");
+      expect(result).not.toContain(".orianbuilder/rules.md");
       expect(result).toContain("other-a.ts");
     });
 

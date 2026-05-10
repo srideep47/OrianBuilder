@@ -1,5 +1,5 @@
-import { useAtom } from 'jotai';
-import { useNavigate } from '@tanstack/react-router';
+import { useAtom } from "jotai";
+import { useNavigate } from "@tanstack/react-router";
 import {
   themeAtom,
   languageAtom,
@@ -8,22 +8,22 @@ import {
   releaseChannelAtom,
   settingsSectionAtom,
   type Theme,
-} from '@/lib/atoms';
-import { Badge } from '@/components/ui/Badge';
-import { Input, Select } from '@/components/ui/Input';
-import { Switch } from '@/components/ui/Switch';
-import { Segmented } from '@/components/ui/Tabs';
+} from "@/lib/atoms";
+import { Badge } from "@/components/ui/Badge";
+import { Input, Select } from "@/components/ui/Input";
+import { Switch } from "@/components/ui/Switch";
+import { Segmented } from "@/components/ui/Tabs";
 
 const SECTIONS = [
-  { id: 'general',     label: '⚙ General' },
-  { id: 'workflow',    label: '⟳ Workflow' },
-  { id: 'ai',          label: '✦ AI' },
-  { id: 'providers',   label: '▣ Model Providers' },
-  { id: 'telemetry',   label: '📊 Telemetry' },
-  { id: 'integrations',label: '🔌 Integrations' },
-  { id: 'permissions', label: '🔐 Permissions' },
-  { id: 'tools',       label: '🛠 Tools (MCP)' },
-  { id: 'experiments', label: '⚗ Experiments' },
+  { id: "general", label: "⚙ General" },
+  { id: "workflow", label: "⟳ Workflow" },
+  { id: "ai", label: "✦ AI" },
+  { id: "providers", label: "▣ Model Providers" },
+  { id: "telemetry", label: "📊 Telemetry" },
+  { id: "integrations", label: "🔌 Integrations" },
+  { id: "permissions", label: "🔐 Permissions" },
+  { id: "tools", label: "🛠 Tools (MCP)" },
+  { id: "experiments", label: "⚗ Experiments" },
 ];
 
 export function SettingsPage() {
@@ -40,25 +40,38 @@ export function SettingsPage() {
       <aside className="settings-aside">
         <div className="head">⊙ Settings</div>
         <div className="search-mini">
-          <Input placeholder="Search…" style={{ fontSize: 11, padding: '6px 10px' }} />
+          <Input
+            placeholder="Search…"
+            style={{ fontSize: 11, padding: "6px 10px" }}
+          />
         </div>
         {SECTIONS.map((s) => (
           <button
             key={s.id}
-            className={`set-item ${section === s.id ? 'active' : ''}`}
+            className={`set-item ${section === s.id ? "active" : ""}`}
             onClick={() => setSection(s.id)}
             type="button"
           >
             {s.label}
           </button>
         ))}
-        <button className="set-item danger" type="button" onClick={() => setSection('danger')}>
+        <button
+          className="set-item danger"
+          type="button"
+          onClick={() => setSection("danger")}
+        >
           ⚠ Danger Zone
         </button>
       </aside>
 
       <div className="settings-content">
-        <button className="back-link" onClick={() => nav({ to: '/apps' })} type="button">← Go Back</button>
+        <button
+          className="back-link"
+          onClick={() => nav({ to: "/apps" })}
+          type="button"
+        >
+          ← Go Back
+        </button>
 
         <div className="glass set-section">
           <h2>⊙ General Settings</h2>
@@ -70,9 +83,9 @@ export function SettingsPage() {
                 value={theme}
                 onValueChange={(v) => setTheme(v as Theme)}
                 options={[
-                  { value: 'system', label: 'System' },
-                  { value: 'dark',   label: 'Dark' },
-                  { value: 'light',  label: 'Light' },
+                  { value: "system", label: "System" },
+                  { value: "dark", label: "Dark" },
+                  { value: "light", label: "Light" },
                 ]}
               />
             </div>
@@ -82,7 +95,11 @@ export function SettingsPage() {
             <div className="lbl">Language</div>
             <div className="desc">Choose your preferred display language.</div>
             <div className="ctl">
-              <Select value={lang} onChange={(e) => setLang(e.target.value)} style={{ width: 180 }}>
+              <Select
+                value={lang}
+                onChange={(e) => setLang(e.target.value)}
+                style={{ width: 180 }}
+              >
                 <option value="en">en</option>
                 <option value="fr">fr</option>
                 <option value="de">de</option>
@@ -92,7 +109,9 @@ export function SettingsPage() {
 
           <div className="set-row">
             <div className="lbl">Zoom level</div>
-            <div className="desc">Adjusts the zoom level to make content easier to read.</div>
+            <div className="desc">
+              Adjusts the zoom level to make content easier to read.
+            </div>
             <div className="ctl">
               <Select
                 value={zoom}
@@ -110,11 +129,15 @@ export function SettingsPage() {
             <div className="row between">
               <div>
                 <div className="lbl">Auto-update app</div>
-                <div className="desc" style={{ color: 'rgba(168,140,255,.7)' }}>
+                <div className="desc" style={{ color: "rgba(168,140,255,.7)" }}>
                   Automatically update when new versions are available.
                 </div>
               </div>
-              <Switch checked={autoUpdate} onCheckedChange={setAutoUpdate} aria-label="Auto-update app" />
+              <Switch
+                checked={autoUpdate}
+                onCheckedChange={setAutoUpdate}
+                aria-label="Auto-update app"
+              />
             </div>
           </div>
 
@@ -122,11 +145,15 @@ export function SettingsPage() {
             <div className="row" style={{ gap: 14 }}>
               <div style={{ flex: 1 }}>
                 <div className="lbl">Release channel</div>
-                <div className="desc">Controls which update channel the app uses.</div>
+                <div className="desc">
+                  Controls which update channel the app uses.
+                </div>
               </div>
               <Select
                 value={channel}
-                onChange={(e) => setChannel(e.target.value as 'stable' | 'beta')}
+                onChange={(e) =>
+                  setChannel(e.target.value as "stable" | "beta")
+                }
                 style={{ width: 120 }}
               >
                 <option value="stable">stable</option>
@@ -136,8 +163,20 @@ export function SettingsPage() {
           </div>
 
           <div className="set-row">
-            <div className="lbl" style={{ marginBottom: 8 }}>Node.js Path</div>
-            <div className="glass-soft" style={{ borderRadius: 8, padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <div className="lbl" style={{ marginBottom: 8 }}>
+              Node.js Path
+            </div>
+            <div
+              className="glass-soft"
+              style={{
+                borderRadius: 8,
+                padding: "10px 12px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+              }}
+            >
               <div>
                 <div className="eyebrow">System PATH</div>
                 <div className="mono" style={{ fontSize: 11, marginTop: 3 }}>
@@ -149,15 +188,26 @@ export function SettingsPage() {
           </div>
 
           <div className="set-row">
-            <div className="lbl" style={{ marginBottom: 8 }}>Apps Folder</div>
-            <div className="glass-soft" style={{ borderRadius: 8, padding: '10px 12px' }}>
+            <div className="lbl" style={{ marginBottom: 8 }}>
+              Apps Folder
+            </div>
+            <div
+              className="glass-soft"
+              style={{ borderRadius: 8, padding: "10px 12px" }}
+            >
               <div className="eyebrow">Default Folder</div>
               <div className="mono" style={{ fontSize: 11, marginTop: 3 }}>
                 C:\Users\ankit\orianbuilder-apps
               </div>
             </div>
-            <div style={{ fontSize: 11, color: 'rgba(168,140,255,.65)', marginTop: 6 }}>
-              App Version <Badge className="mono" >0.44.0</Badge>
+            <div
+              style={{
+                fontSize: 11,
+                color: "rgba(168,140,255,.65)",
+                marginTop: 6,
+              }}
+            >
+              App Version <Badge className="mono">0.44.0</Badge>
             </div>
           </div>
         </div>
@@ -168,7 +218,9 @@ export function SettingsPage() {
             <div className="row between">
               <div>
                 <div className="lbl">Default Chat Mode</div>
-                <div className="desc">Controls the default chat mode when opening a new chat.</div>
+                <div className="desc">
+                  Controls the default chat mode when opening a new chat.
+                </div>
               </div>
               <Select style={{ width: 130 }} defaultValue="agent">
                 <option value="agent">Agent</option>

@@ -9,7 +9,7 @@ export default function LibraryPage() {
   const { prefillData, dialogOpen, handleDialogClose } = useAddPromptDeepLink();
 
   return (
-    <div className="lib-content"  style={{ color: '#fff' }}>
+    <div className="lib-content" style={{ color: "#fff" }}>
       <div className="mx-auto max-w-6xl">
         <div className="galaxy-page-header">
           <h1 className="galaxy-page-title">Prompt Library</h1>
@@ -31,15 +31,21 @@ export default function LibraryPage() {
           <div className="flex items-center justify-center py-20">
             <div className="galaxy-card px-8 py-6 flex items-center gap-3">
               <div className="w-5 h-5 border-2 border-purple-400/60 border-t-purple-300 rounded-full animate-spin" />
-              <span className="text-sm text-purple-200/70">Loading prompts...</span>
+              <span className="text-sm text-purple-200/70">
+                Loading prompts...
+              </span>
             </div>
           </div>
         ) : prompts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
             <div className="galaxy-card px-10 py-10 text-center max-w-sm">
               <div className="text-4xl mb-4 opacity-60">📝</div>
-              <p className="text-purple-100/80 font-medium mb-1">No prompts yet</p>
-              <p className="text-sm text-purple-200/50">Create your first reusable prompt to get started</p>
+              <p className="text-purple-100/80 font-medium mb-1">
+                No prompts yet
+              </p>
+              <p className="text-sm text-purple-200/50">
+                Create your first reusable prompt to get started
+              </p>
             </div>
           </div>
         ) : (

@@ -171,7 +171,11 @@ export function SetupBanner() {
         setIsVisible={setIsOnboardingVisible}
       />
       <div className={bannerClasses}>
-        <Accordion multiple className="w-full" defaultValue={["node-setup", "ai-setup"]}>
+        <Accordion
+          multiple
+          className="w-full"
+          defaultValue={["node-setup", "ai-setup"]}
+        >
           <AccordionItem
             value="node-setup"
             className={cn(
@@ -429,7 +433,8 @@ function NodeInstallButton({
     case "finished-checking":
       return (
         <div className="mt-3 text-sm text-red-600 dark:text-red-400">
-          Node.js not detected. Closing and re-opening Dyad usually fixes this.
+          Node.js not detected. Closing and re-opening OrianBuilder usually
+          fixes this.
         </div>
       );
     default:

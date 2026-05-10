@@ -1,11 +1,11 @@
 import {
-  getDyadAddDependencyTags,
-  getDyadCopyTags,
-  getDyadDeleteTags,
-  getDyadRenameTags,
-  getDyadSearchReplaceTags,
-  getDyadWriteTags,
-} from "./dyad_tag_parser";
+  getOrianBuilderAddDependencyTags,
+  getOrianBuilderCopyTags,
+  getOrianBuilderDeleteTags,
+  getOrianBuilderRenameTags,
+  getOrianBuilderSearchReplaceTags,
+  getOrianBuilderWriteTags,
+} from "./orianbuilder_tag_parser";
 import { unescapeXmlAttr } from "../../../shared/xmlEscape";
 
 export type MissionStructuredXmlEvent = {
@@ -28,7 +28,7 @@ export function getMissionStructuredEventsForXml(
 
 function getFileEventsForXml(xml: string): MissionStructuredXmlEvent[] {
   return [
-    ...getDyadWriteTags(xml).map((tag) => ({
+    ...getOrianBuilderWriteTags(xml).map((tag) => ({
       eventType: "file_written",
       summary: `Wrote ${tag.path}`,
       metadata: {
@@ -37,7 +37,7 @@ function getFileEventsForXml(xml: string): MissionStructuredXmlEvent[] {
         description: tag.description,
       },
     })),
-    ...getDyadSearchReplaceTags(xml).map((tag) => ({
+    ...getOrianBuilderSearchReplaceTags(xml).map((tag) => ({
       eventType: "file_modified",
       summary: `Modified ${tag.path}`,
       metadata: {
@@ -46,12 +46,12 @@ function getFileEventsForXml(xml: string): MissionStructuredXmlEvent[] {
         description: tag.description,
       },
     })),
-    ...getDyadDeleteTags(xml).map((path) => ({
+    ...getOrianBuilderDeleteTags(xml).map((path) => ({
       eventType: "file_deleted",
       summary: `Deleted ${path}`,
       metadata: { path, action: "delete" },
     })),
-    ...getDyadRenameTags(xml).map((tag) => ({
+    ...getOrianBuilderRenameTags(xml).map((tag) => ({
       eventType: "file_renamed",
       summary: `Renamed ${tag.from} to ${tag.to}`,
       metadata: {
@@ -60,7 +60,7 @@ function getFileEventsForXml(xml: string): MissionStructuredXmlEvent[] {
         action: "rename",
       },
     })),
-    ...getDyadCopyTags(xml).map((tag) => ({
+    ...getOrianBuilderCopyTags(xml).map((tag) => ({
       eventType: "file_copied",
       summary: `Copied ${tag.from} to ${tag.to}`,
       metadata: {
@@ -74,7 +74,7 @@ function getFileEventsForXml(xml: string): MissionStructuredXmlEvent[] {
 }
 
 function getDependencyEventsForXml(xml: string): MissionStructuredXmlEvent[] {
-  const packages = getDyadAddDependencyTags(xml);
+  const packages = getOrianBuilderAddDependencyTags(xml);
   if (packages.length === 0) {
     return [];
   }
@@ -92,7 +92,7 @@ function getDependencyEventsForXml(xml: string): MissionStructuredXmlEvent[] {
 }
 
 function getTerminalEventsForXml(xml: string): MissionStructuredXmlEvent[] {
-  if (!xml.startsWith("<dyad-terminal-command")) {
+  if (!xml.startsWith("<orianbuilder-terminal-command")) {
     return [];
   }
 
@@ -123,7 +123,7 @@ function getTerminalEventsForXml(xml: string): MissionStructuredXmlEvent[] {
 }
 
 function getProjectEventsForXml(xml: string): MissionStructuredXmlEvent[] {
-  if (!xml.startsWith("<dyad-create-project")) {
+  if (!xml.startsWith("<orianbuilder-create-project")) {
     return [];
   }
 
@@ -194,7 +194,7 @@ function getProjectEventsForXml(xml: string): MissionStructuredXmlEvent[] {
 function getProjectVerificationEventsForXml(
   xml: string,
 ): MissionStructuredXmlEvent[] {
-  if (!xml.startsWith("<dyad-project-verification")) {
+  if (!xml.startsWith("<orianbuilder-project-verification")) {
     return [];
   }
 

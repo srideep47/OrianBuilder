@@ -2,7 +2,7 @@ import { db } from "../../db";
 import { chats, messages } from "../../db/schema";
 import { and, eq } from "drizzle-orm";
 import fs from "node:fs";
-import { getDyadAppPath } from "../../paths/paths";
+import { getOrianBuilderAppPath } from "../../paths/paths";
 import path from "node:path";
 import { safeJoin } from "../utils/path_utils";
 
@@ -32,17 +32,20 @@ import {
   hasStagedChanges,
 } from "../utils/git_utils";
 import { readSettings } from "@/main/settings";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { writeMigrationFile } from "../utils/file_utils";
 import {
-  getDyadWriteTags,
-  getDyadRenameTags,
-  getDyadDeleteTags,
-  getDyadAddDependencyTags,
-  getDyadExecuteSqlTags,
-  getDyadSearchReplaceTags,
-  getDyadCopyTags,
-} from "../utils/dyad_tag_parser";
+  getOrianBuilderWriteTags,
+  getOrianBuilderRenameTags,
+  getOrianBuilderDeleteTags,
+  getOrianBuilderAddDependencyTags,
+  getOrianBuilderExecuteSqlTags,
+  getOrianBuilderSearchReplaceTags,
+  getOrianBuilderCopyTags,
+} from "../utils/orianbuilder_tag_parser";
 import { applySearchReplace } from "../../pro/main/ipc/processors/search_replace_processor";
 import { storeDbTimestampAtCurrentVersion } from "../utils/neon_timestamp_utils";
 import { executeNeonSql } from "../../neon_admin/neon_context";
@@ -73,8 +76,9 @@ export async function dryRunSearchReplace({
   appPath: string;
 }) {
   const issues: { filePath: string; error: string }[] = [];
-  const dyadSearchReplaceTags = getDyadSearchReplaceTags(fullResponse);
-  for (const tag of dyadSearchReplaceTags) {
+  const orianbuilderSearchReplaceTags =
+    getOrianBuilderSearchReplaceTags(fullResponse);
+  for (const tag of orianbuilderSearchReplaceTags) {
     const filePath = tag.path;
     const fullFilePath = safeJoin(appPath, filePath);
     try {
@@ -150,16 +154,16 @@ export async function processFullResponseActions(
       });
     } catch (error) {
       logger.error("Error creating Neon branch at current version:", error);
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Could not create Neon branch; database versioning functionality is not working: " +
           error,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
   }
 
   const settings: UserSettings = readSettings();
-  const appPath = getDyadAppPath(chatWithApp.app.path);
+  const appPath = getOrianBuilderAppPath(chatWithApp.app.path);
   const writtenFiles: string[] = [];
   const renamedFiles: string[] = [];
   const deletedFiles: string[] = [];
@@ -173,14 +177,15 @@ export async function processFullResponseActions(
 
   try {
     // Extract all tags
-    const dyadWriteTags = getDyadWriteTags(fullResponse);
-    const dyadRenameTags = getDyadRenameTags(fullResponse);
-    const dyadDeletePaths = getDyadDeleteTags(fullResponse);
-    const dyadAddDependencyPackages = getDyadAddDependencyTags(fullResponse);
+    const orianbuilderWriteTags = getOrianBuilderWriteTags(fullResponse);
+    const orianbuilderRenameTags = getOrianBuilderRenameTags(fullResponse);
+    const orianbuilderDeletePaths = getOrianBuilderDeleteTags(fullResponse);
+    const orianbuilderAddDependencyPackages =
+      getOrianBuilderAddDependencyTags(fullResponse);
     const hasDbProvider =
       chatWithApp.app.supabaseProjectId || chatWithApp.app.neonProjectId;
-    const dyadExecuteSqlQueries = hasDbProvider
-      ? getDyadExecuteSqlTags(fullResponse)
+    const orianbuilderExecuteSqlQueries = hasDbProvider
+      ? getOrianBuilderExecuteSqlTags(fullResponse)
       : [];
 
     const message = await db.query.messages.findFirst({
@@ -197,8 +202,8 @@ export async function processFullResponseActions(
     }
 
     // Handle SQL execution tags
-    if (dyadExecuteSqlQueries.length > 0) {
-      for (const query of dyadExecuteSqlQueries) {
+    if (orianbuilderExecuteSqlQueries.length > 0) {
+      for (const query of orianbuilderExecuteSqlQueries) {
         try {
           if (chatWithApp.app.neonProjectId) {
             // Route to Neon executor
@@ -206,9 +211,9 @@ export async function processFullResponseActions(
               chatWithApp.app.neonActiveBranchId ??
               chatWithApp.app.neonDevelopmentBranchId;
             if (!branchId) {
-              throw new DyadError(
+              throw new OrianBuilderError(
                 "No active Neon branch found for SQL execution. Please select a branch in the Neon integration settings.",
-                DyadErrorKind.Precondition,
+                OrianBuilderErrorKind.Precondition,
               );
             }
             try {
@@ -230,14 +235,14 @@ export async function processFullResponseActions(
                 errorMsg.includes("authentication failed") ||
                 errorMsg.includes("access token")
               ) {
-                throw new DyadError(
+                throw new OrianBuilderError(
                   `Neon authentication failed. Please reconnect your Neon account in the integration settings. Details: ${errorMsg}`,
-                  DyadErrorKind.Auth,
+                  OrianBuilderErrorKind.Auth,
                 );
               }
-              throw new DyadError(
+              throw new OrianBuilderError(
                 `Neon SQL query failed: ${errorMsg}`,
-                DyadErrorKind.External,
+                OrianBuilderErrorKind.External,
               );
             }
           } else if (chatWithApp.app.supabaseProjectId) {
@@ -273,14 +278,16 @@ export async function processFullResponseActions(
           });
         }
       }
-      logger.log(`Executed ${dyadExecuteSqlQueries.length} SQL queries`);
+      logger.log(
+        `Executed ${orianbuilderExecuteSqlQueries.length} SQL queries`,
+      );
     }
 
     // TODO: Handle add dependency tags
-    if (dyadAddDependencyPackages.length > 0) {
+    if (orianbuilderAddDependencyPackages.length > 0) {
       try {
         const addDependencyResult = await executeAddDependency({
-          packages: dyadAddDependencyPackages,
+          packages: orianbuilderAddDependencyPackages,
           message: message,
           appPath,
         });
@@ -289,12 +296,12 @@ export async function processFullResponseActions(
         if (error instanceof ExecuteAddDependencyError) {
           warningMessages.push(...error.warningMessages);
           errors.push({
-            message: `Failed to add dependencies: ${dyadAddDependencyPackages.join(", ")}. ${error.displaySummary}`,
+            message: `Failed to add dependencies: ${orianbuilderAddDependencyPackages.join(", ")}. ${error.displaySummary}`,
             error: error.displayDetails,
           });
         } else {
           errors.push({
-            message: `Failed to add dependencies: ${dyadAddDependencyPackages.join(", ")}`,
+            message: `Failed to add dependencies: ${orianbuilderAddDependencyPackages.join(", ")}`,
             error: error,
           });
         }
@@ -323,7 +330,7 @@ export async function processFullResponseActions(
     //////////////////////
 
     // Process all file deletions
-    for (const filePath of dyadDeletePaths) {
+    for (const filePath of orianbuilderDeletePaths) {
       const fullFilePath = safeJoin(appPath, filePath);
 
       // Track if this is a shared module
@@ -369,7 +376,7 @@ export async function processFullResponseActions(
     }
 
     // Process all file renames
-    for (const tag of dyadRenameTags) {
+    for (const tag of orianbuilderRenameTags) {
       const fromPath = safeJoin(appPath, tag.from);
       const toPath = safeJoin(appPath, tag.to);
 
@@ -437,8 +444,9 @@ export async function processFullResponseActions(
     }
 
     // Process all search-replace edits
-    const dyadSearchReplaceTags = getDyadSearchReplaceTags(fullResponse);
-    for (const tag of dyadSearchReplaceTags) {
+    const orianbuilderSearchReplaceTags =
+      getOrianBuilderSearchReplaceTags(fullResponse);
+    for (const tag of orianbuilderSearchReplaceTags) {
       const filePath = tag.path;
       const fullFilePath = safeJoin(appPath, filePath);
 
@@ -449,14 +457,14 @@ export async function processFullResponseActions(
 
       try {
         if (!fs.existsSync(fullFilePath)) {
-          // Do not show warning to user because we already attempt to do a <dyad-write> tag to fix it.
+          // Do not show warning to user because we already attempt to do a <orianbuilder-write> tag to fix it.
           logger.warn(`Search-replace target file does not exist: ${filePath}`);
           continue;
         }
         const original = await readFile(fullFilePath, "utf8");
         const result = applySearchReplace(original, tag.content);
         if (!result.success || typeof result.content !== "string") {
-          // Do not show warning to user because we already attempt to do a <dyad-write> and/or a subsequent <dyad-search-replace> tag to fix it.
+          // Do not show warning to user because we already attempt to do a <orianbuilder-write> and/or a subsequent <orianbuilder-search-replace> tag to fix it.
           logger.warn(
             `Failed to apply search-replace to ${filePath}: ${result.error ?? "unknown"}`,
           );
@@ -492,8 +500,8 @@ export async function processFullResponseActions(
     }
 
     // Process all file copies
-    const dyadCopyTags = getDyadCopyTags(fullResponse);
-    for (const tag of dyadCopyTags) {
+    const orianbuilderCopyTags = getOrianBuilderCopyTags(fullResponse);
+    for (const tag of orianbuilderCopyTags) {
       try {
         const result = await executeCopyFile({
           from: tag.from,
@@ -526,7 +534,7 @@ export async function processFullResponseActions(
     }
 
     // Process all file writes
-    for (const tag of dyadWriteTags) {
+    for (const tag of orianbuilderWriteTags) {
       const filePath = tag.path;
       const content = tag.content;
       const fullFilePath = safeJoin(appPath, filePath);
@@ -604,7 +612,7 @@ export async function processFullResponseActions(
       writtenFiles.length > 0 ||
       renamedFiles.length > 0 ||
       deletedFiles.length > 0 ||
-      dyadAddDependencyPackages.length > 0;
+      orianbuilderAddDependencyPackages.length > 0;
 
     let uncommittedFiles: string[] = [];
     let extraFilesError: string | undefined;
@@ -623,16 +631,18 @@ export async function processFullResponseActions(
         changes.push(`renamed ${renamedFiles.length} file(s)`);
       if (deletedFiles.length > 0)
         changes.push(`deleted ${deletedFiles.length} file(s)`);
-      if (dyadAddDependencyPackages.length > 0)
+      if (orianbuilderAddDependencyPackages.length > 0)
         changes.push(
-          `added ${dyadAddDependencyPackages.join(", ")} package(s)`,
+          `added ${orianbuilderAddDependencyPackages.join(", ")} package(s)`,
         );
-      if (dyadExecuteSqlQueries.length > 0)
-        changes.push(`executed ${dyadExecuteSqlQueries.length} SQL queries`);
+      if (orianbuilderExecuteSqlQueries.length > 0)
+        changes.push(
+          `executed ${orianbuilderExecuteSqlQueries.length} SQL queries`,
+        );
 
       let message = chatSummary
-        ? `[dyad] ${chatSummary} - ${changes.join(", ")}`
-        : `[dyad] ${changes.join(", ")}`;
+        ? `[orianbuilder] ${chatSummary} - ${changes.join(", ")}`
+        : `[orianbuilder] ${changes.join(", ")}`;
 
       // Verify there are actual staged changes before committing.
       // Files may be "written" with identical content (e.g. regenerated by the AI),
@@ -662,17 +672,18 @@ export async function processFullResponseActions(
           try {
             commitHash = await gitCommit({
               path: appPath,
-              message: message + " + extra files edited outside of Dyad",
+              message:
+                message + " + extra files edited outside of OrianBuilder",
               amend: true,
             });
             logger.log(
-              `Amend commit with changes outside of dyad: ${uncommittedFiles.join(", ")}`,
+              `Amend commit with changes outside of orianbuilder: ${uncommittedFiles.join(", ")}`,
             );
           } catch (error) {
             // Just log, but don't throw an error because the user can still
-            // commit these changes outside of Dyad if needed.
+            // commit these changes outside of OrianBuilder if needed.
             logger.error(
-              `Failed to commit changes outside of dyad: ${uncommittedFiles.join(", ")}`,
+              `Failed to commit changes outside of orianbuilder: ${uncommittedFiles.join(", ")}`,
             );
             extraFilesError = (error as any).toString();
           }
@@ -701,8 +712,8 @@ export async function processFullResponseActions(
         appId: chatWithApp.app.id,
         changedPaths: [...writtenFiles, ...renamedFiles],
         deletedPaths: [
-          ...dyadDeletePaths,
-          ...dyadRenameTags.map((renameTag) => renameTag.from),
+          ...orianbuilderDeletePaths,
+          ...orianbuilderRenameTags.map((renameTag) => renameTag.from),
         ],
       });
     }
@@ -726,13 +737,13 @@ export async function processFullResponseActions(
     ${warnings
       .map(
         (warning) =>
-          `<dyad-output type="warning" message="${escapeXmlAttr(warning.message)}">${escapeXmlContent(formatOutputError(warning.error))}</dyad-output>`,
+          `<orianbuilder-output type="warning" message="${escapeXmlAttr(warning.message)}">${escapeXmlContent(formatOutputError(warning.error))}</orianbuilder-output>`,
       )
       .join("\n")}
     ${errors
       .map(
         (error) =>
-          `<dyad-output type="error" message="${escapeXmlAttr(error.message)}">${escapeXmlContent(formatOutputError(error.error))}</dyad-output>`,
+          `<orianbuilder-output type="error" message="${escapeXmlAttr(error.message)}">${escapeXmlContent(formatOutputError(error.error))}</orianbuilder-output>`,
       )
       .join("\n")}
     `;

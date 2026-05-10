@@ -55,7 +55,7 @@ test("chat mode selector - mode persists per chat", async ({ po }) => {
   await expect(selector).toContainText("Plan");
 });
 
-test.skip("dyadwrite edit and save - basic flow", async ({ po }) => {
+test.skip("orianbuilderwrite edit and save - basic flow", async ({ po }) => {
   await po.setUp({ autoApprove: true });
   await po.importApp("minimal");
   await po.chatActions.clickNewChat();

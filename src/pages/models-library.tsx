@@ -139,7 +139,7 @@ export default function ModelsLibraryPage() {
   );
 
   return (
-    <div className="models-page" style={{ color: '#fff' }}>
+    <div className="models-page" style={{ color: "#fff" }}>
       <div className="border-b px-6 py-4 sticky top-0 z-10 bg-background/95 backdrop-blur">
         <div className="flex items-center justify-between gap-4">
           <div>

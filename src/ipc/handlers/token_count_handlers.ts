@@ -11,7 +11,7 @@ import {
   SUPABASE_NOT_AVAILABLE_SYSTEM_PROMPT,
 } from "../../prompts/supabase_prompt";
 import { buildNeonPromptForApp } from "../../neon_admin/neon_prompt_context";
-import { getDyadAppPath } from "../../paths/paths";
+import { getOrianBuilderAppPath } from "../../paths/paths";
 import log from "electron-log";
 import { extractCodebase } from "../../utils/codebase";
 import {
@@ -27,7 +27,10 @@ import { readSettings } from "@/main/settings";
 import { extractMentionedAppsCodebases } from "../utils/mention_apps";
 import { parseAppMentions } from "@/shared/parse_mention_apps";
 import { isLocalAgentBackedMode, isTurboEditsV2Enabled } from "@/lib/schemas";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { resolveChatModeForTurn } from "./chat_mode_resolution";
 
 const logger = log.scope("token_count_handlers");
@@ -49,9 +52,9 @@ export function registerTokenCountHandlers() {
       });
 
       if (!chat) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `Chat not found: ${req.chatId}`,
-          DyadErrorKind.NotFound,
+          OrianBuilderErrorKind.NotFound,
         );
       }
 
@@ -81,7 +84,7 @@ export function registerTokenCountHandlers() {
       // Migration on read converts "agent" to "build", so no need to check for it here
       const themePrompt = await getThemePromptById(chat.app?.themeId ?? null);
       let systemPrompt = constructSystemPrompt({
-        aiRules: await readAiRules(getDyadAppPath(chat.app.path)),
+        aiRules: await readAiRules(getOrianBuilderAppPath(chat.app.path)),
         chatMode:
           selectedChatMode === "local-agent" ? "build" : selectedChatMode,
         enableTurboEditsV2: isTurboEditsV2Enabled(settings),
@@ -122,7 +125,7 @@ export function registerTokenCountHandlers() {
       let codebaseTokens = 0;
 
       if (chat.app) {
-        const appPath = getDyadAppPath(chat.app.path);
+        const appPath = getOrianBuilderAppPath(chat.app.path);
         const { formattedOutput, files } = await extractCodebase({
           appPath,
           chatContext: validateChatContext(chat.app.chatContext),
@@ -133,7 +136,8 @@ export function registerTokenCountHandlers() {
             files
               // It doesn't need to be the exact format but it's just to get a token estimate
               .map(
-                (file) => `<dyad-file=${file.path}>${file.content}</dyad-file>`,
+                (file) =>
+                  `<orianbuilder-file=${file.path}>${file.content}</orianbuilder-file>`,
               )
               .join("\n\n"),
           );

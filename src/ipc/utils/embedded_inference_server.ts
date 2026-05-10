@@ -1,4 +1,5 @@
 import http from "node:http";
+import os from "node:os";
 import log from "electron-log";
 import {
   findDefaultTensorRtEngineDir,
@@ -114,15 +115,20 @@ export interface InferenceStats {
   liveTps: number;
   avgTps: number;
   prefillTps: number;
+  prefillComplete: boolean;
   promptTokens: number;
   prefillDurationMs: number;
   decodeTps: number;
+  recentDecodeTps: number;
   peakTps: number;
   lowestTps: number;
   tokensGenerated: number;
   sessionDurationMs: number;
   totalSessions: number;
   totalTokensAllTime: number;
+  processCpuPercent: number;
+  systemRamUsedMb: number;
+  systemRamTotalMb: number;
 }
 
 export interface InferenceLogEntry {
@@ -157,6 +163,52 @@ let sessionLowestTps = Infinity;
 let allTimeTotalTokens = 0;
 let allTimeTotalSessions = 0;
 
+// EMA decode speed tracking
+const EMA_ALPHA = 0.3;
+const MIN_DECODE_SAMPLES = 3;
+let lastDecodeTokenAt = 0;
+let emaInterTokenMs = 0;
+let decodeTokenCount = 0;
+
+// System stats for hardware panel (CPU + RAM)
+let sysCpuLastUsage: NodeJS.CpuUsage | null = null;
+let sysCpuLastTs: number | null = null;
+let sysCpuPercent = 0;
+const NUM_CORES = os.cpus().length || 1;
+
+function sampleProcessCpu(): number {
+  const now = Date.now();
+  const cur = process.cpuUsage();
+  if (sysCpuLastUsage && sysCpuLastTs) {
+    const elapsedUs = (now - sysCpuLastTs) * 1000;
+    if (elapsedUs > 0) {
+      const cpuUs =
+        cur.user - sysCpuLastUsage.user + (cur.system - sysCpuLastUsage.system);
+      // Normalize by core count so result is always 0-100%
+      const rawPercent = (cpuUs / elapsedUs) * 100;
+      sysCpuPercent = Math.round(Math.min(100, rawPercent / NUM_CORES));
+    }
+  }
+  sysCpuLastUsage = cur;
+  sysCpuLastTs = now;
+  return sysCpuPercent;
+}
+
+// Always-on hardware broadcast (2 s interval) so CPU/RAM show even when idle
+let hardwareBroadcastTimer: NodeJS.Timeout | null = null;
+export function startHardwareBroadcast(): void {
+  if (hardwareBroadcastTimer) return;
+  // Prime the CPU baseline so the first real reading is accurate
+  sampleProcessCpu();
+  hardwareBroadcastTimer = setInterval(broadcastStats, 2000);
+}
+export function stopHardwareBroadcast(): void {
+  if (hardwareBroadcastTimer) {
+    clearInterval(hardwareBroadcastTimer);
+    hardwareBroadcastTimer = null;
+  }
+}
+
 let currentInferenceState: InferenceState = "idle";
 let currentOperation = "";
 
@@ -179,21 +231,39 @@ export function getCurrentStats(): InferenceStats {
   const sessionDurationMs = sessionStart > 0 ? Date.now() - sessionStart : 0;
   const avgTps =
     sessionDurationMs > 0 ? (sessionTokens / sessionDurationMs) * 1000 : 0;
-  const activePrefillMs =
-    prefillStart > 0 &&
-    firstTokenAt === 0 &&
-    currentInferenceState === "prefilling"
+
+  // Prefill TPS: only stable after prefill completes (firstTokenAt set).
+  // During active prefill the elapsed time is tiny → division gives huge fake numbers.
+  const prefillComplete = firstTokenAt > 0;
+  const activePrefillMs = prefillComplete
+    ? currentPrefillDurationMs
+    : prefillStart > 0
       ? Date.now() - prefillStart
-      : currentPrefillDurationMs;
-  const prefillTps =
-    currentPromptTokens > 0 && activePrefillMs > 0
-      ? (currentPromptTokens / activePrefillMs) * 1000
       : 0;
+  const prefillTps =
+    prefillComplete && currentPromptTokens > 0 && currentPrefillDurationMs > 0
+      ? (currentPromptTokens / currentPrefillDurationMs) * 1000
+      : 0;
+
+  // Cumulative decode avg (stable over whole session)
   const decodeMs =
-    firstTokenAt > 0
-      ? Math.max(1, Date.now() - firstTokenAt)
-      : sessionDurationMs;
-  const decodeTps = sessionTokens > 0 ? (sessionTokens / decodeMs) * 1000 : 0;
+    firstTokenAt > 0 ? Math.max(1, Date.now() - firstTokenAt) : 0;
+  const decodeTps =
+    sessionTokens > 0 && decodeMs > 0 ? (sessionTokens / decodeMs) * 1000 : 0;
+
+  // EMA-smoothed recent decode speed (responsive, not distorted by early burst)
+  const recentDecodeTps =
+    decodeTokenCount >= MIN_DECODE_SAMPLES && emaInterTokenMs > 0
+      ? 1000 / emaInterTokenMs
+      : 0;
+
+  // System stats
+  const processCpuPercent = sampleProcessCpu();
+  const systemRamTotalMb = Math.round(os.totalmem() / (1024 * 1024));
+  const systemRamUsedMb = Math.round(
+    (os.totalmem() - os.freemem()) / (1024 * 1024),
+  );
+
   return {
     state: currentInferenceState,
     operation: currentOperation,
@@ -201,15 +271,20 @@ export function getCurrentStats(): InferenceStats {
     liveTps,
     avgTps,
     prefillTps,
+    prefillComplete,
     promptTokens: currentPromptTokens,
     prefillDurationMs: activePrefillMs,
     decodeTps,
+    recentDecodeTps,
     peakTps: sessionPeakTps,
     lowestTps: sessionLowestTps === Infinity ? 0 : sessionLowestTps,
     tokensGenerated: sessionTokens,
     sessionDurationMs,
     totalSessions: allTimeTotalSessions,
     totalTokensAllTime: allTimeTotalTokens,
+    processCpuPercent,
+    systemRamUsedMb,
+    systemRamTotalMb,
   };
 }
 
@@ -225,13 +300,29 @@ function computeLiveTps(): number {
 }
 
 function recordToken(): void {
+  const now = Date.now();
   if (firstTokenAt === 0 && prefillStart > 0) {
-    firstTokenAt = Date.now();
+    firstTokenAt = now;
     currentPrefillDurationMs = Math.max(1, firstTokenAt - prefillStart);
+    lastDecodeTokenAt = now;
+    decodeTokenCount = 0;
+    emaInterTokenMs = 0;
+  } else if (lastDecodeTokenAt > 0) {
+    const delta = now - lastDecodeTokenAt;
+    if (delta > 0) {
+      emaInterTokenMs =
+        decodeTokenCount < MIN_DECODE_SAMPLES
+          ? emaInterTokenMs === 0
+            ? delta
+            : (emaInterTokenMs * decodeTokenCount + delta) /
+              (decodeTokenCount + 1)
+          : EMA_ALPHA * delta + (1 - EMA_ALPHA) * emaInterTokenMs;
+    }
+    lastDecodeTokenAt = now;
+    decodeTokenCount++;
   }
   sessionTokens++;
   allTimeTotalTokens++;
-  const now = Date.now();
   if (
     tpsBuckets.length === 0 ||
     now - tpsBuckets[tpsBuckets.length - 1].ts > 500
@@ -285,6 +376,9 @@ function beginSession(promptTokens: number): void {
   sessionPeakTps = 0;
   sessionLowestTps = Infinity;
   tpsBuckets = [];
+  lastDecodeTokenAt = 0;
+  emaInterTokenMs = 0;
+  decodeTokenCount = 0;
   allTimeTotalSessions++;
   startStatsBroadcast();
 }
@@ -721,7 +815,7 @@ export function abortCurrentInference(): void {
 // ─── OpenAI → node-llama-cpp message conversion ──────────────────────────────
 //
 // The agent passes a full conversation that includes:
-//   • system message (huge Dyad system prompt with codebase)
+//   • system message (huge OrianBuilder system prompt with codebase)
 //   • user messages
 //   • assistant messages (may include tool_calls)
 //   • tool messages (results of previous tool calls)
@@ -823,7 +917,7 @@ function openAiToLlamaChatInput(rawMessages: OpenAIMessage[]): {
 } {
   const history: NlcHistoryItem[] = [];
 
-  // Collect system messages first (Dyad puts the codebase here)
+  // Collect system messages first (OrianBuilder puts the codebase here)
   const systemParts = rawMessages
     .filter((m) => m.role === "system")
     .map((m) => stringifyOpenAIContent(m.content));
@@ -1040,7 +1134,8 @@ async function handleWithTools(
   );
 
   beginSession(
-    payload._dyadEstimatedInputTokens ?? Math.ceil(userPrompt.length / 4),
+    payload._orianbuilderEstimatedInputTokens ??
+      Math.ceil(userPrompt.length / 4),
   );
   setState("prefilling", "Processing context…");
 
@@ -1302,7 +1397,8 @@ async function handleWithoutTools(
   });
 
   beginSession(
-    payload._dyadEstimatedInputTokens ?? Math.ceil(userPrompt.length / 4),
+    payload._orianbuilderEstimatedInputTokens ??
+      Math.ceil(userPrompt.length / 4),
   );
   setState("prefilling", "Processing context…");
 
@@ -1716,7 +1812,7 @@ async function handleChatCompletions(
     rawMessages,
     payload,
   );
-  payload._dyadEstimatedInputTokens = estimatedInputTokens;
+  payload._orianbuilderEstimatedInputTokens = estimatedInputTokens;
   const safeLimit = Math.floor(currentActualContextSize * 0.8);
   if (estimatedInputTokens > safeLimit) {
     const msg =
@@ -1792,7 +1888,7 @@ async function handleChatCompletions(
   try {
     session = new LlamaChatSession({
       contextSequence: sequence as any,
-      // Keep system prompt when context fills — critical for Dyad since the
+      // Keep system prompt when context fills — critical for OrianBuilder since the
       // system prompt carries the full app codebase and instructions.
       contextShift: { strategy: "eraseFirstResponseAndKeepFirstSystem" },
       autoDisposeSequence: false,

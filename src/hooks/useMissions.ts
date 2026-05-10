@@ -13,6 +13,16 @@ import type {
   SubmitMissionWorkerReportParams,
   PrepareMissionWorkerWorkspaceParams,
   SetMissionWorkerIntegrationStatusParams,
+  RunReadyMissionWorkersParams,
+  ApplyAcceptedMissionWorkerOutputsParams,
+  CleanupAppliedMissionWorkerWorkspacesParams,
+  CreateMissionInterruptParams,
+  MarkMissionInterruptsInjectedParams,
+  CreateMissionMemoryParams,
+  ListMissionMemoriesParams,
+  CreateMissionPermissionRequestParams,
+  ResolveMissionPermissionRequestParams,
+  ExpireMissionPermissionRequestsParams,
 } from "@/ipc/types";
 
 export function useMissions(appId: number | null, missionId?: number | null) {
@@ -67,6 +77,34 @@ export function useMissions(appId: number | null, missionId?: number | null) {
     enabled: missionId !== undefined && missionId !== null,
   });
 
+  const interruptsQuery = useQuery({
+    queryKey: queryKeys.missions.interrupts({ missionId: missionId ?? null }),
+    queryFn: () => ipc.mission.listMissionInterrupts({ missionId: missionId! }),
+    enabled: missionId !== undefined && missionId !== null,
+  });
+
+  const memoriesQuery = useQuery({
+    queryKey: queryKeys.missions.memories({
+      appId,
+      missionId: missionId ?? null,
+    }),
+    queryFn: () =>
+      ipc.mission.listMissionMemories({
+        appId: appId!,
+        missionId: missionId ?? null,
+      }),
+    enabled: appId !== null,
+  });
+
+  const permissionRequestsQuery = useQuery({
+    queryKey: queryKeys.missions.permissionRequests({
+      missionId: missionId ?? null,
+    }),
+    queryFn: () =>
+      ipc.mission.listMissionPermissionRequests({ missionId: missionId! }),
+    enabled: missionId !== undefined && missionId !== null,
+  });
+
   const invalidateMissionQueries = async (targetMissionId?: number | null) => {
     await queryClient.invalidateQueries({ queryKey: queryKeys.missions.all });
     if (targetMissionId !== undefined && targetMissionId !== null) {
@@ -92,6 +130,22 @@ export function useMissions(appId: number | null, missionId?: number | null) {
       });
       await queryClient.invalidateQueries({
         queryKey: queryKeys.missions.artifacts({
+          missionId: targetMissionId,
+        }),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.missions.interrupts({
+          missionId: targetMissionId,
+        }),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.missions.memories({
+          appId,
+          missionId: targetMissionId,
+        }),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.missions.permissionRequests({
           missionId: targetMissionId,
         }),
       });
@@ -197,6 +251,90 @@ export function useMissions(appId: number | null, missionId?: number | null) {
     meta: { showErrorToast: true },
   });
 
+  const runReadyMissionWorkersMutation = useMutation({
+    mutationFn: (params: RunReadyMissionWorkersParams) =>
+      ipc.mission.runReadyMissionWorkers(params),
+    onSuccess: async (workers) => {
+      await invalidateMissionQueries(workers[0]?.missionId ?? missionId);
+    },
+    meta: { showErrorToast: true },
+  });
+
+  const applyAcceptedMissionWorkerOutputsMutation = useMutation({
+    mutationFn: (params: ApplyAcceptedMissionWorkerOutputsParams) =>
+      ipc.mission.applyAcceptedMissionWorkerOutputs(params),
+    onSuccess: async (workers) => {
+      await invalidateMissionQueries(workers[0]?.missionId ?? missionId);
+    },
+    meta: { showErrorToast: true },
+  });
+
+  const cleanupAppliedMissionWorkerWorkspacesMutation = useMutation({
+    mutationFn: (params: CleanupAppliedMissionWorkerWorkspacesParams) =>
+      ipc.mission.cleanupAppliedMissionWorkerWorkspaces(params),
+    onSuccess: async (workers) => {
+      await invalidateMissionQueries(workers[0]?.missionId ?? missionId);
+    },
+    meta: { showErrorToast: true },
+  });
+
+  const createMissionInterruptMutation = useMutation({
+    mutationFn: (params: CreateMissionInterruptParams) =>
+      ipc.mission.createMissionInterrupt(params),
+    onSuccess: async (interrupt) => {
+      await invalidateMissionQueries(interrupt.missionId);
+    },
+    meta: { showErrorToast: true },
+  });
+
+  const markMissionInterruptsInjectedMutation = useMutation({
+    mutationFn: (params: MarkMissionInterruptsInjectedParams) =>
+      ipc.mission.markMissionInterruptsInjected(params),
+    onSuccess: async (interrupts) => {
+      await invalidateMissionQueries(interrupts[0]?.missionId ?? missionId);
+    },
+    meta: { showErrorToast: true },
+  });
+
+  const createMissionMemoryMutation = useMutation({
+    mutationFn: (params: CreateMissionMemoryParams) =>
+      ipc.mission.createMissionMemory(params),
+    onSuccess: async (memory) => {
+      await invalidateMissionQueries(memory.missionId ?? missionId);
+    },
+    meta: { showErrorToast: true },
+  });
+
+  const listMissionMemories = (params: ListMissionMemoriesParams) =>
+    ipc.mission.listMissionMemories(params);
+
+  const createMissionPermissionRequestMutation = useMutation({
+    mutationFn: (params: CreateMissionPermissionRequestParams) =>
+      ipc.mission.createMissionPermissionRequest(params),
+    onSuccess: async (request) => {
+      await invalidateMissionQueries(request.missionId);
+    },
+    meta: { showErrorToast: true },
+  });
+
+  const resolveMissionPermissionRequestMutation = useMutation({
+    mutationFn: (params: ResolveMissionPermissionRequestParams) =>
+      ipc.mission.resolveMissionPermissionRequest(params),
+    onSuccess: async (request) => {
+      await invalidateMissionQueries(request.missionId);
+    },
+    meta: { showErrorToast: true },
+  });
+
+  const expireMissionPermissionRequestsMutation = useMutation({
+    mutationFn: (params: ExpireMissionPermissionRequestsParams) =>
+      ipc.mission.expireMissionPermissionRequests(params),
+    onSuccess: async (requests) => {
+      await invalidateMissionQueries(requests[0]?.missionId ?? missionId);
+    },
+    meta: { showErrorToast: true },
+  });
+
   return {
     missions: missionsQuery.data ?? [],
     mission: missionQuery.data ?? null,
@@ -206,6 +344,9 @@ export function useMissions(appId: number | null, missionId?: number | null) {
     workers: workersQuery.data ?? [],
     checkpoints: checkpointsQuery.data ?? [],
     artifacts: artifactsQuery.data ?? [],
+    interrupts: interruptsQuery.data ?? [],
+    memories: memoriesQuery.data ?? [],
+    permissionRequests: permissionRequestsQuery.data ?? [],
     isLoading:
       missionsQuery.isLoading ||
       missionQuery.isLoading ||
@@ -214,7 +355,10 @@ export function useMissions(appId: number | null, missionId?: number | null) {
       runsQuery.isLoading ||
       workersQuery.isLoading ||
       checkpointsQuery.isLoading ||
-      artifactsQuery.isLoading,
+      artifactsQuery.isLoading ||
+      interruptsQuery.isLoading ||
+      memoriesQuery.isLoading ||
+      permissionRequestsQuery.isLoading,
     createMission: createMissionMutation.mutateAsync,
     updateMissionStatus: updateMissionStatusMutation.mutateAsync,
     addMissionEvent: addMissionEventMutation.mutateAsync,
@@ -228,6 +372,22 @@ export function useMissions(appId: number | null, missionId?: number | null) {
       prepareMissionWorkerWorkspaceMutation.mutateAsync,
     setMissionWorkerIntegrationStatus:
       setMissionWorkerIntegrationStatusMutation.mutateAsync,
+    runReadyMissionWorkers: runReadyMissionWorkersMutation.mutateAsync,
+    applyAcceptedMissionWorkerOutputs:
+      applyAcceptedMissionWorkerOutputsMutation.mutateAsync,
+    cleanupAppliedMissionWorkerWorkspaces:
+      cleanupAppliedMissionWorkerWorkspacesMutation.mutateAsync,
+    createMissionInterrupt: createMissionInterruptMutation.mutateAsync,
+    markMissionInterruptsInjected:
+      markMissionInterruptsInjectedMutation.mutateAsync,
+    createMissionMemory: createMissionMemoryMutation.mutateAsync,
+    listMissionMemories,
+    createMissionPermissionRequest:
+      createMissionPermissionRequestMutation.mutateAsync,
+    resolveMissionPermissionRequest:
+      resolveMissionPermissionRequestMutation.mutateAsync,
+    expireMissionPermissionRequests:
+      expireMissionPermissionRequestsMutation.mutateAsync,
     refreshMissions: () => invalidateMissionQueries(missionId),
   };
 }

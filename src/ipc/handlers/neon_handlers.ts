@@ -15,7 +15,10 @@ import { apps } from "../../db/schema";
 import { eq } from "drizzle-orm";
 import { EndpointType } from "@neondatabase/api-client";
 import { retryOnLocked } from "../utils/retryOnLocked";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import {
   getEnvFilePath,
   readEnvFileIfExists,
@@ -72,9 +75,9 @@ export function registerNeonHandlers() {
       .where(eq(apps.id, appId))
       .limit(1);
     if (appRecord.length === 0) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `App with ID ${appId} not found`,
-        DyadErrorKind.NotFound,
+        OrianBuilderErrorKind.NotFound,
       );
     }
     const appPath = appRecord[0].path;
@@ -96,16 +99,16 @@ export function registerNeonHandlers() {
       );
 
       if (!response.data.project) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Failed to create project: No project data returned.",
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
 
       if (!response.data.branch) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Failed to create project: No branch data returned.",
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
 
@@ -147,9 +150,9 @@ export function registerNeonHandlers() {
           !developmentBranchResponse.data.connection_uris ||
           developmentBranchResponse.data.connection_uris.length === 0
         ) {
-          throw new DyadError(
+          throw new OrianBuilderError(
             "Failed to create development branch: No branch data returned.",
-            DyadErrorKind.External,
+            OrianBuilderErrorKind.External,
           );
         }
 
@@ -183,9 +186,9 @@ export function registerNeonHandlers() {
           !previewBranchResponse.data.connection_uris ||
           previewBranchResponse.data.connection_uris.length === 0
         ) {
-          throw new DyadError(
+          throw new OrianBuilderError(
             "Failed to create preview branch: No branch data returned.",
-            DyadErrorKind.External,
+            OrianBuilderErrorKind.External,
           );
         }
 
@@ -281,11 +284,11 @@ export function registerNeonHandlers() {
         throw postCreateError;
       }
     } catch (error: any) {
-      if (error instanceof DyadError) throw error;
+      if (error instanceof OrianBuilderError) throw error;
       const errorMessage = getNeonErrorMessage(error);
       const message = `Failed to create Neon project for app ${appId}: ${errorMessage}`;
       logger.error(message);
-      throw new DyadError(message, DyadErrorKind.External);
+      throw new OrianBuilderError(message, OrianBuilderErrorKind.External);
     }
   });
 
@@ -302,17 +305,17 @@ export function registerNeonHandlers() {
         .limit(1);
 
       if (app.length === 0) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `App with ID ${appId} not found`,
-          DyadErrorKind.NotFound,
+          OrianBuilderErrorKind.NotFound,
         );
       }
 
       const appData = app[0];
       if (!appData.neonProjectId) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `No Neon project found for app ${appId}`,
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
 
@@ -324,9 +327,9 @@ export function registerNeonHandlers() {
       );
 
       if (!projectResponse.data.project) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Failed to get project: No project data returned.",
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
 
@@ -338,9 +341,9 @@ export function registerNeonHandlers() {
       });
 
       if (!branchesResponse.data.branches) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Failed to get branches: No branch data returned.",
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
 
@@ -427,14 +430,14 @@ export function registerNeonHandlers() {
     } catch (error: any) {
       const errorMessage = getNeonErrorMessage(error);
       logger.error(`Failed to list Neon projects: ${errorMessage}`);
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to list Neon projects: ${errorMessage}`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
   });
 
-  // Link an existing Neon project to a Dyad app
+  // Link an existing Neon project to a OrianBuilder app
   createTypedHandler(neonContracts.setAppProject, async (_, params) => {
     const { appId, projectId } = params;
     logger.info(`Setting Neon project ${projectId} for app ${appId}`);
@@ -449,9 +452,9 @@ export function registerNeonHandlers() {
       .where(eq(apps.id, appId))
       .limit(1);
     if (appRecord.length === 0) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `App with ID ${appId} not found`,
-        DyadErrorKind.NotFound,
+        OrianBuilderErrorKind.NotFound,
       );
     }
     const appPath = appRecord[0].path;
@@ -466,9 +469,9 @@ export function registerNeonHandlers() {
       });
 
       if (!branchesResponse.data.branches) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Failed to get branches for project",
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
 
@@ -488,9 +491,9 @@ export function registerNeonHandlers() {
         dedicatedDevBranch?.id ?? defaultBranch?.id ?? null;
 
       if (!activeBranchId) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Linked Neon project has no writable branch. Create a development branch in Neon before connecting this app.",
-          DyadErrorKind.Precondition,
+          OrianBuilderErrorKind.Precondition,
         );
       }
 
@@ -550,19 +553,19 @@ export function registerNeonHandlers() {
       );
       return { success: true, warning };
     } catch (error: any) {
-      if (error instanceof DyadError) throw error;
+      if (error instanceof OrianBuilderError) throw error;
       const errorMessage = getNeonErrorMessage(error);
       logger.error(
         `Failed to set Neon project for app ${appId}: ${errorMessage}`,
       );
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to set Neon project for app ${appId}: ${errorMessage}`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
   });
 
-  // Unlink a Neon project from a Dyad app
+  // Unlink a Neon project from a OrianBuilder app
   createTypedHandler(neonContracts.unsetAppProject, async (_, params) => {
     const { appId } = params;
     logger.info(`Unsetting Neon project for app ${appId}`);
@@ -598,9 +601,9 @@ export function registerNeonHandlers() {
       logger.error(
         `Failed to unset Neon project for app ${appId}: ${errorMessage}`,
       );
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to unset Neon project for app ${appId}: ${errorMessage}`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
   });
@@ -618,9 +621,9 @@ export function registerNeonHandlers() {
         .limit(1);
 
       if (appRecord.length === 0) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `App with ID ${appId} not found`,
-          DyadErrorKind.NotFound,
+          OrianBuilderErrorKind.NotFound,
         );
       }
 
@@ -630,9 +633,9 @@ export function registerNeonHandlers() {
       });
 
       if (!appData.neonProjectId) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `No Neon project found for app ${appId}`,
-          DyadErrorKind.Precondition,
+          OrianBuilderErrorKind.Precondition,
         );
       }
 
@@ -643,16 +646,16 @@ export function registerNeonHandlers() {
         branchId,
       );
       if (branchResponse.data.branch?.project_id !== appData.neonProjectId) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `Branch ${branchId} does not belong to Neon project ${appData.neonProjectId}`,
-          DyadErrorKind.Precondition,
+          OrianBuilderErrorKind.Precondition,
         );
       }
 
       if (branchId === appData.neonPreviewBranchId) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Preview branches are used for historical rollback and cannot be selected as the active Neon branch.",
-          DyadErrorKind.Precondition,
+          OrianBuilderErrorKind.Precondition,
         );
       }
 
@@ -703,14 +706,14 @@ export function registerNeonHandlers() {
       );
       return { success: true, warning };
     } catch (error: any) {
-      if (error instanceof DyadError) throw error;
+      if (error instanceof OrianBuilderError) throw error;
       const errorMessage = getNeonErrorMessage(error);
       logger.error(
         `Failed to set active branch for app ${appId}: ${errorMessage}`,
       );
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to set active branch for app ${appId}: ${errorMessage}`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
   });
@@ -756,7 +759,7 @@ export function registerNeonHandlers() {
     // Simulate the deep link event
     event.sender.send("deep-link-received", {
       type: "neon-oauth-return",
-      url: "https://oauth.dyad.sh/api/integrations/neon/login",
+      url: "https://oauth.orianbuilder.sh/api/integrations/neon/login",
     });
     logger.info("Sent fake neon deep-link-received event during testing.");
   });

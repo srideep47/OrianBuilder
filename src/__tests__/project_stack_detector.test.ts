@@ -13,7 +13,7 @@ async function writeJson(filePath: string, value: unknown) {
 
 describe("project stack detector", () => {
   beforeEach(async () => {
-    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "dyad-stack-"));
+    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "orianbuilder-stack-"));
   });
 
   afterEach(async () => {

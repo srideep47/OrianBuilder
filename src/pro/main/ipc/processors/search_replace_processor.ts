@@ -80,10 +80,10 @@ const MATCHING_PASSES: Array<{ name: string; comparator: LineComparator }> = [
  */
 function trimEmptyLines(lines: string[]): string[] {
   const result = [...lines];
-  while (result.length > 0 && result[0] === "") {
+  while (result.length > 0 && result[0].trim() === "") {
     result.shift();
   }
-  while (result.length > 0 && result[result.length - 1] === "") {
+  while (result.length > 0 && result[result.length - 1].trim() === "") {
     result.pop();
   }
   return result;

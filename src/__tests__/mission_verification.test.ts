@@ -9,7 +9,7 @@ describe("mission verification event classification", () => {
   it("classifies successful type checks", () => {
     expect(
       getMissionVerificationEventForXml(
-        '<dyad-status title="Type checking all files">\nNo type errors found.\n</dyad-status>',
+        '<orianbuilder-status title="Type checking all files">\nNo type errors found.\n</orianbuilder-status>',
       ),
     ).toMatchObject({
       eventType: "verification_typecheck",
@@ -22,7 +22,7 @@ describe("mission verification event classification", () => {
   it("classifies failed type checks", () => {
     expect(
       getMissionVerificationEventForXml(
-        '<dyad-status title="Type checking: src/App.tsx">\nFound 2 type error(s):\n</dyad-status>',
+        '<orianbuilder-status title="Type checking: src/App.tsx">\nFound 2 type error(s):\n</orianbuilder-status>',
       ),
     ).toMatchObject({
       eventType: "verification_typecheck",
@@ -35,7 +35,7 @@ describe("mission verification event classification", () => {
   it("classifies install, build, and test terminal commands", () => {
     expect(
       getMissionVerificationEventForXml(
-        '<dyad-terminal-command cmd="pnpm install" exit-code="0">ok</dyad-terminal-command>',
+        '<orianbuilder-terminal-command cmd="pnpm install" exit-code="0">ok</orianbuilder-terminal-command>',
       ),
     ).toMatchObject({
       eventType: "verification_install",
@@ -47,7 +47,7 @@ describe("mission verification event classification", () => {
 
     expect(
       getMissionVerificationEventForXml(
-        '<dyad-terminal-command cmd="npm run build" exit-code="0">ok</dyad-terminal-command>',
+        '<orianbuilder-terminal-command cmd="npm run build" exit-code="0">ok</orianbuilder-terminal-command>',
       ),
     ).toMatchObject({
       eventType: "verification_build",
@@ -59,7 +59,7 @@ describe("mission verification event classification", () => {
 
     expect(
       getMissionVerificationEventForXml(
-        '<dyad-terminal-command cmd="npm test" exit-code="1">fail</dyad-terminal-command>',
+        '<orianbuilder-terminal-command cmd="npm test" exit-code="1">fail</orianbuilder-terminal-command>',
       ),
     ).toMatchObject({
       eventType: "verification_test",
@@ -73,15 +73,43 @@ describe("mission verification event classification", () => {
   it("ignores non-verification terminal commands", () => {
     expect(
       getMissionVerificationEventForXml(
-        '<dyad-terminal-command cmd="ls" exit-code="0">files</dyad-terminal-command>',
+        '<orianbuilder-terminal-command cmd="ls" exit-code="0">files</orianbuilder-terminal-command>',
       ),
     ).toBeNull();
   });
 
+  it("classifies structured project check XML", () => {
+    expect(
+      getMissionVerificationEventForXml(
+        '<orianbuilder-project-check check="build" command="npm run build" status="failed" exit-code="1">failed</orianbuilder-project-check>',
+      ),
+    ).toMatchObject({
+      eventType: "verification_build",
+      status: "failed",
+      check: "build",
+      command: "npm run build",
+      exitCode: 1,
+    });
+
+    expect(
+      getMissionVerificationEventForXml(
+        '<orianbuilder-project-check check="e2e_test" command="npm run test:e2e" status="passed" exit-code="0">ok</orianbuilder-project-check>',
+      ),
+    ).toMatchObject({
+      eventType: "verification_test",
+      status: "passed",
+      check: "test",
+      command: "npm run test:e2e",
+      exitCode: 0,
+    });
+  });
+
   it("summarizes arbitrary agent XML", () => {
-    expect(getMissionEventSummaryForXml("<dyad-write>code</dyad-write>")).toBe(
-      "Agent output: dyad-write",
-    );
+    expect(
+      getMissionEventSummaryForXml(
+        "<orianbuilder-write>code</orianbuilder-write>",
+      ),
+    ).toBe("Agent output: orianbuilder-write");
     expect(getMissionEventSummaryForXml("plain text")).toBe("Agent output");
   });
 });

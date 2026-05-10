@@ -1,11 +1,11 @@
 ---
-name: dyad:deflake-e2e-from-run
+name: orianbuilder:deflake-e2e-from-run
 description: Root-cause flaky or failing E2E tests from a specific CI run by downloading and analyzing the Playwright HTML report (traces, screenshots, errors). Use this when given a GitHub Actions run URL and asked to investigate failures. Diagnose from report artifacts first, then rebuild and rerun the affected E2E tests locally after making fixes.
 ---
 
 # Deflake E2E Tests from a CI Run
 
-Use this skill when the user points you at a specific failing CI run (e.g. `https://github.com/dyad-sh/dyad/actions/runs/<id>`) and asks you to root-cause the E2E failures. Unlike `deflake-e2e`, this skill starts by reading the already-recorded Playwright report from the run's artifacts, which is faster and gives you the _exact_ failure state CI saw. After making fixes, always rebuild and rerun the affected E2E tests locally before committing/pushing.
+Use this skill when the user points you at a specific failing CI run (e.g. `https://github.com/orianbuilder-sh/orianbuilder/actions/runs/<id>`) and asks you to root-cause the E2E failures. Unlike `deflake-e2e`, this skill starts by reading the already-recorded Playwright report from the run's artifacts, which is faster and gives you the _exact_ failure state CI saw. After making fixes, always rebuild and rerun the affected E2E tests locally before committing/pushing.
 
 ## Arguments
 
@@ -16,12 +16,12 @@ Use this skill when the user points you at a specific failing CI run (e.g. `http
 1. Extract `run_id` from the URL (`/actions/runs/<run_id>` or `/actions/runs/<run_id>/job/<job_id>`).
 2. List artifacts and find the `html-report` (merged across shards):
    ```
-   gh api repos/dyad-sh/dyad/actions/runs/<run_id>/artifacts --jq '.artifacts[] | {name, size_in_bytes}'
+   gh api repos/orianbuilder-sh/orianbuilder/actions/runs/<run_id>/artifacts --jq '.artifacts[] | {name, size_in_bytes}'
    ```
-3. Download it into a scratch dir (use `-R dyad-sh/dyad` — `gh run download` does not auto-detect the repo from arbitrary cwd):
+3. Download it into a scratch dir (use `-R orianbuilder-sh/orianbuilder` — `gh run download` does not auto-detect the repo from arbitrary cwd):
    ```
    mkdir -p /tmp/pw-report
-   gh run download <run_id> -R dyad-sh/dyad -n html-report -D /tmp/pw-report
+   gh run download <run_id> -R orianbuilder-sh/orianbuilder -n html-report -D /tmp/pw-report
    ```
 4. Confirm layout: `index.html`, `results.json`, `data/*.zip` (trace archives), `data/*.png` (screenshots), `data/*.markdown` (error-context files).
 
@@ -105,7 +105,7 @@ Prefer fixing the test over the app unless the race would actually bite a real u
    PLAYWRIGHT_HTML_OPEN=never npm run e2e -- e2e-tests/<affected-file>.spec.ts
    ```
    If the fix is in a shared helper that affected several failing specs, run all representative affected specs in one command or separate commands.
-5. Use `/dyad:pr-push` or commit + `gh pr create` directly. The PR body MUST include:
+5. Use `/orianbuilder:pr-push` or commit + `gh pr create` directly. The PR body MUST include:
    - A link to the failing run.
    - The root-cause narrative (what raced, in concrete terms — not "timing issue").
    - Why the fix is correct (what the retry loop is doing that the original flow wasn't).

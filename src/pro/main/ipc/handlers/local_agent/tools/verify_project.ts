@@ -151,7 +151,7 @@ Use this immediately after create_project and before claiming a greenfield app i
 
   buildXml: (_args, isComplete) => {
     if (isComplete) return undefined;
-    return `<dyad-project-verification status="running">Running project verification...`;
+    return `<orianbuilder-project-verification status="running">Running project verification...`;
   },
 
   execute: async (args, ctx: AgentContext) => {
@@ -160,7 +160,7 @@ Use this immediately after create_project and before claiming a greenfield app i
     const checks: CommandResult[] = [];
 
     ctx.onXmlStream(
-      `<dyad-project-verification status="running">Running project verification...`,
+      `<orianbuilder-project-verification status="running">Running project verification...`,
     );
 
     if (args.install !== false && stack.commands.install) {
@@ -227,7 +227,7 @@ Use this immediately after create_project and before claiming a greenfield app i
 
     const attrs = checks.map(commandAttrs).join(" ");
     ctx.onXmlComplete(
-      `<dyad-project-verification status="${status}" framework="${escapeXmlAttr(stack.framework)}" package-manager="${escapeXmlAttr(stack.packageManager)}" runtime-status="${runtimeReady ? "passed" : stack.commands.dev ? "failed" : "skipped"}" runtime-url="${escapeXmlAttr(runtimeUrl ?? "")}" runtime-error="${escapeXmlAttr(runtimeError ?? "")}" ${attrs}>${escapeXmlContent(output)}</dyad-project-verification>`,
+      `<orianbuilder-project-verification status="${status}" framework="${escapeXmlAttr(stack.framework)}" package-manager="${escapeXmlAttr(stack.packageManager)}" runtime-status="${runtimeReady ? "passed" : stack.commands.dev ? "failed" : "skipped"}" runtime-url="${escapeXmlAttr(runtimeUrl ?? "")}" runtime-error="${escapeXmlAttr(runtimeError ?? "")}" ${attrs}>${escapeXmlContent(output)}</orianbuilder-project-verification>`,
     );
 
     return [
