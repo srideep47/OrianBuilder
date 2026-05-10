@@ -290,7 +290,7 @@ export function registerMissionHandlers() {
           workerKey: worker.workerKey,
           role: worker.role,
           status,
-          ...(metadata ?? {}),
+          ...metadata,
         },
       });
 

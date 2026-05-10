@@ -174,7 +174,7 @@ export default function MarketplacePage() {
   );
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="market-page" style={{ color: '#fff' }}>
       {/* ─── Main pane ─── */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}

@@ -147,17 +147,10 @@ export function SetupBanner() {
     itemsNeedAction.push("ai-setup");
   }
 
-  if (itemsNeedAction.length === 0) {
-    return (
-      <h1 className="text-center text-5xl font-bold mb-8 bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 dark:from-gray-100 dark:to-gray-400 tracking-tight">
-        {t("setup.buildNewApp")}
-      </h1>
-    );
-  }
-
   const bannerClasses = cn(
     "w-full mb-6 border rounded-xl shadow-sm overflow-hidden",
     "border-zinc-200 dark:border-zinc-700",
+    "galaxy-setup-banner-root",
   );
 
   const getStatusIcon = (isComplete: boolean, hasError: boolean = false) => {
@@ -173,18 +166,16 @@ export function SetupBanner() {
 
   return (
     <>
-      <p className="text-xl font-medium text-zinc-700 dark:text-zinc-300 p-4 pt-6">
-        {t("setup.setupDyad")}
-      </p>
       <OnboardingBanner
         isVisible={isOnboardingVisible}
         setIsVisible={setIsOnboardingVisible}
       />
       <div className={bannerClasses}>
-        <Accordion multiple className="w-full" defaultValue={itemsNeedAction}>
+        <Accordion multiple className="w-full" defaultValue={["node-setup", "ai-setup"]}>
           <AccordionItem
             value="node-setup"
             className={cn(
+              "galaxy-setup-card",
               nodeCheckError
                 ? "bg-red-50 dark:bg-red-900/30"
                 : isNodeSetupComplete
@@ -202,7 +193,7 @@ export function SetupBanner() {
                 </div>
               </div>
             </AccordionTrigger>
-            <AccordionContent className="px-4 pt-2 pb-4 bg-white dark:bg-zinc-900 border-t border-inherit">
+            <AccordionContent className="px-4 pt-2 pb-4 bg-white dark:bg-zinc-900 border-t border-inherit accordion-inner">
               {nodeCheckError && (
                 <p className="text-sm text-red-600 dark:text-red-400">
                   {t("setup.errorCheckingNode")}
@@ -291,6 +282,7 @@ export function SetupBanner() {
           <AccordionItem
             value="ai-setup"
             className={cn(
+              "galaxy-setup-card",
               isAnyProviderSetup()
                 ? "bg-green-50 dark:bg-green-900/30"
                 : "bg-yellow-50 dark:bg-yellow-900/30",
@@ -310,7 +302,7 @@ export function SetupBanner() {
                 </div>
               </div>
             </AccordionTrigger>
-            <AccordionContent className="px-4 pt-2 pb-4 bg-white dark:bg-zinc-900 border-t border-inherit">
+            <AccordionContent className="px-4 pt-2 pb-4 bg-white dark:bg-zinc-900 border-t border-inherit accordion-inner">
               <p className="text-[15px] mb-3">
                 Not sure what to do? Watch the Get Started video above ☝️
               </p>
@@ -346,7 +338,7 @@ export function SetupBanner() {
               </div>
 
               <div
-                className="mt-2 p-3 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800/70 transition-colors"
+                className="galaxy-provider-card mt-2 p-3 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800/70 transition-colors"
                 onClick={handleOtherProvidersClick}
                 role="button"
                 tabIndex={isNodeSetupComplete ? 0 : -1}

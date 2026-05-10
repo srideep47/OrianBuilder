@@ -1908,7 +1908,7 @@ async function logMissionEventsForXml(input: {
       mimeType: artifact.mimeType ?? null,
       metadata: {
         chatId,
-        ...(artifact.metadata ?? {}),
+        ...artifact.metadata,
       },
     });
   }

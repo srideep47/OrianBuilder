@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "./design.css";
 @plugin "@tailwindcss/typography";
 
 /* Load Geist Font */
@@ -391,7 +392,1041 @@ body[data-scroll-locked] .app-region-drag {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   GALAXY SPACE BACKGROUND — OrianBuilder Space UI
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─ Keyframes ─────────────────────────────────────────────────── */
+@keyframes galaxyRotate {
+  from { transform: rotate(0deg)   scale(1.05); }
+  to   { transform: rotate(360deg) scale(1.05); }
+}
+@keyframes galaxySpiralDrift {
+  from { transform: translate(0,    0)    rotate(0deg); }
+  to   { transform: translate(-4%, -3%)   rotate(2deg); }
+}
+
+/*  Star / particle drift: translate exactly ONE tile width so the
+    tiled background-pattern loops seamlessly — no jump at wrap. */
+@keyframes galaxyStarsDrift {
+  from { transform: translate(0,      0);        }
+  to   { transform: translate(-280px, -280px);   }
+}
+@keyframes galaxyParticlesDrift {
+  from { transform: translate(0,      0);        }
+  to   { transform: translate(-500px, -500px);   }
+}
+@keyframes galaxyTwinkle {
+  0%, 100% { opacity: 0.55; }
+  50%       { opacity: 1;    }
+}
+
+/* ─ Wrapper ────────────────────────────────────────────────────── */
+/*  NO contain — it breaks backdrop-filter on descendant-external
+    elements (the glass setup cards) across the containment boundary. */
+.galaxy-bg-wrapper {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background: #000000;
+}
+
+/* ─ Rotating galactic core ─────────────────────────────────────── */
+.galaxy-bg-core {
+  position: absolute;
+  width: 200%;
+  height: 200%;
+  top: -50%;
+  left: -50%;
+  will-change: transform;
+  background:
+    radial-gradient(ellipse 18% 14% at 50% 50%, rgba(255,255,240,.98) 0%, rgba(255,240,220,.85) 2%, transparent 6%),
+    radial-gradient(ellipse 32% 25% at 50% 50%, rgba(240,215,255,.70) 0%, rgba(220,175,255,.50) 4%, transparent 13%),
+    radial-gradient(ellipse 52% 40% at 50% 50%, rgba(170,125,225,.50) 0%, rgba(110, 80,175,.30) 9%, transparent 26%),
+    radial-gradient(ellipse 78% 58% at 50% 50%, rgba( 85, 60,150,.38) 0%, rgba( 55, 38,105,.22)16%, transparent 36%),
+    #000000;
+  animation: galaxyRotate 260s linear infinite;
+}
+
+/* ─ Spiral-arm nebula (own GPU layer — separate sibling, not ::before) ── */
+.galaxy-bg-nebula {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+  background:
+    radial-gradient(ellipse 42% 32% at 26% 34%, rgba(185,140,245,.42) 0%, rgba(140, 98,205,.24) 9%, transparent 26%),
+    radial-gradient(ellipse 36% 27% at 74% 66%, rgba(155,112,228,.38) 0%, rgba(112, 80,185,.20) 8%, transparent 23%),
+    radial-gradient(ellipse 44% 33% at 64% 27%, rgba(165,122,235,.36) 0%, rgba(122, 90,195,.18)10%, transparent 28%),
+    radial-gradient(ellipse 34% 22% at 16% 20%, rgba(142,100,215,.32) 0%, rgba(102, 70,175,.16) 8%, transparent 22%);
+  animation: galaxySpiralDrift 200s ease-in-out infinite alternate;
+}
+
+/* ─ Drifting star field ─────────────────────────────────────────
+   All layers share the SAME tile size (280×280 px) so
+   translating by -280px produces a perfect seamless loop.
+   The layer is oversized (top/left: -5%, width/height: 110%)
+   to prevent edge gaps during the translate.                     */
+.galaxy-bg-stars {
+  position: absolute;
+  top: -5%;
+  left: -5%;
+  width: 110%;
+  height: 110%;
+  will-change: transform;
+  background-image:
+    radial-gradient(2px   2px   at 12% 18%, rgba(255,255,255,1.00), transparent),
+    radial-gradient(1.5px 1.5px at 38% 42%, rgba(235,228,255,.96),  transparent),
+    radial-gradient(2px   2px   at 68% 12%, rgba(255,255,255,1.00), transparent),
+    radial-gradient(1.8px 1.8px at 22% 65%, rgba(255,248,255,.92),  transparent),
+    radial-gradient(2px   2px   at 82% 50%, rgba(255,255,255,.98),  transparent),
+    radial-gradient(1.6px 1.6px at 52% 78%, rgba(218,228,255,.92),  transparent),
+    radial-gradient(1.8px 1.8px at 74% 35%, rgba(255,255,255,.95),  transparent),
+    radial-gradient(2px   2px   at  8% 88%, rgba(248,242,255,.90),  transparent),
+    radial-gradient(1.5px 1.5px at 46% 58%, rgba(255,255,255,.88),  transparent),
+    radial-gradient(2px   2px   at 92% 24%, rgba(230,220,255,.94),  transparent);
+  background-size:    280px 280px; /* ALL layers same tile = seamless loop */
+  background-position:
+      0   0, 100px  56px, 196px  14px,  42px 210px,
+    224px 84px,  70px 168px, 154px 238px, 238px 126px,
+    112px 196px, 182px  42px;
+  animation: galaxyStarsDrift 18s linear infinite;
+}
+
+/* ─ Second, slower star layer for depth parallax ─────────────── */
+.galaxy-bg-stars2 {
+  position: absolute;
+  top: -5%;
+  left: -5%;
+  width: 110%;
+  height: 110%;
+  will-change: transform;
+  background-image:
+    radial-gradient(1.4px 1.4px at 30% 25%, rgba(255,255,255,.80), transparent),
+    radial-gradient(1px   1px   at 60% 55%, rgba(220,210,255,.75), transparent),
+    radial-gradient(1.4px 1.4px at 85% 72%, rgba(255,255,255,.78), transparent),
+    radial-gradient(1px   1px   at 15% 82%, rgba(210,220,255,.72), transparent),
+    radial-gradient(1.2px 1.2px at 50% 38%, rgba(255,255,255,.76), transparent),
+    radial-gradient(1px   1px   at 78% 88%, rgba(230,225,255,.70), transparent);
+  background-size:    280px 280px;
+  background-position:
+      0   0,  56px 112px, 140px  28px,
+    196px 196px, 84px 224px, 224px 70px;
+  animation: galaxyStarsDrift 30s linear infinite reverse;
+}
+
+/* ─ Twinkling accent stars (opacity-only, no translate) ─────── */
+.galaxy-bg-twinkle {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(2.5px 2.5px at 20% 35%, rgba(255,255,255,1.00), transparent),
+    radial-gradient(2px   2px   at 55% 65%, rgba(242,238,255,.96),  transparent),
+    radial-gradient(2.5px 2.5px at 76% 20%, rgba(255,255,255,.98),  transparent),
+    radial-gradient(2.2px 2.2px at 30% 72%, rgba(255,248,255,.92),  transparent),
+    radial-gradient(2px   2px   at 66% 40%, rgba(238,232,255,.90),  transparent),
+    radial-gradient(2.5px 2.5px at 10% 55%, rgba(255,255,255,.96),  transparent),
+    radial-gradient(2.2px 2.2px at 88% 70%, rgba(248,242,255,.92),  transparent);
+  background-size:    420px 420px, 460px 460px, 390px 390px,
+                      440px 440px, 470px 470px, 400px 400px, 450px 450px;
+  background-position: 0 0, 84px 84px, 42px 126px, 126px 42px,
+                       168px 168px, 21px 189px, 147px 105px;
+  animation: galaxyTwinkle 3.5s ease-in-out infinite;
+}
+
+/* ─ Glowing particles (larger, slow opposite drift) ─────────── */
+.galaxy-bg-particles {
+  position: absolute;
+  top: -10%;
+  left: -10%;
+  width: 120%;
+  height: 120%;
+  will-change: transform;
+  background-image:
+    radial-gradient(3.5px 3.5px at 18% 28%, rgba(195,175,255,.80), transparent),
+    radial-gradient(2.8px 2.8px at 58% 48%, rgba(218,198,255,.75), transparent),
+    radial-gradient(3.5px 3.5px at 40% 70%, rgba(238,218,255,.72), transparent),
+    radial-gradient(3px   3px   at 80% 36%, rgba(208,188,255,.76), transparent),
+    radial-gradient(2.8px 2.8px at 26% 56%, rgba(228,208,255,.70), transparent),
+    radial-gradient(3px   3px   at 72% 82%, rgba(215,195,255,.74), transparent);
+  background-size:    500px 500px;
+  background-position: 0 0, 100px 100px, 50px 300px, 300px 50px,
+                       200px 400px, 400px 200px;
+  animation: galaxyParticlesDrift 24s linear infinite;
+}
+
+/* ─ Static filmic grain ─────────────────────────────────────── */
+.galaxy-bg-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='1' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.8'/></svg>");
+  background-size: 200px 200px;
+}
+
+/* ─ Edge vignette ───────────────────────────────────────────── */
+.galaxy-bg-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(115% 88% at 50% 50%, transparent 42%, rgba(0,0,0,.65) 100%);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   GALAXY MODE — UI OVERRIDES
+   ════════════════════════════════════════════════════════════════ */
+
+body.galaxy-mode {
+  background: #000000 !important;
+  /* CSS variable overrides so all Tailwind color tokens go dark-glass */
+  --background:           oklch(0.08 0.018 292);
+  --background-lighter:   oklch(0.10 0.018 292);
+  --background-lightest:  oklch(0.12 0.018 292);
+  --foreground:           rgba(220, 212, 255, 0.90);
+  --muted:                rgba(255, 255, 255, 0.05);
+  --muted-foreground:     rgba(180, 172, 225, 0.60);
+  --border:               rgba(255, 255, 255, 0.10);
+  --input:                rgba(255, 255, 255, 0.08);
+  --card:                 rgba(10, 6, 25, 0.55);
+  --card-foreground:      rgba(220, 212, 255, 0.90);
+  --popover:              rgba(12, 8, 30, 0.85);
+  --popover-foreground:   rgba(220, 212, 255, 0.90);
+  --sidebar:                    rgba(0,   0,   0,   0.25);
+  --sidebar-border:             rgba(255, 255, 255, 0.10);
+  --sidebar-foreground:         rgba(243, 236, 223, 0.80);
+  --sidebar-accent:             rgba(139, 127, 255, 0.18);
+  --sidebar-accent-foreground:  rgba(243, 236, 223, 1.00);
+}
+
+/* Sidebar glass blur */
+body.galaxy-mode [data-sidebar="sidebar"] {
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* Title bar glass */
+body.galaxy-mode .app-region-drag {
+  background: rgba(0, 0, 0, 0.20) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Window control icons (minimize / maximize / close) — force
+   white on the dark galaxy title bar regardless of theme mode.
+   CSS fill/stroke override SVG presentation attributes.         */
+body.galaxy-mode .no-app-region-drag button svg rect,
+body.galaxy-mode .no-app-region-drag button svg path {
+  fill:   rgba(228, 220, 255, 0.88) !important;
+  stroke: rgba(228, 220, 255, 0.88) !important;
+}
+
+/* Main layout container — flat, no border, transparent */
+body.galaxy-mode #layout-main-content-container {
+  background: transparent !important;
+  border: none !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+}
+
+/* ── Glass setup step cards ────────────────────────────────────
+   Cards use a purple-tinted glass instead of pure black so the
+   galaxy colours bleed through, matching the design.            */
+body.galaxy-mode .galaxy-setup-card {
+  background: rgba(12, 8, 28, 0.45) !important;
+  backdrop-filter: blur(20px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(160%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.13) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,.40), inset 0 1px 0 rgba(255,255,255,.06) !important;
+}
+
+/* AccordionContent inner div — targets the <div className={cn("pt-0 pb-4", className)}> */
+body.galaxy-mode .galaxy-setup-card [data-slot="accordion-content"] > div,
+body.galaxy-mode .galaxy-setup-card .accordion-inner {
+  background: rgba(0, 0, 0, 0.20) !important;
+  border-top-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Text colours readable on dark glass */
+body.galaxy-mode .galaxy-setup-card .text-sm,
+body.galaxy-mode .galaxy-setup-card p,
+body.galaxy-mode .galaxy-setup-card label {
+  color: rgba(230, 222, 248, 0.80) !important;
+}
+body.galaxy-mode .galaxy-setup-card .font-medium,
+body.galaxy-mode .galaxy-setup-card [data-slot="accordion-trigger"] {
+  color: rgba(243, 236, 255, 0.94) !important;
+}
+
+/* ── Onboarding video card ─────────────────────────────────── */
+body.galaxy-mode .galaxy-onboarding-card {
+  background: rgba(12, 8, 28, 0.45) !important;
+  backdrop-filter: blur(20px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(160%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.13) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,.40), inset 0 1px 0 rgba(255,255,255,.06) !important;
+  color: rgba(243, 236, 223, 0.90) !important;
+}
+body.galaxy-mode .galaxy-onboarding-card:hover {
+  background: rgba(18, 12, 40, 0.58) !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
+}
+body.galaxy-mode .galaxy-onboarding-card p.font-semibold  { color: rgba(243,236,255,.96) !important; }
+body.galaxy-mode .galaxy-onboarding-card p.text-muted-foreground { color: rgba(190,182,220,.65) !important; }
+
+/* ── Prompt / home chat input card ────────────────────────── */
+body.galaxy-mode .galaxy-prompt-card {
+  background: rgba(12, 8, 28, 0.45) !important;
+  backdrop-filter: blur(20px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(160%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.13) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,.40), inset 0 1px 0 rgba(255,255,255,.06) !important;
+}
+
+/* ── Setup banner root (accordion wrapper) ─────────────────── */
+/*  No border / overflow:hidden — those cause visible corner lines
+    at the gap between cards. Each card handles its own border.  */
+body.galaxy-mode .galaxy-setup-banner-root {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  overflow: visible !important;
+}
+/* Also kill the AccordionItem bottom-border separator line */
+body.galaxy-mode .galaxy-setup-card {
+  border-bottom: none !important;
+}
+
+/* ── Quick-action chips ────────────────────────────────────── */
+body.galaxy-mode .galaxy-quick-chip {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: rgba(230, 222, 248, 0.85) !important;
+}
+body.galaxy-mode .galaxy-quick-chip:hover {
+  background: rgba(139, 127, 255, 0.15) !important;
+  border-color: rgba(139, 127, 255, 0.35) !important;
+  color: rgba(243, 236, 255, 1.00) !important;
+}
+
+/* ── Build heading ─────────────────────────────────────────── */
+body.galaxy-mode .galaxy-home-heading {
+  background: linear-gradient(135deg, #e8e0ff 0%, #b8a8f8 50%, #8b7fff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+}
+
+/* ── Gap between accordion setup cards + remove separator line ── */
+body.galaxy-mode .galaxy-setup-card + .galaxy-setup-card {
+  margin-top: 8px;
+}
+body.galaxy-mode .galaxy-setup-banner-root [data-slot="accordion-item"] {
+  border-bottom: none !important;
+}
+
+/* ── Home chat input (dark glass) ────────────────────────── */
+body.galaxy-mode .galaxy-chat-input {
+  background: rgba(8, 5, 20, 0.55) !important;
+  backdrop-filter: blur(20px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(160%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06) !important;
+}
+body.galaxy-mode .galaxy-chat-input:focus-within {
+  border-color: rgba(139, 127, 255, 0.45) !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,.45), 0 0 0 1px rgba(139,127,255,.28), inset 0 1px 0 rgba(255,255,255,.06) !important;
+}
+/* Text inside the input */
+body.galaxy-mode .galaxy-chat-input [contenteditable] {
+  color: rgba(243, 236, 255, 0.95) !important;
+  caret-color: rgba(180, 160, 255, 0.95) !important;
+}
+body.galaxy-mode .galaxy-chat-input [data-lexical-placeholder] {
+  color: rgba(180, 172, 220, 0.50) !important;
+}
+/* Bottom bar controls */
+body.galaxy-mode .galaxy-chat-input .text-muted-foreground {
+  color: rgba(180, 172, 220, 0.65) !important;
+}
+body.galaxy-mode .galaxy-chat-input button span,
+body.galaxy-mode .galaxy-chat-input [class*="text-foreground"] {
+  color: rgba(210, 200, 248, 0.80) !important;
+}
+
+/* ── Quick chip text (force white on dark bg) ───────────── */
+body.galaxy-mode .galaxy-quick-chip span {
+  color: rgba(230, 222, 248, 0.90) !important;
+}
+body.galaxy-mode .galaxy-quick-chip:hover span {
+  color: rgba(243, 236, 255, 1.00) !important;
+}
+
+/* ── Setup banner heading & description text ────────────── */
+body.galaxy-mode .galaxy-home-root > p {
+  color: rgba(220, 212, 248, 0.85) !important;
+}
+
+/* ── API provider cards (Google, OpenRouter, Other) ──────── */
+body.galaxy-mode .galaxy-provider-card {
+  background: rgba(10, 6, 25, 0.60) !important;
+  backdrop-filter: blur(16px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(150%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,.30) !important;
+}
+body.galaxy-mode .galaxy-provider-card:hover {
+  background: rgba(20, 13, 45, 0.75) !important;
+  border-color: rgba(139, 127, 255, 0.35) !important;
+}
+body.galaxy-mode .galaxy-provider-card h4 {
+  color: rgba(243, 236, 255, 0.92) !important;
+}
+body.galaxy-mode .galaxy-provider-card p,
+body.galaxy-mode .galaxy-provider-card span {
+  color: rgba(180, 172, 220, 0.72) !important;
+}
+body.galaxy-mode .galaxy-provider-card svg {
+  color: rgba(160, 152, 215, 0.70) !important;
+}
+/* "Free" chip badge */
+body.galaxy-mode .galaxy-provider-card [class*="absolute"][class*="rounded-full"] {
+  background: rgba(22, 14, 50, 0.90) !important;
+  border-color: rgba(139, 127, 255, 0.30) !important;
+  color: rgba(200, 192, 255, 0.92) !important;
+}
+/* Icon circle wrapper */
+body.galaxy-mode .galaxy-provider-card [class*="p-1"][class*="rounded-full"] {
+  background: rgba(100, 80, 200, 0.20) !important;
+}
+
+/* ── Sidebar buttons: New App, Search Apps ─────────────────── */
+body.galaxy-mode .galaxy-sidebar-btn {
+  background: rgba(12, 8, 28, 0.50) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: rgba(215, 205, 250, 0.85) !important;
+}
+body.galaxy-mode .galaxy-sidebar-btn:hover {
+  background: rgba(28, 18, 58, 0.70) !important;
+  border-color: rgba(139, 127, 255, 0.35) !important;
+  color: rgba(243, 236, 255, 1.00) !important;
+}
+body.galaxy-mode .galaxy-sidebar-btn svg {
+  color: rgba(175, 162, 240, 0.75) !important;
+}
+
+/* ── TitleBar app name button ─────────────────────────────── */
+body.galaxy-mode .galaxy-titlebar-btn {
+  background: rgba(12, 8, 28, 0.50) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: rgba(200, 190, 248, 0.82) !important;
+}
+body.galaxy-mode .galaxy-titlebar-btn:hover {
+  background: rgba(25, 16, 55, 0.72) !important;
+  border-color: rgba(139, 127, 255, 0.35) !important;
+  color: rgba(243, 236, 255, 1.00) !important;
+}
+
+/* ── Import App button ───────────────────────────────────── */
+body.galaxy-mode .galaxy-import-btn {
+  background: rgba(70, 50, 160, 0.55) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(139, 127, 255, 0.40) !important;
+  color: rgba(243, 236, 255, 0.95) !important;
+  box-shadow: 0 4px 16px rgba(80, 60, 180, 0.25) !important;
+}
+body.galaxy-mode .galaxy-import-btn:hover {
+  background: rgba(90, 68, 190, 0.70) !important;
+  border-color: rgba(160, 150, 255, 0.55) !important;
+  box-shadow: 0 4px 24px rgba(100, 80, 220, 0.40) !important;
+}
+
 /* In-between text-xs and text-sm */
 .text-xs-sm {
   font-size: 0.82rem;
 }
+
+/* ── Setup page title in TitleBar ───────────────────────────── */
+body.galaxy-mode .galaxy-setup-title {
+  color: rgba(220, 212, 248, 0.82) !important;
+  letter-spacing: 0.01em;
+}
+
+/* ── "Already have Pro?" link in TitleBar ───────────────────── */
+body.galaxy-mode .galaxy-pro-link {
+  color: rgba(139, 127, 255, 0.90) !important;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+body.galaxy-mode .galaxy-pro-link:hover {
+  color: rgba(180, 170, 255, 1.00) !important;
+  background: rgba(139, 127, 255, 0.12) !important;
+}
+
+/* ── Promo banner ("Up to 3x cheaper") ──────────────────────── */
+body.galaxy-mode .galaxy-promo-banner {
+  background: rgba(20, 65, 45, 0.45) !important;
+  backdrop-filter: blur(16px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(140%) !important;
+  border-color: rgba(45, 180, 120, 0.25) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.30) !important;
+}
+body.galaxy-mode .galaxy-promo-banner p {
+  color: rgba(80, 220, 150, 0.92) !important;
+}
+body.galaxy-mode .galaxy-promo-banner p + p {
+  color: rgba(80, 220, 150, 0.65) !important;
+}
+body.galaxy-mode .galaxy-promo-banner button {
+  background: rgba(45, 180, 120, 0.85) !important;
+  box-shadow: 0 2px 8px rgba(45, 180, 120, 0.25) !important;
+}
+body.galaxy-mode .galaxy-promo-banner button:hover {
+  background: rgba(55, 200, 135, 0.95) !important;
+  box-shadow: 0 4px 16px rgba(45, 180, 120, 0.40) !important;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   GLOBAL SPACE THEME — ALL ROUTES
+   ════════════════════════════════════════════════════════════════ */
+
+/* ── Shared enter animations ─────────────────────────────────── */
+@keyframes galaxyFadeInDown {
+  from { opacity: 0; transform: translateY(-14px); }
+  to   { opacity: 1; transform: translateY(0);     }
+}
+@keyframes galaxyFadeInUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+@keyframes galaxyFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes galaxyPulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0   rgba(139,127,255,0);    }
+  50%       { box-shadow: 0 0 18px 4px rgba(139,127,255,.22); }
+}
+
+/* ── Route-specific nebula color shifts ──────────────────────── */
+body[data-route="chat"]          .galaxy-bg-nebula { filter: hue-rotate(-55deg)  saturate(110%); }
+body[data-route="hub"]           .galaxy-bg-nebula { filter: hue-rotate(-90deg)  saturate(120%); }
+body[data-route="library"]       .galaxy-bg-nebula { filter: hue-rotate(115deg)  saturate(130%); }
+body[data-route="marketplace"]   .galaxy-bg-nebula { filter: hue-rotate(-25deg)  saturate(115%); }
+body[data-route="models-library"].galaxy-bg-nebula { filter: hue-rotate(-25deg)  saturate(115%); }
+body[data-route="inference"]     .galaxy-bg-nebula { filter: hue-rotate(145deg)  saturate(140%); }
+body[data-route="media"]         .galaxy-bg-nebula { filter: hue-rotate(65deg)   saturate(125%); }
+body[data-route="settings"]      .galaxy-bg-nebula { filter: hue-rotate(0deg)    saturate(50%);  }
+body[data-route="app-details"]   .galaxy-bg-nebula { filter: hue-rotate(-40deg)  saturate(105%); }
+
+/* Also shift the galactic core glow */
+body[data-route="chat"]          .galaxy-bg-core { filter: hue-rotate(-55deg); }
+body[data-route="hub"]           .galaxy-bg-core { filter: hue-rotate(-90deg); }
+body[data-route="library"]       .galaxy-bg-core { filter: hue-rotate(115deg); }
+body[data-route="inference"]     .galaxy-bg-core { filter: hue-rotate(145deg); }
+body[data-route="media"]         .galaxy-bg-core { filter: hue-rotate(65deg);  }
+
+/* ── Shared dark glass card (used on content pages) ──────────── */
+body.galaxy-mode .galaxy-card {
+  background: rgba(10, 6, 25, 0.55);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.40), inset 0 1px 0 rgba(255,255,255,.05);
+  animation: galaxyFadeInUp 0.45s ease-out both;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+body.galaxy-mode .galaxy-card:hover {
+  border-color: rgba(139, 127, 255, 0.28);
+  box-shadow: 0 8px 32px rgba(0,0,0,.40), 0 0 0 1px rgba(139,127,255,.12), inset 0 1px 0 rgba(255,255,255,.06);
+}
+/* Ensure card text is readable */
+body.galaxy-mode .galaxy-card,
+body.galaxy-mode .galaxy-card * {
+  color: rgba(220, 212, 255, 0.88);
+}
+
+/* ── Page headers (title + subtitle) ────────────────────────── */
+body.galaxy-mode .galaxy-page-header {
+  text-align: center;
+  padding: 1.5rem 1rem 1rem;
+  margin-bottom: 1.5rem;
+}
+body.galaxy-mode .galaxy-page-title {
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #e8e0ff 0%, #b8a8f8 50%, #8b7fff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  margin-bottom: 0.5rem;
+  animation: galaxyFadeInDown 0.55s ease-out both;
+}
+body.galaxy-mode .galaxy-page-subtitle {
+  color: rgba(190, 180, 240, 0.65);
+  font-size: 0.92rem;
+  animation: galaxyFadeInDown 0.55s ease-out 0.08s both;
+}
+/* Per-route title gradient overrides */
+body[data-route="chat"]          .galaxy-page-title { background-image: linear-gradient(135deg, #cce8ff 0%, #89c8f8 50%, #5ba0e8 100%); }
+body[data-route="hub"]           .galaxy-page-title { background-image: linear-gradient(135deg, #c8f8ec 0%, #6ddfc8 50%, #30b89a 100%); }
+body[data-route="library"]       .galaxy-page-title { background-image: linear-gradient(135deg, #fff3cc 0%, #f8d87a 50%, #e0a030 100%); }
+body[data-route="marketplace"]   .galaxy-page-title { background-image: linear-gradient(135deg, #cce8ff 0%, #89bcf8 50%, #5080d8 100%); }
+body[data-route="inference"]     .galaxy-page-title { background-image: linear-gradient(135deg, #ffe8cc 0%, #f8b06a 50%, #e07830 100%); }
+body[data-route="media"]         .galaxy-page-title { background-image: linear-gradient(135deg, #ffd6ec 0%, #f898c8 50%, #d060a0 100%); }
+
+/* ── Section sub-labels inside pages ────────────────────────── */
+body.galaxy-mode .galaxy-section-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: rgba(180, 165, 255, 0.60);
+  margin-bottom: 1rem;
+  padding-left: 0.25rem;
+  animation: galaxyFadeIn 0.4s ease-out both;
+}
+
+/* ── Chat panel glass: dark glass on messages background ─────── */
+body.galaxy-mode .flex.flex-col.h-full {
+  background: transparent !important;
+}
+
+/* ── LibraryCard dark glass inner override ───────────────────── */
+body.galaxy-mode .galaxy-card [class*="border"],
+body.galaxy-mode .galaxy-card [class*="bg-white"],
+body.galaxy-mode .galaxy-card [class*="bg-background"] {
+  background: transparent !important;
+  border-color: rgba(255,255,255,.08) !important;
+}
+
+/* ── TemplateCard dark glass inner override ──────────────────── */
+body.galaxy-mode .galaxy-card button[class*="bg-primary"] {
+  background: rgba(80,60,180,.70) !important;
+  border-color: rgba(139,127,255,.40) !important;
+  color: rgba(243,236,255,.95) !important;
+}
+
+/* ── Scrollbars (thin, translucent) ─────────────────────────── */
+body.galaxy-mode *::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+body.galaxy-mode *::-webkit-scrollbar-track { background: transparent; }
+body.galaxy-mode *::-webkit-scrollbar-thumb {
+  background: rgba(139,127,255,.30);
+  border-radius: 4px;
+}
+body.galaxy-mode *::-webkit-scrollbar-thumb:hover {
+  background: rgba(139,127,255,.55);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   ROUTE-SPECIFIC SPACE SCENES  (V2 — unique per page)
+   Each page gets its own animated space environment, colour
+   palette, and foreground space object (planet / star / aurora).
+   Driven by  body[data-route="X"]  set in layout.tsx.
+   ════════════════════════════════════════════════════════════════ */
+
+/* ── Shared object keyframes ─────────────────────────────────── */
+@keyframes spaceFloat {
+  0%, 100% { transform: translateY(0px)  rotate(0deg);    }
+  50%       { transform: translateY(-14px) rotate(1.5deg); }
+}
+@keyframes spaceFloatB {
+  0%, 100% { transform: translateY(0px)  rotate(0deg);    }
+  50%       { transform: translateY(14px) rotate(-1.5deg); }
+}
+@keyframes reactorPulse {
+  0%, 100% { transform: scale(1);    opacity: 0.92; }
+  50%       { transform: scale(1.06); opacity: 1.00; }
+}
+@keyframes auroraWave {
+  0%   { background-position: 0%   50%; opacity: 0.55; }
+  33%  { background-position: 42%  50%; opacity: 0.80; }
+  66%  { background-position: -28% 50%; opacity: 0.62; }
+  100% { background-position: 0%   50%; opacity: 0.55; }
+}
+@keyframes asteroidDrift {
+  0%   { transform: translate(0,    0)  rotate(0deg);   }
+  100% { transform: translate(-85px, 42px) rotate(190deg); }
+}
+
+/* ── Content container: subtle glass tint per route ─────────── */
+body.galaxy-mode #layout-main-content-container {
+  backdrop-filter: blur(2px) !important;
+  -webkit-backdrop-filter: blur(2px) !important;
+}
+body[data-route="chat"]        #layout-main-content-container { background: rgba( 3,  7, 26, 0.36) !important; }
+body[data-route="inference"]   #layout-main-content-container { background: rgba(20,  8,  2, 0.36) !important; }
+body[data-route="models"]      #layout-main-content-container { background: rgba( 2,  5, 20, 0.36) !important; }
+body[data-route="marketplace"] #layout-main-content-container { background: rgba( 2, 10,  7, 0.36) !important; }
+body[data-route="mediaai"]     #layout-main-content-container { background: rgba( 2, 14, 10, 0.36) !important; }
+body[data-route="settings"]    #layout-main-content-container { background: rgba( 8,  4, 24, 0.36) !important; }
+body[data-route="library"]     #layout-main-content-container { background: rgba(16,  8,  2, 0.36) !important; }
+body[data-route="hub"]         #layout-main-content-container { background: rgba( 2,  6, 20, 0.36) !important; }
+
+/* ══════════════════════════════════════════════════════════════
+   /chat — Deep Blue Nebula + Earth + Moon
+   ══════════════════════════════════════════════════════════════ */
+body[data-route="chat"] .galaxy-bg-wrapper { background: #000510; }
+body[data-route="chat"] .galaxy-bg-core {
+  background:
+    radial-gradient(ellipse 18% 14% at 65% 42%, rgba(220,248,255,.96) 0%, rgba(180,235,255,.83) 2%, transparent 6%),
+    radial-gradient(ellipse 34% 26% at 65% 42%, rgba(90,200,255,.68) 0%, rgba(50,160,240,.48) 4%, transparent 14%),
+    radial-gradient(ellipse 54% 42% at 65% 42%, rgba(25,120,195,.50) 0%, rgba(12,72,150,.30) 9%, transparent 28%),
+    radial-gradient(ellipse 80% 60% at 65% 42%, rgba(8,48,115,.38) 0%, rgba(4,24,80,.22) 16%, transparent 38%),
+    #000510;
+  filter: none !important;
+}
+body[data-route="chat"] .galaxy-bg-nebula {
+  background:
+    radial-gradient(ellipse 44% 34% at 28% 36%, rgba(60,175,255,.40) 0%, rgba(38,135,220,.22) 9%, transparent 28%),
+    radial-gradient(ellipse 38% 28% at 72% 64%, rgba(45,195,220,.36) 0%, rgba(28,155,200,.18) 8%, transparent 25%),
+    radial-gradient(ellipse 46% 35% at 60% 25%, rgba(55,155,240,.32) 0%, rgba(36,115,200,.16) 10%, transparent 30%);
+  filter: none !important;
+}
+/* Earth */
+body[data-route="chat"] .galaxy-bg-wrapper::before {
+  content: '';
+  position: absolute;
+  width: 155px; height: 155px;
+  right: 8%; bottom: 20%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 38%,
+    rgba(130,205,255,.95) 0%, rgba(55,148,225,.85) 22%,
+    rgba(22,85,175,.90) 52%, rgba(8,38,105,.96) 82%, rgba(3,18,60,1) 100%);
+  box-shadow:
+    inset -22px -18px 48px rgba(0,0,35,.86),
+    0 0 32px rgba(60,148,255,.22), 0 0 68px rgba(28,90,210,.10);
+  animation: spaceFloat 20s ease-in-out infinite;
+  z-index: 1;
+}
+/* Moon */
+body[data-route="chat"] .galaxy-bg-wrapper::after {
+  content: '';
+  position: absolute;
+  width: 44px; height: 44px;
+  right: calc(8% + 132px); bottom: calc(20% + 90px);
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 38%,
+    rgba(215,215,228,.95) 0%, rgba(162,165,182,.88) 40%,
+    rgba(105,108,125,.92) 75%, rgba(68,70,88,1) 100%);
+  box-shadow: inset -8px -6px 16px rgba(0,0,20,.78), 0 0 10px rgba(185,188,220,.14);
+  animation: spaceFloatB 26s ease-in-out infinite;
+  z-index: 1;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   /inference (Engine) — Hot Star / Solar Reactor
+   ══════════════════════════════════════════════════════════════ */
+body[data-route="inference"] .galaxy-bg-wrapper { background: #080200; }
+body[data-route="inference"] .galaxy-bg-core {
+  background:
+    radial-gradient(ellipse 18% 14% at 50% 50%, rgba(255,255,235,.99) 0%, rgba(255,238,180,.90) 2%, transparent 6%),
+    radial-gradient(ellipse 34% 26% at 50% 50%, rgba(255,195,70,.74) 0%, rgba(242,148,35,.54) 4%, transparent 14%),
+    radial-gradient(ellipse 54% 42% at 50% 50%, rgba(218,95,22,.54) 0%, rgba(175,55,10,.34) 9%, transparent 28%),
+    radial-gradient(ellipse 80% 60% at 50% 50%, rgba(145,35,8,.42) 0%, rgba(95,18,3,.25) 16%, transparent 38%),
+    #080200;
+  filter: none !important;
+  animation: galaxyRotate 200s linear infinite, reactorPulse 5s ease-in-out infinite;
+}
+body[data-route="inference"] .galaxy-bg-nebula {
+  background:
+    radial-gradient(ellipse 50% 38% at 26% 38%, rgba(255,145,45,.46) 0%, rgba(220,95,22,.26) 9%, transparent 28%),
+    radial-gradient(ellipse 44% 32% at 72% 62%, rgba(242,118,28,.42) 0%, rgba(198,75,14,.24) 8%, transparent 25%),
+    radial-gradient(ellipse 48% 36% at 62% 28%, rgba(255,175,55,.38) 0%, rgba(225,128,28,.20) 10%, transparent 30%);
+  filter: none !important;
+}
+/* Hot star */
+body[data-route="inference"] .galaxy-bg-wrapper::before {
+  content: '';
+  position: absolute;
+  width: 96px; height: 96px;
+  right: 13%; top: 22%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 44% 44%,
+    rgba(255,255,215,1) 0%, rgba(255,222,115,.96) 14%,
+    rgba(255,160,55,.90) 38%, rgba(218,78,18,.82) 68%, rgba(145,28,4,.92) 100%);
+  box-shadow:
+    0 0 18px rgba(255,198,70,.62), 0 0 48px rgba(255,148,36,.36),
+    0 0 96px rgba(215,76,18,.18), inset -8px -8px 22px rgba(148,28,4,.52);
+  animation: reactorPulse 3.5s ease-in-out infinite;
+  z-index: 1;
+}
+/* Solar flare ray */
+body[data-route="inference"] .galaxy-bg-wrapper::after {
+  content: '';
+  position: absolute;
+  width: 260px; height: 3px;
+  right: calc(13% + 48px); top: calc(22% + 46px);
+  background: linear-gradient(to left, rgba(255,200,70,.65), rgba(255,140,40,.20), transparent);
+  animation: reactorPulse 4s ease-in-out infinite 0.8s;
+  z-index: 1;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   /models — Navy Blue Nebula + Blue-White Dwarf Star
+   ══════════════════════════════════════════════════════════════ */
+body[data-route="models"] .galaxy-bg-wrapper { background: #000308; }
+body[data-route="models"] .galaxy-bg-core {
+  background:
+    radial-gradient(ellipse 18% 14% at 72% 30%, rgba(210,240,255,.95) 0%, rgba(165,220,255,.82) 2%, transparent 6%),
+    radial-gradient(ellipse 34% 26% at 72% 30%, rgba(72,188,255,.64) 0%, rgba(44,148,238,.44) 4%, transparent 14%),
+    radial-gradient(ellipse 54% 42% at 72% 30%, rgba(20,105,190,.46) 0%, rgba(10,58,145,.26) 9%, transparent 28%),
+    radial-gradient(ellipse 80% 60% at 72% 30%, rgba(6,40,108,.33) 0%, rgba(3,19,72,.18) 16%, transparent 38%),
+    #000308;
+  filter: none !important;
+}
+body[data-route="models"] .galaxy-bg-nebula {
+  background:
+    radial-gradient(ellipse 44% 34% at 28% 38%, rgba(48,155,255,.36) 0%, rgba(32,115,222,.18) 9%, transparent 28%),
+    radial-gradient(ellipse 38% 28% at 74% 64%, rgba(62,195,255,.32) 0%, rgba(44,148,228,.16) 8%, transparent 25%);
+  filter: none !important;
+}
+/* Blue-white dwarf */
+body[data-route="models"] .galaxy-bg-wrapper::before {
+  content: '';
+  position: absolute;
+  width: 70px; height: 70px;
+  right: 10%; top: 18%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 42% 42%,
+    rgba(235,248,255,1) 0%, rgba(165,215,255,.96) 18%,
+    rgba(80,162,255,.90) 45%, rgba(30,90,210,.84) 72%, rgba(10,40,130,.92) 100%);
+  box-shadow:
+    0 0 14px rgba(165,220,255,.68), 0 0 36px rgba(80,165,255,.40),
+    0 0 72px rgba(30,95,220,.18),   inset -5px -5px 12px rgba(8,38,130,.60);
+  animation: reactorPulse 6s ease-in-out infinite;
+  z-index: 1;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   /marketplace — Teal-Green Nebula + Drifting Asteroids
+   ══════════════════════════════════════════════════════════════ */
+body[data-route="marketplace"] .galaxy-bg-wrapper { background: #010508; }
+body[data-route="marketplace"] .galaxy-bg-core {
+  background:
+    radial-gradient(ellipse 18% 14% at 50% 56%, rgba(225,255,245,.95) 0%, rgba(185,250,225,.82) 2%, transparent 6%),
+    radial-gradient(ellipse 34% 26% at 50% 56%, rgba(68,215,175,.66) 0%, rgba(42,178,148,.46) 4%, transparent 14%),
+    radial-gradient(ellipse 54% 42% at 50% 56%, rgba(18,135,105,.48) 0%, rgba(9,88,68,.28) 9%, transparent 28%),
+    radial-gradient(ellipse 80% 60% at 50% 56%, rgba(5,75,55,.36) 0%, rgba(2,42,32,.20) 16%, transparent 38%),
+    #010508;
+  filter: none !important;
+}
+body[data-route="marketplace"] .galaxy-bg-nebula {
+  background:
+    radial-gradient(ellipse 44% 34% at 26% 35%, rgba(48,195,155,.38) 0%, rgba(32,155,122,.20) 9%, transparent 28%),
+    radial-gradient(ellipse 38% 28% at 72% 65%, rgba(62,210,168,.34) 0%, rgba(44,165,132,.16) 8%, transparent 25%);
+  filter: none !important;
+}
+/* Asteroid 1 */
+body[data-route="marketplace"] .galaxy-bg-wrapper::before {
+  content: '';
+  position: absolute;
+  width: 58px; height: 40px;
+  left: 14%; top: 28%;
+  border-radius: 50% 48% 52% 46% / 44% 50% 52% 48%;
+  background: radial-gradient(circle at 36% 36%, rgba(165,155,138,.92) 0%, rgba(102,96,85,.86) 38%, rgba(64,60,52,.93) 78%);
+  box-shadow: inset -8px -6px 18px rgba(0,0,0,.72), 0 0 8px rgba(175,162,130,.08);
+  animation: asteroidDrift 35s linear infinite;
+  z-index: 1;
+}
+/* Asteroid 2 */
+body[data-route="marketplace"] .galaxy-bg-wrapper::after {
+  content: '';
+  position: absolute;
+  width: 36px; height: 26px;
+  left: 22%; top: 60%;
+  border-radius: 50% 48% 52% 46% / 44% 50% 52% 48%;
+  background: radial-gradient(circle at 36% 36%, rgba(142,134,118,.90) 0%, rgba(88,84,74,.84) 38%, rgba(56,52,45,.92) 78%);
+  box-shadow: inset -6px -5px 14px rgba(0,0,0,.70);
+  animation: asteroidDrift 22s linear infinite reverse;
+  z-index: 1;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   /mediaai (Media AI) — Aurora Borealis
+   ══════════════════════════════════════════════════════════════ */
+body[data-route="mediaai"] .galaxy-bg-wrapper { background: #000a06; }
+body[data-route="mediaai"] .galaxy-bg-core {
+  background:
+    radial-gradient(ellipse 22% 55% at 50% 2%, rgba(68,255,168,.52) 0%, rgba(38,195,132,.28) 25%, transparent 65%),
+    radial-gradient(ellipse 65% 40% at 50% 8%, rgba(45,225,155,.22) 0%, transparent 58%),
+    radial-gradient(ellipse 55% 82% at 50% 50%, rgba(15,72,52,.88) 0%, rgba(4,28,22,.95) 50%, #000a06 100%);
+  filter: none !important;
+  animation: none !important;
+}
+body[data-route="mediaai"] .galaxy-bg-nebula {
+  background:
+    linear-gradient(180deg,
+      transparent 0%,
+      rgba(48,215,145,.20) 7%,
+      rgba(78,195,255,.24) 13%,
+      rgba(108,80,255,.16) 18%,
+      transparent 28%
+    );
+  background-size: 200% 100%;
+  filter: none !important;
+  animation: auroraWave 9s ease-in-out infinite !important;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   /settings — Deep Indigo + Saturn (Ringed Planet)
+   ══════════════════════════════════════════════════════════════ */
+body[data-route="settings"] .galaxy-bg-wrapper { background: #02000e; }
+body[data-route="settings"] .galaxy-bg-core {
+  background:
+    radial-gradient(ellipse 18% 14% at 28% 62%, rgba(242,232,255,.96) 0%, rgba(222,202,255,.83) 2%, transparent 6%),
+    radial-gradient(ellipse 34% 26% at 28% 62%, rgba(172,132,255,.68) 0%, rgba(132,92,238,.48) 4%, transparent 14%),
+    radial-gradient(ellipse 54% 42% at 28% 62%, rgba(82,52,182,.50) 0%, rgba(48,28,132,.30) 9%, transparent 28%),
+    radial-gradient(ellipse 80% 60% at 28% 62%, rgba(32,18,98,.38) 0%, rgba(18,8,62,.22) 16%, transparent 38%),
+    #02000e;
+  filter: none !important;
+}
+body[data-route="settings"] .galaxy-bg-nebula {
+  background:
+    radial-gradient(ellipse 44% 34% at 25% 33%, rgba(152,112,255,.42) 0%, rgba(112,78,222,.24) 9%, transparent 28%),
+    radial-gradient(ellipse 38% 28% at 70% 68%, rgba(132,98,242,.38) 0%, rgba(96,66,205,.20) 8%, transparent 25%);
+  filter: none !important;
+  animation: galaxySpiralDrift 200s ease-in-out infinite alternate !important;
+}
+/* Saturn body */
+body[data-route="settings"] .galaxy-bg-wrapper::before {
+  content: '';
+  position: absolute;
+  width: 132px; height: 132px;
+  right: 11%; top: 16%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 38%,
+    rgba(245,215,158,.95) 0%, rgba(202,162,96,.86) 28%,
+    rgba(152,112,58,.92) 58%, rgba(92,62,22,1) 92%);
+  box-shadow:
+    inset -20px -16px 42px rgba(30,10,0,.80),
+    0 0 28px rgba(205,162,78,.18), 0 0 58px rgba(162,122,42,.10);
+  animation: spaceFloat 28s ease-in-out infinite;
+  z-index: 2;
+}
+/* Saturn rings */
+body[data-route="settings"] .galaxy-bg-wrapper::after {
+  content: '';
+  position: absolute;
+  width: 228px; height: 58px;
+  right: calc(11% - 48px); top: calc(16% + 37px);
+  border-radius: 50%;
+  border: 12px solid rgba(202,162,78,.28);
+  box-shadow: 0 0 0 7px rgba(182,142,58,.12), 0 0 0 20px rgba(162,122,42,.06);
+  transform: rotateX(68deg);
+  animation: spaceFloat 28s ease-in-out infinite;
+  z-index: 1;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   /library — Warm Amber Nebula + Distant Warm Planet
+   ══════════════════════════════════════════════════════════════ */
+body[data-route="library"] .galaxy-bg-wrapper { background: #060300; }
+body[data-route="library"] .galaxy-bg-core {
+  background:
+    radial-gradient(ellipse 18% 14% at 36% 54%, rgba(255,245,208,.97) 0%, rgba(255,228,162,.84) 2%, transparent 6%),
+    radial-gradient(ellipse 34% 26% at 36% 54%, rgba(242,188,72,.70) 0%, rgba(212,148,38,.50) 4%, transparent 14%),
+    radial-gradient(ellipse 54% 42% at 36% 54%, rgba(182,118,28,.52) 0%, rgba(142,82,12,.32) 9%, transparent 28%),
+    radial-gradient(ellipse 80% 60% at 36% 54%, rgba(108,62,6,.40) 0%, rgba(72,38,2,.22) 16%, transparent 38%),
+    #060300;
+  filter: none !important;
+}
+body[data-route="library"] .galaxy-bg-nebula {
+  background:
+    radial-gradient(ellipse 44% 34% at 26% 33%, rgba(222,168,72,.40) 0%, rgba(182,128,48,.22) 9%, transparent 28%),
+    radial-gradient(ellipse 38% 28% at 72% 67%, rgba(202,152,58,.36) 0%, rgba(162,115,38,.18) 8%, transparent 25%);
+  filter: none !important;
+}
+/* Warm planet */
+body[data-route="library"] .galaxy-bg-wrapper::before {
+  content: '';
+  position: absolute;
+  width: 88px; height: 88px;
+  right: 9%; top: 22%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 38%,
+    rgba(255,198,118,.95) 0%, rgba(222,148,68,.86) 33%,
+    rgba(162,92,28,.91) 64%, rgba(98,52,10,1) 94%);
+  box-shadow:
+    inset -14px -10px 28px rgba(40,10,0,.76),
+    0 0 22px rgba(245,168,58,.18), 0 0 45px rgba(202,128,38,.10);
+  animation: spaceFloat 32s ease-in-out infinite;
+  z-index: 1;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   /hub — Blue Nebula + Space Station (Rings + Core)
+   ══════════════════════════════════════════════════════════════ */
+body[data-route="hub"] .galaxy-bg-wrapper { background: #00050e; }
+body[data-route="hub"] .galaxy-bg-core {
+  background:
+    radial-gradient(ellipse 18% 14% at 50% 50%, rgba(218,238,255,.96) 0%, rgba(178,218,255,.82) 2%, transparent 6%),
+    radial-gradient(ellipse 34% 26% at 50% 50%, rgba(75,158,242,.66) 0%, rgba(48,118,215,.46) 4%, transparent 14%),
+    radial-gradient(ellipse 54% 42% at 50% 50%, rgba(22,78,175,.48) 0%, rgba(10,42,132,.28) 9%, transparent 28%),
+    radial-gradient(ellipse 80% 60% at 50% 50%, rgba(6,28,98,.36) 0%, rgba(3,12,65,.20) 16%, transparent 38%),
+    #00050e;
+  filter: none !important;
+}
+body[data-route="hub"] .galaxy-bg-nebula {
+  background:
+    radial-gradient(ellipse 44% 34% at 26% 36%, rgba(55,138,255,.36) 0%, rgba(38,102,222,.18) 9%, transparent 28%),
+    radial-gradient(ellipse 38% 28% at 74% 64%, rgba(66,158,242,.32) 0%, rgba(46,118,215,.16) 8%, transparent 25%);
+  filter: none !important;
+}
+/* Station ring halo */
+body[data-route="hub"] .galaxy-bg-wrapper::before {
+  content: '';
+  position: absolute;
+  width: 178px; height: 178px;
+  left: 11%; top: 50%;
+  transform: translate(0, -50%);
+  border-radius: 50%;
+  border: 2.5px solid rgba(95,175,255,.22);
+  box-shadow:
+    0 0 0 10px rgba(72,152,242,.10),
+    0 0 0 26px rgba(52,132,222,.06),
+    0 0 0 50px rgba(32,110,202,.03);
+  animation: spaceFloat 22s ease-in-out infinite;
+  z-index: 1;
+}
+/* Station core planet */
+body[data-route="hub"] .galaxy-bg-wrapper::after {
+  content: '';
+  position: absolute;
+  width: 74px; height: 74px;
+  left: calc(11% + 52px); top: 50%;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 40%,
+    rgba(182,218,255,.95) 0%, rgba(118,178,242,.82) 24%,
+    rgba(55,110,202,.88) 58%, rgba(22,52,142,1) 100%);
+  box-shadow:
+    inset -10px -8px 22px rgba(0,0,30,.80),
+    0 0 18px rgba(98,178,255,.22), 0 0 36px rgba(68,148,242,.12);
+  animation: spaceFloat 22s ease-in-out infinite;
+  z-index: 2;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   /app-details — Tinted rose-violet (distinct from home galaxy)
+   ══════════════════════════════════════════════════════════════ */
+body[data-route="app-details"] .galaxy-bg-wrapper { background: #060004; }
+body[data-route="app-details"] .galaxy-bg-core { filter: hue-rotate(-28deg) saturate(112%) !important; }
+body[data-route="app-details"] .galaxy-bg-nebula { filter: hue-rotate(-28deg) saturate(112%) !important; }

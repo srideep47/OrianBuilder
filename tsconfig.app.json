@@ -31,6 +31,7 @@
   "exclude": [
     "e2e-tests/fixtures",
     "src/__tests__/evals/fixtures",
-    "eval-results"
+    "eval-results",
+    "src/ui"
   ]
 }

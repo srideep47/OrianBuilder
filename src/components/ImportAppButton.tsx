@@ -13,6 +13,7 @@ export function ImportAppButton({ className }: { className?: string }) {
         <Button
           variant="default"
           size="default"
+          className="galaxy-import-btn"
           onClick={() => setIsDialogOpen(true)}
         >
           <Upload className="mr-2 h-4 w-4" />

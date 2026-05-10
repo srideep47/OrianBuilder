@@ -23,7 +23,7 @@ export const OnboardingBanner = ({
         }}
         target="_blank"
         rel="noopener noreferrer"
-        className="cursor-pointer block bg-(--background-lightest) border border-border rounded-lg shadow-lg hover:bg-accent transition-colors"
+        className="galaxy-onboarding-card cursor-pointer block bg-(--background-lightest) border border-border rounded-lg shadow-lg hover:bg-accent transition-colors"
       >
         <div className="flex items-center">
           <div className="relative p-2">

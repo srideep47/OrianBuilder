@@ -7,6 +7,8 @@ import { TitleBar } from "./TitleBar";
 import { useEffect, type ReactNode } from "react";
 import { useRunApp, useAppOutputSubscription } from "@/hooks/useRunApp";
 import { useAtomValue, useSetAtom } from "jotai";
+import { useRouterState } from "@tanstack/react-router";
+import { GalaxyBackground } from "@/components/GalaxyBackground";
 import {
   appConsoleEntriesAtom,
   previewModeAtom,
@@ -27,6 +29,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   useAppOutputSubscription();
   const previewMode = useAtomValue(previewModeAtom);
   const { settings } = useSettings();
+  const routerState = useRouterState();
+  const currentRoute = routerState.location.pathname.split("/")[1] || "home";
   const setSelectedComponentsPreview = useSetAtom(
     selectedComponentsPreviewAtom,
   );
@@ -102,16 +106,26 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     setConsoleEntries([]);
   }, [selectedAppId]);
 
+  useEffect(() => {
+    document.body.classList.add("galaxy-mode");
+    document.body.setAttribute("data-route", currentRoute);
+    return () => {
+      document.body.classList.remove("galaxy-mode");
+      document.body.removeAttribute("data-route");
+    };
+  }, [currentRoute]);
+
   return (
     <>
       <ThemeProvider>
         <DeepLinkProvider>
+          <GalaxyBackground />
           <SidebarProvider>
             <TitleBar />
             <AppSidebar />
             <div
               id="layout-main-content-container"
-              className="flex h-screenish w-full overflow-x-hidden mt-12 mb-4 mr-4 border-t border-l border-border rounded-lg bg-background"
+              className="flex h-screenish w-full overflow-x-hidden mt-[42px] bg-transparent"
             >
               {children}
             </div>

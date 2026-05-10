@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useTheme } from "../contexts/ThemeContext";
 import { ProviderSettingsGrid } from "@/components/ProviderSettings";
 import ConfirmationDialog from "@/components/ConfirmationDialog";
@@ -11,8 +11,6 @@ import { MaxToolCallStepsSelector } from "@/components/MaxToolCallStepsSelector"
 import { ThinkingBudgetSelector } from "@/components/ThinkingBudgetSelector";
 import { useSettings } from "@/hooks/useSettings";
 import { useAppVersion } from "@/hooks/useAppVersion";
-import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
 import { useRouter } from "@tanstack/react-router";
 import { GitHubIntegration } from "@/components/GitHubIntegration";
 import { VercelIntegration } from "@/components/VercelIntegration";
@@ -42,17 +40,37 @@ import { activeSettingsSectionAtom } from "@/atoms/viewAtoms";
 import { SECTION_IDS, SETTING_IDS } from "@/lib/settingsSearchIndex";
 import { BraveSearchSettings } from "@/components/settings/BraveSearchSettings";
 
+const SETTINGS_NAV = [
+  { id: SECTION_IDS.general,          label: '⚙ General' },
+  { id: SECTION_IDS.workflow,         label: '⟳ Workflow' },
+  { id: SECTION_IDS.ai,               label: '✦ AI' },
+  { id: SECTION_IDS.providers,        label: '▣ Model Providers' },
+  { id: SECTION_IDS.telemetry,        label: '📊 Telemetry' },
+  { id: SECTION_IDS.integrations,     label: '🔌 Integrations' },
+  { id: SECTION_IDS.agentPermissions, label: '🔐 Permissions' },
+  { id: SECTION_IDS.toolsMcp,         label: '🛠 Tools (MCP)' },
+  { id: SECTION_IDS.experiments,      label: '⚗ Experiments' },
+];
+
 export default function SettingsPage() {
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [activeSection, setActiveSection] = useState<string>(SECTION_IDS.general);
   const appVersion = useAppVersion();
   const { settings, updateSettings } = useSettings();
   const router = useRouter();
   const setActiveSettingsSection = useSetAtom(activeSettingsSectionAtom);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setActiveSettingsSection(SECTION_IDS.general);
   }, [setActiveSettingsSection]);
+
+  const scrollToSection = (id: string) => {
+    setActiveSection(id);
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const handleResetEverything = async () => {
     setIsResetting(true);
@@ -71,231 +89,163 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="min-h-screen px-8 py-4">
-      <div className="max-w-5xl mx-auto">
-        <Button
-          onClick={() => router.history.back()}
-          variant="outline"
-          size="sm"
-          className="flex items-center gap-2 mb-4 bg-(--background-lightest) py-5"
+    <div className="settings-shell">
+      {/* ── Left settings nav sidebar ── */}
+      <aside className="settings-aside">
+        <div className="head">⊙ Settings</div>
+        {SETTINGS_NAV.map((nav) => (
+          <button
+            key={nav.id}
+            className={`set-item ${activeSection === nav.id ? 'active' : ''}`}
+            onClick={() => scrollToSection(nav.id)}
+            type="button"
+          >
+            {nav.label}
+          </button>
+        ))}
+        <button
+          className="set-item danger"
+          onClick={() => scrollToSection(SECTION_IDS.dangerZone)}
+          type="button"
         >
-          <ArrowLeft className="h-4 w-4" />
-          Go Back
-        </Button>
-        <div className="flex justify-between mb-4">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Settings
-          </h1>
+          ⚠ Danger Zone
+        </button>
+      </aside>
+
+      {/* ── Right scrollable content ── */}
+      <div className="settings-content" ref={contentRef}>
+        <button className="back-link" onClick={() => router.history.back()} type="button">
+          ← Go Back
+        </button>
+
+        {/* General */}
+        <GeneralSettings appVersion={appVersion} />
+
+        {/* Workflow */}
+        <WorkflowSettings />
+
+        {/* AI */}
+        <AISettings />
+
+        {/* Model Providers */}
+        <div id={SECTION_IDS.providers} className="glass set-section">
+          <h2>▣ Model Providers</h2>
+          <ProviderSettingsGrid />
         </div>
 
-        <div className="space-y-6">
-          <GeneralSettings appVersion={appVersion} />
-          <WorkflowSettings />
-          <AISettings />
-
-          <div
-            id={SECTION_IDS.providers}
-            className="bg-white dark:bg-gray-800 rounded-xl shadow-sm"
-          >
-            <ProviderSettingsGrid />
-          </div>
-
-          <div className="space-y-6">
-            <div
-              id={SECTION_IDS.telemetry}
-              className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6"
-            >
-              <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-                Telemetry
-              </h2>
-              <div id={SETTING_IDS.telemetry} className="space-y-2">
-                <TelemetrySwitch />
-                <div className="text-sm text-gray-500 dark:text-gray-400">
-                  This records anonymous usage data to improve the product.
-                </div>
-              </div>
-
-              <div className="mt-2 flex items-center text-sm text-gray-500 dark:text-gray-400">
-                <span className="mr-2 font-medium">Telemetry ID:</span>
-                <span className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-800 dark:text-gray-200 font-mono">
-                  {settings ? settings.telemetryUserId : "n/a"}
-                </span>
-              </div>
+        {/* Telemetry */}
+        <div id={SECTION_IDS.telemetry} className="glass set-section">
+          <h2>📊 Telemetry</h2>
+          <div className="set-row" id={SETTING_IDS.telemetry}>
+            <TelemetrySwitch />
+            <div className="desc" style={{ marginTop: 6 }}>
+              Records anonymous usage data to improve the product.
             </div>
           </div>
+          <div className="set-row">
+            <span className="lbl">Telemetry ID</span>
+            <span className="mono" style={{ fontSize: 11, color: 'rgba(168,140,255,.8)', marginTop: 4, display: 'block' }}>
+              {settings ? settings.telemetryUserId : "n/a"}
+            </span>
+          </div>
+        </div>
 
-          {/* Integrations Section */}
-          <div
-            id={SECTION_IDS.integrations}
-            className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6"
-          >
-            <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-              Integrations
-            </h2>
-            <div className="space-y-4">
-              <div id={SETTING_IDS.github}>
-                <GitHubIntegration />
+        {/* Integrations */}
+        <div id={SECTION_IDS.integrations} className="glass set-section">
+          <h2>🔌 Integrations</h2>
+          <div className="set-row" id={SETTING_IDS.github}><GitHubIntegration /></div>
+          <div className="set-row" id={SETTING_IDS.vercel}><VercelIntegration /></div>
+          <div className="set-row" id={SETTING_IDS.supabase}><SupabaseIntegration /></div>
+          <div className="set-row" id={SETTING_IDS.neon}><NeonIntegration /></div>
+          <div className="set-row" id={SETTING_IDS.braveSearch}><BraveSearchSettings /></div>
+        </div>
+
+        {/* Agent Permissions */}
+        <div id={SECTION_IDS.agentPermissions} className="glass set-section">
+          <h2>🔐 Agent Permissions (Pro)</h2>
+          <AgentToolsSettings />
+        </div>
+
+        {/* Tools MCP */}
+        <div id={SECTION_IDS.toolsMcp} className="glass set-section">
+          <h2>🛠 Tools (MCP)</h2>
+          <ToolsMcpSettings />
+        </div>
+
+        {/* Experiments */}
+        <div id={SECTION_IDS.experiments} className="glass set-section">
+          <h2>⚗ Experiments</h2>
+          <div className="set-row" id={SETTING_IDS.nativeGit}>
+            <div className="row between">
+              <div>
+                <div className="lbl">Enable Native Git</div>
+                <div className="desc">Faster, native-Git performance — no external installation required.</div>
               </div>
-              <div id={SETTING_IDS.vercel}>
-                <VercelIntegration />
-              </div>
-              <div id={SETTING_IDS.supabase}>
-                <SupabaseIntegration />
-              </div>
-              <div id={SETTING_IDS.neon}>
-                <NeonIntegration />
-              </div>
-              <div id={SETTING_IDS.braveSearch}>
-                <BraveSearchSettings />
-              </div>
+              <Switch
+                id="enable-native-git"
+                aria-label="Enable Native Git"
+                checked={!!settings?.enableNativeGit}
+                onCheckedChange={(checked) => updateSettings({ enableNativeGit: checked })}
+              />
             </div>
           </div>
-
-          {/* Agent v2 Permissions */}
-
-          <div
-            id={SECTION_IDS.agentPermissions}
-            className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6"
-          >
-            <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-              Agent Permissions (Pro)
-            </h2>
-            <AgentToolsSettings />
+          <div className="set-row" id={SETTING_IDS.enableCloudSandbox}>
+            <CloudSandboxExperimentSwitch />
           </div>
-
-          {/* Tools (MCP) */}
-          <div
-            id={SECTION_IDS.toolsMcp}
-            className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6"
-          >
-            <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-              Tools (MCP)
-            </h2>
-            <ToolsMcpSettings />
+          <div className="set-row" id={SETTING_IDS.blockUnsafeNpmPackages}>
+            <BlockUnsafeNpmPackagesSwitch />
           </div>
-
-          {/* Experiments Section */}
-          <div
-            id={SECTION_IDS.experiments}
-            className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6"
-          >
-            <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-              Experiments
-            </h2>
-            <div className="space-y-4">
-              <div id={SETTING_IDS.nativeGit} className="space-y-1 mt-4">
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    id="enable-native-git"
-                    aria-label="Enable Native Git"
-                    checked={!!settings?.enableNativeGit}
-                    onCheckedChange={(checked) => {
-                      updateSettings({
-                        enableNativeGit: checked,
-                      });
-                    }}
-                  />
-                  <Label htmlFor="enable-native-git">Enable Native Git</Label>
-                </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">
-                  This doesn't require any external Git installation and offers
-                  a faster, native-Git performance experience.
-                </div>
+          <div className="set-row" id={SETTING_IDS.enableMcpServersForBuildMode}>
+            <div className="row between">
+              <div>
+                <div className="lbl">Enable MCP servers for Build mode</div>
+                <div className="desc">MCP servers are always enabled in Agent mode.</div>
               </div>
-              <div
-                id={SETTING_IDS.enableCloudSandbox}
-                className="space-y-1 mt-4"
-              >
-                <CloudSandboxExperimentSwitch />
-              </div>
-              <div
-                id={SETTING_IDS.blockUnsafeNpmPackages}
-                className="space-y-1 mt-4"
-              >
-                <BlockUnsafeNpmPackagesSwitch />
-              </div>
-              <div
-                id={SETTING_IDS.enableMcpServersForBuildMode}
-                className="space-y-1 mt-4"
-              >
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    id="enable-mcp-servers-for-build-mode"
-                    aria-label="Enable MCP servers for Build mode"
-                    checked={!!settings?.enableMcpServersForBuildMode}
-                    onCheckedChange={(checked) => {
-                      updateSettings({
-                        enableMcpServersForBuildMode: checked,
-                      });
-                    }}
-                  />
-                  <Label htmlFor="enable-mcp-servers-for-build-mode">
-                    Enable MCP servers for Build mode
-                  </Label>
-                </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">
-                  Allow MCP servers to be used when in Build mode. Note: MCP
-                  servers are always enabled in Agent mode.
-                </div>
-              </div>
-              <div
-                id={SETTING_IDS.enableSelectAppFromHomeChatInput}
-                className="space-y-1 mt-4"
-              >
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    id="enable-select-app-from-home-chat-input"
-                    aria-label="Enable Select App from Home Chat Input"
-                    checked={!!settings?.enableSelectAppFromHomeChatInput}
-                    onCheckedChange={(checked) => {
-                      updateSettings({
-                        enableSelectAppFromHomeChatInput: checked,
-                      });
-                    }}
-                  />
-                  <Label htmlFor="enable-select-app-from-home-chat-input">
-                    Enable Select App from Home Chat Input
-                  </Label>
-                </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">
-                  Show an app selector in the home chat input to start a chat
-                  referencing an existing app.
-                </div>
-              </div>
+              <Switch
+                id="enable-mcp-servers-for-build-mode"
+                aria-label="Enable MCP servers for Build mode"
+                checked={!!settings?.enableMcpServersForBuildMode}
+                onCheckedChange={(checked) => updateSettings({ enableMcpServersForBuildMode: checked })}
+              />
             </div>
           </div>
-
-          {/* Danger Zone */}
-          <div
-            id={SECTION_IDS.dangerZone}
-            className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 border border-red-200 dark:border-red-800"
-          >
-            <h2 className="text-lg font-medium text-red-600 dark:text-red-400 mb-4">
-              Danger Zone
-            </h2>
-
-            <div className="space-y-4">
-              <div
-                id={SETTING_IDS.reset}
-                className="flex items-start justify-between flex-col sm:flex-row sm:items-center gap-4"
-              >
-                <div>
-                  <h3 className="text-sm font-medium text-gray-900 dark:text-white">
-                    Reset Everything
-                  </h3>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    This will delete all your apps, chats, and settings. This
-                    action cannot be undone.
-                  </p>
-                </div>
-                <button
-                  onClick={() => setIsResetDialogOpen(true)}
-                  disabled={isResetting}
-                  className="rounded-md border border-transparent bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isResetting ? "Resetting..." : "Reset Everything"}
-                </button>
+          <div className="set-row" id={SETTING_IDS.enableSelectAppFromHomeChatInput}>
+            <div className="row between">
+              <div>
+                <div className="lbl">Enable Select App from Home Chat Input</div>
+                <div className="desc">Show an app selector in the home chat input.</div>
               </div>
+              <Switch
+                id="enable-select-app-from-home-chat-input"
+                aria-label="Enable Select App from Home Chat Input"
+                checked={!!settings?.enableSelectAppFromHomeChatInput}
+                onCheckedChange={(checked) => updateSettings({ enableSelectAppFromHomeChatInput: checked })}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Danger Zone */}
+        <div
+          id={SECTION_IDS.dangerZone}
+          className="glass set-section"
+          style={{ borderColor: 'rgba(255,80,90,.3)' }}
+        >
+          <h2 style={{ color: '#ff8794' }}>⚠ Danger Zone</h2>
+          <div className="set-row" id={SETTING_IDS.reset}>
+            <div className="row between" style={{ flexWrap: 'wrap', gap: 12 }}>
+              <div>
+                <div className="lbl">Reset Everything</div>
+                <div className="desc">Deletes all apps, chats, and settings. Cannot be undone.</div>
+              </div>
+              <button
+                onClick={() => setIsResetDialogOpen(true)}
+                disabled={isResetting}
+                className="btn"
+                style={{ background: 'rgba(255,80,90,.18)', borderColor: 'rgba(255,80,90,.35)', color: '#ff8794' }}
+              >
+                {isResetting ? "Resetting…" : "Reset Everything"}
+              </button>
             </div>
           </div>
         </div>
@@ -321,9 +271,9 @@ export function GeneralSettings({ appVersion }: { appVersion: string | null }) {
   return (
     <div
       id={SECTION_IDS.general}
-      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6"
+      className="glass set-section"
     >
-      <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+      <h2>
         General Settings
       </h2>
 
@@ -399,9 +349,9 @@ export function WorkflowSettings() {
   return (
     <div
       id={SECTION_IDS.workflow}
-      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6"
+      className="glass set-section"
     >
-      <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+      <h2>
         Workflow Settings
       </h2>
 
@@ -452,9 +402,9 @@ export function AISettings() {
   return (
     <div
       id={SECTION_IDS.ai}
-      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6"
+      className="glass set-section"
     >
-      <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+      <h2>
         AI Settings
       </h2>
 

@@ -28,7 +28,7 @@ export function SetupProviderCard({
   return (
     <div
       className={cn(
-        "p-3 border rounded-lg cursor-pointer transition-colors relative",
+        "galaxy-provider-card p-3 border rounded-lg cursor-pointer transition-colors relative",
         styles.container,
         className,
       )}

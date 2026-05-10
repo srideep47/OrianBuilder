@@ -304,7 +304,7 @@ export function mergeWorkerMetadata(
   update: Record<string, unknown>,
 ) {
   return {
-    ...(existing ?? {}),
+    ...existing,
     ...update,
   };
 }

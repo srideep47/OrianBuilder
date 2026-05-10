@@ -148,7 +148,7 @@ const config: ForgeConfig = {
     // ignore: [/node_modules\/(?!(better-sqlite3|bindings|file-uri-to-path)\/)/],
   },
   rebuildConfig: {
-    extraModules: ["better-sqlite3", "node-pty", "node-llama-cpp"],
+    onlyModules: ["better-sqlite3", "node-llama-cpp"],
     force: true,
   },
   makers: [

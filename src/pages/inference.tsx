@@ -961,7 +961,7 @@ export default function InferencePage() {
   };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-background">
+    <div className="cockpit-l design-scroll" style={{ color: '#fff', padding: 18, height: '100%' }}>
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b px-6 py-4 flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2">
