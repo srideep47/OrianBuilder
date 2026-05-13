@@ -333,6 +333,8 @@ const BaseUserSettingsFields = {
   defaultMissionAutonomyProfile: z
     .enum(["supervised", "trusted-workspace", "full-autopilot-sandbox"])
     .optional(),
+  autoResumeMissionsOnStartup: z.boolean().optional(),
+  maxParallelMissionWorkers: z.number().int().min(1).max(8).optional(),
   enableProLazyEditsMode: z.boolean().optional(),
   proLazyEditsMode: z.enum(["off", "v1", "v2"]).optional(),
   enableProSmartFilesContextMode: z.boolean().optional(),

@@ -92,6 +92,35 @@ describe("project stack detector", () => {
     });
   });
 
+  it("infers a TypeScript check for apps without a typecheck script", async () => {
+    await writeJson(path.join(tempRoot, "package.json"), {
+      scripts: {
+        dev: "vite",
+        build: "vite build",
+      },
+      dependencies: {
+        "@vitejs/plugin-react": "^4.0.0",
+        react: "^19.0.0",
+        vite: "^6.0.0",
+      },
+      devDependencies: {
+        typescript: "^5.8.0",
+      },
+    });
+    await fs.writeFile(path.join(tempRoot, "vite.config.ts"), "");
+    await fs.writeFile(path.join(tempRoot, "tsconfig.json"), "{}");
+    await fs.writeFile(path.join(tempRoot, "package-lock.json"), "{}");
+
+    const detection = await detectProjectStack(tempRoot);
+
+    expect(detection).toMatchObject({
+      language: "typescript",
+      commands: {
+        typecheck: "npx tsc --noEmit",
+      },
+    });
+  });
+
   it("returns low-confidence unknown results for empty directories", async () => {
     const detection = await detectProjectStack(tempRoot);
 

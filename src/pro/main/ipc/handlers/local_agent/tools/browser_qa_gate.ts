@@ -58,6 +58,10 @@ const NOISE_PATTERNS = [
   /local:\s+http/i,
   /network:\s+http/i,
   /press\s+h\s+to\s+show\s+help/i,
+  /useLayoutEffect does nothing on the server/i,
+  /props\.pointerEvents is deprecated/i,
+  /"shadow\*" style props are deprecated/i,
+  /Image: style\.resizeMode is deprecated/i,
 ];
 
 type BrowserQaResult = {

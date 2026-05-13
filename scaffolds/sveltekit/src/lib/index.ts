@@ -1,1 +1,2 @@
-// Shared utilities — import from $lib
+// Shared utilities - import from $lib.
+export {};

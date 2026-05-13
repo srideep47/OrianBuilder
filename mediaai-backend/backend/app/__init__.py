@@ -1,0 +1,2 @@
+"""OmniGen Local FastAPI backend."""
+

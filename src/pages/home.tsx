@@ -3,7 +3,6 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useAtom, useSetAtom } from "jotai";
 import { homeChatInputValueAtom } from "../atoms/chatAtoms";
 import { ipc } from "@/ipc/types";
-import { generateCuteAppName } from "@/lib/utils";
 import { useLoadApps } from "@/hooks/useLoadApps";
 import { useSettings } from "@/hooks/useSettings";
 import { SetupBanner } from "@/components/SetupBanner";
@@ -38,7 +37,6 @@ import type { FileAttachment } from "@/ipc/types";
 import type { ListedApp } from "@/ipc/types/app";
 import { NEON_TEMPLATE_IDS } from "@/shared/templates";
 import { neonTemplateHook } from "@/client_logic/template_hook";
-import { autoSelectTemplate } from "@/lib/template_auto_select";
 import {
   ProBanner,
   ManageOrianBuilderProButton,
@@ -200,16 +198,18 @@ export default function HomePage() {
         appId = selectedApp.id;
       } else {
         // New app flow (default behavior)
-        const autoTemplateId = autoSelectTemplate(inputValue);
+        const templateSelection = await ipc.template.selectTemplateForPrompt({
+          prompt: inputValue,
+        });
         const result = await ipc.app.createApp({
-          name: generateCuteAppName(),
+          name: templateSelection.appName,
           initialChatMode,
-          templateId: autoTemplateId,
+          templateId: templateSelection.templateId,
         });
         chatId = result.chatId;
         appId = result.app.id;
 
-        if (NEON_TEMPLATE_IDS.has(autoTemplateId)) {
+        if (NEON_TEMPLATE_IDS.has(templateSelection.templateId)) {
           await neonTemplateHook({
             appId: result.app.id,
             appName: result.app.name,

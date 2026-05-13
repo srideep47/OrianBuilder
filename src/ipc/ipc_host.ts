@@ -41,6 +41,7 @@ import { registerAgentToolHandlers } from "../pro/main/ipc/handlers/local_agent/
 import { registerFreeAgentQuotaHandlers } from "./handlers/free_agent_quota_handlers";
 import { registerPlanHandlers } from "./handlers/plan_handlers";
 import { registerMediaHandlers } from "./handlers/media_handlers";
+import { registerMediaAiHandlers } from "./handlers/media_ai_handlers";
 import { registerImageGenerationHandlers } from "./handlers/image_generation_handlers";
 import { registerEmbeddedModelHandlers } from "./handlers/embedded_model_handler";
 import { registerMarketplaceHandlers } from "./handlers/model_marketplace_handler";
@@ -91,6 +92,7 @@ export function registerIpcHandlers() {
   registerFreeAgentQuotaHandlers();
   registerPlanHandlers();
   registerMediaHandlers();
+  registerMediaAiHandlers();
   registerImageGenerationHandlers();
   registerEmbeddedModelHandlers();
   registerMarketplaceHandlers();

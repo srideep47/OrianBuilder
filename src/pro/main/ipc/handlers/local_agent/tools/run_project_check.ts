@@ -18,9 +18,17 @@ import {
   resolveProjectCheckCommand,
   type ProjectCheckName,
 } from "./project_check_utils";
+import {
+  buildNpmEtargetRecoveryMessage,
+  detectNpmEtargetError,
+  getNpmPackageVersions,
+  selectNpmReplacementVersion,
+} from "@/ipc/utils/npm_registry";
+import { logMissionEvent } from "@/ipc/utils/mission_utils";
 
 const MAX_OUTPUT_CHARS = 18_000;
 const DEFAULT_TIMEOUT_SECONDS = 180;
+const MAX_ETARGET_AUTO_RECOVERIES_PER_RUN = 2;
 
 const BLOCKED_COMMAND_PATTERNS = [
   /\brm\s+-rf\b/i,
@@ -157,6 +165,57 @@ async function runCommand(params: {
   });
 }
 
+async function maybeQueueInstallEtargetRecovery(params: {
+  ctx: AgentContext;
+  check: ProjectCheckName;
+  command: string;
+  output: string;
+  packageManager: string;
+}) {
+  if (params.check !== "install") return;
+  const recoveryCount = params.ctx.installEtargetRecoveryCount ?? 0;
+  if (recoveryCount >= MAX_ETARGET_AUTO_RECOVERIES_PER_RUN) {
+    return;
+  }
+
+  const failure = detectNpmEtargetError(params.output);
+  if (!failure) return;
+
+  const versions = await getNpmPackageVersions(failure.packageName);
+  const replacementVersion = selectNpmReplacementVersion({
+    requestedVersion: failure.requestedVersion,
+    latest: versions.latest,
+    stableVersions: versions.stableVersions,
+  });
+  if (!replacementVersion || replacementVersion === failure.requestedVersion) {
+    return;
+  }
+
+  params.ctx.installEtargetRecoveryCount = recoveryCount + 1;
+  const recoveryMessage = buildNpmEtargetRecoveryMessage({
+    packageName: failure.packageName,
+    requestedVersion: failure.requestedVersion,
+    replacementVersion,
+    distTagLatest: versions.latest,
+  });
+  params.ctx.appendUserMessage([{ type: "text", text: recoveryMessage }]);
+  await logMissionEvent({
+    missionId: params.ctx.missionId,
+    eventType: "install_etarget_auto_recovery",
+    summary: `Install ETARGET auto-recovery queued for ${failure.packageName}@${failure.requestedVersion}`,
+    metadata: {
+      packageName: failure.packageName,
+      requestedVersion: failure.requestedVersion,
+      latestVersion: replacementVersion,
+      distTagLatest: versions.latest,
+      command: params.command,
+      packageManager: params.packageManager,
+      recoveryCount: params.ctx.installEtargetRecoveryCount,
+      maxRecoveries: MAX_ETARGET_AUTO_RECOVERIES_PER_RUN,
+    },
+  }).catch(() => {});
+}
+
 export const runProjectCheckTool: ToolDefinition<RunProjectCheckArgs> = {
   name: "run_project_check",
   description: `Run a single first-class project check using the detected package manager and scripts.
@@ -204,6 +263,16 @@ Use this instead of run_terminal_command for install, lint, typecheck, build, un
       command,
       timeoutMs: (args.timeout_seconds ?? DEFAULT_TIMEOUT_SECONDS) * 1000,
     });
+
+    if (result.status === "failed") {
+      await maybeQueueInstallEtargetRecovery({
+        ctx,
+        check: result.check,
+        command,
+        output: result.output,
+        packageManager: stack.packageManager,
+      });
+    }
 
     const output = result.output.trim() || "(no output)";
     const summary = `${label} ${result.status} (exit ${result.exitCode})\nCommand: ${command}\n\n${output}`;

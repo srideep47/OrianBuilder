@@ -1,15 +1,15 @@
-# @orianbuilder-sh/react-vite-component-tagger
+# @dyad-sh/react-vite-component-tagger
 
 A Vite plugin that automatically adds `data-orianbuilder-id` and `data-orianbuilder-name` attributes to your React components. This is useful for identifying components in the DOM, for example for testing or analytics.
 
 ## Installation
 
 ```bash
-npm install @orianbuilder-sh/react-vite-component-tagger
+npm install @dyad-sh/react-vite-component-tagger
 # or
-yarn add @orianbuilder-sh/react-vite-component-tagger
+yarn add @dyad-sh/react-vite-component-tagger
 # or
-pnpm add @orianbuilder-sh/react-vite-component-tagger
+pnpm add @dyad-sh/react-vite-component-tagger
 ```
 
 ## Usage
@@ -19,7 +19,7 @@ Add the plugin to your `vite.config.ts` file:
 ```ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import orianbuilderTagger from "@orianbuilder-sh/react-vite-component-tagger";
+import orianbuilderTagger from "@dyad-sh/react-vite-component-tagger";
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -40,13 +40,13 @@ Bump it to an alpha version and test in OrianBuilder app, eg. `"version": "0.0.1
 Then publish it:
 
 ```sh
-cd packages/@orianbuilder-sh/react-vite-component-tagger/ && npm run prepublishOnly && npm publish
+cd packages/@dyad-sh/react-vite-component-tagger/ && npm run prepublishOnly && npm publish
 ```
 
 Update the scaffold like this:
 
 ```sh
-cd scaffold && pnpm remove @orianbuilder-sh/react-vite-component-tagger && pnpm add -D @orianbuilder-sh/react-vite-component-tagger
+cd scaffold && pnpm remove @dyad-sh/react-vite-component-tagger && pnpm add -D @dyad-sh/react-vite-component-tagger
 ```
 
 Run the E2E tests and make sure it passes.

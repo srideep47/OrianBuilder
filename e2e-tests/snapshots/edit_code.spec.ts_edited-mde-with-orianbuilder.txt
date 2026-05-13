@@ -183,7 +183,7 @@ export default tseslint.config(
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@orianbuilder-sh/react-vite-component-tagger": "^0.8.0",
+    "@dyad-sh/react-vite-component-tagger": "^0.8.0",
     "@eslint/js": "^9.9.0",
     "@tailwindcss/typography": "^0.5.15",
     "@types/node": "^22.5.5",
@@ -5839,7 +5839,7 @@ export default {
 
 === vite.config.ts ===
 import { defineConfig } from "vite";
-import orianbuilderComponentTagger from "@orianbuilder-sh/react-vite-component-tagger";
+import orianbuilderComponentTagger from "@dyad-sh/react-vite-component-tagger";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 

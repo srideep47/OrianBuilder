@@ -368,10 +368,21 @@ function getRegularModelClient(
       };
     }
     case "openrouter": {
+      if (!apiKey) {
+        throw new OrianBuilderError(
+          "OpenRouter API key is missing. Go to Settings → Engine → OpenRouter and add your API key from openrouter.ai/settings/keys",
+          OrianBuilderErrorKind.Auth,
+        );
+      }
       const provider = createOpenAICompatible({
         name: "openrouter",
         baseURL: "https://openrouter.ai/api/v1",
         apiKey,
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "HTTP-Referer": "https://orianbuilder.com",
+          "X-Title": "OrianBuilder",
+        },
       });
       return {
         modelClient: {
@@ -471,12 +482,12 @@ function getRegularModelClient(
       };
     }
     case "embedded": {
+      const status = getServerStatus();
       if (
         settings.selectedChatMode === "local-agent" ||
         settings.selectedChatMode === "ask" ||
         settings.selectedChatMode === "plan"
       ) {
-        const status = getServerStatus();
         if (status.backend === "tensorrt-native") {
           throw new OrianBuilderError(
             "The embedded TensorRT backend does not support app-building agent tool calls yet. Reload the model with the llama.cpp backend, or choose Ollama, LM Studio, or a cloud model for Build/Ask/Plan mode.",
@@ -493,7 +504,7 @@ function getRegularModelClient(
       });
       return {
         modelClient: {
-          model: provider(model.name),
+          model: provider(status.modelName ?? model.name),
         },
         backupModelClients: [],
       };

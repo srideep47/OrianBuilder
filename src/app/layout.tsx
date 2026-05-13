@@ -20,6 +20,7 @@ import { selectedComponentsPreviewAtom } from "@/atoms/previewAtoms";
 import { usePlanEvents } from "@/hooks/usePlanEvents";
 import { useZoomShortcuts } from "@/hooks/useZoomShortcuts";
 import { useQueueProcessor } from "@/hooks/useQueueProcessor";
+import { useMissionAutoResume } from "@/hooks/useMissionAutoResume";
 import i18n from "@/i18n";
 import { LanguageSchema } from "@/lib/schemas";
 
@@ -45,6 +46,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 
   // Process queued messages globally (even when not on chat page)
   useQueueProcessor();
+
+  // Trigger auto-resume of interrupted missions once after app load.
+  useMissionAutoResume();
 
   useEffect(() => {
     const zoomLevel = settings?.zoomLevel ?? DEFAULT_ZOOM_LEVEL;

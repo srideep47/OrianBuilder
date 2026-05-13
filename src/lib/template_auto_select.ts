@@ -14,6 +14,9 @@ const RULES: TemplateRule[] = [
       /\belectron\s*app\b/i,
       /\bdesktop\s*app\b/i,
       /\bnative\s*desktop\b/i,
+      /\bwindows\s+(?:app|desktop|installer|exe)\b/i,
+      /\bmac(?:os)?\s+(?:app|desktop|dmg)\b/i,
+      /\blinux\s+(?:app|desktop|appimage|deb|rpm)\b/i,
       /\belectron[\s-]?vite\b/i,
     ],
   },
@@ -26,6 +29,13 @@ const RULES: TemplateRule[] = [
   {
     templateId: "expo",
     keywords: [
+      /\bandroid\s*(?:app|application|apk|todo|to[-\s]?do)?\b/i,
+      /\bapk\b/i,
+      /\baab\b/i,
+      /\bgoogle\s+play\b/i,
+      /\bplay\s+store\b/i,
+      /\biphone\s+app\b/i,
+      /\bios\s+app\b/i,
       /react\s*native/i,
       /\bexpo\s*(?:sdk|router|app|go)?\b/i,
       /mobile\s*app/i,

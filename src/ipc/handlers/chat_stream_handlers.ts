@@ -1,6 +1,9 @@
 import { v4 as uuidv4 } from "uuid";
 import { ipcMain, IpcMainInvokeEvent } from "electron";
-import { abortCurrentInference } from "../utils/embedded_inference_server";
+import {
+  abortCurrentInference,
+  getServerStatus,
+} from "../utils/embedded_inference_server";
 import { createTypedHandler } from "./base";
 import { chatContracts } from "../types/chat";
 import {
@@ -578,7 +581,10 @@ ${componentSnippet}
           role: "assistant",
           content: "", // Start with empty content
           requestId: orianbuilderRequestId,
-          model: settings.selectedModel.name,
+          model:
+            settings.selectedModel.provider === "embedded"
+              ? (getServerStatus().modelName ?? settings.selectedModel.name)
+              : settings.selectedModel.name,
           sourceCommitHash: await getCurrentCommitHash({
             path: getOrianBuilderAppPath(chat.app.path),
           }),
@@ -819,12 +825,22 @@ ${componentSnippet}
           `Theme for app ${updatedChat.app.id}: ${updatedChat.app.themeId ?? "none"}, prompt length: ${themePrompt.length} chars`,
         );
 
+        // Autopilot directive is applied for local-agent runs when the user
+        // has explicitly opted into full-autopilot — either via the legacy
+        // `autonomousMode` toggle or the default mission autonomy profile.
+        const autopilotMode =
+          selectedChatMode === "local-agent" &&
+          (settings.autonomousMode === true ||
+            settings.defaultMissionAutonomyProfile ===
+              "full-autopilot-sandbox");
+
         // Migration on read converts "agent" to "build", so no need to check for it here
         let systemPrompt = constructSystemPrompt({
           aiRules,
           chatMode: selectedChatMode,
           enableTurboEditsV2: isTurboEditsV2Enabled(settings),
           themePrompt,
+          autopilotMode,
         });
 
         // Add information about mentioned apps for build mode only.
@@ -1121,7 +1137,10 @@ This conversation includes one or more image attachments. When the user uploads 
               builtinProviderId: modelClient.builtinProviderId,
             }),
             maxOutputTokens: await getMaxTokens(settings.selectedModel),
-            temperature: await getTemperature(settings.selectedModel),
+            temperature:
+              settings.selectedModel.provider === "embedded"
+                ? undefined
+                : await getTemperature(settings.selectedModel),
             maxRetries: 2,
             model: modelClient.model,
             stopWhen: [stepCountIs(20), hasToolCall("edit-code")],

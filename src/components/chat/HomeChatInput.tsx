@@ -53,7 +53,7 @@ export function HomeChatInput({
   }); // eslint-disable-line @typescript-eslint/no-unused-vars
   useChatModeToggle();
   const { userBudget } = useUserBudgetInfo();
-  const isProEnabled = !!userBudget && !!settings?.enableDyadPro;
+  const isProEnabled = !!userBudget && !!settings?.enableOrianBuilderPro;
 
   const handleTranscription = useCallback(
     (text: string) => {
@@ -233,7 +233,9 @@ export function HomeChatInput({
                   render={
                     <button
                       onClick={() =>
-                        ipc.system.openExternalUrl("https://dyad.sh/pro")
+                        ipc.system.openExternalUrl(
+                          "https://orianbuilder.sh/pro",
+                        )
                       }
                       aria-label="Voice to text (Pro)"
                       className="px-2 py-2 mb-0.5 text-muted-foreground hover:text-primary rounded-lg transition-colors duration-150 cursor-pointer relative"

@@ -17,7 +17,7 @@ export type ProjectCheckName = (typeof PROJECT_CHECK_NAMES)[number];
 export type ProjectCheckResolution = {
   check: ProjectCheckName;
   command: string | null;
-  source: "detected" | "script" | "missing";
+  source: "detected" | "script" | "inferred" | "missing";
 };
 
 function commandForScript(
@@ -35,6 +35,15 @@ function findFirstScript(
   candidates: string[],
 ): string | null {
   return candidates.find((script) => scripts[script]) ?? null;
+}
+
+function commandForTsc(
+  packageManager: ProjectStackDetection["packageManager"],
+): string {
+  if (packageManager === "pnpm") return "pnpm exec tsc --noEmit";
+  if (packageManager === "yarn") return "yarn tsc --noEmit";
+  if (packageManager === "bun") return "bunx tsc --noEmit";
+  return "npx tsc --noEmit";
 }
 
 function commandFromDetected(
@@ -92,6 +101,19 @@ export function resolveProjectCheckCommand(params: {
       check: params.check,
       command: commandForScript(params.stack.packageManager, fallbackScript),
       source: "script",
+    };
+  }
+
+  if (
+    params.check === "typecheck" &&
+    (params.stack.language === "typescript" ||
+      params.stack.language === "mixed" ||
+      params.stack.configFiles.includes("tsconfig.json"))
+  ) {
+    return {
+      check: params.check,
+      command: commandForTsc(params.stack.packageManager),
+      source: "inferred",
     };
   }
 

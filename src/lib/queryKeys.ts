@@ -33,6 +33,11 @@ export const queryKeys = {
     envVars: ["settings", "envVars"] as const,
   },
 
+  embeddedModel: {
+    all: ["embeddedModel"] as const,
+    status: () => ["embeddedModel", "status"] as const,
+  },
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Apps
   // ─────────────────────────────────────────────────────────────────────────────
@@ -396,6 +401,9 @@ export type QueryKeyOf<T> = T extends readonly unknown[]
 export type AppQueryKey =
   | QueryKeyOf<(typeof queryKeys.system)[keyof typeof queryKeys.system]>
   | QueryKeyOf<(typeof queryKeys.settings)[keyof typeof queryKeys.settings]>
+  | QueryKeyOf<
+      (typeof queryKeys.embeddedModel)[keyof typeof queryKeys.embeddedModel]
+    >
   | QueryKeyOf<(typeof queryKeys.apps)[keyof typeof queryKeys.apps]>
   | QueryKeyOf<(typeof queryKeys.chats)[keyof typeof queryKeys.chats]>
   | QueryKeyOf<(typeof queryKeys.plans)[keyof typeof queryKeys.plans]>

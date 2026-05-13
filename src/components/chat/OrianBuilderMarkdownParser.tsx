@@ -1,6 +1,7 @@
-import React, { useDeferredValue, useMemo } from "react";
+import React, { useDeferredValue, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Check, CheckCircle2, Copy, XCircle } from "lucide-react";
 
 import { OrianBuilderWrite } from "./OrianBuilderWrite";
 import { OrianBuilderRename } from "./OrianBuilderRename";
@@ -53,6 +54,13 @@ import { mapActionToButton } from "./ChatInput";
 import { SuggestedAction } from "@/lib/schemas";
 import { FixAllErrorsButton } from "./FixAllErrorsButton";
 import { unescapeXmlAttr, unescapeXmlContent } from "../../../shared/xmlEscape";
+import {
+  OrianBuilderBadge,
+  OrianBuilderCard,
+  OrianBuilderCardContent,
+  OrianBuilderCardHeader,
+  OrianBuilderExpandIcon,
+} from "./OrianBuilderCardPrimitives";
 
 const ORIANBUILDER_CUSTOM_TAGS = [
   "orianbuilder-write",
@@ -102,6 +110,7 @@ const ORIANBUILDER_CUSTOM_TAGS = [
   "orianbuilder-project-stack",
   "orianbuilder-repo-map",
   "orianbuilder-agent-action",
+  "orianbuilder-project-check",
 ];
 
 interface OrianBuilderMarkdownParserProps {
@@ -119,6 +128,25 @@ type CustomTagInfo = {
 type ContentPiece =
   | { type: "markdown"; content: string }
   | { type: "custom-tag"; tagInfo: CustomTagInfo };
+
+const HIDDEN_LOCAL_AGENT_TAGS = ["set_chat_summary"];
+
+const BARE_LOCAL_AGENT_TOOL_TAGS = [
+  "browser_qa_gate",
+  "code_search",
+  "create_project",
+  "deploy_preview",
+  "detect_project_stack",
+  "edit_ast",
+  "generate_media_asset",
+  "get_repo_map",
+  "grep",
+  "list_files",
+  "package_native_artifact",
+  "read_file",
+  "run_project_check",
+  "write_file",
+];
 
 const customLink = ({
   node: _node,
@@ -152,6 +180,89 @@ export const VanillaMarkdownParser = ({ content }: { content: string }) => {
     </ReactMarkdown>
   );
 };
+
+function OrianBuilderProjectCheck({
+  attributes,
+  content,
+}: {
+  attributes: Record<string, string>;
+  content: string;
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const status = attributes.status?.toLowerCase();
+  const isFailed = status === "failed";
+  const command = attributes.command || "Unknown command";
+  const framework = attributes.framework || attributes.check || "Project";
+  const exitCode =
+    attributes["exit-code"] || attributes.exit_code || attributes.code || "";
+  const output = content.trim();
+  const title = isFailed ? "Project check failed" : "Project check passed";
+  const accentColor = isFailed ? "red" : "green";
+
+  const handleCopy = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    await navigator.clipboard.writeText(output || `${title}: ${command}`);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1200);
+  };
+
+  return (
+    <OrianBuilderCard
+      showAccent
+      accentColor={accentColor}
+      isExpanded={isExpanded}
+      onClick={() => setIsExpanded((value) => !value)}
+    >
+      <OrianBuilderCardHeader
+        icon={isFailed ? <XCircle size={15} /> : <CheckCircle2 size={15} />}
+        accentColor={accentColor}
+      >
+        <OrianBuilderBadge color={accentColor}>
+          {isFailed ? "Error" : "Passed"}
+        </OrianBuilderBadge>
+        <span className="truncate text-sm font-medium text-foreground">
+          {title}
+        </span>
+        <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
+          {framework}
+        </span>
+        <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
+          {command}
+        </span>
+        {exitCode && (
+          <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+            exit {exitCode}
+          </span>
+        )}
+        <button
+          type="button"
+          className="ml-auto inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          onClick={handleCopy}
+          title="Copy project check output"
+        >
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+          <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
+        </button>
+        <OrianBuilderExpandIcon isExpanded={isExpanded} />
+      </OrianBuilderCardHeader>
+      <OrianBuilderCardContent isExpanded={isExpanded}>
+        {output ? (
+          <pre
+            className="max-h-72 overflow-auto rounded-lg bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <code>{output}</code>
+          </pre>
+        ) : (
+          <div className="text-sm text-muted-foreground">
+            No stdout or stderr was captured.
+          </div>
+        )}
+      </OrianBuilderCardContent>
+    </OrianBuilderCard>
+  );
+}
 
 /**
  * Custom component to parse markdown content with OrianBuilder-specific tags
@@ -361,32 +472,71 @@ function parseCustomTags(content: string): ContentPiece[] {
 }
 
 function normalizeLocalAgentProtocolContent(content: string): string {
-  return (
-    content
-      // Normalize legacy dyad-* XML tags to orianbuilder-* so local LLMs that
-      // output the old protocol are rendered as proper action cards.
-      .replace(/(<\/?)dyad-/g, "$1orianbuilder-")
-      .replace(
-        /\|\|call:([a-zA-Z0-9_-]+)\((\{[^\n]*?\})\)/g,
-        (_match, toolName: string, rawArgs: string) => {
-          let detail = "";
-          try {
-            const args = JSON.parse(rawArgs) as Record<string, unknown>;
-            const path = typeof args.path === "string" ? args.path : "";
-            const directory =
-              typeof args.directory === "string" ? args.directory : "";
-            const query = typeof args.query === "string" ? args.query : "";
-            detail = path || directory || query;
-          } catch {
-            detail = "";
-          }
+  let normalized = content
+    // Normalize legacy dyad-* XML tags to orianbuilder-* so local LLMs that
+    // output the old protocol are rendered as proper action cards.
+    .replace(/(<\/?)dyad-/g, "$1orianbuilder-")
+    .replace(
+      /\|\|call:([a-zA-Z0-9_-]+)\((\{[^\n]*?\})\)/g,
+      (_match, toolName: string, rawArgs: string) => {
+        let detail = "";
+        try {
+          const args = JSON.parse(rawArgs) as Record<string, unknown>;
+          detail = detailFromToolArgs(args);
+        } catch {
+          detail = "";
+        }
 
-          const label = toolName.replace(/_/g, " ");
-          return `<orianbuilder-agent-action tool="${toolName}" label="${label}" detail="${escapeXmlAttribute(detail)}"></orianbuilder-agent-action>`;
-        },
+        return buildAgentActionTag(toolName, detail);
+      },
+    )
+    .replace(/^\s*\|\|result:[^\n]*(?:\n|$)/gm, "");
+
+  for (const tagName of HIDDEN_LOCAL_AGENT_TAGS) {
+    normalized = normalized
+      .replace(
+        new RegExp(`<${tagName}\\b[^>]*>[\\s\\S]*?<\\/${tagName}>`, "gi"),
+        "",
       )
-      .replace(/^\s*\|\|result:[^\n]*(?:\n|$)/gm, "")
+      .replace(new RegExp(`<${tagName}\\b[^>]*\\/?>`, "gi"), "");
+  }
+
+  for (const toolName of BARE_LOCAL_AGENT_TOOL_TAGS) {
+    normalized = normalized
+      .replace(
+        new RegExp(`<${toolName}\\b([^>]*)>[\\s\\S]*?<\\/${toolName}>`, "gi"),
+        (_match, attributes: string) =>
+          buildAgentActionTag(toolName, detailFromAttributeText(attributes)),
+      )
+      .replace(
+        new RegExp(`<${toolName}\\b([^>]*)\\/?>`, "gi"),
+        (_match, attributes: string) =>
+          buildAgentActionTag(toolName, detailFromAttributeText(attributes)),
+      );
+  }
+
+  return normalized;
+}
+
+function detailFromToolArgs(args: Record<string, unknown>): string {
+  const path = typeof args.path === "string" ? args.path : "";
+  const directory = typeof args.directory === "string" ? args.directory : "";
+  const query = typeof args.query === "string" ? args.query : "";
+  const target = typeof args.target === "string" ? args.target : "";
+  const name = typeof args.name === "string" ? args.name : "";
+  return path || directory || query || target || name;
+}
+
+function detailFromAttributeText(attributes: string): string {
+  const match = attributes.match(
+    /\b(?:path|directory|query|target|name)=["']?([^"'\s>]+)/i,
   );
+  return match?.[1] ?? "";
+}
+
+function buildAgentActionTag(toolName: string, detail: string): string {
+  const label = toolName.replace(/_/g, " ");
+  return `<orianbuilder-agent-action tool="${toolName}" label="${label}" detail="${escapeXmlAttribute(detail)}"></orianbuilder-agent-action>`;
 }
 
 function escapeXmlAttribute(value: string): string {
@@ -742,6 +892,11 @@ function renderCustomTag(
         >
           {content}
         </OrianBuilderOutput>
+      );
+
+    case "orianbuilder-project-check":
+      return (
+        <OrianBuilderProjectCheck attributes={attributes} content={content} />
       );
 
     case "orianbuilder-problem-report":

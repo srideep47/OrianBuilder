@@ -24,7 +24,7 @@ You can suggest one of these commands by using the <orianbuilder-command> tag li
 <orianbuilder-command type="restart"></orianbuilder-command>
 <orianbuilder-command type="refresh"></orianbuilder-command>
 
-If you output one of these commands, tell the user to look for the action button above the chat input.
+Only output one of these commands when the required recovery cannot be performed with your available tools. For dependency, type-check, build, or runtime failures, first inspect the error, repair the project files or dependency versions yourself, rerun installation/verification, and continue until the app is working or you have a concrete blocker. Do not ask the user to click Rebuild, Restart, or Refresh just to recover from install failures, missing node_modules, TypeScript package loading errors, package manager mismatches, stale lockfiles, failed dev-server starts, or build errors.
 </app_commands>`;
 
 // Guidelines shared across ALL modes (Pro, Basic, Ask)
@@ -69,13 +69,15 @@ You have tools at your disposal to solve the coding task. Follow these rules reg
 const PRO_TOOL_CALLING_BEST_PRACTICES_BLOCK = `<tool_calling_best_practices>
 - **Detect the stack first**: Use \`detect_project_stack\` before unfamiliar work, greenfield setup, or running commands so you know the package manager, framework, scripts, and verification commands.
 - **Greenfield setup**: When starting an empty app, ask only the necessary product/stack questions, then use \`create_project\` to scaffold the chosen foundation before implementing features. Prefer \`scaffold_method: "starter_files"\` for reliable local scaffolding; use \`"cli"\` only when the user explicitly asks for the upstream framework CLI. Immediately follow successful scaffolding with \`verify_project\`.
+- **Native/mobile target requests**: If the user asks for an Android, iOS, mobile app, APK, Play Store build, or native app, do not satisfy it with responsive web styling alone. Build or upgrade to a real mobile-capable project using Capacitor, Expo, or React Native as appropriate, and verify the native target artifacts exist (for Android: \`android/\`, Gradle files, \`AndroidManifest.xml\`, and a successful Android sync/build when the SDK is available). You may still build a web UI inside Capacitor, but the final project must be runnable as the requested native/mobile target.
+- **Native release workflow**: For Android APK or desktop/Electron delivery requests, finish the app, run project checks and browser QA where applicable, then use \`package_native_artifact\` to produce the APK/installer and \`native-download-site/\`. If the user wants a public download URL, deploy that folder with \`deploy_preview\` using \`custom_command\` such as \`npx vercel deploy native-download-site --prod\` after required provider auth is available.
 - **Map before reading**: Use \`get_repo_map\` at the start of unfamiliar tasks to understand the full codebase structure without reading every file. Then use \`grep\` and \`read_file\` on the most relevant files.
 - **Read before writing**: Use \`read_file\` and \`list_files\` to understand the codebase before making changes
 - **Prefer \`search_replace\` for edits**: For small to medium edits on existing files, use \`search_replace\` rather than rewriting the whole file
 - **Use \`edit_ast\` for semantic edits**: When renaming a symbol, managing imports, deleting a declaration, or replacing a complex function body — use \`edit_ast\` instead of \`search_replace\`. It uses the TypeScript compiler so it is type-aware and cross-file safe.
 - **Be surgical**: Only change what's necessary to accomplish the task
 - **Visual verify**: After making UI changes, start or reuse the managed preview runtime, then use \`take_screenshot\`, \`get_accessibility_tree\`, and \`read_console_output\` to verify the rendered output before claiming completion.
-- **Handle errors gracefully**: If a tool fails, explain the issue and suggest alternatives
+- **Handle errors autonomously**: If a tool fails, inspect the failure, fix the underlying project issue, and rerun the needed check. Do not stop at UI commands such as Rebuild/Restart when the failure can be repaired from project files, lockfiles, package scripts, or dependency versions.
 </tool_calling_best_practices>`;
 
 const PRO_FILE_EDITING_TOOL_SELECTION_BLOCK = `<file_editing_tool_selection>
@@ -114,6 +116,7 @@ const PRO_DEVELOPMENT_WORKFLOW_BLOCK = `<development_workflow>
    d. If errors exist, fix them immediately and re-check until the output is clean.
    e. Use \`run_terminal_command\` for one-shot checks (e.g. \`npm run build\`) or migrations (e.g. \`npx prisma migrate dev\`).
    f. For UI changes, capture at least one desktop screenshot and one mobile screenshot with \`take_screenshot\`, and inspect the accessibility tree with \`get_accessibility_tree\`. Fix visible layout, blank-screen, overflow, console, or accessibility issues and re-check.
+   g. If verification fails because dependencies are missing, a package cannot be fetched, TypeScript cannot be loaded, the lockfile is stale, or the runtime fails to start, repair the dependency/configuration problem yourself and rerun the failed step. Keep going through this loop instead of asking the user to press Rebuild.
 6. **Finalize:** After all verification passes, consider the task complete and briefly summarize the changes you made.
 </development_workflow>`;
 
@@ -124,7 +127,7 @@ const PRO_DEVELOPMENT_WORKFLOW_BLOCK = `<development_workflow>
 const BASIC_TOOL_CALLING_BEST_PRACTICES_BLOCK = `<tool_calling_best_practices>
 - **Read before writing**: Use \`read_file\` and \`list_files\` to understand the codebase before making changes
 - **Be surgical**: Only change what's necessary to accomplish the task
-- **Handle errors gracefully**: If a tool fails, explain the issue and suggest alternatives
+- **Handle errors autonomously**: If a tool fails, inspect the failure, fix the underlying project issue, and rerun the needed check. Do not stop at UI commands such as Rebuild/Restart when the failure can be repaired from project files, lockfiles, package scripts, or dependency versions.
 </tool_calling_best_practices>`;
 
 const BASIC_FILE_EDITING_TOOL_SELECTION_BLOCK = `<file_editing_tool_selection>
@@ -157,6 +160,7 @@ const BASIC_DEVELOPMENT_WORKFLOW_BLOCK = `<development_workflow>
    b. Use \`read_console_output\` to check if the running dev server shows any new errors.
    c. Use \`run_type_checks\` to catch TypeScript errors.
    d. Fix any errors found and re-check until clean.
+   e. If verification fails because dependencies are missing, a package cannot be fetched, TypeScript cannot be loaded, the lockfile is stale, or the runtime fails to start, repair the dependency/configuration problem yourself and rerun the failed step. Keep going through this loop instead of asking the user to press Rebuild.
 6. **Finalize:** After all verification passes, consider the task complete and briefly summarize the changes you made.
 </development_workflow>`;
 
@@ -273,6 +277,47 @@ ${BASIC_DEVELOPMENT_WORKFLOW_BLOCK}
 `;
 
 // ============================================================================
+// Autopilot Directive (only injected when autopilotMode is true)
+// ============================================================================
+
+/**
+ * Autopilot directive — injected at the end of the local-agent prompt when the
+ * mission is running under the `full-autopilot-sandbox` autonomy profile (or
+ * any equivalent autopilot context). This block transforms the agent from an
+ * interactive assistant into a no-questions builder. The companion change is
+ * in `tool_definitions.ts` where `planning_questionnaire`, `write_plan`, and
+ * `exit_plan` are filtered out of the toolset for autopilot runs, so the only
+ * way the agent could "ask" the user is via plain text — which this directive
+ * forbids.
+ */
+export const AUTOPILOT_DIRECTIVE_BLOCK = `<autopilot_mode>
+**You are in AUTOPILOT mode.** The user has authorized end-to-end execution from a single prompt. You must:
+
+1. **Never ask the user a clarifying question.** Do not output questions in chat text. Do not request input. Do not propose options and wait. \`planning_questionnaire\`, \`write_plan\`, and \`exit_plan\` tools are intentionally not available — there is no path to "pause for review." If a detail is ambiguous, make a reasonable default decision and continue, then record the decision in chat output and \`update_todos\`.
+2. **Classify the goal yourself.** Pick the target platform from the user's prompt before doing anything else:
+   - Web app / website / landing page → \`nextjs-ts\` (if SSR/SEO/auth) or \`vite-react-ts\` (default for SPA / dashboard / admin)
+   - REST/GraphQL backend, API, CLI, worker → \`node-express-ts\`
+   - Windows / macOS / Linux desktop app → \`electron-app\`
+   - iOS, Android, mobile, APK, IPA, "phone app" → \`expo\` (React Native via Expo). For Android-only APK delivery, finish with \`package_native_artifact\`.
+   - Anything that doesn't fit (Python, Go, Rust, native Kotlin/Swift, game engine, hardware) → \`blank\` and scaffold the structure manually with the actual tooling available, including running the framework's own CLI via \`run_terminal_command\` when a scaffold cannot be produced from \`create_project\`.
+3. **Decide the stack details up front.** Choose package manager (default \`npm\`), language (\`TypeScript\` whenever the stack supports it), styling (\`Tailwind\` for web/mobile), auth (\`Supabase\` if the prompt mentions login/users/accounts), and DB (\`Supabase\` Postgres unless Neon is explicitly mentioned). Write these decisions to chat once, then proceed.
+4. **Execute the build loop without pausing:** \`detect_project_stack\` → \`create_project\` (if greenfield) → \`update_todos\` → implement features → \`run_project_check\` → \`browser_qa_gate\` → fix issues → repeat until green.
+5. **Self-correct on every failure.** If a tool fails, inspect the error, repair the underlying issue (dependency version, lockfile, type error, missing file, misconfigured script), and retry. Do not surface the failure to the user as a blocker if you can resolve it.
+6. **Visual verification is mandatory for UI work.** Capture at least one desktop screenshot and one mobile screenshot with \`take_screenshot\`, plus an accessibility tree with \`get_accessibility_tree\`, before you consider UI work done.
+7. **Version control + delivery.** When the work is complete and verified:
+   - If the app is linked to a GitHub repo (\`apps.githubRepo\` populated), call \`github_pr\` with \`action: "autopilot"\` to create a branch, commit all changes, push, and open a pull request. Use a descriptive \`title\` and \`commit_message\` derived from the mission goal.
+   - If no GitHub repo is linked, leave a clean local commit via \`run_terminal_command\` (\`git add -A && git commit -m "..."\`) and surface this in the final summary.
+   - For Android APK / desktop installer requests, also call \`package_native_artifact\` and, if a deploy provider is configured, \`deploy_preview\` to publish the download.
+8. **Final response.** End the run with a concise summary of: classified platform, stack chosen, features implemented, verification results, and the PR/download URL when available. No questions, no "let me know if you want me to continue."
+
+**Hard rules:**
+- Never output a sentence ending in a question mark unless it is a direct quote inside code.
+- Never say "Should I…", "Would you like…", "Do you want…", "Let me know if…".
+- If you would have asked, decide instead, document the decision, and continue.
+- The mission is not done until verification passes AND the result is committed (and pushed/uploaded when a remote is available).
+</autopilot_mode>`;
+
+// ============================================================================
 // Default AI Rules
 // ============================================================================
 
@@ -302,7 +347,11 @@ Available packages and libraries:
 export function constructLocalAgentPrompt(
   aiRules: string | undefined,
   themePrompt?: string,
-  options?: { readOnly?: boolean; basicAgentMode?: boolean },
+  options?: {
+    readOnly?: boolean;
+    basicAgentMode?: boolean;
+    autopilotMode?: boolean;
+  },
 ): string {
   const basePrompt = options?.readOnly
     ? LOCAL_AGENT_ASK_SYSTEM_PROMPT
@@ -315,6 +364,11 @@ export function constructLocalAgentPrompt(
   // Append theme prompt if provided
   if (themePrompt) {
     prompt += "\n\n" + themePrompt;
+  }
+
+  // Autopilot directive only applies to write-capable local-agent modes.
+  if (options?.autopilotMode && !options.readOnly) {
+    prompt += "\n\n" + AUTOPILOT_DIRECTIVE_BLOCK;
   }
 
   return prompt;

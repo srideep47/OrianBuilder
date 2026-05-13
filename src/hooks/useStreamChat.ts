@@ -47,6 +47,13 @@ export function getRandomNumberId() {
 // This prevents race conditions when clicking rapidly before state updates
 const pendingStreamChatIds = new Set<number>();
 
+function buildMissionTitle(prompt: string): string {
+  const title =
+    prompt.trim().replace(/\s+/g, " ").split(" ").slice(0, 9).join(" ") ||
+    "Autonomous development mission";
+  return title.length > 64 ? `${title.slice(0, 61)}...` : title;
+}
+
 export function useStreamChat({
   hasChatId = true,
 }: { hasChatId?: boolean } = {}) {
@@ -76,6 +83,7 @@ export function useStreamChat({
   const queuePausedById = useAtomValue(queuePausedByIdAtom);
   const setQueuePausedById = useSetAtom(queuePausedByIdAtom);
   const activeMissionByChatId = useAtomValue(activeMissionByChatIdAtom);
+  const setActiveMissionByChatId = useSetAtom(activeMissionByChatIdAtom);
 
   const posthog = usePostHog();
   const queryClient = useQueryClient();
@@ -198,7 +206,7 @@ export function useStreamChat({
       }
       const targetAppId =
         appId ?? resolvedAppIdFromChat ?? selectedAppId ?? null;
-      const effectiveMissionId = missionId ?? activeMissionByChatId.get(chatId);
+      let effectiveMissionId = missionId ?? activeMissionByChatId.get(chatId);
       try {
         const cachedChat =
           requestedChatMode === null
@@ -206,6 +214,38 @@ export function useStreamChat({
             : queryClient.getQueryData<Chat>(
                 queryKeys.chats.detail({ chatId }),
               );
+        const effectiveChatMode =
+          requestedChatMode === null
+            ? undefined
+            : (requestedChatMode ?? cachedChat?.chatMode ?? undefined);
+
+        if (
+          effectiveMissionId === undefined &&
+          targetAppId !== null &&
+          effectiveChatMode === "local-agent"
+        ) {
+          const createdMission = await ipc.mission.createMission({
+            appId: targetAppId,
+            chatId,
+            title: buildMissionTitle(prompt),
+            goal: prompt.trim() || buildMissionTitle(prompt),
+            autonomyProfile:
+              settings?.defaultMissionAutonomyProfile ?? "trusted-workspace",
+          });
+          const runningMission = await ipc.mission.updateMissionStatus({
+            missionId: createdMission.id,
+            status: "running",
+          });
+          effectiveMissionId = runningMission.id;
+          setActiveMissionByChatId((prev) => {
+            const next = new Map(prev);
+            next.set(chatId, runningMission.id);
+            return next;
+          });
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.missions.list({ appId: targetAppId }),
+          });
+        }
 
         ipc.chatStream.start(
           {
@@ -214,10 +254,7 @@ export function useStreamChat({
             redo,
             attachments: convertedAttachments,
             selectedComponents: selectedComponents ?? [],
-            requestedChatMode:
-              requestedChatMode === null
-                ? undefined
-                : (requestedChatMode ?? cachedChat?.chatMode ?? undefined),
+            requestedChatMode: effectiveChatMode,
             missionId: effectiveMissionId,
           },
           {
@@ -340,7 +377,8 @@ export function useStreamChat({
                 }
 
                 if (response.updatedFiles) {
-                  if (settings?.autoExpandPreviewPanel) {
+                  // Always open preview when AI writes files (unless user explicitly disabled it)
+                  if (settings?.autoExpandPreviewPanel !== false) {
                     setIsPreviewOpen(true);
                   }
                   refreshAppIframe();
@@ -556,6 +594,7 @@ export function useStreamChat({
       settings,
       queryClient,
       activeMissionByChatId,
+      setActiveMissionByChatId,
     ],
   );
 

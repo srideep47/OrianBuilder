@@ -383,7 +383,8 @@ export type SetMissionWorkerIntegrationStatusParams = z.infer<
 
 export const RunReadyMissionWorkersParamsSchema = z.object({
   missionId: z.number(),
-  limit: z.number().int().positive().max(5).optional().default(1),
+  limit: z.number().int().positive().max(8).optional().default(3),
+  parallel: z.boolean().optional().default(true),
 });
 
 export type RunReadyMissionWorkersParams = z.infer<
@@ -470,6 +471,24 @@ export const ResolveMissionPermissionRequestParamsSchema = z.object({
 
 export type ResolveMissionPermissionRequestParams = z.infer<
   typeof ResolveMissionPermissionRequestParamsSchema
+>;
+
+export const TriggerMissionAutoResumeParamsSchema = z.object({
+  appId: z.number().optional(),
+});
+
+export type TriggerMissionAutoResumeParams = z.infer<
+  typeof TriggerMissionAutoResumeParamsSchema
+>;
+
+export const TriggerMissionAutoResumeResultSchema = z.object({
+  resumedMissionIds: z.array(z.number()),
+  dispatchedWorkerCount: z.number(),
+  startedWorkerCount: z.number(),
+});
+
+export type TriggerMissionAutoResumeResult = z.infer<
+  typeof TriggerMissionAutoResumeResultSchema
 >;
 
 export const ExpireMissionPermissionRequestsParamsSchema = z.object({
@@ -671,6 +690,12 @@ export const missionContracts = {
     channel: "mission:expire-permission-requests",
     input: ExpireMissionPermissionRequestsParamsSchema,
     output: z.array(MissionPermissionRequestSchema),
+  }),
+
+  triggerMissionAutoResume: defineContract({
+    channel: "mission:trigger-auto-resume",
+    input: TriggerMissionAutoResumeParamsSchema,
+    output: TriggerMissionAutoResumeResultSchema,
   }),
 } as const;
 

@@ -1,5 +1,5 @@
 {
-  "name": "@orianbuilder-sh/react-vite-component-tagger",
+  "name": "@dyad-sh/react-vite-component-tagger",
   "version": "0.8.0",
   "description": "A Vite plugin that automatically adds data attributes to your React components.",
   "keywords": [

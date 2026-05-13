@@ -1,15 +1,15 @@
-# @orianbuilder-sh/nextjs-webpack-component-tagger
+# @dyad-sh/nextjs-webpack-component-tagger
 
 A webpack loader for Next.js that automatically adds `data-orianbuilder-id` and `data-orianbuilder-name` attributes to your React components. This is useful for identifying components in the DOM, for example for testing or analytics.
 
 ## Installation
 
 ```bash
-npm install @orianbuilder-sh/nextjs-webpack-component-tagger
+npm install @dyad-sh/nextjs-webpack-component-tagger
 # or
-yarn add @orianbuilder-sh/nextjs-webpack-component-tagger
+yarn add @dyad-sh/nextjs-webpack-component-tagger
 # or
-pnpm add @orianbuilder-sh/nextjs-webpack-component-tagger
+pnpm add @dyad-sh/nextjs-webpack-component-tagger
 ```
 
 ## Usage
@@ -26,7 +26,7 @@ const nextConfig: NextConfig = {
         test: /\.(jsx|tsx)$/,
         exclude: /node_modules/,
         enforce: "pre",
-        use: "@orianbuilder-sh/nextjs-webpack-component-tagger",
+        use: "@dyad-sh/nextjs-webpack-component-tagger",
       });
     }
     return config;
@@ -49,7 +49,7 @@ Bump it to an alpha version and test in OrianBuilder app, eg. `"version": "0.0.1
 Then publish it:
 
 ```sh
-cd packages/@orianbuilder-sh/nextjs-webpack-component-tagger/ && npm run prepublishOnly && npm publish
+cd packages/@dyad-sh/nextjs-webpack-component-tagger/ && npm run prepublishOnly && npm publish
 ```
 
 Update the package version in the nextjs-template repo in your personal fork.

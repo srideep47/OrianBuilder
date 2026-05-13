@@ -78,10 +78,36 @@ describe("project check utils", () => {
     });
   });
 
+  it("infers TypeScript checks when no script exists", () => {
+    expect(
+      resolveProjectCheckCommand({
+        stack: stack({
+          packageManager: "pnpm",
+          scripts: {},
+          commands: {
+            install: "pnpm install",
+            dev: "pnpm dev",
+            start: null,
+            build: "pnpm build",
+            test: null,
+            lint: null,
+            typecheck: null,
+          },
+          configFiles: ["tsconfig.json"],
+        }),
+        check: "typecheck",
+      }),
+    ).toEqual({
+      check: "typecheck",
+      command: "pnpm exec tsc --noEmit",
+      source: "inferred",
+    });
+  });
+
   it("reports missing checks without inventing risky commands", () => {
     expect(
       resolveProjectCheckCommand({
-        stack: stack({ scripts: {} }),
+        stack: stack({ scripts: {}, language: "javascript" }),
         check: "typecheck",
       }),
     ).toEqual({

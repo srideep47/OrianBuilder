@@ -54,6 +54,24 @@ describe("detectFrameworkType", () => {
 
     expect(detectFrameworkType("/tmp/example-app")).toBe("vite");
   });
+
+  it("detects Expo from app.json before falling back to Vite-style files", () => {
+    vi.mocked(fs.existsSync).mockImplementation((candidate) =>
+      String(candidate).endsWith("app.json"),
+    );
+
+    expect(detectFrameworkType("/tmp/example-app")).toBe("expo");
+  });
+
+  it("detects Electron before Vite", () => {
+    vi.mocked(fs.existsSync).mockImplementation(
+      (candidate) =>
+        String(candidate).endsWith("electron.vite.config.ts") ||
+        String(candidate).endsWith("vite.config.ts"),
+    );
+
+    expect(detectFrameworkType("/tmp/example-app")).toBe("electron");
+  });
 });
 
 describe("detectNextJsMajorVersion", () => {

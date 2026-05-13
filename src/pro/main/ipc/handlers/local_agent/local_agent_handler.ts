@@ -4,6 +4,7 @@
  */
 
 import { IpcMainInvokeEvent } from "electron";
+import { createHash } from "node:crypto";
 import {
   streamText,
   ToolSet,
@@ -21,6 +22,7 @@ import {
   missionInterrupts,
   missionMemories,
   missionPermissionRequests,
+  missionWorkers,
   missions,
 } from "@/db/schema";
 import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
@@ -30,6 +32,7 @@ import { readSettings } from "@/main/settings";
 import { getOrianBuilderAppPath } from "@/paths/paths";
 import { detectFrameworkType } from "@/ipc/utils/framework_utils";
 import { getModelClient } from "@/ipc/utils/get_model_client";
+import { getServerStatus } from "@/ipc/utils/embedded_inference_server";
 import { safeSend } from "@/ipc/utils/safe_sender";
 import {
   getMaxTokens,
@@ -85,6 +88,8 @@ import { buildMissionMemoryMessage } from "@/ipc/utils/mission_memories";
 import { loadTodos } from "./todo_persistence";
 import { ensureOrianBuilderGitignored } from "@/ipc/handlers/gitignoreUtils";
 import { TOOL_DEFINITIONS } from "./tool_definitions";
+import { hasTextToolCallMarkers } from "./text_tool_call_parser";
+import { runTextToolCallFallback } from "./text_tool_call_executor";
 import {
   parseAiMessagesJson,
   type DbMessageForParsing,
@@ -115,6 +120,9 @@ import {
   maybeAppendRetryReplayForRetry,
 } from "./retry_replay_utils";
 import { setChatSummaryTool } from "./tools/set_chat_summary";
+import { packageNativeArtifactTool } from "./tools/package_native_artifact";
+import { deployPreviewTool } from "./tools/deploy_preview";
+import { browserQaGateTool } from "./tools/browser_qa_gate";
 import {
   createMissionArtifact,
   createMissionCheckpoint,
@@ -142,6 +150,11 @@ import {
   recordToolSuccessForBudget,
   type ToolFailureBudgetDecision,
 } from "@/ipc/utils/mission_budgets";
+import {
+  buildNativeTargetReminder,
+  detectNativeTargetIntentWithModel,
+  type NativeTargetIntent,
+} from "./native_target_intent";
 
 const logger = log.scope("local_agent_handler");
 const PLANNING_QUESTIONNAIRE_TOOL_NAME = "planning_questionnaire";
@@ -149,6 +162,13 @@ const MAX_TERMINATED_STREAM_RETRIES = 3;
 const STREAM_RETRY_BASE_DELAY_MS = 400;
 const STREAM_CONTINUE_MESSAGE =
   "[System] Your previous response stream was interrupted by a transient network error. Continue from exactly where you left off and do not repeat text that has already been sent.";
+
+function getMissionRunModelName(settings: UserSettings): string {
+  if (settings.selectedModel.provider !== "embedded") {
+    return settings.selectedModel.name;
+  }
+  return getServerStatus().modelName ?? settings.selectedModel.name;
+}
 
 const RETRYABLE_STREAM_ERROR_STATUS_CODES = new Set([
   408, 429, 500, 502, 503, 504,
@@ -203,6 +223,111 @@ function cleanupStreamingEntry(id: string): void {
 
 function findToolDefinition(toolName: string) {
   return TOOL_DEFINITIONS.find((t) => t.name === toolName);
+}
+
+type PlainTextToolCall = {
+  toolName: string;
+  args: Record<string, unknown>;
+  signature: string;
+};
+
+function decodeXmlText(value: string): string {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+function parsePlainTextToolAttributes(value: string): Record<string, unknown> {
+  const args: Record<string, unknown> = {};
+  const attrPattern = /([a-zA-Z0-9_-]+)="([^"]*)"/g;
+  let match: RegExpExecArray | null;
+  while ((match = attrPattern.exec(value)) !== null) {
+    args[match[1]] = decodeXmlText(match[2]).trim();
+  }
+  return args;
+}
+
+function parsePlainTextToolArgs(
+  attributes: string,
+  body: string,
+): Record<string, unknown> {
+  const args = parsePlainTextToolAttributes(attributes);
+  const childPattern = /<([a-zA-Z0-9_-]+)(?:\s[^>]*)?>([\s\S]*?)<\/\1>/g;
+  let match: RegExpExecArray | null;
+  let childCount = 0;
+  while ((match = childPattern.exec(body)) !== null) {
+    childCount += 1;
+    args[match[1]] = decodeXmlText(match[2]).trim();
+  }
+
+  const trimmedBody = decodeXmlText(body).trim();
+  if (childCount === 0 && trimmedBody.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(trimmedBody) as Record<string, unknown>;
+      return { ...args, ...parsed };
+    } catch {
+      return args;
+    }
+  }
+
+  return args;
+}
+
+function extractPlainTextToolCall(input: {
+  text: string;
+  availableToolNames: Set<string>;
+  alreadyExecuted: Set<string>;
+}): PlainTextToolCall | null {
+  const pattern = /<([a-zA-Z][a-zA-Z0-9_]*)(\s[^>]*)?>([\s\S]*?)<\/\1>/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(input.text)) !== null) {
+    const toolName = match[1];
+    if (
+      !input.availableToolNames.has(toolName) ||
+      toolName === setChatSummaryTool.name
+    ) {
+      continue;
+    }
+
+    const toolDef = findToolDefinition(toolName);
+    if (!toolDef) continue;
+
+    const rawArgs = parsePlainTextToolArgs(match[2] ?? "", match[3] ?? "");
+    const parsedArgs = toolDef.inputSchema.safeParse(rawArgs);
+    if (!parsedArgs.success) {
+      continue;
+    }
+
+    const signature = `${toolName}:${JSON.stringify(parsedArgs.data)}`;
+    if (input.alreadyExecuted.has(signature)) {
+      continue;
+    }
+
+    return {
+      toolName,
+      args: parsedArgs.data as Record<string, unknown>,
+      signature,
+    };
+  }
+
+  return null;
+}
+
+function stringifyManualToolResult(result: unknown): string {
+  if (
+    result &&
+    typeof result === "object" &&
+    "type" in result &&
+    (result as { type?: unknown }).type === "text" &&
+    "value" in result
+  ) {
+    return String((result as { value?: unknown }).value ?? "");
+  }
+  return typeof result === "string" ? result : JSON.stringify(result, null, 2);
 }
 
 function buildChatMessageHistory(
@@ -296,6 +421,43 @@ function injectReferencedAppsReminder(
     }
     return;
   }
+}
+
+function injectUserMessageReminder(
+  messageHistory: ModelMessage[],
+  reminder: string,
+): void {
+  for (let i = messageHistory.length - 1; i >= 0; i--) {
+    const msg = messageHistory[i];
+    if (msg.role !== "user") continue;
+    if (typeof msg.content === "string") {
+      messageHistory[i] = { ...msg, content: `${msg.content}\n\n${reminder}` };
+    } else {
+      messageHistory[i] = {
+        ...msg,
+        content: [...msg.content, { type: "text", text: `\n\n${reminder}` }],
+      };
+    }
+    return;
+  }
+}
+
+function hasCompletedNativePackage(response: string): boolean {
+  return /<orianbuilder-native-package\b[^>]*status="passed"/.test(response);
+}
+
+function buildNativeTargetFollowUpMessage(
+  intent: NativeTargetIntent,
+): ModelMessage {
+  return {
+    role: "user",
+    content: [
+      {
+        type: "text",
+        text: `${buildNativeTargetReminder(intent)}\n\nYou have not completed the required native packaging artifact yet. Continue now. Do not stop after web UI work; run project checks and package_native_artifact with target="${intent.target}".`,
+      },
+    ],
+  };
 }
 
 function getMidTurnCompactionSummaryIds(
@@ -470,7 +632,7 @@ export async function handleLocalAgentStream(
     missionId,
     chatId: req.chatId,
     messageId: placeholderMessageId,
-    model: settings.selectedModel.name,
+    model: getMissionRunModelName(settings),
     requestId: orianbuilderRequestId,
     metadata: {
       appId: chat.app.id,
@@ -621,6 +783,13 @@ export async function handleLocalAgentStream(
   const allInjectedMessages: InjectedMessage[] = [];
   const warningMessages: string[] = [];
   let missionStepCheckpointCount = 0;
+  // Counts native + fallback tool executions for this run. Used at stream
+  // completion to detect "dead" runs where the model never produced a usable
+  // tool call (common with local GGUFs lacking function-call support).
+  let totalNativeToolCalls = 0;
+  let totalFallbackToolCalls = 0;
+  let textToolCallFallbackAttempts = 0;
+  const MAX_TEXT_TOOL_CALL_FALLBACK_ATTEMPTS = 6;
   const recentStepSignatures: string[] = [];
   const warnedStepLoopSignatures = new Set<string>();
 
@@ -630,6 +799,13 @@ export async function handleLocalAgentStream(
       settings.selectedModel,
       settings,
     );
+    const nativeTargetIntent =
+      !readOnly && !planModeOnly && !messageOverride
+        ? await detectNativeTargetIntentWithModel({
+            prompt: req.prompt,
+            model: modelClient.model,
+          })
+        : null;
 
     // Load persisted todos from a previous turn (if any)
     const persistedTodos = await loadTodos(appPath, chat.id);
@@ -653,12 +829,20 @@ export async function handleLocalAgentStream(
     const referencedAppsMap = new Map(
       referencedApps.map((ref) => [ref.appName.toLowerCase(), ref.appPath]),
     );
+    let producedNativePackageArtifact = false;
+    let attemptedNativePackageArtifact = false;
+    let producedDeploymentUrl = false;
+    let producedBrowserQaScreenshotArtifact = false;
+    let passedBrowserQaGate = false;
     const ctx: AgentContext = {
       event,
       appId: chat.app.id,
       appPath,
       referencedApps: referencedAppsMap,
       chatId: chat.id,
+      missionId,
+      missionRunId,
+      workerId: workerId ?? null,
       supabaseProjectId: chat.app.supabaseProjectId,
       supabaseOrganizationSlug: chat.app.supabaseOrganizationSlug,
       neonProjectId: chat.app.neonProjectId,
@@ -670,6 +854,7 @@ export async function handleLocalAgentStream(
       todos: persistedTodos,
       orianbuilderRequestId,
       fileEditTracker,
+      installEtargetRecoveryCount: 0,
       isOrianBuilderPro: isOrianBuilderProEnabled(settings),
       onXmlStream: (accumulatedXml: string) => {
         // Stream accumulated XML to UI without persisting
@@ -684,6 +869,42 @@ export async function handleLocalAgentStream(
         );
       },
       onXmlComplete: (finalXml: string) => {
+        if (finalXml.startsWith("<orianbuilder-native-package")) {
+          attemptedNativePackageArtifact = true;
+        }
+        if (
+          finalXml.startsWith("<orianbuilder-native-package") &&
+          /\bstatus="passed"/.test(finalXml)
+        ) {
+          producedNativePackageArtifact = true;
+        }
+        const deploymentUrl = finalXml.startsWith(
+          "<orianbuilder-deploy-preview",
+        )
+          ? finalXml.match(/\burl="([^"]+)"/)?.[1]
+          : null;
+        if (deploymentUrl) {
+          producedDeploymentUrl = true;
+        }
+        if (
+          (finalXml.startsWith("<orianbuilder-screenshot") ||
+            finalXml.startsWith("<orianbuilder-browser-action")) &&
+          /\bpath="[^"]+"/.test(finalXml)
+        ) {
+          producedBrowserQaScreenshotArtifact = true;
+        }
+        if (finalXml.startsWith("<orianbuilder-browser-qa")) {
+          const hasDesktopScreenshot = /\bdesktop-path="[^"]+"/.test(finalXml);
+          const hasMobileScreenshot = /\bmobile-path="[^"]+"/.test(finalXml);
+          const screenshotGatePassed =
+            /\bscreenshot-status="passed"/.test(finalXml) &&
+            hasDesktopScreenshot &&
+            hasMobileScreenshot;
+          producedBrowserQaScreenshotArtifact =
+            producedBrowserQaScreenshotArtifact || screenshotGatePassed;
+          passedBrowserQaGate =
+            /\bstatus="passed"/.test(finalXml) && screenshotGatePassed;
+        }
         // Write final XML to DB and UI
         const xmlChunk = `${finalXml}\n`;
         fullResponse += xmlChunk;
@@ -798,6 +1019,9 @@ export async function handleLocalAgentStream(
         warningMessages.push(message);
       },
       onToolExecutionStart: (params) => {
+        if (params.toolName === packageNativeArtifactTool.name) {
+          attemptedNativePackageArtifact = true;
+        }
         logMissionEvent({
           missionId,
           eventType: "agent_tool_execution_started",
@@ -873,6 +1097,7 @@ export async function handleLocalAgentStream(
     const agentTools = buildAgentToolSet(ctx, {
       readOnly,
       planModeOnly,
+      autopilotMode: autonomyProfile === "full-autopilot-sandbox",
     });
     const mcpTools =
       readOnly || planModeOnly
@@ -894,6 +1119,12 @@ export async function handleLocalAgentStream(
     if (referencedApps.length > 0) {
       injectReferencedAppsReminder(messageHistory, referencedApps);
     }
+    if (nativeTargetIntent) {
+      injectUserMessageReminder(
+        messageHistory,
+        `<system-reminder>\n${buildNativeTargetReminder(nativeTargetIntent)}\n</system-reminder>`,
+      );
+    }
 
     // Used to swap out pre-compaction history while preserving in-flight turn steps.
     let baseMessageHistoryCount = messageHistory.length;
@@ -907,12 +1138,20 @@ export async function handleLocalAgentStream(
     let compactionIndexDelta = 0;
 
     const maxOutputTokens = await getMaxTokens(settings.selectedModel);
-    const temperature = await getTemperature(settings.selectedModel);
+    const temperature =
+      settings.selectedModel.provider === "embedded"
+        ? undefined
+        : await getTemperature(settings.selectedModel);
 
     // Run one or more generation passes. If the model emits a chat message while
     // there are still incomplete todos, we append a reminder and do another pass.
     const maxTodoFollowUpLoops = 1;
     let todoFollowUpLoops = 0;
+    const maxNativeTargetFollowUpLoops = 0;
+    let nativeTargetFollowUpLoops = 0;
+    const maxPlainTextToolFollowUpLoops = 6;
+    let plainTextToolFollowUpLoops = 0;
+    const executedPlainTextToolSignatures = new Set<string>();
     let hasInjectedPlanningQuestionnaireReflection = false;
     let hasInjectedMissionMemories = false;
     let currentMessageHistory = messageHistory;
@@ -1020,6 +1259,17 @@ export async function handleLocalAgentStream(
               stepCountIs(maxToolCallSteps),
               // User needs to explicitly set up integration before AI can continue.
               hasToolCall(addIntegrationTool.name),
+              ...(nativeTargetIntent
+                ? [
+                    hasRepeatedToolSignature(
+                      "run_project_check",
+                      MISSION_REPEATED_STEP_LOOP_LIMIT - 1,
+                    ),
+                    hasToolCall(browserQaGateTool.name),
+                    hasToolCall(packageNativeArtifactTool.name),
+                    hasToolCall(deployPreviewTool.name),
+                  ]
+                : []),
               // In plan mode, also stop after writing a plan or exiting plan mode.
               ...(planModeOnly
                 ? [
@@ -1077,6 +1327,12 @@ export async function handleLocalAgentStream(
                     injectReferencedAppsReminder(
                       compactedMessageHistory,
                       referencedApps,
+                    );
+                  }
+                  if (nativeTargetIntent) {
+                    injectUserMessageReminder(
+                      compactedMessageHistory,
+                      `<system-reminder>\n${buildNativeTargetReminder(nativeTargetIntent)}\n</system-reminder>`,
                     );
                   }
                   baseMessageHistoryCount = compactedMessageHistory.length;
@@ -1237,7 +1493,7 @@ export async function handleLocalAgentStream(
 
               missionStepCheckpointCount += 1;
               const stepToolNames = getStepToolNames(step);
-              const stepSignature = getStepSignature(stepToolNames);
+              const stepSignature = getStepSignature(step.toolCalls);
               const stepMetadata = {
                 chatId: req.chatId,
                 runId: missionRunId,
@@ -1249,6 +1505,90 @@ export async function handleLocalAgentStream(
                 textLength: step.text?.length ?? 0,
                 usage: step.usage,
               };
+
+              totalNativeToolCalls += step.toolCalls.length;
+
+              // Text-tool-call fallback: triggered when the model emits a tool
+              // call as prose instead of through the AI SDK's structured slot
+              // (common with local GGUFs like Qwen, DeepSeek, plain Llama 3.x).
+              // We parse the text, execute what we safely can, and inject a
+              // synthetic user message containing the results so the model can
+              // continue. After MAX_TEXT_TOOL_CALL_FALLBACK_ATTEMPTS unsuccessful
+              // recoveries, we abort the run so the user can switch models.
+              if (
+                step.toolCalls.length === 0 &&
+                typeof step.text === "string" &&
+                hasTextToolCallMarkers(step.text) &&
+                textToolCallFallbackAttempts <
+                  MAX_TEXT_TOOL_CALL_FALLBACK_ATTEMPTS
+              ) {
+                textToolCallFallbackAttempts += 1;
+                try {
+                  const outcome = await runTextToolCallFallback({
+                    assistantText: step.text,
+                    ctx,
+                    autopilot:
+                      autonomyProfile === "full-autopilot-sandbox" ||
+                      autonomyProfile === "trusted-workspace",
+                  });
+                  if (outcome) {
+                    totalFallbackToolCalls += outcome.executed.length;
+                    if (outcome.reminder) {
+                      pendingUserMessages.push(outcome.reminder);
+                    }
+                    await logMissionEvent({
+                      missionId,
+                      eventType: "model_emitted_tool_call_as_text",
+                      summary: `Model emitted ${outcome.parsed.length} tool call(s) as text on step ${missionStepCheckpointCount}; recovered ${outcome.executed.length}, skipped ${outcome.failed.length}`,
+                      metadata: {
+                        ...stepMetadata,
+                        attempt: textToolCallFallbackAttempts,
+                        parsedToolNames: outcome.parsed.map(
+                          (entry) => entry.toolName,
+                        ),
+                        executedToolNames: outcome.executed.map(
+                          (entry) => entry.toolName,
+                        ),
+                        failedToolNames: outcome.failed.map(
+                          (entry) => entry.toolName,
+                        ),
+                      },
+                    }).catch((err) =>
+                      logger.warn(
+                        "Failed to log text-tool-call fallback event:",
+                        err,
+                      ),
+                    );
+                  }
+                } catch (err) {
+                  logger.warn(
+                    "Text-tool-call fallback threw unexpectedly:",
+                    err,
+                  );
+                }
+
+                if (
+                  textToolCallFallbackAttempts >=
+                  MAX_TEXT_TOOL_CALL_FALLBACK_ATTEMPTS
+                ) {
+                  warningMessages.push(
+                    "Model emitted tool calls as plain text repeatedly. Switch to a provider that supports function calling (OpenAI, Anthropic, Gemini, or a GGUF with a tool-call template) to continue.",
+                  );
+                  await logMissionEvent({
+                    missionId,
+                    eventType:
+                      "model_emitted_tool_call_as_text_abort_threshold",
+                    summary:
+                      "Aborting stream: model repeatedly emitted tool calls as text",
+                    metadata: {
+                      ...stepMetadata,
+                      attempts: textToolCallFallbackAttempts,
+                    },
+                  }).catch(() => {});
+                  abortController.abort();
+                }
+              }
+
               await createMissionCheckpoint({
                 missionId,
                 runId: missionRunId,
@@ -1703,6 +2043,80 @@ export async function handleLocalAgentStream(
           stepOnlyCalledTool(lastStep, setChatSummaryTool.name));
 
       if (
+        passEndedWithText &&
+        plainTextToolFollowUpLoops < maxPlainTextToolFollowUpLoops
+      ) {
+        const plainTextToolCall = extractPlainTextToolCall({
+          text: fullResponse,
+          availableToolNames: new Set(Object.keys(allTools)),
+          alreadyExecuted: executedPlainTextToolSignatures,
+        });
+
+        if (plainTextToolCall) {
+          executedPlainTextToolSignatures.add(plainTextToolCall.signature);
+          plainTextToolFollowUpLoops += 1;
+
+          await logMissionEvent({
+            missionId,
+            eventType: "agent_plain_text_tool_recovered",
+            summary: `Recovered plain-text tool call: ${plainTextToolCall.toolName}`,
+            metadata: {
+              chatId: req.chatId,
+              runId: missionRunId,
+              toolName: plainTextToolCall.toolName,
+              args: plainTextToolCall.args,
+              loop: plainTextToolFollowUpLoops,
+            },
+          }).catch((err) =>
+            logger.warn("Failed to log plain-text tool recovery:", err),
+          );
+
+          const tool = (allTools as Record<string, any>)[
+            plainTextToolCall.toolName
+          ];
+          let toolResultText = "";
+          try {
+            const result = await tool.execute(plainTextToolCall.args);
+            toolResultText = stringifyManualToolResult(result);
+          } catch (error) {
+            toolResultText =
+              error instanceof Error ? error.message : String(error);
+          }
+
+          currentMessageHistory = [
+            ...currentMessageHistory,
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: `[System] You emitted <${plainTextToolCall.toolName}> as plain XML text instead of making a real tool call. The backend executed that tool for you.\n\nTool result:\n${toolResultText.slice(0, 8000)}\n\nContinue the user's request from this result. Use real tool calls for future actions; do not print tool XML as prose.`,
+                },
+              ],
+            },
+          ];
+          continue;
+        }
+      }
+
+      if (
+        nativeTargetIntent &&
+        passEndedWithText &&
+        !hasCompletedNativePackage(fullResponse) &&
+        nativeTargetFollowUpLoops < maxNativeTargetFollowUpLoops
+      ) {
+        nativeTargetFollowUpLoops += 1;
+        currentMessageHistory = [
+          ...currentMessageHistory,
+          buildNativeTargetFollowUpMessage(nativeTargetIntent),
+        ];
+        logger.info(
+          `Starting native target follow-up pass ${nativeTargetFollowUpLoops}/${maxNativeTargetFollowUpLoops} for chat ${req.chatId}`,
+        );
+        continue;
+      }
+
+      if (
         !shouldRunTodoFollowUpPass({
           readOnly,
           planModeOnly,
@@ -1836,6 +2250,139 @@ export async function handleLocalAgentStream(
       throw new OrianBuilderError(
         "The model stream ended without producing any text or tool calls. This is usually a local model/provider issue; try again or switch to a larger tool-capable model.",
         OrianBuilderErrorKind.External,
+      );
+    }
+
+    const executeNativeAutofinishTool = async (
+      tool:
+        | typeof browserQaGateTool
+        | typeof packageNativeArtifactTool
+        | typeof deployPreviewTool,
+      args: Record<string, unknown>,
+      inputPreview: string,
+    ) => {
+      const allowed = await ctx.requireConsent({
+        toolName: tool.name,
+        toolDescription: tool.description,
+        inputPreview,
+      });
+      if (!allowed) {
+        return false;
+      }
+
+      const modifiesState = tool.modifiesState === true;
+      ctx.onToolExecutionStart?.({
+        toolName: tool.name,
+        inputPreview,
+        modifiesState,
+      });
+      try {
+        const output = await tool.execute(args as never, ctx);
+        ctx.onToolExecutionComplete?.({
+          toolName: tool.name,
+          status: "completed",
+          durationMs: 0,
+          outputPreview: String(output).slice(0, 4000),
+          error: null,
+          modifiesState,
+        });
+        return true;
+      } catch (error) {
+        const errorMessage = getErrorMessage(error);
+        ctx.onToolExecutionComplete?.({
+          toolName: tool.name,
+          status: "failed",
+          durationMs: 0,
+          outputPreview: null,
+          error: errorMessage,
+          modifiesState,
+        });
+        warningMessages.push(`${tool.name} failed: ${errorMessage}`);
+        return false;
+      }
+    };
+
+    if (
+      nativeTargetIntent &&
+      !producedNativePackageArtifact &&
+      !attemptedNativePackageArtifact
+    ) {
+      await logMissionEvent({
+        missionId,
+        eventType: "native_autofinish_triggered",
+        summary: `Auto-finishing native package: ${nativeTargetIntent.label}`,
+        metadata: {
+          chatId: req.chatId,
+          runId: missionRunId,
+          target: nativeTargetIntent.target,
+          reason: "agent_stream_ended_without_native_package",
+        },
+      }).catch((err) =>
+        logger.warn("Failed to log native autofinish package event:", err),
+      );
+      await executeNativeAutofinishTool(
+        packageNativeArtifactTool,
+        {
+          target: nativeTargetIntent.target,
+          variant: "debug",
+          create_download_site: true,
+          initialize_capacitor_if_missing: true,
+        },
+        `Package native artifact: ${nativeTargetIntent.target} and create download site`,
+      );
+    }
+
+    if (nativeTargetIntent && !passedBrowserQaGate) {
+      await logMissionEvent({
+        missionId,
+        eventType: "native_autofinish_triggered",
+        summary: "Auto-finishing browser QA gate",
+        metadata: {
+          chatId: req.chatId,
+          runId: missionRunId,
+          target: nativeTargetIntent.target,
+          reason: "native_target_without_browser_qa_pass",
+        },
+      }).catch((err) =>
+        logger.warn("Failed to log native autofinish browser QA event:", err),
+      );
+      await executeNativeAutofinishTool(
+        browserQaGateTool,
+        {
+          start_runtime: true,
+          full_page: false,
+          runtime_timeout_seconds: 60,
+        },
+        "Run browser QA gate after native package build",
+      );
+    }
+
+    if (
+      nativeTargetIntent &&
+      producedNativePackageArtifact &&
+      !producedDeploymentUrl
+    ) {
+      await logMissionEvent({
+        missionId,
+        eventType: "native_autofinish_triggered",
+        summary: "Auto-finishing native download page deployment",
+        metadata: {
+          chatId: req.chatId,
+          runId: missionRunId,
+          target: nativeTargetIntent.target,
+          reason: "native_package_created_without_download_page_url",
+        },
+      }).catch((err) =>
+        logger.warn("Failed to log native autofinish deploy event:", err),
+      );
+      await executeNativeAutofinishTool(
+        deployPreviewTool,
+        {
+          provider: "custom_command",
+          target: "production",
+          deploy_directory: "native-download-site",
+        },
+        "Deploy native-download-site as a managed local static download page",
       );
     }
 
@@ -1987,27 +2534,119 @@ export async function handleLocalAgentStream(
         warningMessages.length > 0 ? [...new Set(warningMessages)] : undefined,
     } satisfies ChatResponseEnd);
 
+    // Detect "dead" runs: the stream completed cleanly but the model never
+    // produced a real tool call (and the fallback parser also didn't recover
+    // one). Without this guard, the mission would stay in `running` forever
+    // and the user would see no obvious failure signal.
+    const isDeadRun =
+      !readOnly &&
+      totalNativeToolCalls === 0 &&
+      totalFallbackToolCalls === 0 &&
+      textToolCallFallbackAttempts === 0;
+
     await logMissionEvent({
       missionId,
       eventType: "agent_stream_completed",
-      summary: "Agent stream completed",
+      summary: isDeadRun
+        ? "Agent stream completed with zero tool calls (model_did_not_tool_call)"
+        : "Agent stream completed",
       metadata: {
         chatId: req.chatId,
         updatedFiles: !readOnly,
         totalStepsExecuted,
+        totalNativeToolCalls,
+        totalFallbackToolCalls,
+        textToolCallFallbackAttempts,
+        deadRun: isDeadRun,
       },
     }).catch((err) =>
       logger.warn("Failed to log mission completion event:", err),
     );
     await finishMissionRun({
       runId: missionRunId,
-      status: "completed",
+      status: isDeadRun ? "failed" : "completed",
       totalStepsExecuted,
+      error: isDeadRun
+        ? "model_did_not_tool_call: stream completed without any structured tool calls. The selected model likely does not support function calling through this provider."
+        : null,
       metadata: {
         updatedFiles: !readOnly,
         chatSummary: ctx.chatSummary,
+        totalNativeToolCalls,
+        totalFallbackToolCalls,
+        textToolCallFallbackAttempts,
       },
     }).catch((err) => logger.warn("Failed to finish mission run:", err));
+
+    const nativeMissionReadyToComplete =
+      !nativeTargetIntent ||
+      (producedBrowserQaScreenshotArtifact &&
+        passedBrowserQaGate &&
+        producedNativePackageArtifact &&
+        producedDeploymentUrl);
+    if (
+      missionId &&
+      !workerId &&
+      !isDeadRun &&
+      totalStepsExecuted < maxToolCallSteps &&
+      nativeMissionReadyToComplete
+    ) {
+      const existingWorker = await db.query.missionWorkers.findFirst({
+        where: eq(missionWorkers.missionId, missionId),
+        columns: { id: true },
+      });
+      if (!existingWorker) {
+        await db
+          .update(missions)
+          .set({
+            status: "completed",
+            updatedAt: new Date(),
+            completedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(missions.id, missionId),
+              inArray(missions.status, ["queued", "running"]),
+            ),
+          )
+          .catch((err) =>
+            logger.warn("Failed to mark standalone mission completed:", err),
+          );
+        await logMissionEvent({
+          missionId,
+          eventType: "mission_status_changed",
+          summary: "Mission marked completed",
+          metadata: {
+            status: "completed",
+            source: "local_agent_stream",
+            chatId: req.chatId,
+            nativeTarget: nativeTargetIntent?.target ?? null,
+            browserQaPassed: nativeTargetIntent ? passedBrowserQaGate : null,
+          },
+        }).catch((err) =>
+          logger.warn("Failed to log mission completion status:", err),
+        );
+      }
+    }
+
+    if (isDeadRun) {
+      warningMessages.push(
+        "Model did not produce any structured tool calls. The agent loop ended without making changes. Try a model with native function-calling support (Claude, GPT-4o/5, Gemini 2.x, or a GGUF with a tool-call template like Hermes/Functionary).",
+      );
+      if (missionId) {
+        await db
+          .update(missions)
+          .set({
+            status: "failed",
+            updatedAt: new Date(),
+            completedAt: new Date(),
+          })
+          .where(eq(missions.id, missionId))
+          .catch((err) =>
+            logger.warn("Failed to mark mission failed after dead run:", err),
+          );
+      }
+    }
     await createMissionCheckpoint({
       missionId,
       runId: missionRunId,
@@ -2315,11 +2954,71 @@ function getStepToolNames(step: { toolCalls: Array<unknown> }) {
     .filter((toolName): toolName is string => !!toolName);
 }
 
-function getStepSignature(toolNames: string[]) {
-  if (toolNames.length === 0) {
+function hasRepeatedToolSignature(toolName: string, repeatedCount: number) {
+  return ({ steps }: { steps: Array<{ toolCalls: Array<unknown> }> }) => {
+    const signatures = steps
+      .map((step) => getStepSignature(step.toolCalls))
+      .filter((signature): signature is string => !!signature);
+    const latestSignature = signatures.at(-1);
+    if (!latestSignature?.startsWith(`${toolName}:`)) {
+      return false;
+    }
+    if (signatures.length < repeatedCount) {
+      return false;
+    }
+    return signatures
+      .slice(-repeatedCount)
+      .every((signature) => signature === latestSignature);
+  };
+}
+
+function getStepSignature(toolCalls: Array<unknown>) {
+  if (toolCalls.length === 0) {
     return null;
   }
-  return toolNames.join(",");
+  return toolCalls
+    .map((toolCall) => {
+      if (!toolCall || typeof toolCall !== "object") {
+        return "unknown:null";
+      }
+      const maybeToolCall = toolCall as Record<string, unknown>;
+      const toolName =
+        typeof maybeToolCall.toolName === "string"
+          ? maybeToolCall.toolName
+          : "unknown";
+      const input =
+        maybeToolCall.input ??
+        maybeToolCall.args ??
+        maybeToolCall.arguments ??
+        null;
+      const inputSignature = createHash("sha1")
+        .update(stableSignatureJson(input))
+        .digest("hex")
+        .slice(0, 10);
+      return `${toolName}:${inputSignature}`;
+    })
+    .join(",");
+}
+
+function stableSignatureJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, (_key, nestedValue) => {
+      if (
+        nestedValue &&
+        typeof nestedValue === "object" &&
+        !Array.isArray(nestedValue)
+      ) {
+        return Object.fromEntries(
+          Object.entries(nestedValue as Record<string, unknown>).sort(
+            ([a], [b]) => a.localeCompare(b),
+          ),
+        );
+      }
+      return nestedValue;
+    });
+  } catch {
+    return String(value);
+  }
 }
 
 function buildTerminatedRetryContinuationInstruction(): ModelMessage {

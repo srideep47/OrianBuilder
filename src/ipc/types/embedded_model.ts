@@ -38,8 +38,9 @@ export const EmbeddedServerStatusSchema = z.object({
   running: z.boolean(),
   modelLoaded: z.boolean(),
   modelPath: z.string().nullable(),
+  modelName: z.string().nullable(),
   isLoading: z.boolean(),
-  modelName: z.string().nullable().optional(),
+  isInferring: z.boolean(),
   backend: z.enum(["none", "llama-cpp", "tensorrt-native"]),
   tensorRtRunnerAvailable: z.boolean(),
   tensorRtRuntimeAvailable: z.boolean(),
@@ -55,6 +56,7 @@ export const EmbeddedServerStatusSchema = z.object({
   totalLayers: z.number(),
   cpuLayers: z.number(),
   actualContextSize: z.number(),
+  chatWrapperLabel: z.string().nullable().optional(),
 });
 export type EmbeddedServerStatus = z.infer<typeof EmbeddedServerStatusSchema>;
 
@@ -110,6 +112,13 @@ export const EmbeddedLoadResultSchema = z.object({
   success: z.boolean(),
   error: z.string().optional(),
 });
+
+export const SwapEmbeddedModelParamsSchema = z.object({
+  newConfig: EmbeddedModelConfigSchema,
+});
+export type SwapEmbeddedModelParams = z.infer<
+  typeof SwapEmbeddedModelParamsSchema
+>;
 
 const InferenceStateSchema = z.enum([
   "idle",
@@ -258,6 +267,12 @@ export const embeddedModelContracts = {
     output: EmbeddedLoadResultSchema,
   }),
 
+  swapModel: defineContract({
+    channel: "embedded-model:swap",
+    input: SwapEmbeddedModelParamsSchema,
+    output: EmbeddedServerStatusSchema,
+  }),
+
   getSavedConfig: defineContract({
     channel: "embedded-model:get-saved-config",
     input: z.void(),
@@ -311,6 +326,10 @@ export const embeddedModelEvents = {
   tensorRtBuildStatus: defineEvent({
     channel: "embedded-model:tensorrt-build-status",
     payload: TensorRtEngineBuildStatusSchema,
+  }),
+  statusChanged: defineEvent({
+    channel: "embedded-model:status-changed",
+    payload: EmbeddedServerStatusSchema,
   }),
 } as const;
 

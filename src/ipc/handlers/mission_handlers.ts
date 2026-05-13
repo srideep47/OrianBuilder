@@ -8,6 +8,7 @@ import log from "electron-log";
 import { db } from "@/db";
 import {
   apps,
+  chats,
   messages,
   missionArtifacts,
   missionCheckpoints,
@@ -20,6 +21,12 @@ import {
   missionTasks,
   missionWorkers,
 } from "@/db/schema";
+import { findAutoResumableMissions } from "@/ipc/utils/mission_recovery";
+import {
+  maybeAutoAdvanceMission,
+  type MissionAutoRunReadyWorkers,
+} from "@/ipc/utils/mission_auto_scheduler";
+import { getServerStatus } from "@/ipc/utils/embedded_inference_server";
 import { getOrianBuilderAppPath } from "@/paths/paths";
 import { readSettings } from "@/main/settings";
 import { constructSystemPrompt, readAiRules } from "@/prompts/system_prompt";
@@ -60,6 +67,62 @@ import {
 const logger = log.scope("mission_handlers");
 const handle = createLoggedTypedHandler(logger);
 
+const DEFAULT_MAX_PARALLEL_WORKERS = 3;
+const MAX_PARALLEL_WORKERS_CAP = 8;
+
+function clampParallelism(value: number) {
+  if (!Number.isFinite(value)) return DEFAULT_MAX_PARALLEL_WORKERS;
+  return Math.max(1, Math.min(MAX_PARALLEL_WORKERS_CAP, Math.floor(value)));
+}
+
+async function ensureWorkerChat(input: {
+  worker: typeof missionWorkers.$inferSelect;
+  mission: typeof missions.$inferSelect;
+}): Promise<{
+  chatId: number;
+  worker: typeof missionWorkers.$inferSelect;
+}> {
+  const existingId = getMetadataNumber(input.worker.metadata, "workerChatId");
+  if (existingId) {
+    const found = await db.query.chats.findFirst({
+      where: eq(chats.id, existingId),
+    });
+    if (found) {
+      return { chatId: found.id, worker: input.worker };
+    }
+  }
+  const [chat] = await db
+    .insert(chats)
+    .values({
+      appId: input.mission.appId,
+      title: `Worker ${input.worker.workerKey} · ${input.mission.title}`,
+      chatMode: null,
+    })
+    .returning();
+  const now = new Date();
+  const [updatedWorker] = await db
+    .update(missionWorkers)
+    .set({
+      metadata: mergeWorkerMetadata(input.worker.metadata, {
+        workerChatId: chat.id,
+        workerChatCreatedAt: now.toISOString(),
+      }),
+      updatedAt: now,
+    })
+    .where(eq(missionWorkers.id, input.worker.id))
+    .returning();
+  return { chatId: chat.id, worker: updatedWorker ?? input.worker };
+}
+
+function getMetadataNumber(
+  metadata: Record<string, unknown> | null | undefined,
+  key: string,
+): number | undefined {
+  const value = metadata?.[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  return undefined;
+}
+
 async function getMissionOrThrow(missionId: number) {
   const mission = await db.query.missions.findFirst({
     where: eq(missions.id, missionId),
@@ -89,6 +152,136 @@ async function getMissionWorkerOrThrow(workerId: number) {
 
   return worker;
 }
+
+function scheduleMissionAutoAdvance(
+  missionId: number,
+  event: IpcMainInvokeEvent,
+  trigger: string,
+) {
+  maybeAutoAdvanceMission(missionId, {
+    event,
+    runReadyMissionWorkers: runReadyMissionWorkersForMission,
+  }).catch((err) => {
+    logger.warn(
+      `Mission auto-advance failed for mission ${missionId} after ${trigger}:`,
+      err,
+    );
+  });
+}
+
+const runReadyMissionWorkersForMission: MissionAutoRunReadyWorkers = async ({
+  event,
+  missionId,
+  limit,
+  parallel,
+}) => {
+  const mission = await getMissionOrThrow(missionId);
+  if (!mission.chatId) {
+    throw new OrianBuilderError(
+      "Mission workers can only run for missions attached to a chat.",
+      OrianBuilderErrorKind.Precondition,
+    );
+  }
+
+  const appRecord = await db.query.apps.findFirst({
+    where: eq(apps.id, mission.appId),
+  });
+  if (!appRecord) {
+    throw new OrianBuilderError(
+      `App not found for mission: ${mission.appId}`,
+      OrianBuilderErrorKind.NotFound,
+    );
+  }
+
+  const allWorkers = await db
+    .select()
+    .from(missionWorkers)
+    .where(eq(missionWorkers.missionId, missionId))
+    .orderBy(missionWorkers.createdAt);
+  const settings = readSettings();
+  const maxParallel = clampParallelism(
+    settings.maxParallelMissionWorkers ?? DEFAULT_MAX_PARALLEL_WORKERS,
+  );
+  const effectiveLimit = Math.max(1, Math.min(limit, maxParallel));
+  const readyWorkers = selectDispatchableWorkers(allWorkers)
+    .filter((worker) => worker.status === "ready")
+    .slice(0, effectiveLimit);
+
+  if (readyWorkers.length === 0) {
+    await logMissionEvent({
+      missionId,
+      eventType: "mission_worker_run_skipped",
+      summary: "No ready workers are available to run",
+    });
+    return [];
+  }
+
+  const appPath = getOrianBuilderAppPath(appRecord.path);
+
+  if (parallel && readyWorkers.length > 1) {
+    await logMissionEvent({
+      missionId,
+      eventType: "mission_workers_parallel_run_started",
+      summary: `Dispatching ${readyWorkers.length} workers concurrently`,
+      metadata: {
+        workerKeys: readyWorkers.map((worker) => worker.workerKey),
+        limit: effectiveLimit,
+        maxParallel,
+      },
+    });
+
+    const results = await Promise.allSettled(
+      readyWorkers.map((readyWorker) =>
+        runMissionWorker({
+          event,
+          mission,
+          appPath,
+          worker: readyWorker,
+        }),
+      ),
+    );
+
+    const completedWorkers: (typeof missionWorkers.$inferSelect)[] = [];
+    for (let i = 0; i < results.length; i += 1) {
+      const result = results[i];
+      if (result.status === "fulfilled") {
+        completedWorkers.push(result.value);
+      } else {
+        const failingKey = readyWorkers[i].workerKey;
+        logger.warn(
+          `Worker ${failingKey} failed during parallel run:`,
+          result.reason,
+        );
+        await logMissionEvent({
+          missionId,
+          eventType: "mission_worker_run_failed",
+          summary: `Worker ${failingKey} threw during parallel run`,
+          metadata: {
+            workerKey: failingKey,
+            error:
+              result.reason instanceof Error
+                ? result.reason.message
+                : String(result.reason),
+          },
+        }).catch(() => {});
+      }
+    }
+    return completedWorkers;
+  }
+
+  const completedWorkers = [];
+  for (const readyWorker of readyWorkers) {
+    const worker = await runMissionWorker({
+      event,
+      mission,
+      appPath,
+      worker: readyWorker,
+    });
+    completedWorkers.push(worker);
+  }
+
+  return completedWorkers;
+};
 
 export function registerMissionHandlers() {
   handle(missionContracts.createMission, async (_event, params) => {
@@ -276,6 +469,11 @@ export function registerMissionHandlers() {
       },
     });
 
+    scheduleMissionAutoAdvance(
+      worker.missionId,
+      _event,
+      "create_mission_worker",
+    );
     return worker;
   });
 
@@ -318,6 +516,11 @@ export function registerMissionHandlers() {
         },
       });
 
+      scheduleMissionAutoAdvance(
+        worker.missionId,
+        _event,
+        "update_mission_worker_status",
+      );
       return worker;
     },
   );
@@ -588,6 +791,11 @@ export function registerMissionHandlers() {
         },
       });
 
+      scheduleMissionAutoAdvance(
+        worker.missionId,
+        _event,
+        "submit_mission_worker_report",
+      );
       return worker;
     },
   );
@@ -646,6 +854,11 @@ export function registerMissionHandlers() {
         },
       });
 
+      scheduleMissionAutoAdvance(
+        worker.missionId,
+        _event,
+        "prepare_mission_worker_workspace",
+      );
       return worker;
     },
   );
@@ -695,61 +908,159 @@ export function registerMissionHandlers() {
         },
       });
 
+      scheduleMissionAutoAdvance(
+        worker.missionId,
+        _event,
+        "set_mission_worker_integration_status",
+      );
       return worker;
     },
   );
 
   handle(
     missionContracts.runReadyMissionWorkers,
-    async (event, { missionId, limit }) => {
-      const mission = await getMissionOrThrow(missionId);
-      if (!mission.chatId) {
-        throw new OrianBuilderError(
-          "Mission workers can only run for missions attached to a chat.",
-          OrianBuilderErrorKind.Precondition,
-        );
-      }
-
-      const appRecord = await db.query.apps.findFirst({
-        where: eq(apps.id, mission.appId),
+    async (event, { missionId, limit, parallel }) => {
+      const completedWorkers = await runReadyMissionWorkersForMission({
+        event,
+        missionId,
+        limit,
+        parallel,
       });
-      if (!appRecord) {
-        throw new OrianBuilderError(
-          `App not found for mission: ${mission.appId}`,
-          OrianBuilderErrorKind.NotFound,
-        );
-      }
-
-      const allWorkers = await db
-        .select()
-        .from(missionWorkers)
-        .where(eq(missionWorkers.missionId, missionId))
-        .orderBy(missionWorkers.createdAt);
-      const readyWorkers = selectDispatchableWorkers(allWorkers)
-        .filter((worker) => worker.status === "ready")
-        .slice(0, limit);
-
-      if (readyWorkers.length === 0) {
-        await logMissionEvent({
-          missionId,
-          eventType: "mission_worker_run_skipped",
-          summary: "No ready workers are available to run",
-        });
-        return [];
-      }
-
-      const completedWorkers = [];
-      for (const readyWorker of readyWorkers) {
-        const worker = await runMissionWorker({
-          event,
-          mission,
-          appPath: getOrianBuilderAppPath(appRecord.path),
-          worker: readyWorker,
-        });
-        completedWorkers.push(worker);
-      }
-
+      scheduleMissionAutoAdvance(missionId, event, "run_ready_mission_workers");
       return completedWorkers;
+    },
+  );
+
+  handle(
+    missionContracts.triggerMissionAutoResume,
+    async (event, { appId }) => {
+      const candidates = await findAutoResumableMissions(appId);
+      if (candidates.length === 0) {
+        return {
+          resumedMissionIds: [],
+          dispatchedWorkerCount: 0,
+          startedWorkerCount: 0,
+        };
+      }
+
+      const settings = readSettings();
+      const maxParallel = clampParallelism(
+        settings.maxParallelMissionWorkers ?? DEFAULT_MAX_PARALLEL_WORKERS,
+      );
+
+      const resumedMissionIds: number[] = [];
+      let dispatchedWorkerCount = 0;
+      let startedWorkerCount = 0;
+
+      for (const candidate of candidates) {
+        try {
+          const mission = await getMissionOrThrow(candidate.id);
+          if (mission.status !== "queued") continue;
+          if (!mission.chatId) continue;
+
+          const appRecord = await db.query.apps.findFirst({
+            where: eq(apps.id, mission.appId),
+          });
+          if (!appRecord) continue;
+
+          const now = new Date();
+          await db
+            .update(missions)
+            .set({ status: "running", updatedAt: now, startedAt: now })
+            .where(eq(missions.id, mission.id));
+          resumedMissionIds.push(mission.id);
+
+          await logMissionEvent({
+            missionId: mission.id,
+            eventType: "mission_auto_resume_started",
+            summary: "Mission auto-resumed after app restart",
+            metadata: {
+              autonomyProfile: mission.autonomyProfile,
+              triggeredBy: "trigger_mission_auto_resume",
+            },
+          });
+
+          const allWorkers = await db
+            .select()
+            .from(missionWorkers)
+            .where(eq(missionWorkers.missionId, mission.id))
+            .orderBy(missionWorkers.createdAt);
+
+          const queuedWorkers = selectDispatchableWorkers(allWorkers).filter(
+            (worker) => worker.status === "queued",
+          );
+
+          for (const queuedWorker of queuedWorkers) {
+            const [readyWorker] = await db
+              .update(missionWorkers)
+              .set({
+                status: "ready",
+                metadata: buildWorkerLifecycleMetadata({
+                  existing: queuedWorker.metadata,
+                  status: "ready",
+                  reason: "auto_resume_dispatched",
+                  now: new Date(),
+                }),
+                updatedAt: new Date(),
+              })
+              .where(eq(missionWorkers.id, queuedWorker.id))
+              .returning();
+            if (readyWorker) {
+              dispatchedWorkerCount += 1;
+              await logMissionEvent({
+                missionId: mission.id,
+                eventType: "mission_worker_dispatched",
+                summary: `Worker ${readyWorker.workerKey} marked ready by auto-resume`,
+                metadata: {
+                  workerId: readyWorker.id,
+                  workerKey: readyWorker.workerKey,
+                  role: readyWorker.role,
+                  status: readyWorker.status,
+                  dependsOn: readyWorker.dependsOn,
+                  autoResume: true,
+                },
+              });
+            }
+          }
+
+          const refreshedWorkers = await db
+            .select()
+            .from(missionWorkers)
+            .where(eq(missionWorkers.missionId, mission.id))
+            .orderBy(missionWorkers.createdAt);
+          const readyWorkers = selectDispatchableWorkers(refreshedWorkers)
+            .filter((worker) => worker.status === "ready")
+            .slice(0, maxParallel);
+
+          if (readyWorkers.length === 0) continue;
+
+          const appPath = getOrianBuilderAppPath(appRecord.path);
+          Promise.allSettled(
+            readyWorkers.map((readyWorker) =>
+              runMissionWorker({
+                event,
+                mission,
+                appPath,
+                worker: readyWorker,
+              }),
+            ),
+          ).catch((err) => {
+            logger.warn(
+              `Auto-resumed worker batch for mission ${mission.id} failed:`,
+              err,
+            );
+          });
+          startedWorkerCount += readyWorkers.length;
+        } catch (err) {
+          logger.warn(`Failed to auto-resume mission ${candidate.id}:`, err);
+        }
+      }
+
+      return {
+        resumedMissionIds,
+        dispatchedWorkerCount,
+        startedWorkerCount,
+      };
     },
   );
 
@@ -1208,14 +1519,19 @@ async function runMissionWorker(input: {
   worker: typeof missionWorkers.$inferSelect;
 }) {
   const preparedWorker = await ensureWorkerWorkspacePrepared(input);
-  const workspacePath = preparedWorker.workspaceRef ?? input.appPath;
+  const { chatId: workerChatId, worker: chatBoundWorker } =
+    await ensureWorkerChat({
+      worker: preparedWorker,
+      mission: input.mission,
+    });
+  const workspacePath = chatBoundWorker.workspaceRef ?? input.appPath;
   const now = new Date();
   const [runningWorker] = await db
     .update(missionWorkers)
     .set({
       status: "running",
       metadata: buildWorkerLifecycleMetadata({
-        existing: preparedWorker.metadata,
+        existing: chatBoundWorker.metadata,
         status: "running",
         reason: "worker_runtime_started",
         now,
@@ -1224,8 +1540,28 @@ async function runMissionWorker(input: {
       startedAt: now,
       completedAt: null,
     })
-    .where(eq(missionWorkers.id, preparedWorker.id))
+    .where(
+      and(
+        eq(missionWorkers.id, chatBoundWorker.id),
+        eq(missionWorkers.status, "ready"),
+      ),
+    )
     .returning();
+
+  if (!runningWorker) {
+    const currentWorker = await getMissionWorkerOrThrow(chatBoundWorker.id);
+    await logMissionEvent({
+      missionId: input.mission.id,
+      eventType: "mission_worker_run_skipped",
+      summary: `Worker ${currentWorker.workerKey} was not ready to run`,
+      metadata: {
+        workerId: currentWorker.id,
+        workerKey: currentWorker.workerKey,
+        status: currentWorker.status,
+      },
+    });
+    return currentWorker;
+  }
 
   await logMissionEvent({
     missionId: input.mission.id,
@@ -1253,13 +1589,14 @@ async function runMissionWorker(input: {
     chatMode: "local-agent",
     enableTurboEditsV2: false,
     basicAgentMode: false,
+    autopilotMode: input.mission.autonomyProfile === "full-autopilot-sandbox",
   });
   const orianbuilderRequestId = `worker:${runningWorker.id}:${crypto.randomUUID()}`;
 
   const [userMessage] = await db
     .insert(messages)
     .values({
-      chatId: input.mission.chatId!,
+      chatId: workerChatId,
       role: "user",
       content: prompt,
     })
@@ -1267,11 +1604,14 @@ async function runMissionWorker(input: {
   const [assistantMessage] = await db
     .insert(messages)
     .values({
-      chatId: input.mission.chatId!,
+      chatId: workerChatId,
       role: "assistant",
       content: "",
       requestId: orianbuilderRequestId,
-      model: settings.selectedModel.name,
+      model:
+        settings.selectedModel.provider === "embedded"
+          ? (getServerStatus().modelName ?? settings.selectedModel.name)
+          : settings.selectedModel.name,
     })
     .returning({ id: messages.id });
 
@@ -1279,7 +1619,7 @@ async function runMissionWorker(input: {
   const success = await handleLocalAgentStream(
     input.event,
     {
-      chatId: input.mission.chatId!,
+      chatId: workerChatId,
       prompt,
       missionId: input.mission.id,
     },

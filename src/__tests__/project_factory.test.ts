@@ -132,4 +132,56 @@ describe("greenfield project factory", () => {
     );
     expect(result.nextSteps[0]).toBe(result.scaffoldCommand);
   });
+
+  it("creates an Expo project with installable SDK 53 dependencies and native-safe metadata", async () => {
+    const result = await createGreenfieldProject({
+      rootPath: tempRoot,
+      projectName: "Hello World Android App",
+      stack: "expo",
+      packageManager: "npm",
+    });
+
+    expect(result.created).toBe(true);
+    expect(result.commands).toMatchObject({
+      install: "npm install",
+      dev: "npm run start",
+      build: null,
+      typecheck: "npm run typecheck",
+    });
+    expect(result.nextSteps).toContain("Run npm run typecheck");
+
+    const packageJson = JSON.parse(
+      await fs.readFile(path.join(tempRoot, "package.json"), "utf8"),
+    );
+    expect(packageJson.dependencies).toMatchObject({
+      expo: "~53.0.0",
+      "expo-router": "~5.1.11",
+      react: "19.0.0",
+      "react-native": "0.79.6",
+      "react-native-web": "~0.20.0",
+    });
+    expect(packageJson.dependencies.nativewind).toBeUndefined();
+    expect(packageJson.dependencies["react-native-worklets"]).toBeUndefined();
+    expect(packageJson.devDependencies).toMatchObject({
+      "@types/react": "~19.0.10",
+    });
+
+    const gitignore = await fs.readFile(
+      path.join(tempRoot, ".gitignore"),
+      "utf8",
+    );
+    expect(gitignore).toContain("node_modules/");
+    expect(gitignore).toContain(".expo/");
+    expect(gitignore).toContain("android/");
+
+    const appConfig = await fs.readFile(
+      path.join(tempRoot, "app.config.js"),
+      "utf8",
+    );
+    expect(appConfig).toContain('name: "Hello World Android App"');
+    expect(appConfig).toContain('slug: "hello-world-android-app"');
+    expect(appConfig).toContain(
+      'package: "com.orianbuilder.helloworldandroidapp"',
+    );
+  });
 });

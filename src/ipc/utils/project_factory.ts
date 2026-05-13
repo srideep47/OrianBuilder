@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import nodeFs from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -8,6 +9,8 @@ export const GREENFIELD_PROJECT_STACKS = [
   "vite-react-ts",
   "nextjs-ts",
   "node-express-ts",
+  "electron-app",
+  "expo",
   "blank",
 ] as const;
 
@@ -74,6 +77,16 @@ function toPackageName(value: string): string {
   return cleaned || "new-project";
 }
 
+function toAndroidPackageSegment(value: string): string {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "")
+      .slice(0, 40) || "app"
+  );
+}
+
 function runCommand(
   packageManager: GreenfieldPackageManager,
   script: string,
@@ -99,17 +112,20 @@ export function getProjectVerificationCommands(params: {
   stack: GreenfieldProjectStack;
   packageManager: GreenfieldPackageManager;
 }): ProjectVerificationCommands {
-  const hasBuild = params.stack !== "blank";
+  const hasBuild = params.stack !== "blank" && params.stack !== "expo";
   const hasTypecheck =
     params.stack === "vite-react-ts" ||
     params.stack === "nextjs-ts" ||
-    params.stack === "node-express-ts";
+    params.stack === "node-express-ts" ||
+    params.stack === "expo";
   return {
     install: installCommand(params.packageManager),
     dev:
       params.stack === "blank"
         ? null
-        : runCommand(params.packageManager, "dev"),
+        : params.stack === "expo"
+          ? runCommand(params.packageManager, "start")
+          : runCommand(params.packageManager, "dev"),
     build: hasBuild ? runCommand(params.packageManager, "build") : null,
     typecheck: hasTypecheck
       ? runCommand(params.packageManager, "typecheck")
@@ -151,6 +167,21 @@ export function getCliScaffoldCommand(params: {
   }
 
   return null;
+}
+
+function getLocalScaffoldDir(stack: GreenfieldProjectStack): string | null {
+  if (stack !== "expo" && stack !== "electron-app") {
+    return null;
+  }
+  const candidates = [
+    path.join(process.cwd(), "scaffolds", stack),
+    path.join(__dirname, "..", "..", "..", "scaffolds", stack),
+    path.join(__dirname, "..", "..", "scaffolds", stack),
+  ];
+  return (
+    candidates.find((candidate) => nodeFs.existsSync(candidate)) ??
+    candidates[0]
+  );
 }
 
 function getVerificationPlan(commands: ProjectVerificationCommands): string[] {
@@ -273,6 +304,93 @@ build
 .env.local
 coverage
 `;
+}
+
+const LOCAL_SCAFFOLD_GITIGNORE_ENTRIES = [
+  "node_modules/",
+  ".orianbuilder/",
+  "dist/",
+  "build/",
+  ".env",
+  ".env.local",
+  "coverage/",
+];
+
+const EXPO_GITIGNORE_ENTRIES = [
+  ".expo/",
+  ".expo-shared/",
+  "android/",
+  "ios/",
+  "web-build/",
+  "native-download-site/",
+  "expo-env.d.ts",
+  "nativewind-env.d.ts",
+];
+
+async function mergeGitignoreEntries(
+  rootPath: string,
+  entries: string[],
+): Promise<void> {
+  const gitignorePath = path.join(rootPath, ".gitignore");
+  let current = "";
+  try {
+    current = await fs.readFile(gitignorePath, "utf8");
+  } catch {
+    current = "";
+  }
+
+  const existing = new Set(
+    current
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean),
+  );
+  const missing = entries.filter((entry) => !existing.has(entry));
+  if (missing.length === 0) return;
+
+  const prefix = current.length > 0 && !current.endsWith("\n") ? "\n" : "";
+  await fs.writeFile(
+    gitignorePath,
+    `${current}${prefix}${missing.join("\n")}\n`,
+    "utf8",
+  );
+}
+
+async function rewriteExpoAppConfigForProject(
+  rootPath: string,
+  projectName: string,
+): Promise<void> {
+  const configPath = path.join(rootPath, "app.config.js");
+  let content: string;
+  try {
+    content = await fs.readFile(configPath, "utf8");
+  } catch {
+    return;
+  }
+
+  const appName = JSON.stringify(projectName);
+  const slugName = JSON.stringify(toPackageName(projectName));
+  const androidPackage = JSON.stringify(
+    `com.orianbuilder.${toAndroidPackageSegment(projectName)}`,
+  );
+
+  content = content
+    .replace(/\bname:\s*["'][^"']*["']/, `name: ${appName}`)
+    .replace(/\bslug:\s*["'][^"']*["']/, `slug: ${slugName}`);
+
+  if (/\bpackage:\s*["'][^"']*["']/.test(content)) {
+    content = content.replace(
+      /\bpackage:\s*["'][^"']*["']/,
+      `package: ${androidPackage}`,
+    );
+  } else if (/\bandroid:\s*{/.test(content)) {
+    content = content.replace(
+      /(\bandroid:\s*{\s*)/,
+      `$1\n      package: ${androidPackage},`,
+    );
+  }
+
+  await fs.writeFile(configPath, content, "utf8");
 }
 
 function viteReactTsFiles(
@@ -695,6 +813,35 @@ function blankFiles(
   ];
 }
 
+async function copyLocalScaffoldProject(params: {
+  stack: GreenfieldProjectStack;
+  rootPath: string;
+  projectName: string;
+  packageManager: GreenfieldPackageManager;
+}) {
+  const scaffoldDir = getLocalScaffoldDir(params.stack);
+  if (!scaffoldDir) return false;
+
+  await fs.cp(scaffoldDir, params.rootPath, {
+    recursive: true,
+    filter: (source) => path.basename(source) !== "node_modules",
+  });
+
+  const packageJsonPath = path.join(params.rootPath, "package.json");
+  const packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf8"));
+  packageJson.name = toPackageName(params.projectName);
+  packageJson.packageManager = packageManagerSpec(params.packageManager);
+  await fs.writeFile(packageJsonPath, json(packageJson), "utf8");
+  await mergeGitignoreEntries(params.rootPath, [
+    ...LOCAL_SCAFFOLD_GITIGNORE_ENTRIES,
+    ...(params.stack === "expo" ? EXPO_GITIGNORE_ENTRIES : []),
+  ]);
+  if (params.stack === "expo") {
+    await rewriteExpoAppConfigForProject(params.rootPath, params.projectName);
+  }
+  return true;
+}
+
 export function getGreenfieldProjectFiles(
   stack: GreenfieldProjectStack,
   projectName: string,
@@ -837,6 +984,30 @@ export async function createGreenfieldProject(
       commands,
       verificationPlan: getVerificationPlan(commands),
       output: cliResult.output,
+    };
+  }
+
+  if (
+    await copyLocalScaffoldProject({
+      stack: options.stack,
+      rootPath,
+      projectName: options.projectName,
+      packageManager: options.packageManager,
+    })
+  ) {
+    const files = await listCreatedFiles(rootPath);
+    return {
+      created: true,
+      reason: null,
+      stack: options.stack,
+      packageManager: options.packageManager,
+      scaffoldMethod,
+      scaffoldCommand,
+      files,
+      nextSteps: getVerificationPlan(commands),
+      commands,
+      verificationPlan: getVerificationPlan(commands),
+      output: null,
     };
   }
 

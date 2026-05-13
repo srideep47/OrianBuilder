@@ -1,5 +1,8 @@
 import { Vercel } from "@vercel/sdk";
 import { spawn } from "node:child_process";
+import fs from "node:fs";
+import http from "node:http";
+import path from "node:path";
 import { z } from "zod";
 import { db } from "@/db";
 import { apps } from "@/db/schema";
@@ -8,6 +11,7 @@ import {
   OrianBuilderErrorKind,
 } from "@/errors/orianbuilder_error";
 import { readSettings } from "@/main/settings";
+import { findAvailablePort } from "@/ipc/utils/port_utils";
 import { eq } from "drizzle-orm";
 import {
   AgentContext,
@@ -72,7 +76,7 @@ const deployPreviewSchema = z.object({
     .string()
     .optional()
     .describe(
-      "For Netlify CLI deployments, the built directory to deploy, for example dist or build.",
+      "For Netlify CLI or managed local static deployments, the built directory to deploy, for example dist, build, or native-download-site.",
     ),
   site_id: z
     .string()
@@ -90,7 +94,7 @@ const deployPreviewSchema = z.object({
     .string()
     .optional()
     .describe(
-      "For custom_command provider, the command that creates the deployment and prints a URL.",
+      "For custom_command provider, the command that creates the deployment and prints a URL. If omitted and deploy_directory is set, OrianBuilder serves that static directory locally and returns a localhost URL.",
     ),
   output_url_regex: z
     .string()
@@ -124,6 +128,16 @@ const FAILED_DEPLOYMENT_STATES = new Set(["ERROR", "CANCELED"]);
 const MAX_BUILD_LOG_CHARS = 16_000;
 const MAX_COMMAND_OUTPUT_CHARS = 24_000;
 const DEFAULT_URL_REGEX = /(https?:\/\/[^\s"'<>]+)/i;
+const localStaticDeployments = new Map<string, http.Server>();
+const NOOP_COMMAND_VALUES = new Set([
+  "none",
+  "null",
+  "n/a",
+  "na",
+  "skip",
+  "skipped",
+  "false",
+]);
 
 type DeploymentProvider = "vercel" | "netlify_cli" | "custom_command";
 
@@ -162,11 +176,125 @@ function extractDeploymentUrl(
   return match?.[1] ?? match?.[0] ?? null;
 }
 
+function normalizeOptionalCommand(command: string | undefined): string | null {
+  const trimmed = command?.trim();
+  if (!trimmed || NOOP_COMMAND_VALUES.has(trimmed.toLowerCase())) {
+    return null;
+  }
+  return trimmed;
+}
+
 function getShellCommandForPlatform(command: string) {
   if (process.platform === "win32") {
     return { file: "cmd.exe", args: ["/d", "/s", "/c", command] };
   }
   return { file: "/bin/sh", args: ["-lc", command] };
+}
+
+function getMimeType(filePath: string): string {
+  const extension = path.extname(filePath).toLowerCase();
+  if (extension === ".html") return "text/html; charset=utf-8";
+  if (extension === ".css") return "text/css; charset=utf-8";
+  if (extension === ".js") return "text/javascript; charset=utf-8";
+  if (extension === ".json") return "application/json; charset=utf-8";
+  if (extension === ".png") return "image/png";
+  if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
+  if (extension === ".svg") return "image/svg+xml";
+  if (extension === ".apk") return "application/vnd.android.package-archive";
+  return "application/octet-stream";
+}
+
+async function deployLocalStaticDirectory(input: {
+  args: DeployPreviewArgs;
+  appPath: string;
+  ctx: AgentContext;
+}): Promise<CliDeploymentResult> {
+  const deployDir = input.args.deploy_directory?.trim();
+  if (!deployDir) {
+    throw new OrianBuilderError(
+      "custom_command provider requires custom_command, or deploy_directory for a managed local static deployment.",
+      OrianBuilderErrorKind.Validation,
+    );
+  }
+
+  const appRoot = path.resolve(input.appPath);
+  const siteRoot = path.resolve(appRoot, deployDir);
+  if (siteRoot !== appRoot && !siteRoot.startsWith(`${appRoot}${path.sep}`)) {
+    throw new OrianBuilderError(
+      "deploy_directory must stay inside the current app.",
+      OrianBuilderErrorKind.Validation,
+    );
+  }
+  if (!fs.existsSync(path.join(siteRoot, "index.html"))) {
+    throw new OrianBuilderError(
+      `deploy_directory '${deployDir}' must contain index.html.`,
+      OrianBuilderErrorKind.Validation,
+    );
+  }
+
+  const deploymentKey = `${input.ctx.appId}:${siteRoot}`;
+  localStaticDeployments.get(deploymentKey)?.close();
+
+  const port = await findAvailablePort(45000, 59999);
+  const server = http.createServer((req, res) => {
+    const requestUrl = new URL(req.url ?? "/", `http://localhost:${port}`);
+    const decodedPath = decodeURIComponent(requestUrl.pathname);
+    const requestedPath = path.resolve(
+      siteRoot,
+      decodedPath.replace(/^\/+/, ""),
+    );
+    if (
+      requestedPath !== siteRoot &&
+      !requestedPath.startsWith(`${siteRoot}${path.sep}`)
+    ) {
+      res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("Forbidden");
+      return;
+    }
+
+    let filePath = requestedPath;
+    try {
+      const stat = fs.statSync(filePath);
+      if (stat.isDirectory()) {
+        filePath = path.join(filePath, "index.html");
+      }
+      const fileStat = fs.statSync(filePath);
+      if (!fileStat.isFile()) {
+        res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Not found");
+        return;
+      }
+      res.writeHead(200, {
+        "Content-Type": getMimeType(filePath),
+        "Content-Length": fileStat.size,
+      });
+      fs.createReadStream(filePath).pipe(res);
+    } catch {
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("Not found");
+    }
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", () => resolve());
+  });
+  server.once("close", () => {
+    if (localStaticDeployments.get(deploymentKey) === server) {
+      localStaticDeployments.delete(deploymentKey);
+    }
+  });
+  localStaticDeployments.set(deploymentKey, server);
+
+  const url = `http://localhost:${port}/`;
+  return {
+    provider: "custom_command",
+    status: "ready",
+    state: "READY",
+    url,
+    error: null,
+    output: `Managed local static deployment serving ${deployDir} at ${url}`,
+  };
 }
 
 async function runDeploymentCommand(input: {
@@ -380,14 +508,15 @@ async function runOptionalBuildCommand(input: {
   timeoutMs: number;
   ctx: AgentContext;
 }) {
-  if (!input.command?.trim()) {
+  const command = normalizeOptionalCommand(input.command);
+  if (!command) {
     return "";
   }
   input.ctx.onXmlStream(
     `<orianbuilder-deploy-preview provider="custom_command" status="building">Running build command...`,
   );
   const result = await runDeploymentCommand({
-    command: input.command,
+    command,
     cwd: input.appPath,
     timeoutMs: input.timeoutMs,
   });
@@ -477,12 +606,9 @@ async function deployWithCustomCommand(input: {
   appPath: string;
   ctx: AgentContext;
 }): Promise<CliDeploymentResult> {
-  const command = input.args.custom_command?.trim();
+  const command = normalizeOptionalCommand(input.args.custom_command);
   if (!command) {
-    throw new OrianBuilderError(
-      "custom_command provider requires custom_command.",
-      OrianBuilderErrorKind.Validation,
-    );
+    return deployLocalStaticDirectory(input);
   }
   const target = input.args.target ?? "preview";
   const timeoutMs = (input.args.timeout_seconds ?? 600) * 1000;
@@ -535,7 +661,7 @@ export const deployPreviewTool: ToolDefinition<DeployPreviewArgs> = {
 Supported providers:
 - vercel: deploys the app's linked Vercel project and GitHub repository.
 - netlify_cli: runs Netlify CLI in the app directory and captures the deployment URL.
-- custom_command: runs a user-specified deployment command and extracts the first deployment URL from output.
+- custom_command: runs a user-specified deployment command and extracts the first deployment URL from output. If no external provider is linked, pass deploy_directory without custom_command to serve that static directory as a managed local download page.
 
 Vercel preconditions:
 - Vercel access token is configured in Settings.

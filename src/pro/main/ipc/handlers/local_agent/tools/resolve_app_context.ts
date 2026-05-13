@@ -6,9 +6,66 @@ import {
 import type { AgentContext } from "./types";
 
 /**
+ * Placeholder values that models (especially Qwen 3.6, Llama 3.x, and other
+ * thinking-mode models) frequently hallucinate when a tool parameter says
+ * "omit to target the current app." Treat all of these as if `appName` were
+ * not provided at all.
+ *
+ * Matching is case-insensitive and ignores surrounding whitespace.
+ */
+const CURRENT_APP_ALIASES: ReadonlySet<string> = new Set([
+  "current-app",
+  "current_app",
+  "currentapp",
+  "current",
+  "this",
+  "this-app",
+  "this_app",
+  "thisapp",
+  "self",
+  "me",
+  "app",
+  ".",
+  "./",
+  "@current",
+  "@self",
+  "@app",
+  "@this",
+]);
+
+/**
+ * Normalize a model-supplied `app_name` argument. Returns `undefined` whenever
+ * the value should be interpreted as "use the current app" — including the
+ * common placeholder strings models hallucinate. Otherwise returns the
+ * original (trimmed) name so the referenced-app lookup runs against a clean
+ * key.
+ */
+export function normalizeAppNameArg(
+  appName: string | null | undefined,
+): string | undefined {
+  if (appName === undefined || appName === null) {
+    return undefined;
+  }
+  const trimmed = appName.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  if (CURRENT_APP_ALIASES.has(trimmed.toLowerCase())) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+function isCurrentAppPathName(ctx: AgentContext, appName: string): boolean {
+  const currentAppPathName = path.basename(ctx.appPath).trim();
+  return currentAppPathName.toLowerCase() === appName.toLowerCase();
+}
+
+/**
  * Resolve the app path a read-only tool should target.
  *
- * - Omitted `appName` → current app (`ctx.appPath`).
+ * - Omitted `appName` (or any placeholder alias like `"current-app"`,
+ *   `"this"`, `"."`) → current app (`ctx.appPath`).
  * - Provided `appName` → must match a referenced app from the current turn's
  *   `@app:Name` mentions. Any other value is rejected.
  *
@@ -19,10 +76,14 @@ export function resolveTargetAppPath(
   ctx: AgentContext,
   appName: string | undefined,
 ): string {
-  if (!appName) {
+  const normalized = normalizeAppNameArg(appName);
+  if (!normalized) {
     return ctx.appPath;
   }
-  const appPath = ctx.referencedApps.get(appName.toLowerCase());
+  if (isCurrentAppPathName(ctx, normalized)) {
+    return ctx.appPath;
+  }
+  const appPath = ctx.referencedApps.get(normalized.toLowerCase());
   if (appPath) {
     return appPath;
   }
@@ -30,7 +91,7 @@ export function resolveTargetAppPath(
   const availableStr =
     available.length > 0 ? available.join(", ") : "(none available)";
   throw new OrianBuilderError(
-    `Unknown app_name '${appName}'. Available referenced apps: ${availableStr}`,
+    `Unknown app_name '${appName}'. Available referenced apps: ${availableStr}. To target the current app, omit the app_name parameter entirely.`,
     OrianBuilderErrorKind.NotFound,
   );
 }
@@ -72,7 +133,7 @@ export function filterOrianBuilderInternalFiles<T extends { path: string }>(
   files: T[],
   appName: string | undefined,
 ): T[] {
-  if (!appName) {
+  if (!normalizeAppNameArg(appName)) {
     return files;
   }
   return files.filter((file) => !isOrianBuilderInternalPath(file.path));
@@ -93,7 +154,7 @@ export function assertOrianBuilderInternalAccessAllowed({
   fullFilePath: string;
   appName: string | undefined;
 }): void {
-  if (!appName) {
+  if (!normalizeAppNameArg(appName)) {
     return;
   }
   const relativeFromApp = path.relative(targetAppPath, fullFilePath);

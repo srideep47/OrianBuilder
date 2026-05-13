@@ -45,6 +45,25 @@ export const GetAppThemeParamsSchema = z.object({
 
 export type GetAppThemeParams = z.infer<typeof GetAppThemeParamsSchema>;
 
+export const SelectTemplateForPromptParamsSchema = z.object({
+  prompt: z.string().trim().min(1).max(4000),
+});
+
+export type SelectTemplateForPromptParams = z.infer<
+  typeof SelectTemplateForPromptParamsSchema
+>;
+
+export const SelectTemplateForPromptResultSchema = z.object({
+  templateId: z.string(),
+  appName: z.string(),
+  source: z.enum(["model", "rules"]),
+  reason: z.string(),
+});
+
+export type SelectTemplateForPromptResult = z.infer<
+  typeof SelectTemplateForPromptResultSchema
+>;
+
 // =============================================================================
 // Custom Theme Schemas
 // =============================================================================
@@ -204,6 +223,12 @@ export const templateContracts = {
     channel: "get-app-theme",
     input: GetAppThemeParamsSchema,
     output: z.string().nullable(),
+  }),
+
+  selectTemplateForPrompt: defineContract({
+    channel: "template:select-for-prompt",
+    input: SelectTemplateForPromptParamsSchema,
+    output: SelectTemplateForPromptResultSchema,
   }),
 
   // Custom theme operations

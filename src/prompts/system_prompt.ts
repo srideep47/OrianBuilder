@@ -514,6 +514,7 @@ export const constructSystemPrompt = ({
   themePrompt,
   readOnly,
   basicAgentMode,
+  autopilotMode,
 }: {
   aiRules: string | undefined;
   chatMode?: "build" | "ask" | "local-agent" | "plan";
@@ -523,6 +524,12 @@ export const constructSystemPrompt = ({
   readOnly?: boolean;
   /** If true, use basic agent mode (free tier with limited tools) */
   basicAgentMode?: boolean;
+  /**
+   * If true, append the autopilot directive (no questions, decide stack, run
+   * commit/PR loop on completion). Only meaningful for `local-agent` chat
+   * mode with write capabilities.
+   */
+  autopilotMode?: boolean;
 }) => {
   if (chatMode === "plan") {
     return constructPlanModePrompt(aiRules, themePrompt);
@@ -532,6 +539,7 @@ export const constructSystemPrompt = ({
     return constructLocalAgentPrompt(aiRules, themePrompt, {
       readOnly,
       basicAgentMode,
+      autopilotMode,
     });
   }
 

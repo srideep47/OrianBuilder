@@ -1,22 +1,11 @@
-import { useState, useCallback } from "react";
-import { ipc } from "@/ipc/types";
-import type { EmbeddedServerStatus } from "@/ipc/types";
+import { useEmbeddedModelStatus } from "@/hooks/useEmbeddedModelStatus";
 
 export function useEmbeddedModel() {
-  const [status, setStatus] = useState<EmbeddedServerStatus | null>(null);
-  const [loading, setLoading] = useState(false);
+  const query = useEmbeddedModelStatus();
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      const s = await ipc.embeddedModel.getStatus();
-      setStatus(s);
-    } catch {
-      setStatus(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  return { status, loading, refresh };
+  return {
+    status: query.data ?? null,
+    loading: query.isLoading || query.isFetching,
+    refresh: query.refetch,
+  };
 }

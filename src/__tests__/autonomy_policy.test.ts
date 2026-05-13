@@ -164,7 +164,7 @@ describe("autonomy policy", () => {
     });
   });
 
-  it("requires consent for deploy preview because it touches external state", () => {
+  it("auto-approves deploy preview in full autopilot so deployment missions can finish", () => {
     expect(getToolCapability("deploy_preview")).toMatchObject({
       risk: "high",
       stateScope: "external",
@@ -178,7 +178,66 @@ describe("autonomy policy", () => {
         inputPreview: "Create preview deployment",
       }),
     ).toMatchObject({
+      decision: "auto_approve",
+      risk: "high",
+    });
+  });
+
+  it("still requires consent for deploy preview in trusted workspace", () => {
+    expect(
+      getAutonomyPolicyDecision({
+        profile: "trusted-workspace",
+        runtimeMode: "host",
+        toolName: "deploy_preview",
+        inputPreview: "Create preview deployment",
+      }),
+    ).toMatchObject({
       decision: "ask",
+      risk: "high",
+    });
+  });
+
+  it("auto-approves project creation in trusted workspace even when replacing scaffold files", () => {
+    expect(
+      getAutonomyPolicyDecision({
+        profile: "trusted-workspace",
+        runtimeMode: "host",
+        toolName: "create_project",
+        inputPreview:
+          'Create expo project "Hello World Android App" via starter_files and overwrite existing files',
+      }),
+    ).toMatchObject({
+      decision: "auto_approve",
+      risk: "high",
+    });
+  });
+
+  it("auto-approves native packaging in trusted workspace", () => {
+    expect(
+      getAutonomyPolicyDecision({
+        profile: "trusted-workspace",
+        runtimeMode: "host",
+        toolName: "package_native_artifact",
+        inputPreview:
+          "Package native artifact: android_apk and create download site",
+      }),
+    ).toMatchObject({
+      decision: "auto_approve",
+      risk: "high",
+    });
+  });
+
+  it("auto-approves native packaging in full autopilot", () => {
+    expect(
+      getAutonomyPolicyDecision({
+        profile: "full-autopilot-sandbox",
+        runtimeMode: "host",
+        toolName: "package_native_artifact",
+        inputPreview:
+          "Package native artifact: android_apk and create download site",
+      }),
+    ).toMatchObject({
+      decision: "auto_approve",
       risk: "high",
     });
   });

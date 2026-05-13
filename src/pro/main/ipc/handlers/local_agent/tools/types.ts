@@ -50,6 +50,9 @@ export interface AgentContext {
    */
   referencedApps: Map<string, string>;
   chatId: number;
+  missionId?: number | null;
+  missionRunId?: number | null;
+  workerId?: number | null;
   supabaseProjectId: string | null;
   supabaseOrganizationSlug: string | null;
   neonProjectId: string | null;
@@ -64,6 +67,7 @@ export interface AgentContext {
   orianbuilderRequestId: string;
   /** Tracks file edit tool usage per file for telemetry */
   fileEditTracker: FileEditTracker;
+  installEtargetRecoveryCount?: number;
   /**
    * If true, the user has OrianBuilder Pro enabled.
    * Engine-dependent tools require this to access the OrianBuilder Pro API.

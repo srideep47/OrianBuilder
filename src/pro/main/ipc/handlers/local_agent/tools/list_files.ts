@@ -16,6 +16,7 @@ import {
 import {
   ORIANBUILDER_INTERNAL_GLOB,
   filterOrianBuilderInternalFiles,
+  normalizeAppNameArg,
   resolveTargetAppPath,
 } from "./resolve_app_context";
 
@@ -75,7 +76,19 @@ function looksLikeDirectoryPath(value: string): boolean {
 }
 
 function normalizeListFilesArgs(args: ListFilesArgs): ListFilesArgs {
-  if (!args.app_name || !looksLikeDirectoryPath(args.app_name)) {
+  if (!args.app_name) {
+    return args;
+  }
+
+  // If the model passed a "current app" placeholder (`current-app`, `this`,
+  // `.`, etc.) just drop it. The resolver would have done the same, but the
+  // path-detection branch below would otherwise reject `.` whenever the model
+  // ALSO supplied a `directory` argument.
+  if (!normalizeAppNameArg(args.app_name)) {
+    return { ...args, app_name: undefined };
+  }
+
+  if (!looksLikeDirectoryPath(args.app_name)) {
     return args;
   }
 

@@ -21,6 +21,14 @@ export type AutonomyPolicyDecision = {
 
 const DESTRUCTIVE_TOOL_NAMES = new Set(["delete_file", "execute_sql"]);
 const ALWAYS_ASK_TOOLS = new Set(["deploy_preview"]);
+const FULL_AUTOPILOT_ALLOWLIST_HIGH_RISK_TOOLS = new Set([
+  "deploy_preview",
+  "package_native_artifact",
+]);
+const TRUSTED_WORKSPACE_ALLOWLIST_HIGH_RISK_TOOLS = new Set([
+  "create_project",
+  "package_native_artifact",
+]);
 
 const CRITICAL_PATTERNS = [
   /\brm\s+-rf\b/i,
@@ -100,6 +108,18 @@ export function getAutonomyPolicyDecision(params: {
     };
   }
 
+  if (
+    params.profile === "full-autopilot-sandbox" &&
+    FULL_AUTOPILOT_ALLOWLIST_HIGH_RISK_TOOLS.has(params.toolName)
+  ) {
+    return {
+      decision: "auto_approve",
+      risk,
+      reason:
+        "Full autopilot sandbox profile allows native packaging and deployment actions required to complete the mission.",
+    };
+  }
+
   if (ALWAYS_ASK_TOOLS.has(params.toolName)) {
     return {
       decision: "ask",
@@ -125,6 +145,14 @@ export function getAutonomyPolicyDecision(params: {
   }
 
   if (params.profile === "trusted-workspace") {
+    if (TRUSTED_WORKSPACE_ALLOWLIST_HIGH_RISK_TOOLS.has(params.toolName)) {
+      return {
+        decision: "auto_approve",
+        risk,
+        reason:
+          "Trusted workspace profile allows project creation and local native packaging actions required to complete the mission.",
+      };
+    }
     if (
       risk === "high" ||
       isExternalStateTool(params.toolName, capabilityOptions) ||

@@ -53,6 +53,7 @@ export { miscContracts, miscEvents } from "./misc";
 export { freeAgentQuotaContracts } from "./free_agent_quota";
 export { audioContracts } from "./audio";
 export { mediaContracts } from "./media";
+export { mediaAiContracts } from "./media_ai";
 export { imageGenerationContracts } from "./image_generation";
 export {
   embeddedModelContracts,
@@ -71,6 +72,7 @@ export type {
   InferenceLogEntry,
   TensorRtEngineBuildStatus,
   TensorRtEngineBuildRequest,
+  SwapEmbeddedModelParams,
 } from "./embedded_model";
 export {
   modelMarketplaceContracts,
@@ -153,6 +155,7 @@ export { miscClient, miscEventClient } from "./misc";
 export { freeAgentQuotaClient } from "./free_agent_quota";
 export { audioClient } from "./audio";
 export { mediaClient } from "./media";
+export { mediaAiClient } from "./media_ai";
 export { imageGenerationClient } from "./image_generation";
 
 // =============================================================================
@@ -321,6 +324,8 @@ export type {
   Theme,
   SetAppThemeParams,
   GetAppThemeParams,
+  SelectTemplateForPromptParams,
+  SelectTemplateForPromptResult,
   CustomTheme,
   CreateCustomThemeParams,
   UpdateCustomThemeParams,
@@ -384,6 +389,15 @@ export type {
   DeleteMediaFileParams,
   MoveMediaFileParams,
 } from "./media";
+
+// Media AI backend types
+export type {
+  MediaAiModelId,
+  MediaAiModelStatus,
+  MediaAiStatus,
+  MediaAiOperationResult,
+  DownloadMediaAiModelsParams,
+} from "./media_ai";
 
 // Image generation types
 export type {
@@ -451,6 +465,7 @@ import { miscClient, miscEventClient } from "./misc";
 import { freeAgentQuotaClient } from "./free_agent_quota";
 import { audioClient } from "./audio";
 import { mediaClient } from "./media";
+import { mediaAiClient } from "./media_ai";
 import { imageGenerationClient } from "./image_generation";
 import {
   embeddedModelClient,
@@ -519,6 +534,7 @@ export const ipc = {
   freeAgentQuota: freeAgentQuotaClient,
   audio: audioClient,
   media: mediaClient,
+  mediaAi: mediaAiClient,
   imageGeneration: imageGenerationClient,
   embeddedModel: embeddedModelClient,
   marketplace: modelMarketplaceClient,

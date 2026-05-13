@@ -1,5 +1,5 @@
 import { defineConfig } from "vite";
-import orianbuilderComponentTagger from "@orianbuilder-sh/react-vite-component-tagger";
+import orianbuilderComponentTagger from "@dyad-sh/react-vite-component-tagger";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 

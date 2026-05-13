@@ -8,7 +8,6 @@ import {
   session,
 } from "electron";
 import * as path from "node:path";
-import { spawn, ChildProcess } from "child_process";
 import { registerIpcHandlers } from "./ipc/ipc_host";
 import dotenv from "dotenv";
 // @ts-ignore
@@ -59,6 +58,10 @@ import {
   stopServer as stopEmbeddedServer,
 } from "./ipc/utils/embedded_inference_server";
 import { recoverInterruptedMissionsOnStartup } from "./ipc/utils/mission_recovery";
+import {
+  startMediaAiBackend,
+  stopMediaAiBackend,
+} from "./ipc/utils/media_ai_backend";
 
 log.errorHandler.startCatching();
 log.eventLogger.startLogging();
@@ -364,51 +367,6 @@ declare global {
 
 let mainWindow: BrowserWindow | null = null;
 let pendingForceCloseData: any = null;
-let pythonServer: ChildProcess | null = null;
-
-function resolveMediaAiBackendPath() {
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, "mediaai-backend", "backend");
-  }
-  return path.join(app.getAppPath(), "mediaai-backend", "backend");
-}
-
-function startMediaAiBackend() {
-  const backendPath = resolveMediaAiBackendPath();
-  if (!fs.existsSync(path.join(backendPath, "app", "main.py"))) {
-    logger.warn(
-      `Media AI backend not found at ${backendPath}; skipping auto-start.`,
-    );
-    return;
-  }
-
-  pythonServer = spawn(
-    "python",
-    ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"],
-    {
-      cwd: backendPath,
-      shell: true,
-      env: {
-        ...process.env,
-        PYTHONPATH: backendPath,
-      },
-    },
-  );
-
-  pythonServer.stdout?.on("data", (data) => {
-    logger.info(`Media AI Backend: ${data}`);
-  });
-  pythonServer.stderr?.on("data", (data) => {
-    logger.error(`Media AI Error: ${data}`);
-  });
-  pythonServer.on("error", (err) => {
-    logger.error("Failed to start Media AI backend:", err);
-  });
-  pythonServer.on("close", (code) => {
-    logger.info(`Media AI backend exited with code ${code}`);
-    pythonServer = null;
-  });
-}
 
 const createWindow = () => {
   // Create the browser window.
@@ -831,11 +789,7 @@ app.on("will-quit", () => {
   );
 
   // Stop the Media AI Python backend
-  if (pythonServer) {
-    logger.info("Stopping Media AI backend...");
-    pythonServer.kill();
-    pythonServer = null;
-  }
+  stopMediaAiBackend();
 
   writeSettings({ isRunning: false });
 });

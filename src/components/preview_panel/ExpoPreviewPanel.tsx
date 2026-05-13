@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { ipc } from "@/ipc/types";
 import { cn } from "@/lib/utils";
+import { showError } from "@/lib/toast";
 
 // Expo Metro outputs lines like:
 //   › Metro waiting on exp://192.168.1.5:8081
@@ -31,6 +32,7 @@ interface ExpoPreviewPanelProps {
 export function ExpoPreviewPanel({ appId }: ExpoPreviewPanelProps) {
   const consoleEntries = useAtomValue(appConsoleEntriesAtom);
   const [copied, setCopied] = useState(false);
+  const [openingAndroid, setOpeningAndroid] = useState(false);
 
   // Scan console entries newest-first so we get the most recent URL
   const expoUrl = useMemo(() => {
@@ -55,6 +57,17 @@ export function ExpoPreviewPanel({ appId }: ExpoPreviewPanelProps) {
 
   const handleOpenWeb = () => {
     ipc.system.openExternalUrl(webPreviewUrl);
+  };
+
+  const handleOpenAndroid = async () => {
+    setOpeningAndroid(true);
+    try {
+      await ipc.app.respondToAppInput({ appId, response: "a" });
+    } catch (error) {
+      showError(error);
+    } finally {
+      setOpeningAndroid(false);
+    }
   };
 
   if (!expoUrl) {
@@ -155,6 +168,18 @@ export function ExpoPreviewPanel({ appId }: ExpoPreviewPanelProps) {
         >
           <ExternalLink size={14} />
           Open Web Preview
+        </button>
+        <button
+          onClick={handleOpenAndroid}
+          disabled={openingAndroid}
+          className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm hover:bg-[var(--background-darkest)] transition-colors disabled:opacity-60"
+        >
+          {openingAndroid ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Smartphone size={14} />
+          )}
+          Android Emulator
         </button>
         <button
           onClick={() => ipc.system.openExternalUrl(expoUrl)}

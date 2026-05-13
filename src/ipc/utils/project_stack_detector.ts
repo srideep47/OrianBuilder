@@ -20,6 +20,7 @@ export type DetectedProjectFramework =
   | "nuxt"
   | "remix"
   | "gatsby"
+  | "electron"
   | "expo"
   | "react-native"
   | "node"
@@ -29,6 +30,7 @@ export type DetectedProjectKind =
   | "frontend"
   | "fullstack"
   | "backend"
+  | "desktop"
   | "mobile"
   | "library"
   | "unknown";
@@ -76,6 +78,10 @@ const CONFIG_FILES = [
   "vite.config.ts",
   "vite.config.mjs",
   "vite.config.mts",
+  "electron.vite.config.js",
+  "electron.vite.config.ts",
+  "electron.vite.config.mjs",
+  "electron.vite.config.mts",
   "astro.config.js",
   "astro.config.mjs",
   "astro.config.ts",
@@ -217,6 +223,13 @@ function installCommand(manager: DetectedPackageManager): string {
   return "npm install";
 }
 
+function tscCommand(manager: DetectedPackageManager): string {
+  if (manager === "pnpm") return "pnpm exec tsc --noEmit";
+  if (manager === "yarn") return "yarn tsc --noEmit";
+  if (manager === "bun") return "bunx tsc --noEmit";
+  return "npx tsc --noEmit";
+}
+
 function findFirstScript(
   scripts: Record<string, string>,
   candidates: string[],
@@ -224,10 +237,13 @@ function findFirstScript(
   return candidates.find((script) => scripts[script]) ?? null;
 }
 
-function buildCommands(
-  manager: DetectedPackageManager,
-  scripts: Record<string, string>,
-): ProjectStackCommands {
+function buildCommands(params: {
+  manager: DetectedPackageManager;
+  scripts: Record<string, string>;
+  language: ProjectStackDetection["language"];
+  configFiles: string[];
+}): ProjectStackCommands {
+  const { manager, scripts } = params;
   const devScript = findFirstScript(scripts, ["dev", "start", "serve"]);
   const startScript = findFirstScript(scripts, ["start", "dev", "serve"]);
   const buildScript = findFirstScript(scripts, ["build"]);
@@ -250,7 +266,11 @@ function buildCommands(
     lint: lintScript ? commandForScript(manager, lintScript) : null,
     typecheck: typecheckScript
       ? commandForScript(manager, typecheckScript)
-      : null,
+      : params.language === "typescript" ||
+          params.language === "mixed" ||
+          params.configFiles.includes("tsconfig.json")
+        ? tscCommand(manager)
+        : null,
   };
 }
 
@@ -335,6 +355,16 @@ function detectFramework(params: {
     evidence.push("react-native dependency found");
     return "react-native";
   }
+  if (
+    configFiles.some((file) => file.startsWith("electron.vite.config.")) ||
+    hasDep("electron") ||
+    hasDep("electron-vite") ||
+    hasDep("@electron-forge/cli") ||
+    hasDep("electron-builder")
+  ) {
+    evidence.push("Electron project signals found");
+    return "electron";
+  }
   if (configFiles.some((file) => file.startsWith("vite.config."))) {
     evidence.push("Vite config file found");
     return "vite";
@@ -364,6 +394,7 @@ function detectKind(
   deps: Record<string, string>,
 ): DetectedProjectKind {
   if (framework === "expo" || framework === "react-native") return "mobile";
+  if (framework === "electron") return "desktop";
   if (framework === "node") return "backend";
   if (
     framework === "nextjs" ||
@@ -468,7 +499,12 @@ export async function detectProjectStack(
     devDependencies: Object.keys(devDependencies).sort(),
     configFiles,
     lockfiles,
-    commands: buildCommands(packageManager, scripts),
+    commands: buildCommands({
+      manager: packageManager,
+      scripts,
+      language,
+      configFiles,
+    }),
     confidence: getConfidence({ framework, packageJson, configFiles }),
     evidence,
     warnings,

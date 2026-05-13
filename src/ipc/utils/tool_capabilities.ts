@@ -305,6 +305,12 @@ export const TOOL_CAPABILITIES: Readonly<Record<string, ToolCapability>> = {
     isolation: "sandbox",
     expectedArtifacts: ["deployment"],
   },
+  package_native_artifact: {
+    risk: "high",
+    stateScope: "host",
+    isolation: "sandbox",
+    expectedArtifacts: ["native_artifact", "download_site"],
+  },
   delete_file: {
     risk: "high",
     stateScope: "workspace",

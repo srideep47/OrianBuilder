@@ -1,0 +1,142 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`OrianBuilderMarkdownParser orianbuilder-status > renders failed project checks as error cards 1`] = `
+<DocumentFragment>
+  <div
+    aria-expanded="false"
+    class="
+        group/card
+        bg-(--background-lightest) hover:bg-(--background-lighter) rounded-xl border border-border/60 border-l-[3px] border-l-red-500
+        my-1.5 transition-colors duration-150
+        cursor-pointer
+        
+      "
+    role="button"
+    tabindex="0"
+  >
+    <div
+      class="flex items-center gap-2.5 px-3 py-2"
+    >
+      <div
+        class="flex items-center justify-center size-7 rounded-lg shrink-0 bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-400"
+      >
+        <svg
+          class="lucide lucide-circle-x"
+          fill="none"
+          height="15"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="15"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <circle
+            cx="12"
+            cy="12"
+            r="10"
+          />
+          <path
+            d="m15 9-6 6"
+          />
+          <path
+            d="m9 9 6 6"
+          />
+        </svg>
+      </div>
+      <div
+        class="flex-1 min-w-0 flex items-center gap-2"
+      >
+        <span
+          class="inline-flex items-center text-[11px] font-semibold px-1.5 py-0.5 rounded-md ring-1 ring-inset bg-red-50 dark:bg-red-950/60 text-red-700 dark:text-red-300 ring-red-200 dark:ring-red-800"
+        >
+          Error
+        </span>
+        <span
+          class="truncate text-sm font-medium text-foreground"
+        >
+          Project check failed
+        </span>
+        <span
+          class="hidden shrink-0 text-xs text-muted-foreground sm:inline"
+        >
+          expo
+        </span>
+        <span
+          class="min-w-0 truncate font-mono text-xs text-muted-foreground"
+        >
+          npm install --legacy-peer-deps
+        </span>
+        <span
+          class="shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
+        >
+          exit 1
+        </span>
+        <button
+          class="ml-auto inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          title="Copy project check output"
+          type="button"
+        >
+          <svg
+            class="lucide lucide-copy"
+            fill="none"
+            height="13"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="13"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <rect
+              height="14"
+              rx="2"
+              ry="2"
+              width="14"
+              x="8"
+              y="8"
+            />
+            <path
+              d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
+            />
+          </svg>
+          <span
+            class="hidden sm:inline"
+          >
+            Copy
+          </span>
+        </button>
+        <svg
+          class="lucide lucide-chevron-right shrink-0 text-muted-foreground transition-transform duration-200"
+          fill="none"
+          height="16"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="16"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="m9 18 6-6-6-6"
+          />
+        </svg>
+      </div>
+    </div>
+    <div
+      class="grid transition-all duration-200 ease-in-out grid-rows-[0fr] opacity-0 pointer-events-none "
+    >
+      <div
+        class="overflow-hidden"
+      >
+        <div
+          class="px-3 pb-3"
+        />
+      </div>
+    </div>
+  </div>
+</DocumentFragment>
+`;

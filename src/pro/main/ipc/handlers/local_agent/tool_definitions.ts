@@ -17,6 +17,7 @@ import { getDatabaseTableSchemaTool } from "./tools/get_database_table_schema";
 import { browserControlTool } from "./tools/browser_control";
 import { browserQaGateTool } from "./tools/browser_qa_gate";
 import { deployPreviewTool } from "./tools/deploy_preview";
+import { packageNativeArtifactTool } from "./tools/package_native_artifact";
 
 import { readFileTool } from "./tools/read_file";
 import { listFilesTool } from "./tools/list_files";
@@ -55,6 +56,7 @@ import { writePlanTool } from "./tools/write_plan";
 import { exitPlanTool } from "./tools/exit_plan";
 import { readGuideTool } from "./tools/read_guide";
 import { editAstTool } from "./tools/edit_ast";
+import { githubPrTool } from "./tools/github_pr";
 import type { LanguageModelV3ToolResultOutput } from "@ai-sdk/provider";
 import {
   escapeXmlAttr,
@@ -114,6 +116,8 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   browserControlTool,
   browserQaGateTool,
   deployPreviewTool,
+  packageNativeArtifactTool,
+  githubPrTool,
   setChatSummaryTool,
   addIntegrationTool,
   readLogsTool,
@@ -443,6 +447,13 @@ export interface BuildAgentToolSetOptions {
    * Used for basic agent mode where some tools may not be available.
    */
   basicAgentMode?: boolean;
+  /**
+   * If true, the mission is running in full-autopilot-sandbox mode.
+   * Tools that pause the loop to ask the user (planning_questionnaire,
+   * write_plan, exit_plan) are filtered out so the agent must decide and
+   * proceed without mid-turn user interaction.
+   */
+  autopilotMode?: boolean;
 }
 
 const FILE_EDIT_TOOLS: Set<FileEditToolName> = new Set(FILE_EDIT_TOOL_NAMES);
@@ -493,6 +504,17 @@ const PLANNING_SPECIFIC_TOOLS = new Set([
 const PRO_AGENT_ONLY_TOOLS = new Set<string>();
 
 /**
+ * Tools blocked when running in autopilot mode. These tools pause the agent
+ * loop waiting for user input, which contradicts the "no middle questions"
+ * contract of full-autopilot missions.
+ */
+const BLOCKED_IN_AUTOPILOT_TOOLS = new Set([
+  "planning_questionnaire",
+  "write_plan",
+  "exit_plan",
+]);
+
+/**
  * Build ToolSet for AI SDK from tool definitions
  */
 export function buildAgentToolSet(
@@ -523,6 +545,11 @@ export function buildAgentToolSet(
 
     // Skip Pro-only tools in basic agent mode
     if (options.basicAgentMode && PRO_AGENT_ONLY_TOOLS.has(tool.name)) {
+      continue;
+    }
+
+    // In autopilot mode, skip tools that pause for user input
+    if (options.autopilotMode && BLOCKED_IN_AUTOPILOT_TOOLS.has(tool.name)) {
       continue;
     }
 

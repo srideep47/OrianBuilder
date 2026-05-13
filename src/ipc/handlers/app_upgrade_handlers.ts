@@ -71,9 +71,7 @@ function isComponentTaggerUpgradeNeeded(appPath: string): boolean {
 
   try {
     const viteConfigContent = fs.readFileSync(viteConfigPath, "utf-8");
-    return !viteConfigContent.includes(
-      "@orianbuilder-sh/react-vite-component-tagger",
-    );
+    return !viteConfigContent.includes("@dyad-sh/react-vite-component-tagger");
   } catch (e) {
     logger.error("Error reading vite config", e);
     return false;
@@ -120,11 +118,15 @@ async function applyComponentTagger(appPath: string) {
   }
 
   let content = await fs.promises.readFile(viteConfigPath, "utf-8");
+  content = content.replace(
+    /@orianbuilder-sh\/react-vite-component-tagger/g,
+    "@dyad-sh/react-vite-component-tagger",
+  );
 
   // Add import statement if not present
   if (
     !content.includes(
-      "import orianbuilderComponentTagger from '@orianbuilder-sh/react-vite-component-tagger';",
+      "import orianbuilderComponentTagger from '@dyad-sh/react-vite-component-tagger';",
     )
   ) {
     // Add it after the last import statement
@@ -139,7 +141,7 @@ async function applyComponentTagger(appPath: string) {
     lines.splice(
       lastImportIndex + 1,
       0,
-      "import orianbuilderComponentTagger from '@orianbuilder-sh/react-vite-component-tagger';",
+      "import orianbuilderComponentTagger from '@dyad-sh/react-vite-component-tagger';",
     );
     content = lines.join("\n");
   }
@@ -160,11 +162,32 @@ async function applyComponentTagger(appPath: string) {
 
   await fs.promises.writeFile(viteConfigPath, content);
 
+  const packageJsonPath = path.join(appPath, "package.json");
+  if (fs.existsSync(packageJsonPath)) {
+    const packageJsonContent = await fs.promises.readFile(
+      packageJsonPath,
+      "utf-8",
+    );
+    if (
+      packageJsonContent.includes(
+        "@orianbuilder-sh/react-vite-component-tagger",
+      )
+    ) {
+      await fs.promises.writeFile(
+        packageJsonPath,
+        packageJsonContent.replace(
+          /"@orianbuilder-sh\/react-vite-component-tagger"/g,
+          '"@dyad-sh/react-vite-component-tagger"',
+        ),
+      );
+    }
+  }
+
   // Install the dependency
   await new Promise<void>((resolve, reject) => {
     logger.info("Installing component-tagger dependency");
     const process = spawn(
-      "pnpm add -D @orianbuilder-sh/react-vite-component-tagger || npm install --save-dev --legacy-peer-deps @orianbuilder-sh/react-vite-component-tagger",
+      "pnpm add -D @dyad-sh/react-vite-component-tagger || npm install --save-dev --legacy-peer-deps @dyad-sh/react-vite-component-tagger",
       {
         cwd: appPath,
         shell: true,

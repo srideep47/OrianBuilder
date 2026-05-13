@@ -429,7 +429,8 @@ export function MissionControl({ chatId }: { chatId?: number }) {
     if (readyDispatchableWorkers.length > 0) {
       await runReadyMissionWorkers({
         missionId: visibleMission.id,
-        limit: 1,
+        limit: Math.min(readyDispatchableWorkers.length, 5),
+        parallel: true,
       });
       return;
     }
@@ -563,6 +564,9 @@ export function MissionControl({ chatId }: { chatId?: number }) {
   const isActive =
     activeMissionId === visibleMission.id &&
     visibleMission.status === "running";
+  const isAutoAdvanceMission =
+    visibleMission.autonomyProfile === "trusted-workspace" ||
+    visibleMission.autonomyProfile === "full-autopilot-sandbox";
 
   return (
     <div
@@ -589,6 +593,11 @@ export function MissionControl({ chatId }: { chatId?: number }) {
               >
                 {getAutonomyProfileLabel(visibleMission.autonomyProfile)}
               </Badge>
+              {isAutoAdvanceMission && (
+                <Badge variant="secondary" className="shrink-0">
+                  Auto
+                </Badge>
+              )}
               {latestRun && (
                 <Badge variant="secondary" className="shrink-0 capitalize">
                   run {latestRun.status}
@@ -657,7 +666,7 @@ export function MissionControl({ chatId }: { chatId?: number }) {
           >
             <ShieldQuestion className="size-4" />
           </Button>
-          {dispatchableWorkers.length > 0 && (
+          {!isAutoAdvanceMission && dispatchableWorkers.length > 0 && (
             <Button
               type="button"
               size="icon"
@@ -677,7 +686,7 @@ export function MissionControl({ chatId }: { chatId?: number }) {
               <Send className="size-4" />
             </Button>
           )}
-          {unpreparedWorkers.length > 0 && (
+          {!isAutoAdvanceMission && unpreparedWorkers.length > 0 && (
             <Button
               type="button"
               size="icon"

@@ -47,18 +47,18 @@ export const TitleBar = () => {
   const platform = useSystemPlatform();
   const showWindowControls = platform !== null && platform !== "darwin";
 
-  const showDyadProSuccessDialog = () => {
+  const showOrianBuilderProSuccessDialog = () => {
     setIsSuccessDialogOpen(true);
   };
 
   const { lastDeepLink, clearLastDeepLink } = useDeepLink();
   useEffect(() => {
     const handleDeepLink = async () => {
-      if (lastDeepLink?.type === "dyad-pro-return") {
+      if (lastDeepLink?.type === "orianbuilder-pro-return") {
         await refreshSettings();
         // Refetch user budget when OrianBuilder Pro key is set via deep link
         queryClient.invalidateQueries({ queryKey: queryKeys.userBudget.info });
-        showDyadProSuccessDialog();
+        showOrianBuilderProSuccessDialog();
         clearLastDeepLink();
       }
     };
@@ -289,16 +289,16 @@ function TitleBarActions() {
   );
 }
 
-export function DyadProButton({
-  isDyadProEnabled,
+export function OrianBuilderProButton({
+  isOrianBuilderProEnabled,
 }: {
-  isDyadProEnabled: boolean;
+  isOrianBuilderProEnabled: boolean;
 }) {
   const { navigate } = useRouter();
   const { userBudget } = useUserBudgetInfo();
   return (
     <Button
-      data-testid="title-bar-dyad-pro-button"
+      data-testid="title-bar-orianbuilder-pro-button"
       onClick={() => {
         navigate({
           to: providerSettingsRoute.id,
@@ -308,16 +308,16 @@ export function DyadProButton({
       variant="outline"
       className={cn(
         "hidden @2xl:block ml-1 no-app-region-drag h-7 bg-indigo-600 text-white dark:bg-indigo-600 dark:text-white text-xs px-2 pt-1 pb-1",
-        !isDyadProEnabled && "bg-zinc-600 dark:bg-zinc-600",
+        !isOrianBuilderProEnabled && "bg-zinc-600 dark:bg-zinc-600",
       )}
       size="sm"
     >
-      {isDyadProEnabled
+      {isOrianBuilderProEnabled
         ? userBudget?.isTrial
           ? "Pro Trial"
           : "Pro"
         : "Pro (off)"}
-      {userBudget && isDyadProEnabled && (
+      {userBudget && isOrianBuilderProEnabled && (
         <AICreditStatus userBudget={userBudget} />
       )}
     </Button>

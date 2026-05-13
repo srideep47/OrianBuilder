@@ -1,10 +1,13 @@
 import http from "node:http";
 import os from "node:os";
+import { BrowserWindow } from "electron";
 import log from "electron-log";
 import {
   findDefaultTensorRtEngineDir,
   TensorRtNativeBackend,
 } from "./tensorrt_native_backend";
+import { embeddedModelEvents } from "../types/embedded_model";
+import { safeSend } from "./safe_sender";
 
 const logger = log.scope("embedded-inference");
 
@@ -18,6 +21,8 @@ let llamaInstance: unknown = null;
 let currentModel: unknown = null;
 let currentContext: unknown = null;
 let currentModelPath: string | null = null;
+let currentChatWrapper: unknown = null;
+let currentChatWrapperLabel: string | null = null;
 let currentGpuLayers = 0;
 let currentTotalLayers = 0;
 let currentActualContextSize = 0;
@@ -63,7 +68,9 @@ export interface EmbeddedServerStatus {
   running: boolean;
   modelLoaded: boolean;
   modelPath: string | null;
+  modelName: string | null;
   isLoading: boolean;
+  isInferring: boolean;
   backend: "none" | "llama-cpp" | "tensorrt-native";
   tensorRtRunnerAvailable: boolean;
   tensorRtRuntimeAvailable: boolean;
@@ -74,6 +81,7 @@ export interface EmbeddedServerStatus {
   totalLayers: number;
   cpuLayers: number;
   actualContextSize: number;
+  chatWrapperLabel: string | null;
 }
 
 export function getServerStatus(): EmbeddedServerStatus {
@@ -84,7 +92,11 @@ export function getServerStatus(): EmbeddedServerStatus {
     running: server !== null,
     modelLoaded: currentModel !== null || tensorRtLoaded,
     modelPath: currentModelPath,
+    modelName: currentModelPath
+      ? (currentModelPath.split(/[/\\]/).pop() ?? null)
+      : null,
     isLoading,
+    isInferring,
     backend: currentBackend,
     tensorRtRunnerAvailable: tensorRtStatus.runnerAvailable,
     tensorRtRuntimeAvailable: tensorRtStatus.runtimeAvailable,
@@ -95,7 +107,22 @@ export function getServerStatus(): EmbeddedServerStatus {
     totalLayers: currentTotalLayers,
     cpuLayers: Math.max(0, currentTotalLayers - currentGpuLayers),
     actualContextSize: currentActualContextSize,
+    chatWrapperLabel: currentChatWrapperLabel,
   };
+}
+
+function emitStatusChanged(): EmbeddedServerStatus {
+  const status = getServerStatus();
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      safeSend(
+        win.webContents,
+        embeddedModelEvents.statusChanged.channel,
+        status,
+      );
+    }
+  }
+  return status;
 }
 
 // ─── Live inference stats ─────────────────────────────────────────────────────
@@ -544,6 +571,7 @@ function isOomError(err: unknown): boolean {
 export async function loadModel(config: EmbeddedModelConfig): Promise<void> {
   if (isLoading) throw new Error("A model is already loading");
   isLoading = true;
+  emitStatusChanged();
 
   if (config.inferenceBackend === "tensorrt-native") {
     await loadTensorRtModel(config);
@@ -685,8 +713,42 @@ export async function loadModel(config: EmbeddedModelConfig): Promise<void> {
       currentGpuLayers = actualGpu;
       currentTotalLayers = totalLayers;
       currentActualContextSize = actualCtx;
+
+      // Resolve a specialized chat wrapper based on the model filename. This
+      // is required for reliable tool calling with models whose GGUF templates
+      // are stripped or incorrect. Qwen 3.5/3.6 deliberately falls back to its
+      // embedded Jinja template because it is more reliable for those GGUFs.
+      try {
+        const { resolveChatWrapperForModel } =
+          await import("./chat_wrapper_resolver");
+        const llamaModule = await getLlamaModule();
+        const resolved = await resolveChatWrapperForModel({
+          modelIdOrFilename: config.modelPath,
+          llamaModule,
+        });
+        currentChatWrapper = resolved.wrapper;
+        currentChatWrapperLabel = resolved.match.label;
+        if (resolved.wrapper) {
+          logger.info(
+            `[chat_wrapper] Locked in ${resolved.match.label} for "${config.modelPath}".`,
+          );
+        } else {
+          logger.info(
+            `[chat_wrapper] No specialized wrapper for "${config.modelPath}"; relying on auto-detect + text-tool-call fallback.`,
+          );
+        }
+      } catch (err) {
+        currentChatWrapper = null;
+        currentChatWrapperLabel = null;
+        logger.warn(
+          `[chat_wrapper] Failed to resolve chat wrapper for "${config.modelPath}":`,
+          err,
+        );
+      }
+
       isLoading = false;
       setState("idle", "Model ready");
+      emitStatusChanged();
       return;
     } catch (err) {
       lastError = err;
@@ -713,6 +775,7 @@ export async function loadModel(config: EmbeddedModelConfig): Promise<void> {
         currentGpuLayers = 0;
         currentActualContextSize = 0;
         isLoading = false;
+        emitStatusChanged();
         throw err;
       }
     }
@@ -724,6 +787,7 @@ export async function loadModel(config: EmbeddedModelConfig): Promise<void> {
   currentTotalLayers = 0;
   currentActualContextSize = 0;
   isLoading = false;
+  emitStatusChanged();
   const msg =
     lastError instanceof Error ? lastError.message : String(lastError);
   throw new Error(
@@ -738,6 +802,7 @@ async function loadTensorRtModel(config: EmbeddedModelConfig): Promise<void> {
   if (!engineDir) {
     isLoading = false;
     currentBackend = "none";
+    emitStatusChanged();
     throw new Error(
       "TensorRT engine directory not found. Select a compiled engine directory containing engine_meta.json.",
     );
@@ -754,6 +819,7 @@ async function loadTensorRtModel(config: EmbeddedModelConfig): Promise<void> {
     currentActualContextSize = config.contextSize;
     isLoading = false;
     setState("idle", "TensorRT engine ready");
+    emitStatusChanged();
   } catch (err) {
     currentBackend = "none";
     currentModelPath = null;
@@ -761,6 +827,7 @@ async function loadTensorRtModel(config: EmbeddedModelConfig): Promise<void> {
     currentTotalLayers = 0;
     currentActualContextSize = 0;
     isLoading = false;
+    emitStatusChanged();
     throw err;
   }
 }
@@ -792,13 +859,17 @@ async function _fullReset(): Promise<void> {
   currentGpuLayers = 0;
   currentTotalLayers = 0;
   currentActualContextSize = 0;
+  currentChatWrapper = null;
+  currentChatWrapperLabel = null;
   await destroyLlamaInstance();
   await tensorRtBackend?.unload();
+  emitStatusChanged();
 }
 
 export async function unloadModel(): Promise<void> {
   await _fullReset();
   logger.info("Model unloaded");
+  emitStatusChanged();
 }
 
 // Abort any in-progress inference and clear the busy flag.
@@ -809,6 +880,7 @@ export function abortCurrentInference(): void {
   }
   currentAbort = null;
   isInferring = false;
+  emitStatusChanged();
   logger.info("Inference aborted by caller");
 }
 
@@ -893,13 +965,129 @@ function stringifyOpenAIContent(content: unknown): string {
   return String(content);
 }
 
+function stripThinkingBlocks(text: string): {
+  visibleText: string;
+  removedThinking: boolean;
+} {
+  if (!text.includes("<think>")) {
+    return { visibleText: text, removedThinking: false };
+  }
+
+  let visibleText = "";
+  let cursor = 0;
+  let removedThinking = false;
+  while (cursor < text.length) {
+    const openIndex = text.indexOf("<think>", cursor);
+    if (openIndex === -1) {
+      visibleText += text.slice(cursor);
+      break;
+    }
+    visibleText += text.slice(cursor, openIndex);
+    removedThinking = true;
+    const closeIndex = text.indexOf("</think>", openIndex + 7);
+    if (closeIndex === -1) {
+      break;
+    }
+    cursor = closeIndex + 8;
+  }
+
+  return { visibleText, removedThinking };
+}
+
+function createThinkingStripper() {
+  let inThink = false;
+  let pending = "";
+
+  const longestTagSuffix = (text: string, tag: string) => {
+    for (let len = Math.min(tag.length - 1, text.length); len > 0; len -= 1) {
+      const suffix = text.slice(-len);
+      if (tag.startsWith(suffix)) return suffix;
+    }
+    return "";
+  };
+
+  return {
+    push(chunk: string): {
+      visibleText: string;
+      enteredThinking: boolean;
+      exitedThinking: boolean;
+    } {
+      const openTag = "<think>";
+      const closeTag = "</think>";
+      const input = pending + chunk;
+      pending = "";
+      let visibleText = "";
+      let enteredThinking = false;
+      let exitedThinking = false;
+      let cursor = 0;
+
+      while (cursor < input.length) {
+        if (inThink) {
+          const closeIndex = input.indexOf(closeTag, cursor);
+          if (closeIndex === -1) {
+            pending = longestTagSuffix(input.slice(cursor), closeTag);
+            break;
+          }
+          cursor = closeIndex + closeTag.length;
+          inThink = false;
+          exitedThinking = true;
+          continue;
+        }
+
+        const openIndex = input.indexOf(openTag, cursor);
+        if (openIndex === -1) {
+          const tail = input.slice(cursor);
+          pending = longestTagSuffix(tail, openTag);
+          visibleText += tail.slice(0, tail.length - pending.length);
+          break;
+        }
+
+        visibleText += input.slice(cursor, openIndex);
+        cursor = openIndex + openTag.length;
+        inThink = true;
+        enteredThinking = true;
+      }
+
+      return { visibleText, enteredThinking, exitedThinking };
+    },
+    flush(): string {
+      if (inThink) {
+        pending = "";
+        return "";
+      }
+      const visibleText = pending;
+      pending = "";
+      return visibleText;
+    },
+  };
+}
+
+function applyThinkingState(input: {
+  enteredThinking: boolean;
+  exitedThinking: boolean;
+  generatingOperation: string;
+}) {
+  if (input.enteredThinking) {
+    setState("thinking", "Thinking...");
+    return;
+  }
+  if (input.exitedThinking || currentInferenceState === "prefilling") {
+    setState("generating", input.generatingOperation);
+  }
+}
+
 function estimateOpenAIRequestTokens(
   rawMessages: OpenAIMessage[],
   payload?: { tools?: unknown },
 ): number {
   const messageChars = rawMessages.reduce((sum, message) => {
+    const content = stringifyOpenAIContent(message.content);
     let chars =
-      stringifyOpenAIContent(message.content).length + message.role.length + 8;
+      (message.role === "assistant"
+        ? stripThinkingBlocks(content).visibleText.length
+        : content.length) +
+      message.role.length +
+      8;
     if (message.tool_calls)
       chars += safeJsonStringify(message.tool_calls).length;
     if (message.tool_call_id) chars += message.tool_call_id.length;
@@ -970,7 +1158,9 @@ function openAiToLlamaChatInput(rawMessages: OpenAIMessage[]): {
         }
 
         // If the assistant also emitted text alongside the tool calls, prepend it
-        const content = stringifyOpenAIContent(msg.content);
+        const content = stripThinkingBlocks(
+          stringifyOpenAIContent(msg.content),
+        ).visibleText.trim();
         if (content) response.unshift(content);
         history.push({ type: "model", response });
 
@@ -981,7 +1171,9 @@ function openAiToLlamaChatInput(rawMessages: OpenAIMessage[]): {
       }
 
       // Plain text assistant turn
-      const content = stringifyOpenAIContent(msg.content);
+      const content = stripThinkingBlocks(
+        stringifyOpenAIContent(msg.content),
+      ).visibleText.trim();
       if (content) {
         history.push({ type: "model", response: [content] });
       }
@@ -1014,7 +1206,11 @@ function openAiToPlainPrompt(rawMessages: OpenAIMessage[]): {
   const turns = rawMessages
     .filter((m) => m.role !== "system")
     .map((m) => {
-      const content = stringifyOpenAIContent(m.content);
+      const rawContent = stringifyOpenAIContent(m.content);
+      const content =
+        m.role === "assistant"
+          ? stripThinkingBlocks(rawContent).visibleText.trim()
+          : rawContent;
       if (m.role === "assistant") return `Assistant: ${content}`;
       if (m.role === "tool") return `Tool: ${content}`;
       return `User: ${content}`;
@@ -1031,16 +1227,17 @@ function buildSamplingOpts(
   payload: any,
   maxTokens: number,
 ): Record<string, unknown> {
+  const samplingDefaults = getModelFamilySamplingDefaults();
   const opts: Record<string, unknown> = {
     maxTokens,
-    temperature: payload.temperature ?? defaultSampling.temperature,
-    topP: payload.top_p ?? defaultSampling.topP,
-    topK: payload.top_k ?? defaultSampling.topK,
+    temperature: payload.temperature ?? samplingDefaults.temperature,
+    topP: payload.top_p ?? samplingDefaults.topP,
+    topK: payload.top_k ?? samplingDefaults.topK,
     repeatPenalty: {
       penalty:
         payload.repeat_penalty ??
         payload.frequency_penalty ??
-        defaultSampling.repeatPenalty,
+        samplingDefaults.repeatPenalty,
       penalizeNewLine: false,
     },
   };
@@ -1049,7 +1246,51 @@ function buildSamplingOpts(
   return opts;
 }
 
+function getModelFamilySamplingDefaults() {
+  if (isQwen3Model(currentModelPath)) {
+    return {
+      ...defaultSampling,
+      temperature: 0.6,
+      topP: 0.95,
+      topK: 20,
+      repeatPenalty: 1.0,
+    };
+  }
+  return defaultSampling;
+}
+
+function isQwen3Model(modelPath: string | null) {
+  const filename = modelPath?.split(/[/\\]/).pop()?.toLowerCase() ?? "";
+  return /qwen[._-]?3/.test(filename) || filename.includes("qwen3");
+}
+
+function stringifyToolCallArguments(params: unknown): string {
+  if (typeof params === "string") {
+    try {
+      JSON.parse(params);
+      return params;
+    } catch {
+      return JSON.stringify({ value: params });
+    }
+  }
+  try {
+    return JSON.stringify(params ?? {});
+  } catch {
+    return "{}";
+  }
+}
+
 // ─── Tool call streaming helpers ─────────────────────────────────────────────
+
+const QWEN_TOOL_TURN_MAX_TOKENS = 2048;
+const TOOL_CALL_COLLECTION_WINDOW_MS = 150;
+
+function getToolTurnMaxTokens(requestedMaxTokens: number): number {
+  if (isQwen3Model(currentModelPath)) {
+    return Math.min(requestedMaxTokens, QWEN_TOOL_TURN_MAX_TOKENS);
+  }
+  return requestedMaxTokens;
+}
 
 function sseChunk(obj: unknown): string {
   return `data: ${JSON.stringify(obj)}\n\n`;
@@ -1060,12 +1301,10 @@ function sseChunk(obj: unknown): string {
 // Uses node-llama-cpp's native function-calling (promptWithMeta + functions).
 // Strategy:
 //   1. Register every OpenAI tool as a node-llama-cpp function.
-//   2. Each function handler records the call then ABORTS the generation signal.
-//   3. Because we use AbortSignal.any(outerSignal, innerAbort), aborting in the
-//      handler stops generation right after the function call — we get the
-//      pre-call text + the call itself, but NOT any text generated after the
-//      fake "" result is fed back.
-//   4. Stream: pre-call text as text deltas, then tool-call deltas, then finish.
+//   2. Each function handler records the call and returns an empty result.
+//   3. Wait briefly for batched calls, then abort before empty tool results
+//      let the model continue to the max-token limit.
+//   4. Stream visible text as text deltas, then tool-call deltas, then finish.
 //
 // On the AI SDK side, the agent then executes the tool and sends the NEXT request
 // with the tool result already in the messages array. Our openAiToLlamaChatInput
@@ -1084,7 +1323,8 @@ async function handleWithTools(
   modelName: string,
 ): Promise<void> {
   const stream: boolean = payload.stream ?? false;
-  const maxTokens: number = payload.max_tokens ?? 8192;
+  const requestedMaxTokens: number = payload.max_tokens ?? 8192;
+  const maxTokens = getToolTurnMaxTokens(requestedMaxTokens);
   const samplingOpts = buildSamplingOpts(payload, maxTokens);
 
   // ── Build node-llama-cpp functions from OpenAI tools ──────────────────────
@@ -1095,14 +1335,32 @@ async function handleWithTools(
 
   const recordedCalls: Array<{ id: string; name: string; arguments: string }> =
     [];
-  // Abort when the first function handler fires — stops generation after the call.
-  const innerAbort = new AbortController();
-  const combinedSignal = AbortSignal.any([
-    outerAbort.signal,
-    innerAbort.signal,
-  ]);
-
   const nlcFunctions: Record<string, unknown> = {};
+  let abortedAfterToolCall = false;
+  let toolCallAbortTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const clearToolCallAbortTimer = () => {
+    if (!toolCallAbortTimer) {
+      return;
+    }
+    clearTimeout(toolCallAbortTimer);
+    toolCallAbortTimer = null;
+  };
+
+  const scheduleToolCallAbort = () => {
+    clearToolCallAbortTimer();
+    toolCallAbortTimer = setTimeout(() => {
+      if (recordedCalls.length === 0 || outerAbort.signal.aborted) {
+        return;
+      }
+      abortedAfterToolCall = true;
+      logger.info(
+        `[inference/tools] returning ${recordedCalls.length} recorded tool call(s) after collection window`,
+      );
+      outerAbort.abort();
+    }, TOOL_CALL_COLLECTION_WINDOW_MS);
+  };
+
   for (const tool of tools) {
     const name = tool.function.name;
     nlcFunctions[name] = {
@@ -1110,23 +1368,18 @@ async function handleWithTools(
       params: tool.function.parameters ?? { type: "object", properties: {} },
       handler: (params: unknown) => {
         const id = `call_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-        let argumentsStr = "";
-        try {
-          argumentsStr = JSON.stringify(params ?? {});
-        } catch {
-          argumentsStr = "{}";
-        }
+        const argumentsStr = stringifyToolCallArguments(params);
         recordedCalls.push({ id, name, arguments: argumentsStr });
+        scheduleToolCallAbort();
         setState("tool_calling", `Calling ${name}…`);
-        if (!innerAbort.signal.aborted) innerAbort.abort();
         return "";
       },
     };
   }
 
   // ── Buffer text generated BEFORE the first tool call ─────────────────────
-  let preToolText = "";
-  let toolCallFired = false;
+  let assistantText = "";
+  const thinkingStripper = createThinkingStripper();
 
   logger.info(
     `[inference/tools] turns=${payload.messages?.length ?? 0} ` +
@@ -1145,7 +1398,7 @@ async function handleWithTools(
     promptResult = await session.promptWithMeta(userPrompt, {
       ...samplingOpts,
       functions: nlcFunctions,
-      signal: combinedSignal,
+      signal: outerAbort.signal,
       stopOnAbortSignal: true,
       onTextChunk: (text: string) => {
         recordToken();
@@ -1157,9 +1410,13 @@ async function handleWithTools(
         } else if (currentInferenceState === "prefilling") {
           setState("generating", "Generating…");
         }
-        if (!toolCallFired) {
-          preToolText += text;
-        }
+        const stripped = thinkingStripper.push(text);
+        applyThinkingState({
+          enteredThinking: stripped.enteredThinking,
+          exitedThinking: stripped.exitedThinking,
+          generatingOperation: "Generating...",
+        });
+        assistantText += stripped.visibleText;
       },
     } as any);
   } catch (err: any) {
@@ -1168,11 +1425,12 @@ async function handleWithTools(
       logger.error("[inference/tools] promptWithMeta error:", err);
     }
     promptResult = null;
+  } finally {
+    clearToolCallAbortTimer();
   }
 
   stopStatsBroadcast();
-  // After the handler fires (and sets toolCallFired), `recordedCalls` is populated.
-  toolCallFired = recordedCalls.length > 0;
+  assistantText += thinkingStripper.flush();
 
   // Also extract any tool calls visible in the response array
   if (promptResult?.response) {
@@ -1183,14 +1441,11 @@ async function handleWithTools(
         (item as any).type === "functionCall"
       ) {
         const fc = item as any;
-        const alreadyRecorded = recordedCalls.some((c) => c.name === fc.name);
+        const argumentsStr = stringifyToolCallArguments(fc.params ?? {});
+        const alreadyRecorded = recordedCalls.some(
+          (c) => c.name === fc.name && c.arguments === argumentsStr,
+        );
         if (!alreadyRecorded) {
-          let argumentsStr = "";
-          try {
-            argumentsStr = JSON.stringify(fc.params ?? {});
-          } catch {
-            argumentsStr = "{}";
-          }
           recordedCalls.push({
             id: `call_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
             name: fc.name,
@@ -1201,7 +1456,7 @@ async function handleWithTools(
     }
   }
 
-  if (outerAbort.signal.aborted) {
+  if (outerAbort.signal.aborted && !abortedAfterToolCall) {
     if (!res.writableEnded) {
       if (stream && !res.headersSent) {
         res.writeHead(200, {
@@ -1256,7 +1511,7 @@ async function handleWithTools(
     );
 
     // Pre-tool text
-    if (preToolText) {
+    if (assistantText) {
       res.write(
         sseChunk({
           id: reqId,
@@ -1264,7 +1519,11 @@ async function handleWithTools(
           created,
           model: modelName,
           choices: [
-            { index: 0, delta: { content: preToolText }, finish_reason: null },
+            {
+              index: 0,
+              delta: { content: assistantText },
+              finish_reason: null,
+            },
           ],
         }),
       );
@@ -1335,7 +1594,7 @@ async function handleWithTools(
         choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
         usage: {
           completion_tokens:
-            recordedCalls.length + Math.ceil(preToolText.length / 4),
+            recordedCalls.length + Math.ceil(assistantText.length / 4),
           prompt_tokens: 0,
           total_tokens: 0,
         },
@@ -1347,7 +1606,7 @@ async function handleWithTools(
     // Non-streaming
     const message: any = {
       role: "assistant",
-      content: preToolText || null,
+      content: assistantText || null,
     };
     if (hasToolCalls) {
       message.tool_calls = recordedCalls.map((tc) => ({
@@ -1427,6 +1686,7 @@ async function handleWithoutTools(
 
     let tokenCount = 0;
     let aborted = false;
+    const thinkingStripper = createThinkingStripper();
     try {
       await session.prompt(userPrompt, {
         ...samplingOpts,
@@ -1443,17 +1703,29 @@ async function handleWithoutTools(
           } else if (currentInferenceState === "prefilling") {
             setState("generating", "Generating response…");
           }
-          res.write(
-            sseChunk({
-              id: reqId,
-              object: "chat.completion.chunk",
-              created,
-              model: modelName,
-              choices: [
-                { index: 0, delta: { content: text }, finish_reason: null },
-              ],
-            }),
-          );
+          const stripped = thinkingStripper.push(text);
+          applyThinkingState({
+            enteredThinking: stripped.enteredThinking,
+            exitedThinking: stripped.exitedThinking,
+            generatingOperation: "Generating response...",
+          });
+          if (stripped.visibleText) {
+            res.write(
+              sseChunk({
+                id: reqId,
+                object: "chat.completion.chunk",
+                created,
+                model: modelName,
+                choices: [
+                  {
+                    index: 0,
+                    delta: { content: stripped.visibleText },
+                    finish_reason: null,
+                  },
+                ],
+              }),
+            );
+          }
         },
       } as any);
     } catch (err: any) {
@@ -1468,6 +1740,24 @@ async function handleWithoutTools(
       stopStatsBroadcast();
       if (!res.writableEnded) {
         if (!aborted) {
+          const pendingText = thinkingStripper.flush();
+          if (pendingText) {
+            res.write(
+              sseChunk({
+                id: reqId,
+                object: "chat.completion.chunk",
+                created,
+                model: modelName,
+                choices: [
+                  {
+                    index: 0,
+                    delta: { content: pendingText },
+                    finish_reason: null,
+                  },
+                ],
+              }),
+            );
+          }
           res.write(
             sseChunk({
               id: reqId,
@@ -1504,6 +1794,7 @@ async function handleWithoutTools(
           }
         },
       } as any);
+      const visibleOutput = stripThinkingBlocks(output).visibleText.trim();
       stopStatsBroadcast();
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(
@@ -1515,7 +1806,7 @@ async function handleWithoutTools(
           choices: [
             {
               index: 0,
-              message: { role: "assistant", content: output },
+              message: { role: "assistant", content: visibleOutput },
               finish_reason: "stop",
             },
           ],
@@ -1576,6 +1867,7 @@ async function handleTensorRtChatCompletions(
   const estimatedInputTokens = estimateOpenAIRequestTokens(rawMessages);
 
   isInferring = true;
+  emitStatusChanged();
   const abort = new AbortController();
   currentAbort = abort;
   req.on("close", () => {
@@ -1611,13 +1903,15 @@ async function handleTensorRtChatCompletions(
   }
 
   try {
+    const samplingDefaults = getModelFamilySamplingDefaults();
+    const thinkingStripper = createThinkingStripper();
     const result = await getTensorRtBackend().chat({
       system,
       prompt,
       maxTokens,
-      temperature: payload.temperature ?? defaultSampling.temperature,
-      topP: payload.top_p ?? defaultSampling.topP,
-      topK: payload.top_k ?? defaultSampling.topK,
+      temperature: payload.temperature ?? samplingDefaults.temperature,
+      topP: payload.top_p ?? samplingDefaults.topP,
+      topK: payload.top_k ?? samplingDefaults.topK,
       stop: payload.stop ?? [],
       stream,
       onToken: stream
@@ -1629,17 +1923,29 @@ async function handleTensorRtChatCompletions(
               setState("generating", "Generating…");
             else if (currentInferenceState === "prefilling")
               setState("generating", "Generating…");
-            res.write(
-              sseChunk({
-                id: reqId,
-                object: "chat.completion.chunk",
-                created,
-                model: modelName,
-                choices: [
-                  { index: 0, delta: { content: text }, finish_reason: null },
-                ],
-              }),
-            );
+            const stripped = thinkingStripper.push(text);
+            applyThinkingState({
+              enteredThinking: stripped.enteredThinking,
+              exitedThinking: stripped.exitedThinking,
+              generatingOperation: "Generating...",
+            });
+            if (stripped.visibleText) {
+              res.write(
+                sseChunk({
+                  id: reqId,
+                  object: "chat.completion.chunk",
+                  created,
+                  model: modelName,
+                  choices: [
+                    {
+                      index: 0,
+                      delta: { content: stripped.visibleText },
+                      finish_reason: null,
+                    },
+                  ],
+                }),
+              );
+            }
           }
         : undefined,
     });
@@ -1673,6 +1979,24 @@ async function handleTensorRtChatCompletions(
 
     if (stream) {
       if (!res.writableEnded) {
+        const pendingText = thinkingStripper.flush();
+        if (pendingText) {
+          res.write(
+            sseChunk({
+              id: reqId,
+              object: "chat.completion.chunk",
+              created,
+              model: modelName,
+              choices: [
+                {
+                  index: 0,
+                  delta: { content: pendingText },
+                  finish_reason: null,
+                },
+              ],
+            }),
+          );
+        }
         res.write(
           sseChunk({
             id: reqId,
@@ -1697,6 +2021,7 @@ async function handleTensorRtChatCompletions(
         result.tokenCount > 0
           ? result.tokenCount
           : Math.ceil(result.text.length / 4);
+      const visibleText = stripThinkingBlocks(result.text).visibleText.trim();
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
@@ -1707,7 +2032,7 @@ async function handleTensorRtChatCompletions(
           choices: [
             {
               index: 0,
-              message: { role: "assistant", content: result.text },
+              message: { role: "assistant", content: visibleText },
               finish_reason: "stop",
             },
           ],
@@ -1741,6 +2066,7 @@ async function handleTensorRtChatCompletions(
   } finally {
     isInferring = false;
     currentAbort = null;
+    emitStatusChanged();
   }
 }
 
@@ -1813,15 +2139,31 @@ async function handleChatCompletions(
     payload,
   );
   payload._orianbuilderEstimatedInputTokens = estimatedInputTokens;
-  const safeLimit = Math.floor(currentActualContextSize * 0.8);
+  const requestHasTools =
+    Array.isArray(payload.tools) && payload.tools.length > 0;
+  const requestedOutputTokens: number = payload.max_tokens ?? 8192;
+  const effectiveOutputTokens = requestHasTools
+    ? getToolTurnMaxTokens(requestedOutputTokens)
+    : requestedOutputTokens;
+  const outputReserve = Math.max(
+    4096,
+    Math.min(8192, effectiveOutputTokens + 1024),
+  );
+  const safeLimit = Math.min(
+    Math.floor(currentActualContextSize * 0.92),
+    Math.max(
+      Math.floor(currentActualContextSize * 0.85),
+      currentActualContextSize - outputReserve,
+    ),
+  );
   if (estimatedInputTokens > safeLimit) {
     const msg =
       `Prompt is ~${estimatedInputTokens} tokens but the loaded model only has ` +
-      `${currentActualContextSize} tokens of context (80% safe limit = ${safeLimit} tokens). ` +
+      `${currentActualContextSize} tokens of context (safe input limit = ${safeLimit} tokens). ` +
       `Open the Engine screen and reload the model with a larger Context Size ` +
       `(recommended ≥ ${Math.ceil(estimatedInputTokens / 1024) * 1024 * 2} tokens for this app).`;
     logger.warn(
-      `[inference] Context overflow: ~${estimatedInputTokens} estimated tokens > ${safeLimit} safe limit`,
+      `[inference] Context overflow: ~${estimatedInputTokens} estimated tokens > ${safeLimit} safe input limit`,
     );
     res.writeHead(400, { "Content-Type": "application/json" });
     res.end(
@@ -1850,6 +2192,7 @@ async function handleChatCompletions(
   const { LlamaChatSession } = await getLlamaModule();
 
   isInferring = true;
+  emitStatusChanged();
   const abort = new AbortController();
   currentAbort = abort;
   req.on("close", () => {
@@ -1862,6 +2205,7 @@ async function handleChatCompletions(
   } catch (err) {
     isInferring = false;
     currentAbort = null;
+    emitStatusChanged();
     logger.error("Failed to acquire context sequence:", err);
     res.writeHead(503, { "Content-Type": "application/json" });
     res.end(
@@ -1874,25 +2218,38 @@ async function handleChatCompletions(
     return;
   }
 
+  let session: any;
   const disposeSeq = () => {
     try {
-      (sequence as any).dispose();
+      if (session) {
+        session.dispose({ disposeSequence: true });
+      } else {
+        (sequence as any).dispose();
+      }
     } catch {
-      /* ignore */
+      try {
+        (sequence as any).dispose();
+      } catch {
+        /* ignore */
+      }
     }
     isInferring = false;
     currentAbort = null;
+    emitStatusChanged();
   };
 
-  let session: any;
   try {
-    session = new LlamaChatSession({
+    const sessionOpts: any = {
       contextSequence: sequence as any,
       // Keep system prompt when context fills — critical for OrianBuilder since the
       // system prompt carries the full app codebase and instructions.
       contextShift: { strategy: "eraseFirstResponseAndKeepFirstSystem" },
-      autoDisposeSequence: false,
-    });
+      autoDisposeSequence: true,
+    };
+    if (currentChatWrapper) {
+      sessionOpts.chatWrapper = currentChatWrapper;
+    }
+    session = new LlamaChatSession(sessionOpts);
     // Load full conversation history including any previous tool calls + results.
     if (history.length > 0) {
       session.setChatHistory(history);
@@ -2025,6 +2382,7 @@ export function startServer(): Promise<void> {
         logger.error("Unhandled HTTP error:", err);
         isInferring = false;
         currentAbort = null;
+        emitStatusChanged();
         if (!res.headersSent)
           res.writeHead(500, { "Content-Type": "application/json" });
         if (!res.writableEnded)

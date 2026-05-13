@@ -221,6 +221,30 @@ function getDefaultCommand(appId: number): string {
   const port = getAppPort(appId);
   return `(pnpm install && pnpm run dev --port ${port}) || (npm install --legacy-peer-deps && npm run dev -- --port ${port})`;
 }
+
+function getTemplateRuntimeCommands(templateId?: string): {
+  installCommand: string | null;
+  startCommand: string | null;
+} {
+  if (
+    templateId === "expo" ||
+    templateId === "shaaraa/orianbuilder-react-native-expo-template"
+  ) {
+    return {
+      installCommand: "npm install --legacy-peer-deps",
+      startCommand: "npm run start -- --port 8081",
+    };
+  }
+
+  if (templateId === "electron-app") {
+    return {
+      installCommand: "npm install --legacy-peer-deps",
+      startCommand: "npm run dev",
+    };
+  }
+
+  return { installCommand: null, startCommand: null };
+}
 async function copyDir(
   source: string,
   destination: string,
@@ -1348,6 +1372,9 @@ export function registerAppHandlers() {
   createTypedHandler(appContracts.createApp, async (_, params) => {
     const appPath = params.name;
     const fullAppPath = getOrianBuilderAppPath(appPath);
+    const templateRuntimeCommands = getTemplateRuntimeCommands(
+      params.templateId,
+    );
 
     if (!isAppLocationAccessible(fullAppPath)) {
       throw new Error(
@@ -1368,6 +1395,8 @@ export function registerAppHandlers() {
         name: params.name,
         // Use the name as the path for now
         path: appPath,
+        installCommand: templateRuntimeCommands.installCommand,
+        startCommand: templateRuntimeCommands.startCommand,
       })
       .returning();
 
@@ -2396,7 +2425,8 @@ export function registerAppHandlers() {
 
   createTypedHandler(appContracts.respondToAppInput, async (_, params) => {
     const { appId, response } = params;
-    if (response !== "y" && response !== "n") {
+    const allowedResponses = new Set(["y", "n", "a", "i", "w", "r"]);
+    if (!allowedResponses.has(response)) {
       throw new OrianBuilderError(
         `Invalid response: ${response}`,
         OrianBuilderErrorKind.Validation,
