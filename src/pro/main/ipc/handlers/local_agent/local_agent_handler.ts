@@ -162,6 +162,8 @@ import {
 } from "./streaming/stall_detector";
 import { getChatLockedPaths } from "@/pro/main/ipc/utils/chat_path_locks";
 import { autoImplementAppIndex } from "./auto_implement";
+import { isQwenModel, QWEN_CODING_SAMPLING } from "./qwen_sampling";
+import { StreamDiagnostics } from "./stream_diagnostics";
 
 const logger = log.scope("local_agent_handler");
 const PLANNING_QUESTIONNAIRE_TOOL_NAME = "planning_questionnaire";
@@ -1213,10 +1215,28 @@ export async function handleLocalAgentStream(
     let compactionIndexDelta = 0;
 
     const maxOutputTokens = await getMaxTokens(settings.selectedModel);
-    const temperature =
-      settings.selectedModel.provider === "embedded"
+    // Qwen 3.x models REQUIRE specific sampling parameters or they collapse
+    // into repetition / emit tool calls as text. The official model card
+    // (https://huggingface.co/Qwen/Qwen3.6-27B) specifies temperature 0.6,
+    // top_p 0.95, top_k 20 for coding tasks. Our generic default of
+    // temperature 0 is the documented failure mode for these models.
+    const isQwen = isQwenModel(settings.selectedModel);
+    const temperature = isQwen
+      ? QWEN_CODING_SAMPLING.temperature
+      : settings.selectedModel.provider === "embedded"
         ? undefined
         : await getTemperature(settings.selectedModel);
+    const topP = isQwen ? QWEN_CODING_SAMPLING.topP : undefined;
+    const topK = isQwen ? QWEN_CODING_SAMPLING.topK : undefined;
+    const presencePenalty = isQwen
+      ? QWEN_CODING_SAMPLING.presencePenalty
+      : undefined;
+    if (isQwen) {
+      logger.info(
+        `Qwen model detected (${settings.selectedModel.name}); applying recommended sampling: ` +
+          `temp=${temperature}, topP=${topP}, topK=${topK}, presencePenalty=${presencePenalty}`,
+      );
+    }
 
     // Run one or more generation passes. If the model emits a chat message while
     // there are still incomplete todos, we append a reminder and do another pass.
@@ -1350,6 +1370,9 @@ export async function handleLocalAgentStream(
             }),
             maxOutputTokens,
             temperature,
+            topP,
+            topK,
+            presencePenalty,
             maxRetries: 2,
             system: systemPrompt,
             messages: attemptMessages,
@@ -1833,9 +1856,26 @@ export async function handleLocalAgentStream(
           let streamErrorFromIteration: unknown;
           stallDetector.start();
 
+          // Diagnostic record for this stream attempt — emitted at end so the
+          // user has a structured trace of what arrived from the model.
+          const diagnostics = new StreamDiagnostics({
+            attemptId: `${req.chatId}-${terminatedRetryCount}-${Date.now()}`,
+            modelName: settings.selectedModel.name,
+            modelProvider: settings.selectedModel.provider,
+            isQwen,
+            samplingParams: {
+              temperature,
+              topP,
+              topK,
+              presencePenalty,
+              maxOutputTokens,
+            },
+          });
+
           try {
             for await (const part of streamResult.fullStream) {
               stallDetector.pulse();
+              diagnostics.observePart(part.type);
               if (abortController.signal.aborted) {
                 logger.log(`Stream aborted for chat ${req.chatId}`);
                 // Clean up pending consent/questionnaire requests to prevent stale UI banners
@@ -1863,6 +1903,7 @@ export async function handleLocalAgentStream(
                 case "text-delta":
                   passProducedChatText = true;
                   chunk += part.text;
+                  diagnostics.observeText(part.text);
                   maybeCaptureRetryReplayText(
                     activeRetryReplayEvents,
                     part.text,
@@ -1938,6 +1979,7 @@ export async function handleLocalAgentStream(
                 }
 
                 case "tool-call":
+                  diagnostics.observeToolCall();
                   maybeCaptureRetryReplayEvent(retryReplayEvents, part);
                   // Tool execution happens via execute callbacks
                   break;
@@ -1980,6 +2022,14 @@ export async function handleLocalAgentStream(
             }
           } finally {
             stallDetector.stop();
+            // Emit one-line structured trace + warning hint when the model
+            // appears to be emitting tool calls / thinking blocks as text
+            // (the canonical Qwen-via-LM-Studio misconfiguration).
+            diagnostics.emit(
+              streamErrorFromIteration || streamErrorFromCallback
+                ? "warn"
+                : "info",
+            );
           }
 
           // Close thinking block if still open
