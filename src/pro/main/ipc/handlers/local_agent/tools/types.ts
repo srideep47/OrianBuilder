@@ -77,6 +77,14 @@ export interface AgentRunState {
    * mutate any path matching this list. Snapshotted at turn start.
    */
   lockedPaths: string[];
+  /**
+   * Count of times browser_qa_gate refused because app/index.tsx was still the
+   * scaffold placeholder. After the first refusal we push a strong directive;
+   * after the second we push the actual file content + a write_file template;
+   * after the third the gate auto-writes a sensible default screen so weak
+   * local models can't dead-end the turn.
+   */
+  placeholderRefusalCount: number;
 }
 
 export interface AgentContext {

@@ -60,6 +60,7 @@ describe("deleteFileTool", () => {
       filesWrittenSinceCreateProject: new Set<string>(),
       createdProjectThisTurn: false,
       lockedPaths: [],
+      placeholderRefusalCount: 0,
     },
     onXmlStream: vi.fn(),
     onXmlComplete: vi.fn(),

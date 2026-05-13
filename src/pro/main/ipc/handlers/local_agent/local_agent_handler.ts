@@ -854,6 +854,7 @@ export async function handleLocalAgentStream(
       filesWrittenSinceCreateProject: new Set<string>(),
       createdProjectThisTurn: false,
       lockedPaths: lockedPathsFromDb,
+      placeholderRefusalCount: 0,
     };
     const referencedAppsMap = new Map(
       referencedApps.map((ref) => [ref.appName.toLowerCase(), ref.appPath]),
@@ -1325,9 +1326,14 @@ export async function handleLocalAgentStream(
                       "run_project_check",
                       MISSION_REPEATED_STEP_LOOP_LIMIT - 1,
                     ),
-                    hasToolCall(browserQaGateTool.name),
-                    hasToolCall(packageNativeArtifactTool.name),
-                    hasToolCall(deployPreviewTool.name),
+                    // Critical: halt only on *successful* gate / package / deploy,
+                    // not on the mere act of calling them. Otherwise a refused
+                    // browser_qa_gate (e.g., placeholder still present) ends
+                    // the stream and the synthetic recovery directive in
+                    // pendingUserMessages is never consumed.
+                    () => passedBrowserQaGate,
+                    () => producedNativePackageArtifact,
+                    () => producedDeploymentUrl,
                   ]
                 : []),
               // In plan mode, also stop after writing a plan or exiting plan mode.
