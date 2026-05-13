@@ -63,25 +63,37 @@ export function detectModelFamily(
   }
   const haystack = modelIdOrFilename.toLowerCase();
 
-  // Qwen 3.5/3.6 GGUFs ship a working Jinja chat template. Forcing the older
-  // generic Qwen wrapper can terminate immediately with an empty response.
+  // Qwen 3.5 / 3.6: use the node-llama-cpp QwenChatWrapper with
+  // variation: "3.5". The previous code returned null here to defer to the
+  // GGUF's embedded Jinja template, but that template uses the `|items`
+  // filter which llama.cpp's C++ Jinja engine cannot parse — tool-call
+  // arguments and thinking blocks then render as raw text (e.g.
+  // `||call|:set_chat_summary(...)`), and the agent loop stalls.
+  // QwenChatWrapper handles the format natively and surfaces tool calls
+  // as structured events. keepOnlyLastThought=false preserves reasoning
+  // across messages so the agent doesn't re-derive context each step
+  // (matches Qwen 3.6's "Thinking Preservation" feature).
   if (/(?:^|[\W_])qwen[\W_]?3(?:[._-]?[56])(?:[\W_]|$)/i.test(haystack)) {
     return {
       family: "qwen",
-      label: "Qwen 3.5/3.6 (GGUF Jinja template)",
-      build: () => null,
+      label: "Qwen 3.5/3.6 (QwenChatWrapper variation 3.5)",
+      build: (m) =>
+        new m.QwenChatWrapper({
+          variation: "3.5",
+          keepOnlyLastThought: false,
+        }),
     };
   }
 
-  // Qwen 2.5 / Qwen 3.0-style models: Hermes-style tags via QwenChatWrapper.
+  // Qwen 2.5 / Qwen 3.0 / Qwen-Coder: variation "3" default.
   if (
     /(?:^|[\W_])qwen[\W_]?[23]/i.test(haystack) ||
     /qwen-?coder/i.test(haystack)
   ) {
     return {
       family: "qwen",
-      label: "Qwen 2.5/3.x (Hermes-style tool calls)",
-      build: (m) => new m.QwenChatWrapper(),
+      label: "Qwen 2.5/3.x (QwenChatWrapper variation 3)",
+      build: (m) => new m.QwenChatWrapper({ variation: "3" }),
     };
   }
 
