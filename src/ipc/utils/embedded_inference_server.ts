@@ -30,6 +30,15 @@ let currentBackend: "none" | "llama-cpp" | "tensorrt-native" = "none";
 let tensorRtBackend: TensorRtNativeBackend | null = null;
 let isLoading = false;
 let isInferring = false;
+/**
+ * Wall-clock timestamp at which `isInferring` was most recently set to
+ * `true`. Used by `forceReleaseIfStuck` to detect a stuck flag — if the
+ * flag has been "true" for far longer than any reasonable generation
+ * could take AND no abort controller is active, the cleanup path was
+ * skipped (most often because the SSE stream's HTTP connection lingered
+ * in keep-alive and the server-side finally fired late).
+ */
+let isInferringSetAtMs: number | null = null;
 let currentAbort: AbortController | null = null;
 
 export interface EmbeddedModelConfig {
@@ -85,6 +94,50 @@ export interface EmbeddedServerStatus {
 }
 
 /**
+ * Set `isInferring` while keeping the matching `isInferringSetAtMs`
+ * timestamp in sync. Used everywhere the flag changes so `forceReleaseIfStuck`
+ * can reliably tell whether the flag is genuinely active or stale.
+ */
+function setIsInferring(value: boolean): void {
+  isInferring = value;
+  isInferringSetAtMs = value ? Date.now() : null;
+}
+
+/**
+ * Detect a stuck `isInferring` flag and force-clear it.
+ *
+ * This is a safety hatch for the case where a previous request's cleanup
+ * path didn't fire (e.g. the SSE response's HTTP connection lingered in
+ * keep-alive and the server-side `finally` was delayed past anything we'd
+ * call "normal"). It's safe to clear only when:
+ *
+ *   1. The flag has been `true` for longer than `staleAfterMs`, AND
+ *   2. No abort controller is active — meaning no real generation is
+ *      currently running. If `currentAbort` is non-null and not aborted,
+ *      a real inference IS in progress and clearing the flag would risk
+ *      a concurrent request hitting llama.cpp at the same time.
+ *
+ * Returns `true` if the flag was force-cleared, `false` otherwise.
+ */
+function forceReleaseIfStuck(staleAfterMs: number = 2_000): boolean {
+  if (!isInferring || isInferringSetAtMs === null) return false;
+  const elapsed = Date.now() - isInferringSetAtMs;
+  if (elapsed < staleAfterMs) return false;
+  // The presence of `currentAbort` (un-aborted) is the authoritative
+  // "real inference is currently running" signal. disposeSeq() clears
+  // currentAbort, so if it's null, no generation is active even when
+  // isInferring is somehow still true.
+  const realInferenceActive =
+    currentAbort !== null && !(currentAbort as AbortController).signal.aborted;
+  if (realInferenceActive) return false;
+  logger.warn(
+    `Detected stuck isInferring flag (held ${elapsed}ms with no active abort controller); force-clearing so the next caller can proceed`,
+  );
+  setIsInferring(false);
+  return true;
+}
+
+/**
  * Wait until the embedded inference server is no longer serving a request.
  *
  * The server enforces "one request at a time" — concurrent /v1/chat/completions
@@ -95,9 +148,12 @@ export interface EmbeddedServerStatus {
  * for this flag to clear first; otherwise the 429 propagates and the call
  * fails despite the server being effectively idle.
  *
+ * After 30s of waiting, we also try `forceReleaseIfStuck` to recover from
+ * the case where the previous cleanup path never fired but no real
+ * generation is actually running.
+ *
  * Returns `true` if the server became free within `timeoutMs`, `false` on
- * timeout. The poll interval is intentionally short (50ms) since the
- * post-stream busy window is typically a few hundred ms at most.
+ * timeout.
  */
 export async function waitForInferenceFree(
   timeoutMs: number = 15_000,
@@ -106,8 +162,12 @@ export async function waitForInferenceFree(
   const deadline = Date.now() + Math.max(0, timeoutMs);
   while (Date.now() < deadline) {
     if (!isInferring) return true;
+    forceReleaseIfStuck();
+    if (!isInferring) return true;
     await new Promise<void>((resolve) => setTimeout(resolve, 50));
   }
+  // One last shot before giving up.
+  forceReleaseIfStuck(0);
   return !isInferring;
 }
 
@@ -864,7 +924,7 @@ async function _fullReset(): Promise<void> {
     currentAbort.abort();
     currentAbort = null;
   }
-  isInferring = false;
+  setIsInferring(false);
   if (currentContext) {
     try {
       await (currentContext as any).dispose();
@@ -906,7 +966,7 @@ export function abortCurrentInference(): void {
     currentAbort.abort();
   }
   currentAbort = null;
-  isInferring = false;
+  setIsInferring(false);
   emitStatusChanged();
   logger.info("Inference aborted by caller");
 }
@@ -1893,7 +1953,7 @@ async function handleTensorRtChatCompletions(
   const { system, prompt } = openAiToPlainPrompt(rawMessages);
   const estimatedInputTokens = estimateOpenAIRequestTokens(rawMessages);
 
-  isInferring = true;
+  setIsInferring(true);
   emitStatusChanged();
   const abort = new AbortController();
   currentAbort = abort;
@@ -2091,7 +2151,7 @@ async function handleTensorRtChatCompletions(
       );
     }
   } finally {
-    isInferring = false;
+    setIsInferring(false);
     currentAbort = null;
     emitStatusChanged();
   }
@@ -2218,7 +2278,7 @@ async function handleChatCompletions(
 
   const { LlamaChatSession } = await getLlamaModule();
 
-  isInferring = true;
+  setIsInferring(true);
   emitStatusChanged();
   const abort = new AbortController();
   currentAbort = abort;
@@ -2230,7 +2290,7 @@ async function handleChatCompletions(
   try {
     sequence = (currentContext as any).getSequence();
   } catch (err) {
-    isInferring = false;
+    setIsInferring(false);
     currentAbort = null;
     emitStatusChanged();
     logger.error("Failed to acquire context sequence:", err);
@@ -2260,7 +2320,7 @@ async function handleChatCompletions(
         /* ignore */
       }
     }
-    isInferring = false;
+    setIsInferring(false);
     currentAbort = null;
     emitStatusChanged();
   };
@@ -2407,7 +2467,7 @@ export function startServer(): Promise<void> {
         res.end(JSON.stringify({ error: "Not found" }));
       } catch (err) {
         logger.error("Unhandled HTTP error:", err);
-        isInferring = false;
+        setIsInferring(false);
         currentAbort = null;
         emitStatusChanged();
         if (!res.headersSent)
