@@ -140,15 +140,27 @@ Use this only when the user asks to start a new project or the current app is em
     );
 
     if (result.created) {
-      if (result.commands.dev) {
-        await db
-          .update(apps)
-          .set({
-            installCommand: result.commands.install,
-            startCommand: result.commands.dev,
-          })
-          .where(eq(apps.id, ctx.appId));
-      }
+      // Keep DB's apps.name in sync with the human-readable project name
+      // the agent just scaffolded. Without this, later tool calls that
+      // (incorrectly) echo the new name back as app_name fail to match
+      // ctx.appName and fall through to "Unknown app_name". Update is
+      // best-effort; failure here doesn't block the scaffold result.
+      await db
+        .update(apps)
+        .set({
+          name: args.project_name,
+          ...(result.commands.dev
+            ? {
+                installCommand: result.commands.install,
+                startCommand: result.commands.dev,
+              }
+            : {}),
+        })
+        .where(eq(apps.id, ctx.appId))
+        .catch(() => {});
+      // Also keep the in-memory ctx in sync so resolveTargetAppPath matches
+      // immediately, before any future turn reloads the DB row.
+      ctx.appName = args.project_name;
       queueCloudSandboxSnapshotSync({
         appId: ctx.appId,
         changedPaths: result.files,

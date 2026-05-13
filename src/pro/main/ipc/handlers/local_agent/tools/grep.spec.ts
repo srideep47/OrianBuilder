@@ -639,13 +639,26 @@ function deepHello() {
       expect(result).toBe("No matches found.");
     });
 
-    it("throws on unknown app_name", async () => {
+    it("throws on unknown app_name when referenced apps exist", async () => {
+      mockContext.referencedApps.set("other-app", otherAppDir);
       await expect(
         grepTool.execute(
           { query: "hello", app_name: "does-not-exist" },
           mockContext,
         ),
       ).rejects.toThrow(/Unknown app_name 'does-not-exist'/);
+    });
+
+    it("falls back to current app on unknown app_name when no referenced apps declared", async () => {
+      // Models (especially Qwen 3.6) sometimes echo a newly-scaffolded
+      // project_name back as app_name. With no referenced apps, the intent
+      // is unambiguously "the current app" — resolve quietly instead of
+      // hard-erroring and dead-ending the agent loop.
+      const result = await grepTool.execute(
+        { query: "hello", app_name: "Numbers App" },
+        mockContext,
+      );
+      expect(result).toContain("hello");
     });
 
     it("includes app_name in the final XML output", async () => {

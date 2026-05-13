@@ -100,11 +100,21 @@ export function resolveTargetAppPath(
   if (appPath) {
     return appPath;
   }
+  // No referenced apps were declared this turn (no `@app:Name` mentions),
+  // so the agent cannot possibly be targeting another app. The most common
+  // way this happens: the agent calls `create_project({ project_name: "X" })`
+  // and then passes `app_name: "X"` to a follow-up `read_file` call. The DB
+  // `apps.name` still has its original auto-generated name, so X doesn't
+  // match the current-app aliases either. Silently fall back to the current
+  // app instead of erroring — the intent is obvious.
+  if (ctx.referencedApps.size === 0) {
+    return ctx.appPath;
+  }
   const available = [...ctx.referencedApps.keys()];
-  const availableStr =
-    available.length > 0 ? available.join(", ") : "(none available)";
   throw new OrianBuilderError(
-    `Unknown app_name '${appName}'. Available referenced apps: ${availableStr}. To target the current app, omit the app_name parameter entirely.`,
+    `Unknown app_name '${appName}'. Available referenced apps: ${available.join(
+      ", ",
+    )}. To target the current app, omit the app_name parameter entirely.`,
     OrianBuilderErrorKind.NotFound,
   );
 }
