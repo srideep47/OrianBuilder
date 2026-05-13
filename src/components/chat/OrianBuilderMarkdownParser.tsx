@@ -61,6 +61,10 @@ import {
   OrianBuilderCardHeader,
   OrianBuilderExpandIcon,
 } from "./OrianBuilderCardPrimitives";
+import {
+  getToolCardPresentation,
+  OrianBuilderToolCard,
+} from "./OrianBuilderToolCard";
 
 const ORIANBUILDER_CUSTOM_TAGS = [
   "orianbuilder-write",
@@ -111,6 +115,22 @@ const ORIANBUILDER_CUSTOM_TAGS = [
   "orianbuilder-repo-map",
   "orianbuilder-agent-action",
   "orianbuilder-project-check",
+  // Runtime / verification / packaging tool tags (rendered via OrianBuilderToolCard)
+  "orianbuilder-terminal-command",
+  "orianbuilder-runtime-session",
+  "orianbuilder-runtime-output",
+  "orianbuilder-browser-qa",
+  "orianbuilder-browser-action",
+  "orianbuilder-screenshot",
+  "orianbuilder-native-package",
+  "orianbuilder-deploy-preview",
+  "orianbuilder-accessibility-tree",
+  "orianbuilder-console-output",
+  "orianbuilder-create-project",
+  "orianbuilder-ast-edit",
+  "orianbuilder-mcp-runtime",
+  "orianbuilder-media-generation",
+  "orianbuilder-github-pr",
 ];
 
 interface OrianBuilderMarkdownParserProps {
@@ -1123,7 +1143,22 @@ function renderCustomTag(
     case "orianbuilder-agent-action":
       return <OrianBuilderAgentAction attributes={attributes} />;
 
-    default:
+    default: {
+      const presentation = getToolCardPresentation(
+        tag,
+        attributes,
+        Boolean(inProgress),
+      );
+      if (presentation) {
+        return (
+          <OrianBuilderToolCard
+            presentation={presentation}
+            content={content}
+            inProgress={inProgress}
+          />
+        );
+      }
       return null;
+    }
   }
 }

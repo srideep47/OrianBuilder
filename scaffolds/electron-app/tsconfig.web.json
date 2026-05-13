@@ -1,8 +1,17 @@
 {
-  "extends": "@electron-toolkit/eslint-config-ts/tsconfig.web.json",
-  "include": ["src/renderer/src/**/*"],
+  "include": ["src/renderer/src/**/*", "src/preload/*.d.ts"],
   "compilerOptions": {
     "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolvePackageJsonExports": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
       "@renderer/*": ["src/renderer/src/*"]

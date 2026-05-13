@@ -24,6 +24,17 @@ export function hasIncompleteTodos(todos: Todo[]): boolean {
 }
 
 /**
+ * Mark any pending or in_progress todos as completed. Used at the end of a
+ * successful mission run to keep the UI in sync when the agent failed to
+ * explicitly call update_todos to close out its task list.
+ */
+export function markIncompleteTodosCompleted(todos: Todo[]): Todo[] {
+  return todos.map((todo) =>
+    isIncompleteTodo(todo) ? { ...todo, status: "completed" as const } : todo,
+  );
+}
+
+/**
  * Format a list of todos as a bullet-point summary string.
  */
 export function formatTodoSummary(todos: Todo[]): string {

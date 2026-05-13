@@ -6,6 +6,7 @@ import {
   prepareStepMessages,
   hasIncompleteTodos,
   buildTodoReminderMessage,
+  markIncompleteTodosCompleted,
   ensureToolResultOrdering,
   type InjectedMessage,
 } from "@/pro/main/ipc/handlers/local_agent/prepare_step_utils";
@@ -890,6 +891,53 @@ describe("prepare_step_utils", () => {
 
       expect(message).toContain("1 incomplete todo(s)");
       expect(message).toContain("[pending] Last task");
+    });
+  });
+
+  describe("markIncompleteTodosCompleted", () => {
+    it("marks pending and in_progress todos as completed", () => {
+      const todos: Todo[] = [
+        { id: "1", content: "A", status: "in_progress" },
+        { id: "2", content: "B", status: "pending" },
+        { id: "3", content: "C", status: "completed" },
+      ];
+
+      const result = markIncompleteTodosCompleted(todos);
+
+      expect(result.map((t) => t.status)).toEqual([
+        "completed",
+        "completed",
+        "completed",
+      ]);
+      // Does not mutate input
+      expect(todos[0].status).toBe("in_progress");
+    });
+
+    it("returns a fresh array when all todos already completed", () => {
+      const todos: Todo[] = [
+        { id: "1", content: "A", status: "completed" },
+        { id: "2", content: "B", status: "completed" },
+      ];
+
+      const result = markIncompleteTodosCompleted(todos);
+
+      expect(result).toEqual(todos);
+    });
+
+    it("preserves id and content fields", () => {
+      const todos: Todo[] = [
+        {
+          id: "abc-123",
+          content: "Package the Electron desktop artifact",
+          status: "in_progress",
+        },
+      ];
+
+      const [result] = markIncompleteTodosCompleted(todos);
+
+      expect(result.id).toBe("abc-123");
+      expect(result.content).toBe("Package the Electron desktop artifact");
+      expect(result.status).toBe("completed");
     });
   });
 

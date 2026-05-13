@@ -117,7 +117,8 @@ export function getProjectVerificationCommands(params: {
     params.stack === "vite-react-ts" ||
     params.stack === "nextjs-ts" ||
     params.stack === "node-express-ts" ||
-    params.stack === "expo";
+    params.stack === "expo" ||
+    params.stack === "electron-app";
   return {
     install: installCommand(params.packageManager),
     dev:
@@ -125,7 +126,9 @@ export function getProjectVerificationCommands(params: {
         ? null
         : params.stack === "expo"
           ? runCommand(params.packageManager, "start")
-          : runCommand(params.packageManager, "dev"),
+          : params.stack === "electron-app"
+            ? runCommand(params.packageManager, "preview")
+            : runCommand(params.packageManager, "dev"),
     build: hasBuild ? runCommand(params.packageManager, "build") : null,
     typecheck: hasTypecheck
       ? runCommand(params.packageManager, "typecheck")

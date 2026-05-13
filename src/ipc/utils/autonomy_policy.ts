@@ -153,6 +153,14 @@ export function getAutonomyPolicyDecision(params: {
           "Trusted workspace profile allows project creation and local native packaging actions required to complete the mission.",
       };
     }
+    if (params.toolName === "run_terminal_command" && risk !== "high") {
+      return {
+        decision: "auto_approve",
+        risk,
+        reason:
+          "Trusted workspace profile allows non-destructive terminal commands required for build/install automation.",
+      };
+    }
     if (
       risk === "high" ||
       isExternalStateTool(params.toolName, capabilityOptions) ||

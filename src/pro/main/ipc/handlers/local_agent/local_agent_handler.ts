@@ -81,11 +81,12 @@ import {
   hasIncompleteTodos,
   formatTodoSummary,
   ensureToolResultOrdering,
+  markIncompleteTodosCompleted,
   type InjectedMessage,
 } from "./prepare_step_utils";
 import { buildMissionInterruptMessage } from "@/ipc/utils/mission_interrupts";
 import { buildMissionMemoryMessage } from "@/ipc/utils/mission_memories";
-import { loadTodos } from "./todo_persistence";
+import { loadTodos, saveTodos } from "./todo_persistence";
 import { ensureOrianBuilderGitignored } from "@/ipc/handlers/gitignoreUtils";
 import { TOOL_DEFINITIONS } from "./tool_definitions";
 import { hasTextToolCallMarkers } from "./text_tool_call_parser";
@@ -2612,6 +2613,20 @@ export async function handleLocalAgentStream(
           .catch((err) =>
             logger.warn("Failed to mark standalone mission completed:", err),
           );
+
+        // Auto-complete any todos that the agent left as pending/in_progress.
+        // When the mission is being marked completed, lingering todos would
+        // otherwise show as "still running" tasks in the UI even though all
+        // verification gates and the native build have succeeded.
+        if (hasIncompleteTodos(ctx.todos)) {
+          const completedTodos = markIncompleteTodosCompleted(ctx.todos);
+          ctx.todos = completedTodos;
+          await saveTodos(appPath, chat.id, completedTodos).catch((err) =>
+            logger.warn("Failed to save auto-completed todos:", err),
+          );
+          ctx.onUpdateTodos(completedTodos);
+        }
+
         await logMissionEvent({
           missionId,
           eventType: "mission_status_changed",
