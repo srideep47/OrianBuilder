@@ -460,13 +460,46 @@ function hasCompletedNativePackage(response: string): boolean {
 
 function buildNativeTargetFollowUpMessage(
   intent: NativeTargetIntent,
+  options: {
+    userPrompt: string | null;
+    appIndexEdited: boolean;
+    createdProjectThisTurn: boolean;
+  },
 ): ModelMessage {
+  const reminder = buildNativeTargetReminder(intent);
+
+  // Most common failure with weak local models: they call create_project,
+  // emit a todo to "implement the UI", and then stop. Auto-finish then ships
+  // the baseline counter app as the APK — pipeline succeeds but the user's
+  // actual request (e.g., "show numbers 1 to 13") is ignored. Detect this
+  // and push a targeted directive that names the file + the user's request.
+  if (options.createdProjectThisTurn && !options.appIndexEdited) {
+    const userRequestLine = options.userPrompt
+      ? `The user asked for: "${options.userPrompt.slice(0, 400).trim()}".`
+      : "";
+    return {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text:
+            `${reminder}\n\n` +
+            `You scaffolded the Expo project but never edited app/index.tsx — the build will ship the generic counter baseline instead of the requested UI. ` +
+            `${userRequestLine} ` +
+            `Your VERY NEXT tool call MUST be write_file({path: "app/index.tsx", content: "<the implementation>"}) using React Native components (View, Text, ScrollView, StyleSheet) to render exactly what the user asked for. ` +
+            `Then run browser_qa_gate, then package_native_artifact(target="${intent.target}"). ` +
+            `Do not call package_native_artifact before writing app/index.tsx — the resulting APK would not contain the user's UI.`,
+        },
+      ],
+    };
+  }
+
   return {
     role: "user",
     content: [
       {
         type: "text",
-        text: `${buildNativeTargetReminder(intent)}\n\nYou have not completed the required native packaging artifact yet. Continue now. Do not stop after web UI work; run project checks and package_native_artifact with target="${intent.target}".`,
+        text: `${reminder}\n\nYou have not completed the required native packaging artifact yet. Continue now. Do not stop after web UI work; run project checks and package_native_artifact with target="${intent.target}".`,
       },
     ],
   };
@@ -1188,7 +1221,11 @@ export async function handleLocalAgentStream(
     // there are still incomplete todos, we append a reminder and do another pass.
     const maxTodoFollowUpLoops = 1;
     let todoFollowUpLoops = 0;
-    const maxNativeTargetFollowUpLoops = 0;
+    // Re-engage the agent up to 2 times after the stream ends when the
+    // native target hasn't been fully delivered. Critical for weak local
+    // models that scaffold but skip customization — without this, auto-finish
+    // ships the generic baseline as the final APK.
+    const maxNativeTargetFollowUpLoops = 2;
     let nativeTargetFollowUpLoops = 0;
     const maxPlainTextToolFollowUpLoops = 6;
     let plainTextToolFollowUpLoops = 0;
@@ -2181,19 +2218,28 @@ export async function handleLocalAgentStream(
         }
       }
 
+      const appIndexEdited =
+        runState.filesWrittenSinceCreateProject.has("app/index.tsx");
+      const needsCustomization =
+        runState.createdProjectThisTurn && !appIndexEdited;
+
       if (
         nativeTargetIntent &&
         passEndedWithText &&
-        !hasCompletedNativePackage(fullResponse) &&
+        (!hasCompletedNativePackage(fullResponse) || needsCustomization) &&
         nativeTargetFollowUpLoops < maxNativeTargetFollowUpLoops
       ) {
         nativeTargetFollowUpLoops += 1;
         currentMessageHistory = [
           ...currentMessageHistory,
-          buildNativeTargetFollowUpMessage(nativeTargetIntent),
+          buildNativeTargetFollowUpMessage(nativeTargetIntent, {
+            userPrompt: req.prompt ?? null,
+            appIndexEdited,
+            createdProjectThisTurn: runState.createdProjectThisTurn,
+          }),
         ];
         logger.info(
-          `Starting native target follow-up pass ${nativeTargetFollowUpLoops}/${maxNativeTargetFollowUpLoops} for chat ${req.chatId}`,
+          `Starting native target follow-up pass ${nativeTargetFollowUpLoops}/${maxNativeTargetFollowUpLoops} for chat ${req.chatId} (customization-needed: ${needsCustomization})`,
         );
         continue;
       }
