@@ -84,6 +84,33 @@ export interface EmbeddedServerStatus {
   chatWrapperLabel: string | null;
 }
 
+/**
+ * Wait until the embedded inference server is no longer serving a request.
+ *
+ * The server enforces "one request at a time" — concurrent /v1/chat/completions
+ * calls return HTTP 429. After a streaming response completes, the in-memory
+ * `isInferring` flag may stay true for a short window while resources are
+ * released. Code paths that need to fire a follow-up generation (e.g. the
+ * one-shot `autoImplementAppIndex` after the agent stream ends) must wait
+ * for this flag to clear first; otherwise the 429 propagates and the call
+ * fails despite the server being effectively idle.
+ *
+ * Returns `true` if the server became free within `timeoutMs`, `false` on
+ * timeout. The poll interval is intentionally short (50ms) since the
+ * post-stream busy window is typically a few hundred ms at most.
+ */
+export async function waitForInferenceFree(
+  timeoutMs: number = 15_000,
+): Promise<boolean> {
+  if (!isInferring) return true;
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  while (Date.now() < deadline) {
+    if (!isInferring) return true;
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+  }
+  return !isInferring;
+}
+
 export function getServerStatus(): EmbeddedServerStatus {
   const tensorRtStatus = getTensorRtBackend().getStatus();
   const tensorRtLoaded =

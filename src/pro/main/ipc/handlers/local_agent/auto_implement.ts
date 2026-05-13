@@ -18,8 +18,22 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { generateText, type LanguageModel } from "ai";
 import log from "electron-log";
+import { waitForInferenceFree } from "@/ipc/utils/embedded_inference_server";
 
 const logger = log.scope("auto_implement");
+
+function isBusyError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const message = err.message ?? "";
+  // The embedded server returns HTTP 429 with body
+  // `{"error":{"message":"Inference busy — one request at a time","type":"busy"}}`.
+  // Vercel AI SDK preserves the message text in the thrown error.
+  return /inference busy|one request at a time|\b429\b/i.test(message);
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
 
 const SYSTEM_PROMPT = `You are a React Native code generator for Expo Router projects.
 
@@ -68,19 +82,57 @@ export async function autoImplementAppIndex(
 ): Promise<AutoImplementResult> {
   const indexPath = path.join(params.appPath, "app", "index.tsx");
 
-  let raw: string;
-  try {
-    const result = await generateText({
-      model: params.model,
-      system: SYSTEM_PROMPT,
-      prompt: `User request: ${params.userPrompt.trim().slice(0, 800)}\n\nGenerate the full contents of app/index.tsx now.`,
-      maxRetries: 2,
-      temperature: 0.2,
-    });
-    raw = result.text ?? "";
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.warn(`Auto-implement generation failed: ${message}`);
+  // The embedded inference server enforces "one request at a time" and
+  // returns HTTP 429 to concurrent /v1/chat/completions calls. After the
+  // agent's streamText finishes there's a short window before the server's
+  // isInferring flag clears — calling generateText too eagerly here will
+  // collide with that window. Wait for it to clear first, then retry on
+  // 429 with backoff (in case it didn't clear in time).
+  const freedInTime = await waitForInferenceFree(15_000);
+  if (!freedInTime) {
+    logger.warn(
+      "Auto-implement: inference server still busy after 15s; will attempt anyway",
+    );
+  }
+
+  let raw = "";
+  let lastError: unknown = null;
+  const MAX_ATTEMPTS = 6;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const result = await generateText({
+        model: params.model,
+        system: SYSTEM_PROMPT,
+        prompt: `User request: ${params.userPrompt.trim().slice(0, 800)}\n\nGenerate the full contents of app/index.tsx now.`,
+        maxRetries: 0, // we handle retries ourselves below
+        temperature: 0.2,
+      });
+      raw = result.text ?? "";
+      lastError = null;
+      break;
+    } catch (err) {
+      lastError = err;
+      if (!isBusyError(err) || attempt === MAX_ATTEMPTS) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.warn(
+          `Auto-implement generation failed on attempt ${attempt}/${MAX_ATTEMPTS}: ${message}`,
+        );
+        break;
+      }
+      const backoffMs = Math.min(500 * 2 ** (attempt - 1), 4_000);
+      logger.warn(
+        `Auto-implement attempt ${attempt}/${MAX_ATTEMPTS} hit inference-busy; waiting ${backoffMs}ms then retrying`,
+      );
+      // Wait for the server to be free, then add a small jitter so two
+      // simultaneous retry waves don't sync up against each other.
+      await waitForInferenceFree(backoffMs);
+      await delay(50 + Math.floor(Math.random() * 100));
+    }
+  }
+
+  if (lastError) {
+    const message =
+      lastError instanceof Error ? lastError.message : String(lastError);
     return { success: false, wrote: false, reason: message, bytes: 0 };
   }
 
