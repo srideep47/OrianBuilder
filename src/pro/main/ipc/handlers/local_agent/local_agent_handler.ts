@@ -161,6 +161,7 @@ import {
   StreamStalledError,
 } from "./streaming/stall_detector";
 import { getChatLockedPaths } from "@/pro/main/ipc/utils/chat_path_locks";
+import { autoImplementAppIndex } from "./auto_implement";
 
 const logger = log.scope("local_agent_handler");
 const PLANNING_QUESTIONNAIRE_TOOL_NAME = "planning_questionnaire";
@@ -2432,6 +2433,60 @@ export async function handleLocalAgentStream(
         return false;
       }
     };
+
+    // Last-resort: the agent scaffolded an Expo project but never wrote
+    // app/index.tsx despite multiple follow-up directives. The follow-up loop
+    // is exhausted. Rather than shipping the baseline counter as the final
+    // APK (the user's actual request gets silently dropped), make a one-shot
+    // focused completion call to the SAME model asking it to *just* generate
+    // the file content. Weak local models are far better at "complete this
+    // code" than "follow multi-step agentic instructions" — this works where
+    // the agent loop didn't. If generation fails validation, we keep the
+    // baseline as the silent fallback.
+    if (
+      nativeTargetIntent &&
+      runState.createdProjectThisTurn &&
+      !runState.filesWrittenSinceCreateProject.has("app/index.tsx") &&
+      typeof req.prompt === "string" &&
+      req.prompt.trim().length > 0
+    ) {
+      logger.info(
+        `Auto-implement: agent scaffolded but never customized app/index.tsx for chat ${req.chatId}; generating from user prompt`,
+      );
+      await logMissionEvent({
+        missionId,
+        eventType: "native_autofinish_triggered",
+        summary: "Auto-implementing app/index.tsx from user prompt",
+        metadata: {
+          chatId: req.chatId,
+          runId: missionRunId,
+          target: nativeTargetIntent.target,
+          reason: "agent_skipped_customization",
+        },
+      }).catch((err) =>
+        logger.warn("Failed to log auto-implement event:", err),
+      );
+      const result = await autoImplementAppIndex({
+        appPath,
+        userPrompt: req.prompt,
+        model: modelClient.model,
+      });
+      if (result.wrote) {
+        runState.filesWrittenSinceCreateProject.add("app/index.tsx");
+        // Invalidate any prior QA result so the auto-finish QA below
+        // re-runs against the new content instead of stale baseline state.
+        runState.lastBrowserQaStatus = null;
+        runState.lastBrowserQaPlaceholderDetected = false;
+        passedBrowserQaGate = false;
+        warningMessages.push(
+          `The agent scaffolded the Expo project but didn't customize app/index.tsx. The harness generated it from your prompt as a last resort (${result.bytes} bytes).`,
+        );
+      } else {
+        warningMessages.push(
+          `Auto-implement could not generate a valid app/index.tsx (${result.reason}). The APK will ship the baseline counter screen.`,
+        );
+      }
+    }
 
     if (nativeTargetIntent && !passedBrowserQaGate) {
       await logMissionEvent({
