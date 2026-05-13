@@ -381,28 +381,22 @@ This starts or reuses the managed preview, waits for runtime readiness, captures
     }
 
     if (indexExists) {
-      const indexKey = "app/index.tsx";
-      const writtenThisTurn =
-        ctx.runState.filesWrittenSinceCreateProject.has(indexKey);
       const isPlaceholder = PLACEHOLDER_PATTERNS.some((pattern) =>
         pattern.test(indexSource),
       );
 
-      // Two refusal cases:
-      //   1) The file still matches the bright-yellow scaffold placeholder.
-      //   2) create_project ran this turn but app/index.tsx was never written,
-      //      so even if the regex misses, the agent skipped implementation.
-      const skippedImplementation =
-        ctx.runState.createdProjectThisTurn && !writtenThisTurn;
-
-      if (isPlaceholder || skippedImplementation) {
+      // The scaffold now ships a working baseline counter app, so we only
+      // refuse when the file *literally still matches the old yellow
+      // placeholder text* (e.g., a project scaffolded before this update, or
+      // an agent that reverted the baseline). Skipped-implementation is no
+      // longer a refusal: an unmodified baseline is a valid (if generic) app.
+      if (isPlaceholder) {
         ctx.runState.lastBrowserQaStatus = "failed";
-        ctx.runState.lastBrowserQaPlaceholderDetected = isPlaceholder;
+        ctx.runState.lastBrowserQaPlaceholderDetected = true;
         ctx.runState.placeholderRefusalCount += 1;
         const refusalCount = ctx.runState.placeholderRefusalCount;
-        const reason = isPlaceholder
-          ? "app/index.tsx still contains the unimplemented scaffold placeholder."
-          : "app/index.tsx has not been written since create_project — the scaffold is still untouched.";
+        const reason =
+          "app/index.tsx still contains the legacy unimplemented scaffold placeholder.";
 
         // Third strike: auto-write a sensible default so weak local models
         // cannot dead-end the turn. The user can still iterate further; this

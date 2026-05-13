@@ -90,10 +90,12 @@ Use this only when the user asks to start a new project or the current app is em
         {
           type: "text",
           text:
-            "Expo project scaffolded. The scaffold's app/index.tsx is a placeholder. " +
-            "Your VERY NEXT tool call MUST be read_file({path: 'app/index.tsx'}). " +
-            "Then call write_file or search_replace on app/index.tsx to implement the requested UI. " +
-            "DO NOT call browser_qa_gate or package_native_artifact until app/index.tsx has been implemented — both are hard-gated and will refuse on the placeholder." +
+            "Expo project scaffolded. The scaffold's app/index.tsx ships a working baseline " +
+            "(welcome screen + counter) so the build pipeline works out of the box. " +
+            "If the user's request needs specific UI (e.g., a list of numbers, a form, a custom layout), " +
+            "edit app/index.tsx with write_file or search_replace to match it. " +
+            "Then run browser_qa_gate to verify, then package_native_artifact to build the APK. " +
+            "If the baseline already matches the user's request closely enough, you can proceed straight to QA + packaging." +
             (androidStatus.issues.length > 0
               ? "\n\nAndroid env warnings (will only block package_native_artifact, not preview):\n" +
                 androidStatus.issues.map((line) => `- ${line}`).join("\n")
