@@ -1,12 +1,14 @@
 import { StyleSheet, Text, View } from "react-native";
 
+// ⚠ PLACEHOLDER — YOU MUST replace this entire file with the app content
+// the user requested. Do NOT run QA or package an APK until this is done.
 export default function HomeScreen() {
   return (
     <View style={styles.screen}>
-      <Text style={styles.title}>Welcome</Text>
-      <Text style={styles.subtitle}>
-        Your Expo app is ready. Edit app/index.tsx to build the requested mobile
-        experience.
+      <Text style={styles.heading}>⚠ PLACEHOLDER</Text>
+      <Text style={styles.body}>
+        This is the scaffold starter screen. Replace app/index.tsx with the
+        requested app content before running QA or building an APK.
       </Text>
     </View>
   );
@@ -19,19 +21,20 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 16,
     padding: 24,
-    backgroundColor: "#eef2ff",
+    backgroundColor: "#fff3cd",
   },
-  title: {
-    color: "#4338ca",
-    fontSize: 42,
-    fontWeight: "800",
+  heading: {
+    fontSize: 30,
+    fontWeight: "900",
+    color: "#856404",
     textAlign: "center",
+    letterSpacing: 2,
   },
-  subtitle: {
-    maxWidth: 320,
-    color: "#475569",
-    fontSize: 16,
-    lineHeight: 24,
+  body: {
+    fontSize: 14,
+    color: "#664d03",
     textAlign: "center",
+    maxWidth: 280,
+    lineHeight: 22,
   },
 });

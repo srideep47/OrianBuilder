@@ -19,8 +19,27 @@ import {
 const browserQaGateSchema = z.object({
   start_runtime: z.boolean().optional().default(true),
   full_page: z.boolean().optional().default(false),
-  runtime_timeout_seconds: z.number().min(5).max(180).optional().default(45),
+  runtime_timeout_seconds: z
+    .number()
+    .min(5)
+    .max(240)
+    .optional()
+    .describe(
+      "Max seconds to wait for the runtime to be ready. Defaults to 45s for most projects and 120s for Expo (where expo export + serve startup is slow).",
+    ),
 });
+
+async function isExpoProject(appPath: string): Promise<boolean> {
+  try {
+    await fs.access(path.join(appPath, "app.json"));
+    return true;
+  } catch {}
+  try {
+    await fs.access(path.join(appPath, "app", "index.tsx"));
+    return true;
+  } catch {}
+  return false;
+}
 
 type BrowserQaGateArgs = z.infer<typeof browserQaGateSchema>;
 
@@ -50,6 +69,21 @@ const ERROR_PATTERNS = [
   /build.*failed/i,
 ];
 
+/**
+ * Strings that indicate the app is still showing the Expo scaffold placeholder
+ * and has not been implemented yet. Any match forces QA to fail.
+ */
+const PLACEHOLDER_PATTERNS = [
+  /⚠\s*PLACEHOLDER/i,
+  /scaffold starter screen/i,
+  /Replace app\/index\.tsx/i,
+  /Edit app\/index\.tsx to build/i,
+] as const;
+
+function isPlaceholderScreen(text: string): boolean {
+  return PLACEHOLDER_PATTERNS.some((p) => p.test(text));
+}
+
 const NOISE_PATTERNS = [
   /^\s*$/,
   /vite.*ready/i,
@@ -62,6 +96,10 @@ const NOISE_PATTERNS = [
   /props\.pointerEvents is deprecated/i,
   /"shadow\*" style props are deprecated/i,
   /Image: style\.resizeMode is deprecated/i,
+  /style\.resizeMode is deprecated/i,
+  /setNativeProps is deprecated/i,
+  /react-native-web.*deprecat/i,
+  /deprecat.*react-native-web/i,
 ];
 
 type BrowserQaResult = {
@@ -77,6 +115,7 @@ type BrowserQaResult = {
   consoleStatus: GateStatus;
   consoleOutput: string;
   browserError: string | null;
+  placeholderDetected: boolean;
 };
 
 function looksLikeProblem(message: string): boolean {
@@ -129,9 +168,11 @@ async function runBrowserQa(
     await runAppById(ctx.event, ctx.appId);
   }
 
+  const expoDefault = (await isExpoProject(ctx.appPath)) ? 120 : 45;
+  const effectiveTimeoutSeconds = args.runtime_timeout_seconds ?? expoDefault;
   const readiness = await waitForManagedRuntimeReady({
     appId: ctx.appId,
-    timeoutMs: (args.runtime_timeout_seconds ?? 45) * 1000,
+    timeoutMs: effectiveTimeoutSeconds * 1000,
   });
   const runtimeUrl =
     readiness.previewUrl ?? getManagedRuntimePreviewUrl(ctx.appId);
@@ -207,11 +248,14 @@ async function runBrowserQa(
   }
 
   const consoleResult = readRecentConsole(ctx.appId);
+  const placeholderDetected = isPlaceholderScreen(accessibilityText);
+
   const status: GateStatus =
     runtimeStatus === "passed" &&
     screenshotStatus === "passed" &&
     accessibilityStatus === "passed" &&
-    consoleResult.status === "passed"
+    consoleResult.status === "passed" &&
+    !placeholderDetected
       ? "passed"
       : "failed";
 
@@ -228,6 +272,7 @@ async function runBrowserQa(
     consoleStatus: consoleResult.status,
     consoleOutput: consoleResult.output,
     browserError,
+    placeholderDetected,
   };
 }
 
@@ -249,10 +294,78 @@ This starts or reuses the managed preview, waits for runtime readiness, captures
   },
 
   execute: async (args, ctx) => {
+    const indexPath = path.join(ctx.appPath, "app", "index.tsx");
+    let indexExists = false;
+    let indexSource = "";
+    try {
+      indexSource = await fs.readFile(indexPath, "utf-8");
+      indexExists = true;
+    } catch {
+      // app/index.tsx doesn't exist (non-Expo project) — fall through to normal QA.
+    }
+
+    if (indexExists) {
+      const indexKey = "app/index.tsx";
+      const writtenThisTurn =
+        ctx.runState.filesWrittenSinceCreateProject.has(indexKey);
+      const isPlaceholder = PLACEHOLDER_PATTERNS.some((pattern) =>
+        pattern.test(indexSource),
+      );
+
+      // Two refusal cases:
+      //   1) The file still matches the bright-yellow scaffold placeholder.
+      //   2) create_project ran this turn but app/index.tsx was never written,
+      //      so even if the regex misses, the agent skipped implementation.
+      const skippedImplementation =
+        ctx.runState.createdProjectThisTurn && !writtenThisTurn;
+
+      if (isPlaceholder || skippedImplementation) {
+        ctx.runState.lastBrowserQaStatus = "failed";
+        ctx.runState.lastBrowserQaPlaceholderDetected = isPlaceholder;
+        const reason = isPlaceholder
+          ? "app/index.tsx still contains the unimplemented scaffold placeholder."
+          : "app/index.tsx has not been written since create_project — the scaffold is still untouched.";
+        const message =
+          `browser_qa_gate refused: ${reason} ` +
+          "REQUIRED NEXT STEPS (in order): " +
+          "(1) read_file({path: 'app/index.tsx'}) " +
+          "(2) write_file or search_replace on app/index.tsx to implement the requested UI using React Native components and StyleSheet " +
+          "(3) re-run browser_qa_gate. " +
+          "Do NOT call package_native_artifact until QA reports status=passed.";
+        ctx.appendUserMessage([
+          {
+            type: "text",
+            text:
+              `[gate] ${reason} You skipped implementation. ` +
+              "Your VERY NEXT tool call MUST be read_file({path: 'app/index.tsx'}). " +
+              "Then call write_file with the actual UI content. " +
+              "Then call browser_qa_gate again. Do not call package_native_artifact yet.",
+          },
+        ]);
+        ctx.onXmlComplete(
+          `<orianbuilder-browser-qa status="failed" runtime-status="failed" runtime-url="" runtime-error="${escapeXmlAttr(reason)}" browser-error="" screenshot-status="failed" desktop-path="" mobile-path="" accessibility-status="failed" console-status="failed">${escapeXmlContent(message)}</orianbuilder-browser-qa>`,
+        );
+        return message;
+      }
+    }
+
     ctx.onXmlStream(
       `<orianbuilder-browser-qa status="running">Running browser QA gate...`,
     );
+    ctx.emitProgress?.({
+      id: "browser_qa",
+      label: "Running browser QA",
+      status: "in-progress",
+    });
     const result = await runBrowserQa(args, ctx);
+    ctx.emitProgress?.({
+      id: "browser_qa",
+      label:
+        result.status === "passed" ? "Browser QA passed" : "Browser QA failed",
+      status: result.status === "passed" ? "completed" : "failed",
+    });
+    ctx.runState.lastBrowserQaStatus = result.status;
+    ctx.runState.lastBrowserQaPlaceholderDetected = result.placeholderDetected;
     const report = [
       `Browser QA ${result.status}.`,
       `runtime: ${result.runtimeStatus} - ${result.runtimeUrl}`,
@@ -262,6 +375,9 @@ This starts or reuses the managed preview, waits for runtime readiness, captures
       `console: ${result.consoleStatus}`,
       result.runtimeError ? `runtime error: ${result.runtimeError}` : null,
       result.browserError ? `browser error: ${result.browserError}` : null,
+      result.placeholderDetected
+        ? "\n⛔ IMPLEMENTATION REQUIRED: The app is showing the unimplemented scaffold placeholder screen. You MUST write the actual app content to app/index.tsx now and re-run QA. Do NOT call package_native_artifact until QA passes without this error."
+        : null,
       "",
       "Accessibility snapshot:",
       result.accessibilityText.trim() || "(empty)",

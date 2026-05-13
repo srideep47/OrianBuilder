@@ -16,6 +16,12 @@ import {
   getInitialChatModeForNewChat,
   normalizeStoredChatMode,
 } from "./chat_mode_resolution";
+import {
+  getChatLockedPaths,
+  setChatLockedPaths,
+  addChatLockedPath,
+  removeChatLockedPath,
+} from "@/pro/main/ipc/utils/chat_path_locks";
 
 const logger = log.scope("chat_handlers");
 
@@ -209,6 +215,27 @@ export function registerChatHandlers() {
 
     return uniqueChats;
   });
+
+  createTypedHandler(chatContracts.getLockedPaths, async (_, chatId) =>
+    getChatLockedPaths(chatId),
+  );
+
+  createTypedHandler(
+    chatContracts.setLockedPaths,
+    async (_, { chatId, paths }) => setChatLockedPaths(chatId, paths),
+  );
+
+  createTypedHandler(
+    chatContracts.addLockedPath,
+    async (_, { chatId, path: pathToLock }) =>
+      addChatLockedPath(chatId, pathToLock),
+  );
+
+  createTypedHandler(
+    chatContracts.removeLockedPath,
+    async (_, { chatId, path: pathToUnlock }) =>
+      removeChatLockedPath(chatId, pathToUnlock),
+  );
 
   logger.debug("Registered chat IPC handlers");
 }

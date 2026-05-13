@@ -31,6 +31,15 @@ const CURRENT_APP_ALIASES: ReadonlySet<string> = new Set([
   "@self",
   "@app",
   "@this",
+  // Additional aliases for newly-created projects where the model echoes the
+  // project's human-readable title back as app_name instead of omitting it.
+  "the app",
+  "the project",
+  "project",
+  "new app",
+  "new project",
+  "my app",
+  "my project",
 ]);
 
 /**
@@ -57,8 +66,12 @@ export function normalizeAppNameArg(
 }
 
 function isCurrentAppPathName(ctx: AgentContext, appName: string): boolean {
-  const currentAppPathName = path.basename(ctx.appPath).trim();
-  return currentAppPathName.toLowerCase() === appName.toLowerCase();
+  const lower = appName.toLowerCase();
+  // Match against the directory basename (e.g. a numeric ID folder)
+  if (path.basename(ctx.appPath).trim().toLowerCase() === lower) return true;
+  // Match against the human-readable app display name stored in the DB
+  if (ctx.appName && ctx.appName.trim().toLowerCase() === lower) return true;
+  return false;
 }
 
 /**

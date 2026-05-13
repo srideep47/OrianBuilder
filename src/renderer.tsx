@@ -25,6 +25,7 @@ import { useSetAtom } from "jotai";
 import {
   pendingAgentConsentsAtom,
   agentTodosByChatIdAtom,
+  agentProgressByChatIdAtom,
 } from "./atoms/chatAtoms";
 import { pendingQuestionnaireAtom } from "./atoms/planAtoms";
 import { queryKeys } from "./lib/queryKeys";
@@ -175,6 +176,7 @@ function App() {
   const setPendingAgentConsents = useSetAtom(pendingAgentConsentsAtom);
   const setPendingQuestionnaire = useSetAtom(pendingQuestionnaireAtom);
   const setAgentTodosByChatId = useSetAtom(agentTodosByChatIdAtom);
+  const setAgentProgressByChatId = useSetAtom(agentProgressByChatIdAtom);
 
   // Agent todos updates
   useEffect(() => {
@@ -188,6 +190,22 @@ function App() {
     return () => unsubscribe();
   }, [setAgentTodosByChatId]);
 
+  // Agent progress annotations (e.g. multi-step tool operations like
+  // packaging an APK, running browser QA). Pushed by tools via
+  // ctx.emitProgress and rendered by ChatAgentProgress.
+  useEffect(() => {
+    const unsubscribe = ipc.events.agent.onProgressUpdate((payload) => {
+      setAgentProgressByChatId((prev) => {
+        const next = new Map(prev);
+        const chatProgress = new Map(next.get(payload.chatId) ?? new Map());
+        chatProgress.set(payload.annotation.id, payload.annotation);
+        next.set(payload.chatId, chatProgress);
+        return next;
+      });
+    });
+    return () => unsubscribe();
+  }, [setAgentProgressByChatId]);
+
   // Clear todos when a new stream starts (so previous turn's todos don't persist)
   useEffect(() => {
     const unsubscribe = ipc.events.misc.onChatStreamStart(({ chatId }) => {
@@ -196,9 +214,14 @@ function App() {
         next.delete(chatId);
         return next;
       });
+      setAgentProgressByChatId((prev) => {
+        const next = new Map(prev);
+        next.delete(chatId);
+        return next;
+      });
     });
     return () => unsubscribe();
-  }, [setAgentTodosByChatId]);
+  }, [setAgentTodosByChatId, setAgentProgressByChatId]);
 
   useEffect(() => {
     const unsubscribe = ipc.events.agent.onConsentRequest((payload) => {

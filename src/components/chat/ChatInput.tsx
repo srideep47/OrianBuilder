@@ -79,6 +79,8 @@ import { ChatInputControls } from "../ChatInputControls";
 import { ChatErrorBox } from "./ChatErrorBox";
 import { AgentConsentBanner } from "./AgentConsentBanner";
 import { TodoList } from "./TodoList";
+import { AgentProgressList } from "./AgentProgressList";
+import { LockedFilesPanel } from "./LockedFilesPanel";
 import { QuestionnaireInput } from "./QuestionnaireInput";
 import { QueuedMessagesList } from "./QueuedMessagesList";
 import {
@@ -907,6 +909,10 @@ export function ChatInput({ chatId }: { chatId?: number }) {
 
           {/* Show todo list if there are todos for this chat */}
           {chatTodos.length > 0 && <TodoList todos={chatTodos} />}
+          {/* Live multi-step progress (APK packaging, browser QA, etc.) */}
+          <AgentProgressList chatId={chatId ?? null} />
+          {/* Per-chat file locks the user has set */}
+          <LockedFilesPanel chatId={chatId ?? null} />
           {/* Show agent consent banner if there's a pending consent request */}
           {pendingAgentConsent && (
             <AgentConsentBanner
@@ -1285,6 +1291,31 @@ function SummarizeInNewChatButton() {
       tooltipText={t("summarizeNewChatTip")}
     >
       {t("summarizeToNewChat")}
+    </SuggestionButton>
+  );
+}
+
+export function QuickActionButton({
+  label,
+  prompt,
+}: {
+  label: string;
+  prompt: string;
+}) {
+  const chatId = useAtomValue(selectedChatIdAtom);
+  const { streamMessage } = useStreamChat();
+  const onClick = () => {
+    if (!chatId) {
+      console.error("No chat id found");
+      return;
+    }
+    streamMessage({ prompt, chatId, redo: false });
+  };
+  return (
+    <SuggestionButton onClick={onClick} tooltipText={prompt}>
+      <span className="max-w-[200px] overflow-hidden whitespace-nowrap text-ellipsis">
+        {label}
+      </span>
     </SuggestionButton>
   );
 }

@@ -35,6 +35,7 @@ import { ZoomSelector } from "@/components/ZoomSelector";
 import { LanguageSelector } from "@/components/LanguageSelector";
 import { DefaultChatModeSelector } from "@/components/DefaultChatModeSelector";
 import { ContextCompactionSwitch } from "@/components/ContextCompactionSwitch";
+import { StreamStallTimeoutSetting } from "@/components/StreamStallTimeoutSetting";
 import { BlockUnsafeNpmPackagesSwitch } from "@/components/BlockUnsafeNpmPackagesSwitch";
 import { CloudSandboxExperimentSwitch } from "@/components/CloudSandboxExperimentSwitch";
 import { useSetAtom } from "jotai";
@@ -476,6 +477,10 @@ export function AISettings() {
           Automatically compact long conversations to stay within context
           limits. Original messages are preserved in the app data directory.
         </div>
+      </div>
+
+      <div className="space-y-1 mt-4">
+        <StreamStallTimeoutSetting />
       </div>
     </div>
   );

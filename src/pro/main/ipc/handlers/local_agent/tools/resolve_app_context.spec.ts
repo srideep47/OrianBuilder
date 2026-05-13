@@ -87,6 +87,15 @@ describe("resolveTargetAppPath", () => {
     );
   });
 
+  it("returns current app path when app_name matches the DB display name (model echoes project title)", () => {
+    const ctx = {
+      ...makeContext({ appPath: "C:/orian/apps/42" }),
+      appName: "Dropdown App",
+    } as ReturnType<typeof makeContext>;
+    expect(resolveTargetAppPath(ctx, "Dropdown App")).toBe("C:/orian/apps/42");
+    expect(resolveTargetAppPath(ctx, "dropdown app")).toBe("C:/orian/apps/42");
+  });
+
   it("resolves real @app references via the map", () => {
     const ctx = makeContext({
       appPath: "C:/orian/apps/current-app",

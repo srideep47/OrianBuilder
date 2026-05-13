@@ -374,6 +374,11 @@ const BaseUserSettingsFields = {
     .optional(),
   hideLocalAgentNewChatToast: z.boolean().optional(),
   enableContextCompaction: z.boolean().optional(),
+  /**
+   * Seconds the local-agent stream may stall (no new tokens) before being
+   * aborted for a retry. Clamped to [30, 300] at the call site. Default 90.
+   */
+  streamStallTimeoutSeconds: z.number().min(30).max(300).optional(),
   skipNotificationBanner: z.boolean().optional(),
   enableSelectAppFromHomeChatInput: z.boolean().optional(),
   previewIdleTimeoutPolicy: z.enum(["default", "never"]).optional(),

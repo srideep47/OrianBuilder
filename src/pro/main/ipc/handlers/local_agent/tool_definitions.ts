@@ -18,6 +18,7 @@ import { browserControlTool } from "./tools/browser_control";
 import { browserQaGateTool } from "./tools/browser_qa_gate";
 import { deployPreviewTool } from "./tools/deploy_preview";
 import { packageNativeArtifactTool } from "./tools/package_native_artifact";
+import { exportZipTool } from "./tools/export_zip";
 
 import { readFileTool } from "./tools/read_file";
 import { listFilesTool } from "./tools/list_files";
@@ -117,6 +118,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   browserQaGateTool,
   deployPreviewTool,
   packageNativeArtifactTool,
+  exportZipTool,
   githubPrTool,
   setChatSummaryTool,
   addIntegrationTool,

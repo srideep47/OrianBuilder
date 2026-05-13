@@ -78,6 +78,7 @@ import {
   getSupabaseProjectName,
 } from "../../supabase_admin/supabase_management_client";
 import { createLoggedHandler } from "./safe_handle";
+import { detectProjectStack } from "../utils/project_stack_detector";
 import { getLanguageModelProviders } from "../shared/language_model_helpers";
 import { startProxy } from "../utils/start_proxy_server";
 import {
@@ -129,6 +130,7 @@ import {
   OrianBuilderErrorKind,
 } from "@/errors/orianbuilder_error";
 import { detectFrameworkType } from "../utils/framework_utils";
+import { exportProjectZip } from "../utils/zip_export";
 
 const logger = log.scope("app_handlers");
 const handle = createLoggedHandler(logger);
@@ -232,7 +234,7 @@ function getTemplateRuntimeCommands(templateId?: string): {
   ) {
     return {
       installCommand: "npm install --legacy-peer-deps",
-      startCommand: "npm run start -- --port 8081",
+      startCommand: "npm run preview",
     };
   }
 
@@ -413,6 +415,70 @@ async function ensureProxyForRunningApp({
   }
 }
 
+function isStaleExpoRuntimeCommand(command?: string | null): boolean {
+  const normalized = command?.trim().toLowerCase();
+  if (!normalized) return true;
+
+  return (
+    normalized === "npm run start" ||
+    normalized.startsWith("npm run start --") ||
+    normalized.includes("expo start") ||
+    normalized.includes("--port 8081")
+  );
+}
+
+async function resolveRuntimeCommandsForApp({
+  appPath,
+  appId,
+  installCommand,
+  startCommand,
+}: {
+  appPath: string;
+  appId: number;
+  installCommand?: string | null;
+  startCommand?: string | null;
+}): Promise<{
+  installCommand?: string | null;
+  startCommand?: string | null;
+}> {
+  try {
+    const stack = await detectProjectStack(appPath);
+    if (
+      stack.framework !== "expo" ||
+      !stack.scripts.preview ||
+      !stack.commands.dev ||
+      !isStaleExpoRuntimeCommand(startCommand)
+    ) {
+      return { installCommand, startCommand };
+    }
+
+    const resolvedInstallCommand = stack.commands.install ?? installCommand;
+    const resolvedStartCommand = stack.commands.dev;
+    logger.info(
+      `Updating Expo runtime commands for app ${appId}: start="${startCommand ?? ""}" -> "${resolvedStartCommand}"`,
+    );
+
+    await db
+      .update(apps)
+      .set({
+        installCommand: resolvedInstallCommand,
+        startCommand: resolvedStartCommand,
+      })
+      .where(eq(apps.id, appId));
+
+    return {
+      installCommand: resolvedInstallCommand,
+      startCommand: resolvedStartCommand,
+    };
+  } catch (error) {
+    logger.warn(
+      `Could not detect project stack for app ${appId}; using stored runtime commands.`,
+      error,
+    );
+    return { installCommand, startCommand };
+  }
+}
+
 async function executeAppLocalNode({
   appPath,
   appId,
@@ -429,11 +495,16 @@ async function executeAppLocalNode({
   startCommand?: string | null;
 }): Promise<void> {
   const command = getCommand({ appId, installCommand, startCommand });
+  const appPort = getAppPort(appId);
   const spawnedProcess = spawn(command, [], {
     cwd: appPath,
     shell: true,
     stdio: "pipe", // Ensure stdio is piped so we can capture output/errors and detect close
     detached: false, // Ensure child process is attached to the main process lifecycle unless explicitly backgrounded
+    env: {
+      ...process.env,
+      PORT: String(appPort),
+    },
   });
 
   // Check if process spawned correctly
@@ -752,6 +823,12 @@ export async function runAppById(
     logger.debug(`Starting app ${appId} in path ${app.path}`);
 
     const appPath = getOrianBuilderAppPath(app.path);
+    const runtimeCommands = await resolveRuntimeCommandsForApp({
+      appPath,
+      appId,
+      installCommand: app.installCommand,
+      startCommand: app.startCommand,
+    });
     try {
       // There may have been a previous run that left a process on this port.
       await cleanUpPort(getAppPort(appId));
@@ -760,8 +837,8 @@ export async function runAppById(
         appId,
         event,
         isNeon: !!app.neonProjectId,
-        installCommand: app.installCommand,
-        startCommand: app.startCommand,
+        installCommand: runtimeCommands.installCommand,
+        startCommand: runtimeCommands.startCommand,
       });
 
       return;
@@ -2959,6 +3036,36 @@ export function registerAppHandlers() {
 
     return { thumbnails };
   });
+
+  createTypedHandler(appContracts.exportAppZip, async (_, params) => {
+    const { appId, destinationPath } = params;
+    const app = await db.query.apps.findFirst({
+      where: eq(apps.id, appId),
+    });
+    if (!app) {
+      throw new OrianBuilderError(
+        "App not found",
+        OrianBuilderErrorKind.NotFound,
+      );
+    }
+    const appPath = getOrianBuilderAppPath(app.path);
+    return exportProjectZip(appPath, destinationPath);
+  });
+
+  createTypedHandler(
+    appContracts.pickExportZipDestination,
+    async (_, params) => {
+      const result = await dialog.showSaveDialog({
+        title: "Export project as ZIP",
+        defaultPath: params.suggestedName,
+        filters: [{ name: "Zip Archive", extensions: ["zip"] }],
+      });
+      return {
+        canceled: result.canceled,
+        path: result.canceled ? null : (result.filePath ?? null),
+      };
+    },
+  );
 
   void reconcileCloudSandboxes().catch((error) => {
     logger.warn("Failed to reconcile cloud sandboxes on startup:", error);

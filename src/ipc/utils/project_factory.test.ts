@@ -26,14 +26,15 @@ describe("getProjectVerificationCommands", () => {
     expect(commands.typecheck).toBe("npm run typecheck");
   });
 
-  it("uses `start` for expo, not dev", () => {
+  it("uses `preview` and web export build for expo so QA gate can hit an HTTP endpoint", () => {
     const commands = getProjectVerificationCommands({
       stack: "expo",
       packageManager: "npm",
     });
 
-    expect(commands.dev).toBe("npm run start");
-    expect(commands.build).toBeNull();
+    expect(commands.install).toBe("npm install --legacy-peer-deps");
+    expect(commands.dev).toBe("npm run preview");
+    expect(commands.build).toBe("npm run build");
     expect(commands.typecheck).toBe("npm run typecheck");
   });
 

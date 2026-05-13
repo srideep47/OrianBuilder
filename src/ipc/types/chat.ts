@@ -275,6 +275,39 @@ export const chatContracts = {
     input: z.number(), // chatId
     output: z.boolean(),
   }),
+
+  getLockedPaths: defineContract({
+    channel: "chat:get-locked-paths",
+    input: z.number(), // chatId
+    output: z.array(z.string()),
+  }),
+
+  setLockedPaths: defineContract({
+    channel: "chat:set-locked-paths",
+    input: z.object({
+      chatId: z.number(),
+      paths: z.array(z.string()),
+    }),
+    output: z.array(z.string()),
+  }),
+
+  addLockedPath: defineContract({
+    channel: "chat:add-locked-path",
+    input: z.object({
+      chatId: z.number(),
+      path: z.string(),
+    }),
+    output: z.array(z.string()),
+  }),
+
+  removeLockedPath: defineContract({
+    channel: "chat:remove-locked-path",
+    input: z.object({
+      chatId: z.number(),
+      path: z.string(),
+    }),
+    output: z.array(z.string()),
+  }),
 } as const;
 
 // =============================================================================

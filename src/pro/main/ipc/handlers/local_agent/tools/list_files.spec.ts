@@ -98,6 +98,13 @@ describe("listFilesTool", () => {
       todos: [],
       orianbuilderRequestId: "test-request",
       fileEditTracker: {},
+      runState: {
+        lastBrowserQaStatus: null,
+        lastBrowserQaPlaceholderDetected: false,
+        filesWrittenSinceCreateProject: new Set<string>(),
+        createdProjectThisTurn: false,
+        lockedPaths: [],
+      },
       onXmlStream: vi.fn(),
       onXmlComplete: vi.fn(),
       requireConsent: vi.fn().mockResolvedValue(true),

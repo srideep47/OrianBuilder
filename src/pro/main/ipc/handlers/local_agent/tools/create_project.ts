@@ -5,6 +5,7 @@ import {
   escapeXmlContent,
   ToolDefinition,
 } from "./types";
+import { checkAndroidEnv, formatAndroidEnvStatus } from "./android_env";
 import { queueCloudSandboxSnapshotSync } from "@/ipc/utils/cloud_sandbox_provider";
 import {
   createGreenfieldProject,
@@ -74,6 +75,33 @@ Use this only when the user asks to start a new project or the current app is em
       force: args.force ?? false,
     });
 
+    if (result.created) {
+      ctx.runState.createdProjectThisTurn = true;
+      ctx.runState.filesWrittenSinceCreateProject.clear();
+      ctx.runState.lastBrowserQaStatus = null;
+      ctx.runState.lastBrowserQaPlaceholderDetected = false;
+    }
+
+    let androidEnvBlock = "";
+    if (result.created && args.stack === "expo") {
+      const androidStatus = await checkAndroidEnv();
+      androidEnvBlock = `\n\n${formatAndroidEnvStatus(androidStatus)}`;
+      ctx.appendUserMessage([
+        {
+          type: "text",
+          text:
+            "Expo project scaffolded. The scaffold's app/index.tsx is a placeholder. " +
+            "Your VERY NEXT tool call MUST be read_file({path: 'app/index.tsx'}). " +
+            "Then call write_file or search_replace on app/index.tsx to implement the requested UI. " +
+            "DO NOT call browser_qa_gate or package_native_artifact until app/index.tsx has been implemented — both are hard-gated and will refuse on the placeholder." +
+            (androidStatus.issues.length > 0
+              ? "\n\nAndroid env warnings (will only block package_native_artifact, not preview):\n" +
+                androidStatus.issues.map((line) => `- ${line}`).join("\n")
+              : ""),
+        },
+      ]);
+    }
+
     const fileList = result.files.map((file) => `- ${file}`).join("\n");
     const nextSteps = result.nextSteps.map((step) => `- ${step}`).join("\n");
     const commandSummary = [
@@ -106,7 +134,7 @@ Use this only when the user asks to start a new project or the current app is em
     ].join(" ");
 
     ctx.onXmlComplete(
-      `<orianbuilder-create-project created="${result.created}" name="${escapeXmlAttr(args.project_name)}" stack="${escapeXmlAttr(result.stack)}" package-manager="${escapeXmlAttr(result.packageManager)}" scaffold-method="${escapeXmlAttr(result.scaffoldMethod)}" scaffold-command="${escapeXmlAttr(result.scaffoldCommand ?? "")}" ${commandAttrs}>${escapeXmlContent(`${body}\n\nCommands:\n${commandSummary}${outputBlock}`)}</orianbuilder-create-project>`,
+      `<orianbuilder-create-project created="${result.created}" name="${escapeXmlAttr(args.project_name)}" stack="${escapeXmlAttr(result.stack)}" package-manager="${escapeXmlAttr(result.packageManager)}" scaffold-method="${escapeXmlAttr(result.scaffoldMethod)}" scaffold-command="${escapeXmlAttr(result.scaffoldCommand ?? "")}" ${commandAttrs}>${escapeXmlContent(`${body}\n\nCommands:\n${commandSummary}${outputBlock}${androidEnvBlock}`)}</orianbuilder-create-project>`,
     );
 
     if (result.created) {
@@ -125,6 +153,6 @@ Use this only when the user asks to start a new project or the current app is em
       });
     }
 
-    return `${body}\n\nCommands:\n${commandSummary}${outputBlock}`;
+    return `${body}\n\nCommands:\n${commandSummary}${outputBlock}${androidEnvBlock}`;
   },
 };

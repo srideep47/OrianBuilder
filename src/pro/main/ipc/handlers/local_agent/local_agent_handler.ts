@@ -156,11 +156,22 @@ import {
   detectNativeTargetIntentWithModel,
   type NativeTargetIntent,
 } from "./native_target_intent";
+import {
+  StreamStallDetector,
+  StreamStalledError,
+} from "./streaming/stall_detector";
+import { getChatLockedPaths } from "@/pro/main/ipc/utils/chat_path_locks";
 
 const logger = log.scope("local_agent_handler");
 const PLANNING_QUESTIONNAIRE_TOOL_NAME = "planning_questionnaire";
 const MAX_TERMINATED_STREAM_RETRIES = 3;
 const STREAM_RETRY_BASE_DELAY_MS = 400;
+/**
+ * Local LLMs (llama.cpp, LM Studio, Ollama) occasionally stall mid-stream:
+ * the HTTP connection stays open but no tokens arrive. Without a watchdog
+ * the whole turn hangs. 90s without a chunk = treat as failed and retry.
+ */
+const STREAM_STALL_TIMEOUT_MS = 90_000;
 const STREAM_CONTINUE_MESSAGE =
   "[System] Your previous response stream was interrupted by a transient network error. Continue from exactly where you left off and do not repeat text that has already been sent.";
 
@@ -827,6 +838,23 @@ export async function handleLocalAgentStream(
 
     // Build tool execute context
     const fileEditTracker: FileEditTracker = Object.create(null);
+    // Snapshot the chat's locked paths once at turn start. Tools consult this
+    // list (synchronously) before mutating any file. Locks added/removed
+    // mid-turn won't take effect until the next turn — which is the right
+    // semantics since the agent's plan was already formed against this set.
+    const lockedPathsFromDb = await getChatLockedPaths(chat.id).catch(
+      (err: unknown) => {
+        logger.warn("Failed to load chat locked paths:", err);
+        return [] as string[];
+      },
+    );
+    const runState = {
+      lastBrowserQaStatus: null as "passed" | "failed" | null,
+      lastBrowserQaPlaceholderDetected: false,
+      filesWrittenSinceCreateProject: new Set<string>(),
+      createdProjectThisTurn: false,
+      lockedPaths: lockedPathsFromDb,
+    };
     const referencedAppsMap = new Map(
       referencedApps.map((ref) => [ref.appName.toLowerCase(), ref.appPath]),
     );
@@ -839,6 +867,7 @@ export async function handleLocalAgentStream(
       event,
       appId: chat.app.id,
       appPath,
+      appName: chat.app.name,
       referencedApps: referencedAppsMap,
       chatId: chat.id,
       missionId,
@@ -855,6 +884,7 @@ export async function handleLocalAgentStream(
       todos: persistedTodos,
       orianbuilderRequestId,
       fileEditTracker,
+      runState,
       installEtargetRecoveryCount: 0,
       isOrianBuilderPro: isOrianBuilderProEnabled(settings),
       onXmlStream: (accumulatedXml: string) => {
@@ -1018,6 +1048,15 @@ export async function handleLocalAgentStream(
       },
       onWarningMessage: (message) => {
         warningMessages.push(message);
+      },
+      emitProgress: (annotation) => {
+        // Pushed to the renderer over a dedicated IPC channel so UI can render
+        // a step indicator without parsing inline XML. Renderers can ignore
+        // this channel safely; it's purely additive.
+        safeSend(event.sender, "agent-tool:progress", {
+          chatId: chat.id,
+          annotation,
+        });
       },
       onToolExecutionStart: (params) => {
         if (params.toolName === packageNativeArtifactTool.name) {
@@ -1232,6 +1271,26 @@ export async function handleLocalAgentStream(
           attemptToolInputIds.clear();
         };
 
+        // Per-attempt inner abort controller. Aborted by the stall detector
+        // when the stream stops producing tokens; combined with the outer
+        // abortController so user cancellation still works.
+        const stallAbortController = new AbortController();
+        let stallDetectedThisAttempt = false;
+        const stallTimeoutMs = Math.max(
+          30_000,
+          Math.min(300_000, (settings.streamStallTimeoutSeconds ?? 90) * 1000),
+        );
+        const stallDetector = new StreamStallDetector({
+          stallTimeoutMs,
+          onStall: (elapsed) => {
+            stallDetectedThisAttempt = true;
+            logger.warn(
+              `Stream stalled (${elapsed}ms no chunks) for chat ${req.chatId}; aborting attempt for retry`,
+            );
+            stallAbortController.abort();
+          },
+        });
+
         try {
           const streamResult = streamText({
             model: modelClient.model,
@@ -1279,7 +1338,10 @@ export async function handleLocalAgentStream(
                   ]
                 : []),
             ],
-            abortSignal: abortController.signal,
+            abortSignal: AbortSignal.any([
+              abortController.signal,
+              stallAbortController.signal,
+            ]),
             // Inject pending user messages (e.g., images from web_crawl) between steps
             // We must re-inject all accumulated messages each step because the AI SDK
             // doesn't persist dynamically injected messages in its internal state.
@@ -1725,9 +1787,11 @@ export async function handleLocalAgentStream(
 
           let inThinkingBlock = false;
           let streamErrorFromIteration: unknown;
+          stallDetector.start();
 
           try {
             for await (const part of streamResult.fullStream) {
+              stallDetector.pulse();
               if (abortController.signal.aborted) {
                 logger.log(`Stream aborted for chat ${req.chatId}`);
                 // Clean up pending consent/questionnaire requests to prevent stale UI banners
@@ -1855,12 +1919,23 @@ export async function handleLocalAgentStream(
             }
           } catch (error) {
             if (!abortController.signal.aborted) {
-              streamErrorFromIteration = error;
+              // Stall-driven aborts surface here as AbortError. Convert them
+              // into a StreamStalledError so shouldRetryTransientStreamError
+              // recognizes them and the outer retry loop fires.
+              if (stallDetectedThisAttempt) {
+                streamErrorFromIteration = new StreamStalledError(
+                  STREAM_STALL_TIMEOUT_MS,
+                );
+              } else {
+                streamErrorFromIteration = error;
+              }
             } else {
               logger.log(
                 `Stream interrupted after abort for chat ${req.chatId}`,
               );
             }
+          } finally {
+            stallDetector.stop();
           }
 
           // Close thinking block if still open
@@ -2254,6 +2329,8 @@ export async function handleLocalAgentStream(
       );
     }
 
+    let autofinishExecutedToolCount = 0;
+
     const executeNativeAutofinishTool = async (
       tool:
         | typeof browserQaGateTool
@@ -2279,6 +2356,7 @@ export async function handleLocalAgentStream(
       });
       try {
         const output = await tool.execute(args as never, ctx);
+        autofinishExecutedToolCount += 1;
         ctx.onToolExecutionComplete?.({
           toolName: tool.name,
           status: "completed",
@@ -2303,36 +2381,6 @@ export async function handleLocalAgentStream(
       }
     };
 
-    if (
-      nativeTargetIntent &&
-      !producedNativePackageArtifact &&
-      !attemptedNativePackageArtifact
-    ) {
-      await logMissionEvent({
-        missionId,
-        eventType: "native_autofinish_triggered",
-        summary: `Auto-finishing native package: ${nativeTargetIntent.label}`,
-        metadata: {
-          chatId: req.chatId,
-          runId: missionRunId,
-          target: nativeTargetIntent.target,
-          reason: "agent_stream_ended_without_native_package",
-        },
-      }).catch((err) =>
-        logger.warn("Failed to log native autofinish package event:", err),
-      );
-      await executeNativeAutofinishTool(
-        packageNativeArtifactTool,
-        {
-          target: nativeTargetIntent.target,
-          variant: "debug",
-          create_download_site: true,
-          initialize_capacitor_if_missing: true,
-        },
-        `Package native artifact: ${nativeTargetIntent.target} and create download site`,
-      );
-    }
-
     if (nativeTargetIntent && !passedBrowserQaGate) {
       await logMissionEvent({
         missionId,
@@ -2354,7 +2402,38 @@ export async function handleLocalAgentStream(
           full_page: false,
           runtime_timeout_seconds: 60,
         },
-        "Run browser QA gate after native package build",
+        "Run browser QA gate before native package build",
+      );
+    }
+
+    if (
+      nativeTargetIntent &&
+      passedBrowserQaGate &&
+      !producedNativePackageArtifact &&
+      !attemptedNativePackageArtifact
+    ) {
+      await logMissionEvent({
+        missionId,
+        eventType: "native_autofinish_triggered",
+        summary: `Auto-finishing native package: ${nativeTargetIntent.label}`,
+        metadata: {
+          chatId: req.chatId,
+          runId: missionRunId,
+          target: nativeTargetIntent.target,
+          reason: "browser_qa_passed_without_native_package",
+        },
+      }).catch((err) =>
+        logger.warn("Failed to log native autofinish package event:", err),
+      );
+      await executeNativeAutofinishTool(
+        packageNativeArtifactTool,
+        {
+          target: nativeTargetIntent.target,
+          variant: "debug",
+          create_download_site: true,
+          initialize_capacitor_if_missing: true,
+        },
+        `Package native artifact: ${nativeTargetIntent.target} and create download site`,
       );
     }
 
@@ -2537,13 +2616,15 @@ export async function handleLocalAgentStream(
 
     // Detect "dead" runs: the stream completed cleanly but the model never
     // produced a real tool call (and the fallback parser also didn't recover
-    // one). Without this guard, the mission would stay in `running` forever
-    // and the user would see no obvious failure signal.
+    // one). The native-autofinish path is also considered real work — if it
+    // ran a tool successfully (browser QA / native package / deploy) the run
+    // produced artifacts even when the model only emitted text.
     const isDeadRun =
       !readOnly &&
       totalNativeToolCalls === 0 &&
       totalFallbackToolCalls === 0 &&
-      textToolCallFallbackAttempts === 0;
+      textToolCallFallbackAttempts === 0 &&
+      autofinishExecutedToolCount === 0;
 
     await logMissionEvent({
       missionId,
@@ -2558,6 +2639,7 @@ export async function handleLocalAgentStream(
         totalNativeToolCalls,
         totalFallbackToolCalls,
         textToolCallFallbackAttempts,
+        autofinishExecutedToolCount,
         deadRun: isDeadRun,
       },
     }).catch((err) =>
@@ -3136,7 +3218,9 @@ function shouldRetryTransientStreamError(params: {
   return (
     !aborted &&
     retryCount < MAX_TERMINATED_STREAM_RETRIES &&
-    (isTerminatedStreamError(error) || isRetryableProviderStreamError(error))
+    (error instanceof StreamStalledError ||
+      isTerminatedStreamError(error) ||
+      isRetryableProviderStreamError(error))
   );
 }
 
