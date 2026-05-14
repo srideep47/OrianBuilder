@@ -11,6 +11,8 @@ import {
 } from "./model_orchestrator";
 import { generateImageViaCloud } from "./cloud_image_generator";
 import { generateImageViaLocalBackend } from "./local_image_generator";
+import { generateAudioViaLocalBackend } from "./local_audio_generator";
+import { generateVideoViaLocalBackend } from "./local_video_generator";
 import { getAvailableVramMb } from "./vram_accounting";
 import { getCachedHardwareProfile } from "@/main/hardware/detect";
 import { getLastLlmParams, estimateFreedLlmVramMb } from "./model_orchestrator";
@@ -99,14 +101,39 @@ async function dispatch(
       return writePlaceholder(request);
     }
     case "audio":
-    case "video":
-    case "music":
+    case "music": {
+      const audio = await generateAudioViaLocalBackend(
+        request.prompt,
+        request.outputPath,
+        { tier: tier?.id ?? null },
+      );
+      if (audio.success) {
+        logger.info(`local audio gen succeeded (tier=${audio.tier ?? "?"})`);
+        return audio;
+      }
       return {
         success: false,
         outputPath: request.outputPath,
-        durationMs: 0,
-        error: `${request.modelType} generation requires media backend (Phase 2 install)`,
+        durationMs: audio.durationMs,
+        error: audio.error ?? "audio generation failed",
       };
+    }
+    case "video": {
+      const video = await generateVideoViaLocalBackend(
+        request.prompt,
+        request.outputPath,
+      );
+      if (video.success) {
+        logger.info("local video gen succeeded");
+        return video;
+      }
+      return {
+        success: false,
+        outputPath: request.outputPath,
+        durationMs: video.durationMs,
+        error: video.error ?? "video generation failed",
+      };
+    }
   }
 }
 

@@ -44,6 +44,8 @@ import { webSearchTool } from "./tools/web_search";
 import { webCrawlTool } from "./tools/web_crawl";
 import { webFetchTool } from "./tools/web_fetch";
 import { generateImageTool } from "./tools/generate_image";
+import { generateAudioTool } from "./tools/generate_audio";
+import { generateVideoTool } from "./tools/generate_video";
 import { generateMediaAssetTool } from "./tools/generate_media_asset";
 import { manageMcpServerTool } from "./tools/manage_mcp_server";
 import { updateTodosTool } from "./tools/update_todos";
@@ -138,6 +140,8 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   webCrawlTool,
   webFetchTool,
   generateImageTool,
+  generateAudioTool,
+  generateVideoTool,
   generateMediaAssetTool,
   manageMcpServerTool,
   updateTodosTool,

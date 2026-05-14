@@ -14,7 +14,10 @@ import {
   IMAGE_MODEL_TIERS,
   type LlmLoadParams,
 } from "./model_orchestrator";
-import { parseRocmVramUsedBytes } from "./vram_accounting";
+import {
+  parseRocmVramUsedBytes,
+  parseTypeperfGpuDedicatedMb,
+} from "./vram_accounting";
 
 const sampleParams: LlmLoadParams = {
   modelPath: "/tmp/model.gguf",
@@ -326,5 +329,29 @@ GPU[0]: VRAM Total Used Memory (B): 1048576
 
   it("returns 0 when the marker is missing", () => {
     expect(parseRocmVramUsedBytes("nothing here")).toBe(0);
+  });
+});
+
+describe("parseTypeperfGpuDedicatedMb", () => {
+  it("prefers the _Total counter when present", () => {
+    const csv = [
+      '"(PDH-CSV 4.0)","\\\\HOST\\GPU Adapter Memory(luid_0x...)\\Dedicated Usage","\\\\HOST\\GPU Adapter Memory(_Total)\\Dedicated Usage"',
+      '"05/15/2026 12:00:00.000","2097152","8388608"',
+    ].join("\n");
+    // _Total = 8 MiB = 8 MB
+    expect(parseTypeperfGpuDedicatedMb(csv)).toBe(8);
+  });
+
+  it("sums per-adapter values when no _Total is present", () => {
+    const csv = [
+      '"(PDH-CSV 4.0)","\\\\HOST\\GPU Adapter Memory(adapter1)\\Dedicated Usage","\\\\HOST\\GPU Adapter Memory(adapter2)\\Dedicated Usage"',
+      '"05/15/2026 12:00:00.000","1048576","2097152"',
+    ].join("\n");
+    expect(parseTypeperfGpuDedicatedMb(csv)).toBe(3); // 1 MiB + 2 MiB
+  });
+
+  it("returns 0 when typeperf returned no samples", () => {
+    expect(parseTypeperfGpuDedicatedMb("")).toBe(0);
+    expect(parseTypeperfGpuDedicatedMb("garbage\nno quotes")).toBe(0);
   });
 });

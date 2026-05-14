@@ -59,13 +59,82 @@ async function getRocmUsedMb(): Promise<number> {
   }
 }
 
+async function getAmdUsedMbWindows(): Promise<number> {
+  // AMD on Windows: rocm-smi is rare outside ROCm SDK installs, so we use
+  // the same Windows perf-counter path as Intel. typeperf gives live
+  // dedicated VRAM in use across all discrete GPU adapters.
+  const usedMb = await getRocmUsedMb();
+  if (usedMb > 0) return usedMb;
+  return getWindowsGpuDedicatedUsedMb();
+}
+
+function parseTypeperfCsvLine(line: string): string[] {
+  const values: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (const ch of line) {
+    if (ch === '"') inQuotes = !inQuotes;
+    else if (ch === "," && !inQuotes) {
+      values.push(current);
+      current = "";
+    } else current += ch;
+  }
+  values.push(current);
+  return values.map((v) => v.trim());
+}
+
+/**
+ * Pure helper: given typeperf CSV stdout for
+ *   \GPU Adapter Memory(*)\Dedicated Usage
+ * returns the total dedicated usage in MB. Returns 0 on parse failure.
+ *
+ * Exported for unit tests.
+ */
+export function parseTypeperfGpuDedicatedMb(stdout: string): number {
+  const lines = stdout
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('"'));
+  if (lines.length < 2) return 0;
+  const headers = parseTypeperfCsvLine(lines[0]);
+  const values = parseTypeperfCsvLine(lines[1]);
+  let totalBytes: number | null = null;
+  let summedBytes = 0;
+  for (let i = 1; i < headers.length; i++) {
+    const header = headers[i].toLowerCase();
+    if (!header.endsWith("\\dedicated usage")) continue;
+    const value = Number(values[i]) || 0;
+    if (header.includes("\\gpu adapter memory(_total)\\")) {
+      totalBytes = value;
+    } else {
+      summedBytes += value;
+    }
+  }
+  const bytes = totalBytes ?? summedBytes;
+  return Math.round(bytes / (1024 * 1024));
+}
+
+async function getWindowsGpuDedicatedUsedMb(): Promise<number> {
+  try {
+    const { stdout } = await execFileAsync(
+      "typeperf",
+      ["\\GPU Adapter Memory(*)\\Dedicated Usage", "-sc", "1"],
+      { timeout: 5000 },
+    );
+    return parseTypeperfGpuDedicatedMb(stdout);
+  } catch (err) {
+    logger.debug("typeperf GPU dedicated usage unavailable:", err);
+    return 0;
+  }
+}
+
 async function getIntelUsedMbWindows(): Promise<number> {
-  // No reliable per-app counter from Intel without a driver-specific dependency.
-  // WMI's AdapterRAM reports the device's total dedicated memory, not live usage,
-  // so we report 0 (caller treats as "unknown"). A future iteration can use the
-  // Performance Counters \GPU Adapter Memory(*)\Dedicated Usage path already used
-  // in embedded_model_handler.ts.
-  return 0;
+  // Intel's UMD doesn't expose a per-process VRAM counter, but the Windows
+  // performance counter \GPU Adapter Memory(*)\Dedicated Usage reports
+  // current per-adapter dedicated VRAM usage. This works for Intel Arc
+  // (discrete) as well as integrated UHD/Iris where "dedicated" is
+  // effectively the carved-out VRAM allocation.
+  return getWindowsGpuDedicatedUsedMb();
 }
 
 async function getAppleUsedMb(): Promise<number> {
@@ -105,6 +174,7 @@ export async function getCurrentVramUsageMb(
   os: HardwareProfile["os"],
 ): Promise<number> {
   if (vendor === "nvidia") return getNvidiaUsedMb();
+  if (vendor === "amd" && os === "windows") return getAmdUsedMbWindows();
   if (vendor === "amd") return getRocmUsedMb();
   if (vendor === "intel" && os === "windows") return getIntelUsedMbWindows();
   if (vendor === "apple" && os === "macos") return getAppleUsedMb();

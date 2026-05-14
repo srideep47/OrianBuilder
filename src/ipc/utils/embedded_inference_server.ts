@@ -8,6 +8,11 @@ import {
 } from "./tensorrt_native_backend";
 import { embeddedModelEvents } from "../types/embedded_model";
 import { safeSend } from "./safe_sender";
+import { getCachedHardwareProfile } from "@/main/hardware/detect";
+import {
+  resolveLlmBackendOptions,
+  getLlmBackendName,
+} from "@/main/llm/backend_resolver";
 
 const logger = log.scope("embedded-inference");
 
@@ -684,11 +689,36 @@ export async function loadModel(config: EmbeddedModelConfig): Promise<void> {
     config._attentionSlidingWindowPattern,
     flashAttention,
   );
-  const baseGpuLayers =
+  let baseGpuLayers =
     config.gpuLayersMode === "manual" &&
     typeof config.manualGpuLayers === "number"
       ? clampGpuLayers(config.manualGpuLayers, totalLayers)
       : autoGpuLayers;
+
+  // Phase 4: honor the hardware profile's bestLlmBackend. When the resolver
+  // says CPU-only (no GPU detected, or detected GPU isn't usable for LLM),
+  // force gpuLayers=0 regardless of what the GGUF-math came up with.
+  // The CUDA/Vulkan/Metal layer math is intentionally NOT replaced here —
+  // it's better than the resolver's all-or-nothing sentinel. We only veto.
+  let resolvedBackendLabel: string | null = null;
+  try {
+    const profile = await getCachedHardwareProfile();
+    const opts = resolveLlmBackendOptions(profile);
+    resolvedBackendLabel = getLlmBackendName(profile);
+    if (opts.gpuLayers === 0 && baseGpuLayers > 0) {
+      logger.info(
+        `Hardware profile resolved to CPU-only (${resolvedBackendLabel}); ` +
+          `overriding baseGpuLayers ${baseGpuLayers} -> 0`,
+      );
+      baseGpuLayers = 0;
+    }
+  } catch (err) {
+    logger.warn(
+      "resolveLlmBackendOptions failed; falling back to GGUF-math layer count:",
+      err,
+    );
+  }
+
   const aggressiveMemory = config.aggressiveMemory ?? true;
   const batchSize = config.batchSize ?? 512;
 
@@ -741,7 +771,8 @@ export async function loadModel(config: EmbeddedModelConfig): Promise<void> {
       `headroom=${config.vramHeadroomMb ?? "legacy"}MB | aggressive=${aggressiveMemory} | ` +
       `gpuLayers=${baseGpuLayers}/${totalLayers} (${config.gpuLayersMode ?? "auto"}) | ` +
       `ctx≤${config.contextSize} | kv=${(kvBytesPerTokenPerLayer / 1024).toFixed(1)}KB/token/layer | ` +
-      `vram=${(vramMb / 1024).toFixed(1)}GB`,
+      `vram=${(vramMb / 1024).toFixed(1)}GB` +
+      (resolvedBackendLabel ? ` | backend=${resolvedBackendLabel}` : ""),
   );
 
   await _fullReset();
