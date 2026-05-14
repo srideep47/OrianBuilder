@@ -600,13 +600,30 @@ async function loadModelFromConfig(config: EmbeddedModelConfig): Promise<void> {
   writeSettings({ embeddedConfig: config } as any);
 
   // Inform the orchestrator that an LLM is now loaded. We use the post-load
-  // server status for the real GPU layer count rather than the requested one.
+  // server status for the real GPU layer count, and forward the model
+  // geometry that computeModelInfo already derived so the orchestrator's
+  // estimateFreedLlmVramMb can return a real (weights + KV) figure rather
+  // than the 250 MB/layer fallback.
   try {
     const s = getServerStatus();
+    const totalLayers = config._estimatedLayers ?? s.totalLayers;
+    const layerSizeMb = config._layerSizeMb;
+    // `loaded weights MB` per layer is what computeModelInfo computed for
+    // `_layerSizeMb`, so multiplying by totalLayers gives us total weight
+    // residency. We then pass quantFactor=1 because that math is already
+    // applied.
+    const modelSizeMb =
+      typeof layerSizeMb === "number" && layerSizeMb > 0 && totalLayers > 0
+        ? layerSizeMb * totalLayers
+        : undefined;
     getOrchestrator().informLlmAcquired({
       modelPath: config.modelPath,
       gpuLayers: s.gpuLayers,
       contextSize: s.actualContextSize || config.contextSize,
+      modelSizeMb,
+      totalLayers: totalLayers > 0 ? totalLayers : undefined,
+      quantFactor: modelSizeMb !== undefined ? 1 : undefined,
+      kvBytesPerTokenPerLayer: config._kvBytesPerTokenPerLayer,
     });
   } catch (err) {
     logger.warn("orchestrator informLlmAcquired failed (non-fatal):", err);

@@ -307,6 +307,114 @@ async function detectWindowsBackends(
   return Array.from(backends);
 }
 
+// ─── Linux detection ──────────────────────────────────────────────────────────
+
+/**
+ * Parses the output of:
+ *   lspci -vmm -nn
+ * which produces one "record" per device separated by blank lines:
+ *   Slot:    01:00.0
+ *   Class:   VGA compatible controller [0300]
+ *   Vendor:  NVIDIA Corporation [10de]
+ *   Device:  AD102 [GeForce RTX 4090] [2684]
+ *
+ * Returns GPU records only (Class is VGA/3D/Display).
+ * Pure function — exported for tests.
+ */
+export function parseLspciVmm(stdout: string): GpuInfo[] {
+  const records = stdout.split(/\r?\n\r?\n/);
+  const gpus: GpuInfo[] = [];
+  for (const record of records) {
+    const fields: Record<string, string> = {};
+    for (const line of record.split(/\r?\n/)) {
+      const m = line.match(/^([A-Za-z]+):\s*(.+)$/);
+      if (m) fields[m[1]] = m[2].trim();
+    }
+    const klass = fields["Class"] ?? "";
+    if (
+      !/VGA compatible controller|3D controller|Display controller/i.test(klass)
+    ) {
+      continue;
+    }
+    const vendorField = fields["Vendor"] ?? "";
+    const deviceField = fields["Device"] ?? "";
+    // Prefer "Vendor Device" so we get e.g. "NVIDIA Corporation AD102 [GeForce RTX 4090]"
+    const name = [vendorField, deviceField]
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s+\[[0-9a-f]{4}\]/g, "")
+      .trim();
+    if (!name) continue;
+    const vendor = detectGpuVendor(name);
+    gpus.push({
+      vendor,
+      model: name,
+      vramMb: 0, // overridden below by nvidia-smi/rocm-smi when available
+      isIntegrated: detectIsIntegrated(name, vendor),
+    });
+  }
+  return gpus;
+}
+
+async function detectLinuxGpus(): Promise<GpuInfo[]> {
+  let gpus: GpuInfo[] = [];
+  try {
+    const { stdout } = await execFileAsync("lspci", ["-vmm", "-nn"], {
+      timeout: 10000,
+    });
+    gpus = parseLspciVmm(stdout);
+  } catch (err) {
+    logger.warn("lspci GPU enumeration failed:", err);
+  }
+
+  // Override Nvidia VRAM via nvidia-smi (also corrects model name)
+  await overrideNvidiaVram(gpus);
+
+  // For AMD GPUs, try to populate VRAM from /sys/class/drm or rocm-smi.
+  if (gpus.some((g) => g.vendor === "amd")) {
+    try {
+      const { stdout } = await execFileAsync(
+        "rocm-smi",
+        ["--showmeminfo", "vram", "--csv"],
+        { timeout: 5000 },
+      );
+      // Format: device,VRAM Total Memory (B),VRAM Total Used Memory (B)
+      const lines = stdout
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l && !l.toLowerCase().startsWith("device"));
+      const amdGpus = gpus.filter((g) => g.vendor === "amd");
+      for (let i = 0; i < lines.length && i < amdGpus.length; i++) {
+        const parts = lines[i].split(",");
+        const totalBytes = parseInt(parts[1] ?? "0", 10);
+        if (!isNaN(totalBytes) && totalBytes > 0) {
+          amdGpus[i].vramMb = Math.round(totalBytes / (1024 * 1024));
+        }
+      }
+    } catch {
+      /* rocm-smi not installed — leave AMD VRAM at 0 */
+    }
+  }
+
+  return gpus;
+}
+
+async function detectLinuxBackends(): Promise<InferenceBackend[]> {
+  const [hasCuda, hasRocm, hasVulkan, hasOpenVINO] = await Promise.all([
+    checkCmdAvailable("nvidia-smi", ["-L"]),
+    checkCmdAvailable("rocm-smi", ["--version"]),
+    checkCmdAvailable("vulkaninfo", ["--summary"]),
+    checkCmdAvailable("mo", ["--version"]),
+  ]);
+  const backends = new Set<InferenceBackend>(["cpu"]);
+  if (hasCuda) backends.add("cuda");
+  if (hasRocm) backends.add("rocm");
+  if (hasVulkan) backends.add("vulkan");
+  if (hasOpenVINO) backends.add("openvino");
+  // DirectML and Metal are not available on Linux.
+  return Array.from(backends);
+}
+
 // ─── macOS detection ──────────────────────────────────────────────────────────
 
 async function detectMacOsGpus(): Promise<GpuInfo[]> {
@@ -394,6 +502,11 @@ export async function detectHardwareProfile(): Promise<HardwareProfile> {
     [gpus, availableBackends] = await Promise.all([
       detectMacOsGpus(),
       Promise.resolve(detectMacOsBackends()),
+    ]);
+  } else if (platform === "linux") {
+    [gpus, availableBackends] = await Promise.all([
+      detectLinuxGpus(),
+      detectLinuxBackends(),
     ]);
   }
 

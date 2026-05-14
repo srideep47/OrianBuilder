@@ -20,6 +20,10 @@ export const LlmLoadParamsSchema = z.object({
   modelPath: z.string(),
   gpuLayers: z.number(),
   contextSize: z.number(),
+  modelSizeMb: z.number().optional(),
+  totalLayers: z.number().optional(),
+  quantFactor: z.number().optional(),
+  kvBytesPerTokenPerLayer: z.number().optional(),
 });
 export type LlmLoadParams = z.infer<typeof LlmLoadParamsSchema>;
 

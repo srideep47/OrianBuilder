@@ -32,6 +32,16 @@ export interface LlmLoadParams {
   modelPath: string;
   gpuLayers: number;
   contextSize: number;
+  /** Optional model geometry used by estimateFreedLlmVramMb. When present
+   *  the estimator returns a real (weights + KV cache) figure instead of
+   *  the 250 MB/layer fallback. */
+  modelSizeMb?: number;
+  totalLayers?: number;
+  /** Fraction of file size that ends up in VRAM after load. ~0.82 for Q4,
+   *  ~0.95 for Q8, ~1.0 for F16. Defaults to 0.85 when omitted. */
+  quantFactor?: number;
+  /** Bytes per token per layer for the KV cache. */
+  kvBytesPerTokenPerLayer?: number;
 }
 
 export type MediaQuality = SharedMediaQuality;
@@ -357,10 +367,53 @@ export const pickBestVideoTier = sharedPickBestVideo;
  *  unloaded. Conservative — uses the larger of (gpuLayers × layerSize) or
  *  (model file size × 0.85). For Phase 3 we use a flat ~250 MB per layer
  *  estimate as a default until we wire real model geometry through. */
+/**
+ * Estimates the VRAM (in MB) that will be freed when the currently loaded
+ * LLM is unloaded. When the params carry geometry (modelSizeMb +
+ * totalLayers + kvBytesPerTokenPerLayer) we return a real figure:
+ *   weights = modelSizeMb × quantFactor × (gpuLayers / totalLayers)
+ *   kv      = contextSize × kvBytesPerTokenPerLayer × gpuLayers / MiB
+ * Otherwise falls back to a flat 250 MB/layer heuristic.
+ *
+ * Pure function — exported for unit tests.
+ */
 export function estimateFreedLlmVramMb(params: LlmLoadParams | null): number {
   if (!params) return 0;
-  const PER_LAYER_MB = 250;
-  return Math.max(0, params.gpuLayers * PER_LAYER_MB);
+  if (params.gpuLayers <= 0) return 0;
+
+  const hasGeometry =
+    typeof params.modelSizeMb === "number" &&
+    params.modelSizeMb > 0 &&
+    typeof params.totalLayers === "number" &&
+    params.totalLayers > 0;
+
+  if (!hasGeometry) {
+    const PER_LAYER_MB_FALLBACK = 250;
+    return params.gpuLayers * PER_LAYER_MB_FALLBACK;
+  }
+
+  const modelSizeMb = params.modelSizeMb!;
+  const totalLayers = params.totalLayers!;
+  const quantFactor = params.quantFactor ?? 0.85;
+  const offloadFraction = Math.min(params.gpuLayers, totalLayers) / totalLayers;
+
+  // Weights actually resident in VRAM for the offloaded layers.
+  const weightsMb = modelSizeMb * quantFactor * offloadFraction;
+
+  // KV cache scales with context size × per-layer cost × offloaded layers.
+  let kvMb = 0;
+  if (
+    typeof params.kvBytesPerTokenPerLayer === "number" &&
+    params.kvBytesPerTokenPerLayer > 0
+  ) {
+    const kvBytes =
+      params.contextSize *
+      params.kvBytesPerTokenPerLayer *
+      Math.min(params.gpuLayers, totalLayers);
+    kvMb = kvBytes / (1024 * 1024);
+  }
+
+  return Math.round(weightsMb + kvMb);
 }
 
 export type AvailableTiersSnapshot = SharedAvailableTiersSnapshot;

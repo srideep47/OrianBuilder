@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseWmicGpuOutput,
   parseNvidiaSmiOutput,
+  parseLspciVmm,
   selectPrimaryGpu,
   selectBestLlmBackend,
   selectBestMediaBackend,
@@ -232,6 +233,52 @@ describe("selectBestMediaBackend", () => {
         os: "windows",
       }),
     ).toBe("cpu");
+  });
+});
+
+describe("parseLspciVmm", () => {
+  it("extracts an Nvidia + Intel pair from a representative lspci dump", () => {
+    const stdout = `Slot:\t00:02.0
+Class:\tVGA compatible controller [0300]
+Vendor:\tIntel Corporation [8086]
+Device:\tAlder Lake-S GT1 [UHD Graphics 770] [4680]
+Rev:\t04
+
+Slot:\t01:00.0
+Class:\tVGA compatible controller [0300]
+Vendor:\tNVIDIA Corporation [10de]
+Device:\tAD102 [GeForce RTX 4090] [2684]
+Rev:\ta1
+`;
+    const gpus = parseLspciVmm(stdout);
+    expect(gpus).toHaveLength(2);
+    expect(gpus[0].vendor).toBe("intel");
+    expect(gpus[0].isIntegrated).toBe(true);
+    expect(gpus[1].vendor).toBe("nvidia");
+    expect(gpus[1].model).toContain("RTX 4090");
+    expect(gpus[1].isIntegrated).toBe(false);
+  });
+
+  it("recognizes 3D controller class (datacenter GPUs)", () => {
+    const stdout = `Slot:\t05:00.0
+Class:\t3D controller [0302]
+Vendor:\tNVIDIA Corporation [10de]
+Device:\tGA100 [A100] [20b0]
+`;
+    expect(parseLspciVmm(stdout)).toHaveLength(1);
+  });
+
+  it("ignores non-display devices", () => {
+    const stdout = `Slot:\t00:1f.6
+Class:\tEthernet controller [0200]
+Vendor:\tIntel Corporation [8086]
+Device:\tEthernet Connection
+`;
+    expect(parseLspciVmm(stdout)).toEqual([]);
+  });
+
+  it("returns empty array on empty input", () => {
+    expect(parseLspciVmm("")).toEqual([]);
   });
 });
 

@@ -307,7 +307,17 @@ describe("estimateFreedLlmVramMb", () => {
     expect(estimateFreedLlmVramMb(null)).toBe(0);
   });
 
-  it("returns ~gpuLayers × 250 MB", () => {
+  it("returns 0 when gpuLayers <= 0 (CPU-only load)", () => {
+    expect(
+      estimateFreedLlmVramMb({
+        modelPath: "x",
+        gpuLayers: 0,
+        contextSize: 4096,
+      }),
+    ).toBe(0);
+  });
+
+  it("falls back to gpuLayers × 250 MB when no geometry is supplied", () => {
     expect(
       estimateFreedLlmVramMb({
         modelPath: "x",
@@ -315,6 +325,77 @@ describe("estimateFreedLlmVramMb", () => {
         contextSize: 4096,
       }),
     ).toBe(10000);
+  });
+
+  it("computes weights + KV from supplied geometry", () => {
+    // 4 GB model, 32 layers, all offloaded, quantFactor=1
+    //  weights = 4096 × 1 × (32/32) = 4096 MB
+    //  KV      = 4096 × 4096 × 32 / (1024*1024) = 512 MB
+    //  total   = 4608 MB
+    const out = estimateFreedLlmVramMb({
+      modelPath: "x",
+      gpuLayers: 32,
+      contextSize: 4096,
+      modelSizeMb: 4096,
+      totalLayers: 32,
+      quantFactor: 1,
+      kvBytesPerTokenPerLayer: 4096,
+    });
+    expect(out).toBe(4608);
+  });
+
+  it("scales weights proportionally to offloaded layers", () => {
+    // Same as above but only half the layers on GPU
+    //  weights = 4096 × 1 × (16/32) = 2048
+    //  KV      = 4096 × 4096 × 16 / 1048576 = 256
+    //  total   = 2304
+    const out = estimateFreedLlmVramMb({
+      modelPath: "x",
+      gpuLayers: 16,
+      contextSize: 4096,
+      modelSizeMb: 4096,
+      totalLayers: 32,
+      quantFactor: 1,
+      kvBytesPerTokenPerLayer: 4096,
+    });
+    expect(out).toBe(2304);
+  });
+
+  it("applies quantFactor when given (file-size based input)", () => {
+    // 17 GB file, Q4_K_M (factor ≈ 0.82), 64 layers all offloaded, no KV info
+    //  weights = 17408 × 0.82 × 1 = 14274.56 -> rounds to 14275
+    const out = estimateFreedLlmVramMb({
+      modelPath: "x",
+      gpuLayers: 64,
+      contextSize: 8192,
+      modelSizeMb: 17408,
+      totalLayers: 64,
+      quantFactor: 0.82,
+    });
+    expect(out).toBe(14275);
+  });
+
+  it("defaults quantFactor to 0.85 when omitted but geometry is present", () => {
+    const out = estimateFreedLlmVramMb({
+      modelPath: "x",
+      gpuLayers: 32,
+      contextSize: 4096,
+      modelSizeMb: 1000,
+      totalLayers: 32,
+    });
+    // weights = 1000 × 0.85 × 1 = 850, no KV
+    expect(out).toBe(850);
+  });
+
+  it("falls back when modelSizeMb is missing even if totalLayers present", () => {
+    const out = estimateFreedLlmVramMb({
+      modelPath: "x",
+      gpuLayers: 10,
+      contextSize: 4096,
+      totalLayers: 32,
+    });
+    // Falls back to 10 × 250 = 2500
+    expect(out).toBe(2500);
   });
 });
 
