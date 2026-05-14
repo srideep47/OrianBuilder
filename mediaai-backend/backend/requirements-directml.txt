@@ -1,0 +1,6 @@
+-r requirements-base.txt
+torch-directml>=0.2.0
+onnxruntime-directml>=1.18.0
+diffusers>=0.28.0
+transformers>=4.41.0
+accelerate>=0.30.0
