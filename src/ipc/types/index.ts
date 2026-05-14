@@ -81,6 +81,13 @@ export {
   modelMarketplaceEventClient,
 } from "./model_marketplace";
 export { missionContracts, missionClient } from "./mission";
+export {
+  hardwareContracts,
+  hardwareClient,
+  HardwareProfileSchema,
+  HardwareGpuInfoSchema,
+} from "./hardware";
+export type { HardwareGpuInfo, HardwareProfile } from "./hardware";
 export type {
   HFSearchModel,
   HFFileSibling,
@@ -476,6 +483,7 @@ import {
   modelMarketplaceEventClient,
 } from "./model_marketplace";
 import { missionClient } from "./mission";
+import { hardwareClient } from "./hardware";
 
 /**
  * Unified IPC client with all domains organized by namespace.
@@ -539,6 +547,7 @@ export const ipc = {
   embeddedModel: embeddedModelClient,
   marketplace: modelMarketplaceClient,
   mission: missionClient,
+  hardware: hardwareClient,
 
   // Event clients for main->renderer pub/sub
   events: {

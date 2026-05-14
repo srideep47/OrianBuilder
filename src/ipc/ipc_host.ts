@@ -46,6 +46,7 @@ import { registerImageGenerationHandlers } from "./handlers/image_generation_han
 import { registerEmbeddedModelHandlers } from "./handlers/embedded_model_handler";
 import { registerMarketplaceHandlers } from "./handlers/model_marketplace_handler";
 import { registerMissionHandlers } from "./handlers/mission_handlers";
+import { registerHardwareHandlers } from "./handlers/hardware_handlers";
 
 export function registerIpcHandlers() {
   // Register all IPC handlers by category
@@ -97,4 +98,5 @@ export function registerIpcHandlers() {
   registerEmbeddedModelHandlers();
   registerMarketplaceHandlers();
   registerMissionHandlers();
+  registerHardwareHandlers();
 }
