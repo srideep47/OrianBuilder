@@ -7,6 +7,11 @@ import {
   calculateOptimalLlmParams,
   canTransition,
   getOrchestrator,
+  pickBestImageTier,
+  pickBestAudioTtsTier,
+  selectAvailableTiers,
+  estimateFreedLlmVramMb,
+  IMAGE_MODEL_TIERS,
   type LlmLoadParams,
 } from "./model_orchestrator";
 import { parseRocmVramUsedBytes } from "./vram_accounting";
@@ -205,6 +210,87 @@ describe("ModelOrchestrator state machine", () => {
     });
     expect(provider).toHaveBeenCalledOnce();
     expect(result.durationMs).toBe(7);
+  });
+});
+
+describe("pickBestImageTier", () => {
+  it("returns flux-schnell with 15 GB VRAM", () => {
+    expect(pickBestImageTier(15000).id).toBe("flux-schnell");
+  });
+
+  it("returns sdxl-turbo with 9 GB VRAM", () => {
+    expect(pickBestImageTier(9000).id).toBe("sdxl-turbo");
+  });
+
+  it("returns sd-1.5 with 5 GB VRAM", () => {
+    expect(pickBestImageTier(5000).id).toBe("sd-1.5");
+  });
+
+  it("returns sd-1.5-cpu with 0 VRAM", () => {
+    expect(pickBestImageTier(0).id).toBe("sd-1.5-cpu");
+  });
+
+  it("never returns a tier above preferredQuality", () => {
+    // 15 GB VRAM is enough for flux-schnell but user wants 'good' max
+    expect(pickBestImageTier(15000, "good").id).toBe("sdxl-turbo");
+  });
+
+  it("still returns floor tier when preferredQuality is set but VRAM is 0", () => {
+    expect(pickBestImageTier(0, "good").id).toBe("sd-1.5-cpu");
+  });
+
+  it("orders tiers best to slow", () => {
+    expect(IMAGE_MODEL_TIERS.map((t) => t.id)).toEqual([
+      "flux-schnell",
+      "sdxl-turbo",
+      "sd-1.5",
+      "sd-1.5-cpu",
+    ]);
+  });
+});
+
+describe("pickBestAudioTtsTier", () => {
+  it("returns xtts-v2 with 4 GB VRAM", () => {
+    expect(pickBestAudioTtsTier(4000).id).toBe("xtts-v2");
+  });
+
+  it("returns piper with 0 VRAM", () => {
+    expect(pickBestAudioTtsTier(0).id).toBe("piper");
+  });
+});
+
+describe("selectAvailableTiers", () => {
+  it("combines live and freed VRAM when computing fitting tiers", () => {
+    const snapshot = selectAvailableTiers(2000, 6000);
+    // 2000 + 6000 = 8000 → sdxl-turbo fits
+    expect(snapshot.projectedAvailableVramMb).toBe(8000);
+    expect(snapshot.image[0].id).toBe("sdxl-turbo");
+  });
+
+  it("returns ALL fitting tiers in best-first order", () => {
+    const snapshot = selectAvailableTiers(13000, 0);
+    expect(snapshot.image.map((t) => t.id)).toEqual([
+      "flux-schnell",
+      "sdxl-turbo",
+      "sd-1.5",
+      "sd-1.5-cpu",
+    ]);
+  });
+});
+
+describe("estimateFreedLlmVramMb", () => {
+  it("returns 0 when no LLM is loaded", () => {
+    expect(estimateFreedLlmVramMb(null)).toBe(0);
+  });
+
+  it("returns ~gpuLayers × 250 MB", () => {
+    expect(
+      estimateFreedLlmVramMb({
+        modelPath: "x",
+        gpuLayers: 40,
+        contextSize: 4096,
+      }),
+    ).toBe(10000);
   });
 });
 

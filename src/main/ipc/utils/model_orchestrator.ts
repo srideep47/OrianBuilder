@@ -1,6 +1,19 @@
 import log from "electron-log";
 import fs from "node:fs/promises";
 import path from "node:path";
+import {
+  IMAGE_MODEL_TIERS as SHARED_IMAGE_TIERS,
+  AUDIO_TTS_TIERS as SHARED_AUDIO_TIERS,
+  VIDEO_TIERS as SHARED_VIDEO_TIERS,
+  pickBestTier as sharedPickBestTier,
+  pickBestImageTier as sharedPickBestImage,
+  pickBestAudioTtsTier as sharedPickBestAudio,
+  pickBestVideoTier as sharedPickBestVideo,
+  selectAvailableTiers as sharedSelectAvailableTiers,
+  type MediaQuality as SharedMediaQuality,
+  type MediaTier as SharedMediaTier,
+  type AvailableTiersSnapshot as SharedAvailableTiersSnapshot,
+} from "@/shared/media_tiers";
 
 const logger = log.scope("orchestrator");
 
@@ -21,11 +34,16 @@ export interface LlmLoadParams {
   contextSize: number;
 }
 
+export type MediaQuality = SharedMediaQuality;
+
 export interface MediaGenerationRequest {
   modelType: "image" | "audio" | "video" | "music";
   prompt: string;
   outputPath: string;
   options?: Record<string, unknown>;
+  /** Cap selected tier to this quality or lower. The floor tier ("slow")
+   *  is always reachable, so passing "good" never disables CPU fallback. */
+  preferredQuality?: MediaQuality;
 }
 
 export interface MediaGenerationResult {
@@ -172,6 +190,11 @@ class OrchestratorImpl implements ModelOrchestrator {
     };
   }
 
+  /** Read-only access for tier-selection helpers. */
+  getLastLlmParams(): LlmLoadParams | null {
+    return this.lastLlmParams;
+  }
+
   /** Strict transition: throws on invalid moves. */
   private transition(to: OrchestratorState): void {
     if (!canTransition(this.state, to)) {
@@ -299,4 +322,33 @@ export function getOrchestrator(): OrchestratorImpl {
 /** Test-only: reset the singleton so each test starts with a clean state. */
 export function _resetOrchestratorForTests(): void {
   singleton = null;
+}
+
+// ─── Phase 3: tier selection (re-exports from shared/media_tiers.ts) ─────────
+
+export type MediaTier = SharedMediaTier;
+export const IMAGE_MODEL_TIERS = SHARED_IMAGE_TIERS;
+export const AUDIO_TTS_TIERS = SHARED_AUDIO_TIERS;
+export const VIDEO_TIERS = SHARED_VIDEO_TIERS;
+export const pickBestTier = sharedPickBestTier;
+export const pickBestImageTier = sharedPickBestImage;
+export const pickBestAudioTtsTier = sharedPickBestAudio;
+export const pickBestVideoTier = sharedPickBestVideo;
+
+/** Estimate VRAM (in MB) that will be freed when the currently loaded LLM is
+ *  unloaded. Conservative — uses the larger of (gpuLayers × layerSize) or
+ *  (model file size × 0.85). For Phase 3 we use a flat ~250 MB per layer
+ *  estimate as a default until we wire real model geometry through. */
+export function estimateFreedLlmVramMb(params: LlmLoadParams | null): number {
+  if (!params) return 0;
+  const PER_LAYER_MB = 250;
+  return Math.max(0, params.gpuLayers * PER_LAYER_MB);
+}
+
+export type AvailableTiersSnapshot = SharedAvailableTiersSnapshot;
+export const selectAvailableTiers = sharedSelectAvailableTiers;
+
+/** Read the current orchestrator's last loaded LLM params, if any. */
+export function getLastLlmParams(): LlmLoadParams | null {
+  return singleton?.getLastLlmParams() ?? null;
 }

@@ -3,10 +3,16 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   getOrchestrator,
+  pickBestImageTier,
+  pickBestAudioTtsTier,
   type MediaGenerationRequest,
   type MediaGenerationResult,
+  type MediaTier,
 } from "./model_orchestrator";
 import { generateImageViaCloud } from "./cloud_image_generator";
+import { getAvailableVramMb } from "./vram_accounting";
+import { getCachedHardwareProfile } from "@/main/hardware/detect";
+import { getLastLlmParams, estimateFreedLlmVramMb } from "./model_orchestrator";
 
 const logger = log.scope("media-dispatcher");
 
@@ -31,18 +37,48 @@ async function writePlaceholder(
   };
 }
 
+async function pickTierForRequest(
+  request: MediaGenerationRequest,
+): Promise<MediaTier | null> {
+  try {
+    const profile = await getCachedHardwareProfile();
+    const live = await getAvailableVramMb(profile);
+    const projected = live + estimateFreedLlmVramMb(getLastLlmParams());
+    switch (request.modelType) {
+      case "image":
+        return pickBestImageTier(projected, request.preferredQuality);
+      case "audio":
+        return pickBestAudioTtsTier(projected, request.preferredQuality);
+      default:
+        return null;
+    }
+  } catch (err) {
+    logger.warn("tier selection failed:", err);
+    return null;
+  }
+}
+
 async function dispatch(
   request: MediaGenerationRequest,
 ): Promise<MediaGenerationResult> {
+  const tier = await pickTierForRequest(request);
+  if (tier) {
+    logger.info(
+      `tier-selected ${request.modelType}: ${tier.id} (${tier.quality})`,
+    );
+  }
+
   switch (request.modelType) {
     case "image": {
+      // The Python media backend is the future home of local image generation,
+      // but until Phase 2 install + spawn is fully wired in production we
+      // route through cloud generation (works without local install) and only
+      // fall back to a placeholder if cloud is also unconfigured.
       const cloud = await generateImageViaCloud(
         request.prompt,
         request.outputPath,
       );
       if (cloud.success) return cloud;
-      // Phase 1: real local image generation lands in Phase 2.
-      // For now, return placeholder so state machine still completes.
       logger.warn(
         `image generation fell back to placeholder: ${cloud.error ?? "unknown"}`,
       );
@@ -51,12 +87,11 @@ async function dispatch(
     case "audio":
     case "video":
     case "music":
-      // Real audio/video/music providers land in Phase 2.
       return {
         success: false,
         outputPath: request.outputPath,
         durationMs: 0,
-        error: `${request.modelType} generation not yet supported in this phase`,
+        error: `${request.modelType} generation requires media backend (Phase 2 install)`,
       };
   }
 }

@@ -1,8 +1,17 @@
 import { useEffect, useState } from "react";
 import { ipc } from "@/ipc/types";
 import type { HardwareProfile } from "@/ipc/types/hardware";
-import type { OrchestratorStatus } from "@/ipc/types/model_orchestrator";
-import { Cpu, RefreshCw, Loader2 } from "lucide-react";
+import type {
+  OrchestratorStatus,
+  AvailableTiers,
+  MediaTier,
+} from "@/ipc/types/model_orchestrator";
+import {
+  IMAGE_MODEL_TIERS,
+  AUDIO_TTS_TIERS,
+  VIDEO_TIERS,
+} from "@/shared/media_tiers";
+import { Cpu, RefreshCw, Loader2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ORCH_STATE_STYLE: Record<OrchestratorStatus["state"], string> = {
@@ -20,6 +29,99 @@ const ORCH_STATE_STYLE: Record<OrchestratorStatus["state"], string> = {
   "swapping-back":
     "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700",
 };
+
+function MediaGenerationPanel() {
+  const [tiers, setTiers] = useState<AvailableTiers | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const t = await ipc.orchestrator.getAvailableTiers();
+        if (!cancelled) setTiers(t);
+      } catch {
+        /* main may not have registered yet */
+      }
+    };
+    refresh();
+    const id = setInterval(refresh, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  if (!tiers) return null;
+
+  const renderRow = (all: readonly MediaTier[], fitting: MediaTier[]) => {
+    const fittingIds = new Set(fitting.map((t) => t.id));
+    const autoId = fitting[0]?.id;
+    return all.map((t) => {
+      const ok = fittingIds.has(t.id);
+      const auto = t.id === autoId;
+      return (
+        <div
+          key={t.id}
+          className={cn(
+            "flex items-center justify-between text-[11px] px-2 py-1 rounded",
+            ok ? "" : "opacity-40",
+          )}
+        >
+          <span className="flex items-center gap-1.5">
+            <span
+              className={cn(
+                "inline-block w-1.5 h-1.5 rounded-full",
+                ok ? "bg-green-500" : "bg-muted-foreground/40",
+              )}
+            />
+            <span className="font-mono">{t.id}</span>
+            {auto && (
+              <span className="text-[9px] uppercase tracking-wider text-primary font-semibold">
+                auto
+              </span>
+            )}
+          </span>
+          <span className="text-muted-foreground tabular-nums">
+            {t.vramRequiredMb === 0 ? "CPU OK" : `${t.vramRequiredMb} MB`}
+          </span>
+        </div>
+      );
+    });
+  };
+
+  return (
+    <div className="border-t px-5 py-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+          <Sparkles className="w-3 h-3" />
+          Media Generation
+        </div>
+        <span className="text-[10px] text-muted-foreground tabular-nums">
+          Projected free VRAM: {tiers.projectedAvailableVramMb} MB
+        </span>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1">
+            Image
+          </div>
+          {renderRow(IMAGE_MODEL_TIERS, tiers.image)}
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1">
+            Audio TTS
+          </div>
+          {renderRow(AUDIO_TTS_TIERS, tiers.audio)}
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-1">
+            Video
+          </div>
+          {renderRow(VIDEO_TIERS, tiers.video)}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function OrchestratorBadge() {
   const [status, setStatus] = useState<OrchestratorStatus | null>(null);
@@ -223,6 +325,7 @@ export function HardwareCard() {
           </div>
         </div>
       </div>
+      <MediaGenerationPanel />
     </div>
   );
 }

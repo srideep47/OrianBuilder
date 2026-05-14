@@ -23,11 +23,30 @@ export const LlmLoadParamsSchema = z.object({
 });
 export type LlmLoadParams = z.infer<typeof LlmLoadParamsSchema>;
 
+export const MediaQualitySchema = z.enum(["best", "good", "basic", "slow"]);
+export type MediaQuality = z.infer<typeof MediaQualitySchema>;
+
+export const MediaTierSchema = z.object({
+  id: z.string(),
+  vramRequiredMb: z.number(),
+  quality: MediaQualitySchema,
+});
+export type MediaTier = z.infer<typeof MediaTierSchema>;
+
+export const AvailableTiersSchema = z.object({
+  image: z.array(MediaTierSchema),
+  audio: z.array(MediaTierSchema),
+  video: z.array(MediaTierSchema),
+  projectedAvailableVramMb: z.number(),
+});
+export type AvailableTiers = z.infer<typeof AvailableTiersSchema>;
+
 export const MediaGenerationRequestSchema = z.object({
   modelType: z.enum(["image", "audio", "video", "music"]),
   prompt: z.string(),
   outputPath: z.string(),
   options: z.record(z.string(), z.unknown()).optional(),
+  preferredQuality: MediaQualitySchema.optional(),
 });
 export type MediaGenerationRequest = z.infer<
   typeof MediaGenerationRequestSchema
@@ -73,6 +92,11 @@ export const orchestratorContracts = {
     channel: "orchestrator:release-all",
     input: z.void(),
     output: z.void(),
+  }),
+  getAvailableTiers: defineContract({
+    channel: "orchestrator:get-available-tiers",
+    input: z.void(),
+    output: AvailableTiersSchema,
   }),
 } as const;
 

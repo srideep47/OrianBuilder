@@ -96,6 +96,9 @@ export {
   LlmLoadParamsSchema,
   MediaGenerationRequestSchema,
   MediaGenerationResultSchema,
+  MediaTierSchema,
+  MediaQualitySchema,
+  AvailableTiersSchema,
 } from "./model_orchestrator";
 export type {
   OrchestratorState,
@@ -103,6 +106,9 @@ export type {
   LlmLoadParams,
   MediaGenerationRequest,
   MediaGenerationResult,
+  MediaTier,
+  MediaQuality,
+  AvailableTiers,
 } from "./model_orchestrator";
 export type {
   HFSearchModel,
