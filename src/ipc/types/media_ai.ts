@@ -36,6 +36,24 @@ export const DownloadMediaAiModelsParamsSchema = z.object({
   models: z.array(MediaAiModelIdSchema).min(1),
 });
 
+export const InstallForBackendParamsSchema = z.object({
+  backend: z
+    .enum([
+      "cuda",
+      "rocm",
+      "metal",
+      "mps",
+      "vulkan",
+      "directml",
+      "openvino",
+      "cpu",
+    ])
+    .optional(),
+});
+export type InstallForBackendParams = z.infer<
+  typeof InstallForBackendParamsSchema
+>;
+
 export const mediaAiContracts = {
   getStatus: defineContract({
     channel: "media-ai:get-status",
@@ -45,6 +63,11 @@ export const mediaAiContracts = {
   installDependencies: defineContract({
     channel: "media-ai:install-dependencies",
     input: z.void(),
+    output: MediaAiOperationResultSchema,
+  }),
+  installDependenciesForBackend: defineContract({
+    channel: "media-ai:install-for-backend",
+    input: InstallForBackendParamsSchema,
     output: MediaAiOperationResultSchema,
   }),
   downloadModels: defineContract({

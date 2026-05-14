@@ -16,6 +16,7 @@ import {
 } from "@/errors/orianbuilder_error";
 import { getOrchestrator } from "@/main/ipc/utils/model_orchestrator";
 import { generateImageViaCloud } from "@/main/ipc/utils/cloud_image_generator";
+import { generateImageViaLocalBackend } from "@/main/ipc/utils/local_image_generator";
 import { initMediaDispatcher } from "@/main/ipc/utils/media_dispatcher";
 
 const logger = log.scope("generate_image");
@@ -113,12 +114,19 @@ export const generateImageTool: ToolDefinition<
         success = result.success;
         errMessage = result.error;
       } else {
-        // No embedded LLM is loaded — no swap needed. Cloud or local provider
-        // can run directly. We use the cloud generator here; in Phase 2 the
-        // Python media backend becomes the primary path.
-        const cloud = await generateImageViaCloud(args.prompt, absolutePath);
-        success = cloud.success;
-        errMessage = cloud.error;
+        // No embedded LLM is loaded — no swap needed. Try local Python
+        // backend first, then cloud.
+        const local = await generateImageViaLocalBackend(
+          args.prompt,
+          absolutePath,
+        );
+        if (local.success) {
+          success = true;
+        } else {
+          const cloud = await generateImageViaCloud(args.prompt, absolutePath);
+          success = cloud.success;
+          errMessage = cloud.error ?? local.error;
+        }
       }
 
       if (!success) {

@@ -10,6 +10,7 @@ import {
   type MediaTier,
 } from "./model_orchestrator";
 import { generateImageViaCloud } from "./cloud_image_generator";
+import { generateImageViaLocalBackend } from "./local_image_generator";
 import { getAvailableVramMb } from "./vram_accounting";
 import { getCachedHardwareProfile } from "@/main/hardware/detect";
 import { getLastLlmParams, estimateFreedLlmVramMb } from "./model_orchestrator";
@@ -70,10 +71,23 @@ async function dispatch(
 
   switch (request.modelType) {
     case "image": {
-      // The Python media backend is the future home of local image generation,
-      // but until Phase 2 install + spawn is fully wired in production we
-      // route through cloud generation (works without local install) and only
-      // fall back to a placeholder if cloud is also unconfigured.
+      // Provider order: local Python backend -> cloud -> placeholder.
+      // The local backend is preferred because it respects the chosen tier
+      // and doesn't require an API key. It silently returns success:false
+      // when the Python server isn't running, so we can chain cleanly.
+      const local = await generateImageViaLocalBackend(
+        request.prompt,
+        request.outputPath,
+        { tier: tier?.id ?? null },
+      );
+      if (local.success) {
+        logger.info(`local image gen succeeded (tier=${local.tier ?? "?"})`);
+        return local;
+      }
+      logger.info(
+        `local image gen unavailable (${local.error ?? "unknown"}); trying cloud`,
+      );
+
       const cloud = await generateImageViaCloud(
         request.prompt,
         request.outputPath,

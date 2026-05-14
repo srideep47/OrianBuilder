@@ -195,6 +195,24 @@ class OrchestratorImpl implements ModelOrchestrator {
     return this.lastLlmParams;
   }
 
+  /** Inform the orchestrator that an LLM was loaded outside its control
+   *  (e.g. the embedded inference server's existing load path). Updates
+   *  bookkeeping without invoking the reloadLlm hook. Idempotent. */
+  informLlmAcquired(params: LlmLoadParams): void {
+    this.currentLlmModel = params.modelPath;
+    this.lastLlmParams = params;
+    if (this.state === "idle") this.state = "llm-loaded";
+    else if (this.state === "llm-loading") this.state = "llm-loaded";
+  }
+
+  /** Inform the orchestrator that the LLM was unloaded outside its control.
+   *  Resets state to idle without invoking the unloadLlm hook. */
+  informLlmReleased(): void {
+    this.currentLlmModel = null;
+    this.lastLlmParams = null;
+    this.state = "idle";
+  }
+
   /** Strict transition: throws on invalid moves. */
   private transition(to: OrchestratorState): void {
     if (!canTransition(this.state, to)) {

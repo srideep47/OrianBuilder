@@ -11,7 +11,7 @@ import {
   AUDIO_TTS_TIERS,
   VIDEO_TIERS,
 } from "@/shared/media_tiers";
-import { Cpu, RefreshCw, Loader2, Sparkles } from "lucide-react";
+import { Cpu, RefreshCw, Loader2, Sparkles, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ORCH_STATE_STYLE: Record<OrchestratorStatus["state"], string> = {
@@ -30,7 +30,83 @@ const ORCH_STATE_STYLE: Record<OrchestratorStatus["state"], string> = {
     "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700",
 };
 
-function MediaGenerationPanel() {
+function InstallBackendButton({
+  backend,
+}: {
+  backend: HardwareProfile["bestMediaBackend"];
+}) {
+  const [installing, setInstalling] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(
+    null,
+  );
+
+  const trigger = async () => {
+    setInstalling(true);
+    setResult(null);
+    try {
+      const r = await ipc.mediaAi.installDependenciesForBackend({ backend });
+      setResult({
+        ok: r.success,
+        message: r.success
+          ? `Installed ${backend} dependencies`
+          : (r.output ?? "install failed").slice(0, 240),
+      });
+    } catch (err) {
+      setResult({
+        ok: false,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5 pt-2 border-t border-dashed border-muted-foreground/20">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] text-muted-foreground">
+          Installs <span className="font-mono">requirements-{backend}.txt</span>{" "}
+          (this can take a while; ~GB of wheels)
+        </span>
+        <button
+          onClick={trigger}
+          disabled={installing}
+          className={cn(
+            "flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full border",
+            installing
+              ? "bg-muted text-muted-foreground border-muted-foreground/30"
+              : "bg-primary/10 text-primary border-primary/30 hover:bg-primary/20",
+          )}
+        >
+          {installing ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <Download className="w-3 h-3" />
+          )}
+          Install {backend} deps
+        </button>
+      </div>
+      {result && (
+        <div
+          className={cn(
+            "text-[10px] px-2 py-1 rounded",
+            result.ok
+              ? "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+              : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+          )}
+        >
+          {result.message}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MediaGenerationPanel({
+  profile,
+}: {
+  profile: HardwareProfile | null;
+}) {
   const [tiers, setTiers] = useState<AvailableTiers | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -119,6 +195,7 @@ function MediaGenerationPanel() {
           {renderRow(VIDEO_TIERS, tiers.video)}
         </div>
       </div>
+      {profile && <InstallBackendButton backend={profile.bestMediaBackend} />}
     </div>
   );
 }
@@ -343,7 +420,7 @@ export function HardwareCard() {
           </div>
         </div>
       </div>
-      <MediaGenerationPanel />
+      <MediaGenerationPanel profile={profile} />
     </div>
   );
 }

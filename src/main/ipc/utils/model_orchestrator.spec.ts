@@ -181,6 +181,27 @@ describe("ModelOrchestrator state machine", () => {
     expect(stat.size).toBeGreaterThan(0);
   });
 
+  it("informLlmAcquired sets state to llm-loaded without invoking reloadLlm hook", () => {
+    const orch = getOrchestrator();
+    const reloadHook = vi.fn();
+    orch.setHooks({ reloadLlm: reloadHook });
+    orch.informLlmAcquired(sampleParams);
+    expect(orch.getStatus().state).toBe("llm-loaded");
+    expect(orch.getStatus().currentLlmModel).toBe(sampleParams.modelPath);
+    expect(reloadHook).not.toHaveBeenCalled();
+  });
+
+  it("informLlmReleased resets to idle without invoking unloadLlm hook", () => {
+    const orch = getOrchestrator();
+    const unloadHook = vi.fn();
+    orch.setHooks({ unloadLlm: unloadHook });
+    orch.informLlmAcquired(sampleParams);
+    orch.informLlmReleased();
+    expect(orch.getStatus().state).toBe("idle");
+    expect(orch.getStatus().currentLlmModel).toBeNull();
+    expect(unloadHook).not.toHaveBeenCalled();
+  });
+
   it("releaseAll resets state to idle from any state", async () => {
     const orch = getOrchestrator();
     orch.setHooks({ reloadLlm: vi.fn().mockResolvedValue(undefined) });

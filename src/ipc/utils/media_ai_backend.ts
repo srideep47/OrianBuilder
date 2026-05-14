@@ -152,6 +152,11 @@ async function isBackendHealthy() {
   }
 }
 
+/** Public re-exports so other utilities (e.g. the orchestrator's media
+ *  dispatcher) can probe and call the Python backend. */
+export const MEDIA_AI_SERVER_URL = SERVER_URL;
+export const isMediaAiBackendHealthy = isBackendHealthy;
+
 export async function getMediaAiBackendStatus(): Promise<MediaAiStatus> {
   const backendPath = resolveMediaAiBackendPath();
   const requirementsPath = path.join(backendPath, "requirements.txt");
