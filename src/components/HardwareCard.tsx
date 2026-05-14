@@ -203,14 +203,24 @@ function formatMb(mb: number): string {
 
 export function HardwareCard() {
   const [profile, setProfile] = useState<HardwareProfile | null>(null);
+  const [llmLabel, setLlmLabel] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const p = await ipc.hardware.getProfile();
-        if (!cancelled) setProfile(p);
+        const [p, lbl] = await Promise.all([
+          ipc.hardware.getProfile(),
+          ipc.hardware
+            .getLlmBackendLabel()
+            .then((r) => r.label)
+            .catch(() => null),
+        ]);
+        if (!cancelled) {
+          setProfile(p);
+          setLlmLabel(lbl);
+        }
       } catch (err) {
         console.error("Failed to load hardware profile:", err);
       }
@@ -313,6 +323,14 @@ export function HardwareCard() {
               <div className="font-semibold uppercase">
                 {profile.bestLlmBackend}
               </div>
+              {llmLabel && (
+                <div
+                  className="text-[10px] text-muted-foreground truncate"
+                  title={llmLabel}
+                >
+                  {llmLabel}
+                </div>
+              )}
             </div>
             <div>
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">

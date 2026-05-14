@@ -4,6 +4,7 @@ import {
   detectHardwareProfile,
 } from "../../main/hardware/detect";
 import { initMediaAiHardware } from "../utils/media_ai_backend";
+import { getLlmBackendName } from "@/main/llm/backend_resolver";
 import { hardwareContracts } from "../types/hardware";
 import { createTypedHandler } from "./base";
 
@@ -26,5 +27,13 @@ export function registerHardwareHandlers(): void {
     const profile = await detectHardwareProfile();
     initMediaAiHardware(profile);
     return profile;
+  });
+
+  createTypedHandler(hardwareContracts.getLlmBackendLabel, async () => {
+    const profile = await getCachedHardwareProfile();
+    return {
+      label: getLlmBackendName(profile),
+      backend: profile.bestLlmBackend,
+    };
   });
 }

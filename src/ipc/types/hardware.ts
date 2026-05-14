@@ -56,6 +56,14 @@ export const hardwareContracts = {
     input: z.void(),
     output: HardwareProfileSchema,
   }),
+  getLlmBackendLabel: defineContract({
+    channel: "hardware:get-llm-backend-label",
+    input: z.void(),
+    output: z.object({
+      label: z.string(),
+      backend: z.enum(["cuda", "rocm", "metal", "vulkan", "cpu"]),
+    }),
+  }),
 } as const;
 
 export const hardwareClient = createClient(hardwareContracts);
