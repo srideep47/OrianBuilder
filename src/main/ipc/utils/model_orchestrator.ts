@@ -1,0 +1,302 @@
+import log from "electron-log";
+import fs from "node:fs/promises";
+import path from "node:path";
+
+const logger = log.scope("orchestrator");
+
+// ─── Types (mirrored in src/ipc/types/model_orchestrator.ts for IPC) ─────────
+
+export type OrchestratorState =
+  | "idle"
+  | "llm-loading"
+  | "llm-loaded"
+  | "swapping-out"
+  | "media-loading"
+  | "media-loaded"
+  | "swapping-back";
+
+export interface LlmLoadParams {
+  modelPath: string;
+  gpuLayers: number;
+  contextSize: number;
+}
+
+export interface MediaGenerationRequest {
+  modelType: "image" | "audio" | "video" | "music";
+  prompt: string;
+  outputPath: string;
+  options?: Record<string, unknown>;
+}
+
+export interface MediaGenerationResult {
+  success: boolean;
+  outputPath: string;
+  durationMs: number;
+  error?: string;
+}
+
+export interface OrchestratorStatus {
+  state: OrchestratorState;
+  currentLlmModel: string | null;
+  currentMediaModel: string | null;
+  lastSwapDurationMs: number | null;
+}
+
+export interface ModelOrchestrator {
+  acquireLlm(params: LlmLoadParams): Promise<void>;
+  runMediaGeneration(
+    request: MediaGenerationRequest,
+  ): Promise<MediaGenerationResult>;
+  releaseAll(): Promise<void>;
+  getStatus(): OrchestratorStatus;
+}
+
+/** Pluggable hooks so the orchestrator can swap real implementations in
+ *  later phases without re-architecting. Defaults are no-ops/stubs. */
+export interface OrchestratorHooks {
+  /** Called when the orchestrator wants the LLM unloaded from VRAM. */
+  unloadLlm?: () => Promise<void>;
+  /** Called when the orchestrator wants the LLM reloaded with previous params. */
+  reloadLlm?: (params: LlmLoadParams) => Promise<void>;
+  /** Actually performs media generation. If not set, runMediaGeneration writes
+   *  a 1×1 PNG placeholder to the requested outputPath (Phase 1 stub). */
+  mediaProvider?: (
+    request: MediaGenerationRequest,
+  ) => Promise<MediaGenerationResult>;
+}
+
+// ─── State machine transition table ──────────────────────────────────────────
+
+const ALLOWED_TRANSITIONS: Record<OrchestratorState, OrchestratorState[]> = {
+  idle: ["llm-loading"],
+  "llm-loading": ["llm-loaded", "idle"],
+  "llm-loaded": ["swapping-out", "idle"],
+  "swapping-out": ["media-loading", "idle"],
+  "media-loading": ["media-loaded", "idle"],
+  "media-loaded": ["swapping-back", "idle"],
+  "swapping-back": ["llm-loaded", "idle"],
+};
+
+/** Pure helper exported for tests. Returns true iff the transition is valid. */
+export function canTransition(
+  from: OrchestratorState,
+  to: OrchestratorState,
+): boolean {
+  return ALLOWED_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+// ─── Pure planner ────────────────────────────────────────────────────────────
+
+const SAFETY_HEADROOM_MB = 512;
+
+/**
+ * Compute the GPU layer count and context size for a given model and GPU.
+ * Pure function — exported for unit tests.
+ */
+export function calculateOptimalLlmParams(opts: {
+  modelPath?: string;
+  modelSizeGb: number;
+  gpuVramMb: number;
+  desiredContextTokens?: number;
+  totalGpuLayers: number;
+}): LlmLoadParams {
+  const effectiveVram = Math.max(0, opts.gpuVramMb - SAFETY_HEADROOM_MB);
+  const layerSizeMb =
+    opts.totalGpuLayers > 0
+      ? (opts.modelSizeGb * 1024) / opts.totalGpuLayers
+      : 1;
+  const rawLayers =
+    layerSizeMb > 0 ? Math.floor((effectiveVram * 0.85) / layerSizeMb) : 0;
+  const gpuLayers = Math.max(
+    0,
+    Math.min(opts.totalGpuLayers, isFinite(rawLayers) ? rawLayers : 0),
+  );
+  const contextSize = Math.max(512, opts.desiredContextTokens ?? 4096);
+  return {
+    modelPath: opts.modelPath ?? "",
+    gpuLayers,
+    contextSize,
+  };
+}
+
+// ─── Stub media generator (Phase 1 placeholder) ─────────────────────────────
+
+/** Minimal 1×1 PNG (transparent) used as Phase 1 stub output. */
+const STUB_PNG_BYTES = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+  "base64",
+);
+
+async function writeStubMedia(
+  request: MediaGenerationRequest,
+): Promise<MediaGenerationResult> {
+  const started = Date.now();
+  try {
+    await fs.mkdir(path.dirname(request.outputPath), { recursive: true });
+    await fs.writeFile(request.outputPath, STUB_PNG_BYTES);
+    return {
+      success: true,
+      outputPath: request.outputPath,
+      durationMs: Date.now() - started,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      outputPath: request.outputPath,
+      durationMs: Date.now() - started,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+// ─── Orchestrator implementation ─────────────────────────────────────────────
+
+class OrchestratorImpl implements ModelOrchestrator {
+  private state: OrchestratorState = "idle";
+  private currentLlmModel: string | null = null;
+  private currentMediaModel: string | null = null;
+  private lastSwapDurationMs: number | null = null;
+  private lastLlmParams: LlmLoadParams | null = null;
+  private hooks: OrchestratorHooks = {};
+
+  setHooks(hooks: OrchestratorHooks): void {
+    this.hooks = { ...this.hooks, ...hooks };
+  }
+
+  getStatus(): OrchestratorStatus {
+    return {
+      state: this.state,
+      currentLlmModel: this.currentLlmModel,
+      currentMediaModel: this.currentMediaModel,
+      lastSwapDurationMs: this.lastSwapDurationMs,
+    };
+  }
+
+  /** Strict transition: throws on invalid moves. */
+  private transition(to: OrchestratorState): void {
+    if (!canTransition(this.state, to)) {
+      throw new Error(
+        `Invalid orchestrator transition: ${this.state} -> ${to}`,
+      );
+    }
+    logger.debug(`state: ${this.state} -> ${to}`);
+    this.state = to;
+  }
+
+  async acquireLlm(params: LlmLoadParams): Promise<void> {
+    if (this.state !== "idle" && this.state !== "llm-loaded") {
+      throw new Error(
+        `acquireLlm called in state ${this.state}; expected idle or llm-loaded`,
+      );
+    }
+    // Re-acquiring same model is a no-op
+    if (
+      this.state === "llm-loaded" &&
+      this.lastLlmParams?.modelPath === params.modelPath
+    ) {
+      this.lastLlmParams = params;
+      return;
+    }
+    // If we were already loaded with a different model, release first.
+    if (this.state === "llm-loaded") {
+      await this.releaseAll();
+    }
+    this.transition("llm-loading");
+    try {
+      // Actual loading is delegated to the embedded inference server; the
+      // hook is optional so callers can drive load externally and just inform
+      // the orchestrator. We update bookkeeping either way.
+      if (this.hooks.reloadLlm) {
+        await this.hooks.reloadLlm(params);
+      }
+      this.currentLlmModel = params.modelPath;
+      this.lastLlmParams = params;
+      this.transition("llm-loaded");
+    } catch (err) {
+      this.transition("idle");
+      throw err;
+    }
+  }
+
+  async runMediaGeneration(
+    request: MediaGenerationRequest,
+  ): Promise<MediaGenerationResult> {
+    if (this.state !== "llm-loaded") {
+      throw new Error(
+        `runMediaGeneration called in state ${this.state}; expected llm-loaded`,
+      );
+    }
+    const captured: MediaGenerationRequest = { ...request };
+    const swapStarted = Date.now();
+
+    this.transition("swapping-out");
+    try {
+      if (this.hooks.unloadLlm) await this.hooks.unloadLlm();
+    } catch (err) {
+      logger.error("unloadLlm hook failed:", err);
+    }
+    this.transition("media-loading");
+
+    let result: MediaGenerationResult;
+    try {
+      this.currentMediaModel = `stub:${captured.modelType}`;
+      this.transition("media-loaded");
+      result = this.hooks.mediaProvider
+        ? await this.hooks.mediaProvider(captured)
+        : await writeStubMedia(captured);
+    } catch (err) {
+      result = {
+        success: false,
+        outputPath: captured.outputPath,
+        durationMs: Date.now() - swapStarted,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    // Swap back regardless of generation success
+    try {
+      this.transition("swapping-back");
+      this.currentMediaModel = null;
+      if (this.lastLlmParams && this.hooks.reloadLlm) {
+        try {
+          await this.hooks.reloadLlm(this.lastLlmParams);
+        } catch (err) {
+          logger.error("reloadLlm hook failed:", err);
+        }
+      }
+      this.transition("llm-loaded");
+    } catch (err) {
+      logger.error("swap-back transition failed:", err);
+      this.state = "idle";
+    }
+
+    this.lastSwapDurationMs = Date.now() - swapStarted;
+    return result;
+  }
+
+  async releaseAll(): Promise<void> {
+    if (this.state === "idle") return;
+    try {
+      if (this.hooks.unloadLlm) await this.hooks.unloadLlm();
+    } catch (err) {
+      logger.error("releaseAll unload failed:", err);
+    }
+    this.state = "idle";
+    this.currentLlmModel = null;
+    this.currentMediaModel = null;
+  }
+}
+
+// ─── Singleton accessors ─────────────────────────────────────────────────────
+
+let singleton: OrchestratorImpl | null = null;
+
+export function getOrchestrator(): OrchestratorImpl {
+  if (!singleton) singleton = new OrchestratorImpl();
+  return singleton;
+}
+
+/** Test-only: reset the singleton so each test starts with a clean state. */
+export function _resetOrchestratorForTests(): void {
+  singleton = null;
+}
