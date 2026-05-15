@@ -143,7 +143,7 @@ export default function ModelsLibraryPage() {
       <div className="border-b px-6 py-4 sticky top-0 z-10 bg-background/95 backdrop-blur">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl font-bold flex items-center gap-2">
+            <h1 className="text-xl font-bold flex items-center gap-2 page-title">
               <Database className="w-5 h-5 text-primary" />
               Models Library
             </h1>

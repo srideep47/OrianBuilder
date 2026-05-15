@@ -181,7 +181,7 @@ export default function MarketplacePage() {
         <div className="border-b px-6 py-4 bg-background/95 backdrop-blur sticky top-0 z-10">
           <div className="flex items-center justify-between gap-4 mb-3">
             <div>
-              <h1 className="text-xl font-bold flex items-center gap-2">
+              <h1 className="text-xl font-bold flex items-center gap-2 page-title">
                 <HardDrive className="w-5 h-5 text-primary" />
                 Model Marketplace
               </h1>

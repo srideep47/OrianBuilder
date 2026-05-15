@@ -87,6 +87,14 @@ body[data-scroll-locked] .app-region-drag {
 .h-screenish {
   height: calc(100vh - 64px);
 }
+
+/* Design reference (Project Orion): page-level h1 headings get uppercase + wide tracking */
+.page-title {
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
 :root {
   --docs-bg: #f5f5f5;
   --default-font-family: "Geist", sans-serif;
@@ -149,36 +157,52 @@ body[data-scroll-locked] .app-region-drag {
   --background-darker: oklch(0.125 0 0);
   --background-darkest: oklch(0.105 0 0);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
+  --card: oklch(0.2 0.018 265 / 0.45);
+  --card-foreground: oklch(0.97 0 0);
+  --popover: oklch(0.18 0.02 265 / 0.92);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
+  --primary: oklch(0.72 0.18 270);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(1 0 0 / 0.06);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
+  --muted: oklch(1 0 0 / 0.06);
+  --muted-foreground: oklch(0.72 0 0);
+  --accent: oklch(1 0 0 / 0.08);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.396 0.141 25.723);
   --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
-  --ring: oklch(0.439 0 0);
+  --border: oklch(1 0 0 / 0.1);
+  --input: oklch(1 0 0 / 0.09);
+  --ring: oklch(0.72 0.18 270 / 0.6);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar: oklch(0.16 0.02 265 / 0.88);
+  --sidebar-foreground: oklch(0.95 0 0);
+  --sidebar-primary: oklch(0.72 0.18 270);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.35 0 0);
+  --sidebar-accent: oklch(1 0 0 / 0.08);
   --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.269 0 0);
-  --sidebar-ring: oklch(0.439 0 0);
+  --sidebar-border: oklch(1 0 0 / 0.1);
+  --sidebar-ring: oklch(0.72 0.18 270 / 0.5);
+}
+
+/* Allow the galaxy background to bleed through card surfaces in dark mode.
+   Scoped to semantic card slots only — avoids compositing every button/badge. */
+.dark [data-slot="card"],
+.dark .bg-card {
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+}
+
+/* Dark glass for the main content container */
+.dark #layout-main-content-container {
+  background: oklch(0.13 0.015 265 / 0.75);
+  backdrop-filter: blur(4px) saturate(140%);
+  -webkit-backdrop-filter: blur(4px) saturate(140%);
+  border-color: oklch(1 0 0 / 0.1);
 }
 
 @theme inline {

@@ -30,6 +30,7 @@ import { MENTION_REGEX, parseAppMentions } from "@/shared/parse_mention_apps";
 import { useLoadApp } from "@/hooks/useLoadApp";
 import { HistoryNavigation, HISTORY_TRIGGER } from "./HistoryNavigation";
 import { slugForPrompt } from "@/ipc/utils/replaceSlashSkillReference";
+import { cn } from "@/lib/utils";
 
 // Define the theme for mentions
 const beautifulMentionsTheme: BeautifulMentionsTheme = {
@@ -294,6 +295,7 @@ interface LexicalChatInputProps {
   messageHistory: string[];
   excludeCurrentApp: boolean;
   disableSendButton: boolean;
+  inputClassName?: string;
 }
 
 function onError(error: Error) {
@@ -310,6 +312,7 @@ export function LexicalChatInput({
   disabled = false,
   disableSendButton,
   messageHistory = [],
+  inputClassName,
 }: LexicalChatInputProps) {
   const { apps } = useLoadApps();
   const { prompts } = usePrompts();
@@ -530,10 +533,10 @@ export function LexicalChatInput({
         <PlainTextPlugin
           contentEditable={
             <ContentEditable
-              className="flex-1 px-3 pt-3 pb-2 focus:outline-none overflow-y-auto min-h-[44px] max-h-[200px] resize-none text-[15px]"
+              className={cn("flex-1 px-3 pt-3 pb-2 focus:outline-none overflow-y-auto min-h-[44px] max-h-[200px] resize-none text-[15px]", inputClassName)}
               aria-placeholder={placeholder}
               placeholder={
-                <div className="absolute top-3 left-3 text-muted-foreground pointer-events-none select-none text-[15px]">
+                <div className={cn("absolute top-3 left-3 text-muted-foreground pointer-events-none select-none text-[15px]", inputClassName)}>
                   {placeholder}
                 </div>
               }

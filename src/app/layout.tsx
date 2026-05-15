@@ -124,12 +124,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <ThemeProvider>
         <DeepLinkProvider>
           <GalaxyBackground />
-          <SidebarProvider>
+          <SidebarProvider defaultOpen={false}>
             <TitleBar />
             <AppSidebar />
             <div
               id="layout-main-content-container"
-              className="flex h-screenish flex-1 min-w-0 overflow-x-hidden mt-12 mb-4 mr-4 border-t border-l border-border rounded-lg bg-background"
+              className="flex h-screenish flex-1 min-w-0 overflow-x-hidden mt-12 mb-4 mr-4 border border-border rounded-lg bg-background"
             >
               {children}
             </div>

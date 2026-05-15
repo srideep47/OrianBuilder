@@ -10,8 +10,10 @@ import { useRouterState } from "@tanstack/react-router";
 
 export function ChatInputControls({
   showContextFilesPicker = false,
+  showProSelector = true,
 }: {
   showContextFilesPicker?: boolean;
+  showProSelector?: boolean;
 }) {
   const { settings } = useSettings();
   const routerState = useRouterState();
@@ -42,7 +44,7 @@ export function ChatInputControls({
       )}
       <div className="w-1.5"></div>
       <ModelPicker />
-      <ProModeSelector />
+      {showProSelector && <ProModeSelector />}
       {showContextFilesPicker && <ContextFilesPicker />}
     </div>
   );

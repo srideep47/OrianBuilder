@@ -883,7 +883,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
           {t("errorLoadingProposal", { message: proposalError.message })}
         </div>
       )}
-      <div className="p-2 pt-0" data-testid="chat-input-container">
+      <div className="px-2 pt-0 pb-5 max-w-3xl mx-auto w-full" data-testid="chat-input-container">
         {/* Show context limit banner above chat input for visibility */}
         {showBanner && tokenCountResult && (
           <ContextLimitBanner
@@ -1075,6 +1075,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
               excludeCurrentApp={true}
               disableSendButton={disableSendButton}
               messageHistory={userMessageHistory}
+              inputClassName="min-h-[60px] text-[16px]"
             />
 
             {/* Voice-to-text button */}
