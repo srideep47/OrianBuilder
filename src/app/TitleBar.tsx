@@ -11,7 +11,6 @@ import { cn } from "@/lib/utils";
 import { useDeepLink } from "@/contexts/DeepLinkContext";
 import { useCallback, useEffect, useState } from "react";
 import { OrianBuilderProSuccessDialog } from "@/components/OrianBuilderProSuccessDialog";
-import { useTheme } from "@/contexts/ThemeContext";
 import { ipc } from "@/ipc/types";
 import { useSystemPlatform } from "@/hooks/useSystemPlatform";
 import { useUserBudgetInfo } from "@/hooks/useUserBudgetInfo";
@@ -23,7 +22,7 @@ import {
 } from "@/components/ui/tooltip";
 import { ChatTabs } from "@/components/chat/ChatTabs";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
-import { Wrench, Cog, Trash2 } from "lucide-react";
+import { Wrench, Cog, Trash2, Minus, Square, X as XIcon } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -126,8 +125,6 @@ export const TitleBar = () => {
 };
 
 function WindowsControls() {
-  const { isDarkMode } = useTheme();
-
   const minimizeWindow = () => {
     ipc.system.minimizeWindow();
   };
@@ -143,63 +140,25 @@ function WindowsControls() {
   return (
     <div className="ml-auto flex no-app-region-drag">
       <button
-        className="w-10 h-10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+        className="w-11 h-11 flex items-center justify-center hover:bg-white/[0.08] transition-colors text-foreground/80 hover:text-foreground"
         onClick={minimizeWindow}
         aria-label="Minimize"
       >
-        <svg
-          width="12"
-          height="1"
-          viewBox="0 0 12 1"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <rect
-            width="12"
-            height="1"
-            fill={isDarkMode ? "#ffffff" : "#000000"}
-          />
-        </svg>
+        <Minus size={14} strokeWidth={2} />
       </button>
       <button
-        className="w-10 h-10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+        className="w-11 h-11 flex items-center justify-center hover:bg-white/[0.08] transition-colors text-foreground/80 hover:text-foreground"
         onClick={maximizeWindow}
         aria-label="Maximize"
       >
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <rect
-            x="0.5"
-            y="0.5"
-            width="11"
-            height="11"
-            stroke={isDarkMode ? "#ffffff" : "#000000"}
-          />
-        </svg>
+        <Square size={11} strokeWidth={1.6} />
       </button>
       <button
-        className="w-10 h-10 flex items-center justify-center hover:bg-red-500 transition-colors"
+        className="w-11 h-11 flex items-center justify-center hover:bg-red-500/90 hover:text-white transition-colors text-foreground/80"
         onClick={closeWindow}
         aria-label="Close"
       >
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            d="M1 1L11 11M1 11L11 1"
-            stroke={isDarkMode ? "#ffffff" : "#000000"}
-            strokeWidth="1.5"
-          />
-        </svg>
+        <XIcon size={14} strokeWidth={2} />
       </button>
     </div>
   );

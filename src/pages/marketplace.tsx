@@ -174,11 +174,11 @@ export default function MarketplacePage() {
   );
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-full overflow-hidden bg-transparent">
       {/* ─── Main pane ─── */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="border-b px-6 py-4 bg-background/95 backdrop-blur sticky top-0 z-10">
+        <div className="border-b border-border/50 px-6 py-4 bg-background/80 backdrop-blur-xl sticky top-0 z-10">
           <div className="flex items-center justify-between gap-4 mb-3">
             <div>
               <h1 className="text-xl font-bold flex items-center gap-2 page-title">

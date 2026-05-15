@@ -3,6 +3,10 @@ import {
   StopCircleIcon,
   FolderOpenIcon,
   XIcon,
+  Mic,
+  MicOff,
+  Loader2,
+  Lock,
 } from "lucide-react";
 import {
   Tooltip,
@@ -13,9 +17,13 @@ import {
 import { useSettings } from "@/hooks/useSettings";
 import { homeChatInputValueAtom, homeSelectedAppAtom } from "@/atoms/chatAtoms";
 import { useAtom } from "jotai";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useStreamChat } from "@/hooks/useStreamChat";
 import { useAttachments } from "@/hooks/useAttachments";
+import { useVoiceToText } from "@/hooks/useVoiceToText";
+import { isOrianBuilderProEnabled } from "@/lib/schemas";
+import { ipc } from "@/ipc/types";
+import { showError } from "@/lib/toast";
 import { AttachmentsList } from "./AttachmentsList";
 import { DragDropOverlay } from "./DragDropOverlay";
 import { FileAttachmentTypeDialog } from "./FileAttachmentTypeDialog";
@@ -44,6 +52,20 @@ export function HomeChatInput({
 
   const [appSearchOpen, setAppSearchOpen] = useState(false);
   const { apps } = useLoadApps();
+  const isProEnabled = settings ? isOrianBuilderProEnabled(settings) : false;
+
+  const handleTranscription = useCallback(
+    (text: string) => {
+      setInputValue((prev: string) => (prev.trim() ? prev + " " + text : text));
+    },
+    [setInputValue],
+  );
+
+  const { isRecording, isTranscribing, toggleRecording } = useVoiceToText({
+    enabled: isProEnabled,
+    onTranscription: handleTranscription,
+    onError: (message) => showError(message),
+  });
 
   useEffect(() => {
     if (!settings?.enableSelectAppFromHomeChatInput) {
@@ -106,9 +128,9 @@ export function HomeChatInput({
       <div className="p-2" data-testid="home-chat-input-container">
         <div
           className={cn(
-            "relative flex flex-col border border-border rounded-2xl bg-(--background-lighter) transition-colors duration-200",
-            "hover:border-primary/30",
-            "focus-within:border-primary/30 focus-within:ring-1 focus-within:ring-primary/20",
+            "relative flex flex-col border border-white/15 rounded-2xl bg-white/[0.04] backdrop-blur-xl shadow-[0_8px_32px_-12px_rgba(0,0,0,0.6)] transition-colors duration-200",
+            "hover:border-primary/40",
+            "focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/25",
             isDraggingOver && "ring-2 ring-blue-500 border-blue-500",
           )}
           onDragOver={handleDragOver}
@@ -136,6 +158,70 @@ export function HomeChatInput({
               messageHistory={[]}
               inputClassName="text-[18px] min-h-[72px] max-h-[320px]"
             />
+
+            {/* Voice-to-text mic button (Pro feature) */}
+            {isProEnabled ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      onClick={toggleRecording}
+                      disabled={isTranscribing}
+                      aria-label={
+                        isRecording
+                          ? "Stop recording"
+                          : isTranscribing
+                            ? "Transcribing..."
+                            : "Voice to text"
+                      }
+                      className={cn(
+                        "px-2 py-2 mb-0.5 text-muted-foreground rounded-lg transition-colors duration-150 cursor-pointer disabled:cursor-default disabled:opacity-30",
+                        isRecording &&
+                          "text-red-500 hover:text-red-600 animate-pulse",
+                        !isRecording && !isTranscribing && "hover:text-primary",
+                      )}
+                    />
+                  }
+                >
+                  {isTranscribing ? (
+                    <Loader2 size={22} className="animate-spin" />
+                  ) : isRecording ? (
+                    <MicOff size={22} />
+                  ) : (
+                    <Mic size={22} />
+                  )}
+                </TooltipTrigger>
+                <TooltipContent>
+                  {isRecording
+                    ? "Stop recording"
+                    : isTranscribing
+                      ? "Transcribing..."
+                      : "Voice to text"}
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      onClick={() =>
+                        ipc.system.openExternalUrl(
+                          "https://orianbuilder.sh/pro",
+                        )
+                      }
+                      aria-label="Voice to text (Pro)"
+                      className="px-2 py-2 mb-0.5 text-muted-foreground hover:text-primary rounded-lg transition-colors duration-150 cursor-pointer relative"
+                    />
+                  }
+                >
+                  <Mic size={22} />
+                  <Lock size={10} className="absolute -top-0.5 -right-0.5" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  Voice to text (requires Pro)
+                </TooltipContent>
+              </Tooltip>
+            )}
 
             {isStreaming ? (
               <Tooltip>

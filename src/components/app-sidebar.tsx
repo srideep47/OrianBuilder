@@ -131,7 +131,7 @@ export function AppSidebar() {
               <SidebarMenuButton
                 size="sm"
                 tooltip="Help"
-                className="flex flex-col items-center justify-center gap-1 w-full h-[62px] mb-1 rounded-xl font-medium"
+                className="flex flex-col items-center justify-center gap-0.5 w-full h-[62px] mb-1 rounded-xl font-medium"
                 onClick={() => setIsHelpDialogOpen(true)}
               >
                 <HelpCircle className="h-[18px] w-[18px] shrink-0" />
@@ -157,10 +157,10 @@ export function AppSidebar() {
         />
       )}
 
-      {/* Floating sub-panel — flush with sidebar, separated by border + deep shadow */}
+      {/* Floating sub-panel — flush with sidebar, runs from titlebar bottom to viewport bottom */}
       {panelItem && (
         <div
-          className="fixed left-[5rem] top-11 bottom-4 w-[272px] bg-sidebar backdrop-blur-2xl border-y border-r border-sidebar-border rounded-r-xl shadow-[4px_0_32px_rgba(0,0,0,0.6)] overflow-hidden z-40"
+          className="fixed left-[5rem] top-11 bottom-4 w-[272px] bg-[oklch(0.11_0.018_292)] border-y border-r border-white/[0.06] rounded-r-xl shadow-[4px_0_40px_rgba(0,0,0,0.7)] overflow-hidden z-40"
           onMouseEnter={cancelClear}
           onMouseLeave={() => {
             if (!isDropdownOpenRef.current) setPanelItem(null);
@@ -200,7 +200,7 @@ function AppIcons({
                   size="sm"
                   tooltip={item.hasPanel ? undefined : item.title}
                   isActive={isActive}
-                  className="flex flex-col items-center justify-center gap-1 w-full h-[62px] mb-0.5 rounded-xl font-medium"
+                  className="flex flex-col items-center justify-center gap-0.5 w-full h-[62px] mb-0.5 rounded-xl font-medium"
                   onMouseEnter={() => onHover(item.title)}
                 >
                   <item.icon className="h-[18px] w-[18px] shrink-0" />

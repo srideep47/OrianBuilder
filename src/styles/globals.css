@@ -85,7 +85,7 @@ body[data-scroll-locked] .app-region-drag {
 }
 
 .h-screenish {
-  height: calc(100vh - 64px);
+  height: calc(100vh - 76px);
 }
 
 /* Design reference (Project Orion): page-level h1 headings get uppercase + wide tracking */
@@ -93,6 +93,14 @@ body[data-scroll-locked] .app-region-drag {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   font-weight: 700;
+}
+
+/* Page-level sticky header — used on inference / marketplace / models / settings.
+   Adds a small inner top spacing so the heading doesn't kiss the rounded card edge,
+   and keeps the glassy background readable when scrolled. */
+.page-sticky-header {
+  border-top-left-radius: var(--radius);
+  border-top-right-radius: var(--radius);
 }
 
 :root {
@@ -777,44 +785,35 @@ body.galaxy-mode {
   --card-foreground: rgba(220, 212, 255, 0.9);
   --popover: rgba(12, 8, 30, 0.85);
   --popover-foreground: rgba(220, 212, 255, 0.9);
-  --sidebar: rgba(0, 0, 0, 0.25);
-  --sidebar-border: rgba(255, 255, 255, 0.1);
+  /* Opaque sidebar so it visually merges with the titlebar + panel without seams */
+  --sidebar: oklch(0.11 0.018 292);
+  --sidebar-border: rgba(255, 255, 255, 0.06);
   --sidebar-foreground: rgba(243, 236, 223, 0.8);
   --sidebar-accent: rgba(139, 127, 255, 0.18);
   --sidebar-accent-foreground: rgba(243, 236, 223, 1);
 }
 
-/* Sidebar glass blur */
+/* Sidebar is fully opaque so the GalaxyBackground does not bleed through */
 body.galaxy-mode [data-sidebar="sidebar"] {
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: oklch(0.11 0.018 292) !important;
 }
 
-/* Title bar glass */
+/* Title bar — solid dark surface, no backdrop blur (user feedback) */
 body.galaxy-mode .app-region-drag {
-  background: rgba(0, 0, 0, 0.2) !important;
-  backdrop-filter: blur(16px) !important;
-  -webkit-backdrop-filter: blur(16px) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: oklch(0.11 0.018 292) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
 }
 
-/* Window control icons (minimize / maximize / close) — force
-   white on the dark galaxy title bar regardless of theme mode.
-   CSS fill/stroke override SVG presentation attributes.         */
-body.galaxy-mode .no-app-region-drag button svg rect,
-body.galaxy-mode .no-app-region-drag button svg path {
-  fill: rgba(228, 220, 255, 0.88) !important;
-  stroke: rgba(228, 220, 255, 0.88) !important;
-}
+/* Window control icons now use lucide with currentColor — no override needed.
+   Tailwind utilities (text-foreground/80) handle their color. */
 
-/* Main layout container — flat, no border, transparent.
-   Keep margin-top so content stays below the fixed title bar. */
+/* Main layout container — transparent so the galaxy shows through,
+   but keep the layout's margins, right border, and right-rounded corners
+   so the content sits in a card that's flush against the sidebar. */
 body.galaxy-mode #layout-main-content-container {
   background: transparent !important;
-  border: none !important;
-  margin-bottom: 0 !important;
-  margin-right: 0 !important;
-  border-radius: 0 !important;
 }
 
 /* ── Glass setup step cards ────────────────────────────────────

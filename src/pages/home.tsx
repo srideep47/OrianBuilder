@@ -212,7 +212,7 @@ export default function HomePage() {
       />
 
       {/* Centered input — the only persistent UI on the home page */}
-      <div className="w-full max-w-4xl px-8">
+      <div className="w-full max-w-4xl px-3 sm:px-6 lg:px-8">
         <HomeChatInput onSubmit={handleSubmit} />
       </div>
 
