@@ -1,5 +1,6 @@
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { SidebarPanel } from "@/components/SidebarPanel";
 import { ThemeProvider } from "../contexts/ThemeContext";
 import { DeepLinkProvider } from "../contexts/DeepLinkContext";
 import { Toaster } from "sonner";
@@ -127,9 +128,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <SidebarProvider defaultOpen={false}>
             <TitleBar />
             <AppSidebar />
+            <SidebarPanel />
             <div
               id="layout-main-content-container"
-              className="flex h-screenish flex-1 min-w-0 overflow-hidden mt-14 mb-2 mr-2 sm:mb-4 sm:mr-4 border-y border-r border-border rounded-r-lg bg-background"
+              className="flex h-screenish flex-1 min-w-0 overflow-hidden mt-11 mb-2 mr-2 sm:mb-4 sm:mr-4 border border-border rounded-r-lg bg-background"
             >
               {children}
             </div>

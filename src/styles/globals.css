@@ -85,7 +85,7 @@ body[data-scroll-locked] .app-region-drag {
 }
 
 .h-screenish {
-  height: calc(100vh - 76px);
+  height: calc(100vh - 60px);
 }
 
 /* Design reference (Project Orion): page-level h1 headings get uppercase + wide tracking */
@@ -809,11 +809,20 @@ body.galaxy-mode .app-region-drag {
 /* Window control icons now use lucide with currentColor — no override needed.
    Tailwind utilities (text-foreground/80) handle their color. */
 
-/* Main layout container — transparent so the galaxy shows through,
-   but keep the layout's margins, right border, and right-rounded corners
-   so the content sits in a card that's flush against the sidebar. */
+/* Main layout container — frosted glass over the galaxy background.
+   Subtle white tint + backdrop blur creates a "lighter glass" feel while
+   still letting the nebula/starfield bleed through.
+   Scoped --background variables make child containers (message bubbles, cards)
+   semi-transparent so the blurred galaxy shows through them too. */
 body.galaxy-mode #layout-main-content-container {
-  background: transparent !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  backdrop-filter: blur(14px) brightness(1.1) !important;
+  -webkit-backdrop-filter: blur(14px) brightness(1.1) !important;
+  --background: oklch(0.08 0.018 292 / 0.72);
+  --background-lighter: oklch(0.1 0.018 292 / 0.72);
+  --background-lightest: oklch(0.12 0.018 292 / 0.72);
+  --card: rgba(10, 6, 25, 0.5);
+  --muted: rgba(255, 255, 255, 0.04);
 }
 
 /* ── Glass setup step cards ────────────────────────────────────
