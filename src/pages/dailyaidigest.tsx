@@ -646,7 +646,7 @@ export default function DailyAIDigestPage() {
   const readerOpen = selectedStory !== null;
 
   return (
-    <div className="min-h-full w-full bg-background px-4 py-4 sm:px-6 lg:px-8">
+    <div className="h-full w-full overflow-y-auto bg-background px-4 py-4 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-[1600px]">
         {/* Header bar */}
         <div className="mb-4 flex items-start justify-between">

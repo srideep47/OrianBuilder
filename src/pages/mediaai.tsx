@@ -351,7 +351,7 @@ export default function MediaAIPage() {
   };
 
   return (
-    <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
+    <div className="h-full w-full overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-5xl">
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
