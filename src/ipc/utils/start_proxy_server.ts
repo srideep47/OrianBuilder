@@ -4,7 +4,10 @@ import { Worker } from "worker_threads";
 import path from "path";
 import { findAvailablePort } from "./port_utils";
 import log from "electron-log";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("start_proxy_server");
 
@@ -19,9 +22,9 @@ export async function startProxy(
   } = {},
 ) {
   if (!/^https?:\/\//.test(targetOrigin))
-    throw new DyadError(
+    throw new OrianBuilderError(
       "startProxy: targetOrigin must be absolute http/https URL",
-      DyadErrorKind.Validation,
+      OrianBuilderErrorKind.Validation,
     );
   const port = await findAvailablePort(50_000, 60_000);
   logger.info("Found available port", port);

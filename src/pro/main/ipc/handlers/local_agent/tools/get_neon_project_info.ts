@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { ToolDefinition, AgentContext, escapeXmlContent } from "./types";
 import { getNeonProjectInfo } from "../../../../../../neon_admin/neon_context";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 // At least one property is needed because Vertex AI rejects empty parameter schemas.
 const getNeonProjectInfoSchema = z.object({
@@ -27,13 +30,15 @@ export const getNeonProjectInfoTool: ToolDefinition<
 
   execute: async (_args, ctx: AgentContext) => {
     if (!ctx.neonProjectId || !ctx.neonActiveBranchId) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Neon is not connected to this app",
-        DyadErrorKind.Precondition,
+        OrianBuilderErrorKind.Precondition,
       );
     }
 
-    ctx.onXmlStream("<dyad-neon-project-info></dyad-neon-project-info>");
+    ctx.onXmlStream(
+      "<orianbuilder-neon-project-info></orianbuilder-neon-project-info>",
+    );
 
     const info = await getNeonProjectInfo({
       projectId: ctx.neonProjectId,
@@ -41,7 +46,7 @@ export const getNeonProjectInfoTool: ToolDefinition<
     });
 
     ctx.onXmlComplete(
-      `<dyad-neon-project-info>\n${escapeXmlContent(info)}\n</dyad-neon-project-info>`,
+      `<orianbuilder-neon-project-info>\n${escapeXmlContent(info)}\n</orianbuilder-neon-project-info>`,
     );
 
     return info;

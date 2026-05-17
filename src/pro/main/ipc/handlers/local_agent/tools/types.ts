@@ -50,6 +50,9 @@ export interface AgentContext {
    */
   referencedApps: Map<string, string>;
   chatId: number;
+  missionId?: number | null;
+  missionRunId?: number | null;
+  workerId?: number | null;
   supabaseProjectId: string | null;
   supabaseOrganizationSlug: string | null;
   neonProjectId: string | null;
@@ -60,15 +63,16 @@ export interface AgentContext {
   chatSummary?: string;
   /** Turn-scoped todo list for agent task tracking */
   todos: Todo[];
-  /** Request ID for tracking requests to the Dyad engine */
-  dyadRequestId: string;
+  /** Request ID for tracking requests to the OrianBuilder engine */
+  orianbuilderRequestId: string;
   /** Tracks file edit tool usage per file for telemetry */
   fileEditTracker: FileEditTracker;
+  installEtargetRecoveryCount?: number;
   /**
-   * If true, the user has Dyad Pro enabled.
-   * Engine-dependent tools require this to access the Dyad Pro API.
+   * If true, the user has OrianBuilder Pro enabled.
+   * Engine-dependent tools require this to access the OrianBuilder Pro API.
    */
-  isDyadPro: boolean;
+  isOrianBuilderPro: boolean;
   /**
    * Streams accumulated XML to UI without persisting to DB (for live preview).
    * Call this repeatedly with the full accumulated XML so far.
@@ -99,6 +103,19 @@ export interface AgentContext {
    * Queues a warning toast to be shown to the user when the turn completes.
    */
   onWarningMessage?: (message: string) => void;
+  onToolExecutionStart?: (params: {
+    toolName: string;
+    inputPreview?: string | null;
+    modifiesState: boolean;
+  }) => void;
+  onToolExecutionComplete?: (params: {
+    toolName: string;
+    status: "completed" | "failed";
+    durationMs: number;
+    outputPreview?: string | null;
+    error?: string | null;
+    modifiesState: boolean;
+  }) => void;
 }
 
 // ============================================================================

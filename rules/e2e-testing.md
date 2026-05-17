@@ -97,7 +97,7 @@ Each parallel Playwright worker gets its own fake LLM server on port `FAKE_LLM_B
 
 When adding new test server URLs, update **both** the test fixtures (`e2e-tests/helpers/fixtures.ts`) and the Electron app source that consumes them. The app reads `process.env.FAKE_LLM_PORT` to build its `TEST_SERVER_BASE` URL — if you hardcode a port in app source, parallel workers will all hit the same server.
 
-For app features that fetch `api.dyad.sh` directly, add a test-only env override in app code and point it at the worker-specific fake server during E2E. Without that override, E2E tests cannot deterministically exercise both the remote-success and local-fallback paths.
+For app features that fetch `api.orianbuilder.sh` directly, add a test-only env override in app code and point it at the worker-specific fake server during E2E. Without that override, E2E tests cannot deterministically exercise both the remote-success and local-fallback paths.
 
 ## Sandbox-related Electron launch failures
 
@@ -160,10 +160,10 @@ This pattern provides a more reliable signal that the async operation has comple
 
 For streamed progress indicators that may complete quickly, allow the assertion to match either the transient in-progress text or the final completed text, then assert the final state after the operation completes.
 
-## E2E test fixtures with .dyad directories
+## E2E test fixtures with .orianbuilder directories
 
-When adding E2E test fixtures that need a `.dyad` directory for testing:
+When adding E2E test fixtures that need a `.orianbuilder` directory for testing:
 
-- The `.dyad` directory is git-ignored by default in test fixtures
-- Use `git add -f path/to/.dyad/file` to force-add files inside `.dyad` directories
-- If `mkdir` is blocked on `.dyad` paths due to security restrictions, use the Write tool to create files directly (which auto-creates parent directories)
+- The `.orianbuilder` directory is git-ignored by default in test fixtures
+- Use `git add -f path/to/.orianbuilder/file` to force-add files inside `.orianbuilder` directories
+- If `mkdir` is blocked on `.orianbuilder` paths due to security restrictions, use the Write tool to create files directly (which auto-creates parent directories)

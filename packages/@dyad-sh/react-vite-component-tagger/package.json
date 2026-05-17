@@ -3,13 +3,13 @@
   "version": "0.8.0",
   "description": "A Vite plugin that automatically adds data attributes to your React components.",
   "keywords": [
-    "dyad",
+    "orianbuilder",
     "react",
     "vite",
     "vite-plugin"
   ],
   "license": "Apache-2.0",
-  "author": "Dyad",
+  "author": "OrianBuilder",
   "files": [
     "dist"
   ],

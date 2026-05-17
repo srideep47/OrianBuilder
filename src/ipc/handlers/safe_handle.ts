@@ -1,6 +1,6 @@
 import { ipcMain, IpcMainInvokeEvent } from "electron";
 import log from "electron-log";
-import { DyadError } from "@/errors/dyad_error";
+import { OrianBuilderError } from "@/errors/orianbuilder_error";
 import { sendTelemetryException } from "../utils/telemetry";
 import { IS_TEST_BUILD } from "../utils/test_utils";
 
@@ -25,8 +25,8 @@ export function createLoggedHandler(logger: log.LogFunctions) {
             error,
           );
           sendTelemetryException(error, { ipc_channel: channel });
-          // Preserve DyadError so telemetry classification stay consistent.
-          if (error instanceof DyadError) {
+          // Preserve OrianBuilderError so telemetry classification stay consistent.
+          if (error instanceof OrianBuilderError) {
             throw error;
           }
           throw new Error(`[${channel}] ${error}`);

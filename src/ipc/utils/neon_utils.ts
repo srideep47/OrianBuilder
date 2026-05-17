@@ -5,7 +5,10 @@ import { getNeonClient } from "../../neon_admin/neon_management_client";
 import { getConnectionUri } from "../../neon_admin/neon_context";
 import { db } from "../../db";
 import { apps } from "../../db/schema";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { updateNeonEnvVars } from "../utils/app_env_var_utils";
 
 export const logger = log.scope("neon_utils");
@@ -37,26 +40,26 @@ export async function getAppWithNeonBranch(appId: number): Promise<{
   const app = await db.select().from(apps).where(eq(apps.id, appId)).limit(1);
 
   if (app.length === 0) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `App with ID ${appId} not found`,
-      DyadErrorKind.NotFound,
+      OrianBuilderErrorKind.NotFound,
     );
   }
 
   const appData = app[0];
   if (!appData.neonProjectId) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `No Neon project found for app ${appId}`,
-      DyadErrorKind.Precondition,
+      OrianBuilderErrorKind.Precondition,
     );
   }
 
   const branchId =
     appData.neonActiveBranchId ?? appData.neonDevelopmentBranchId;
   if (!branchId) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `No active Neon branch found for app ${appId}`,
-      DyadErrorKind.Precondition,
+      OrianBuilderErrorKind.Precondition,
     );
   }
 
@@ -169,9 +172,9 @@ export async function assertNoSupabaseProject(appId: number): Promise<void> {
     .where(eq(apps.id, appId))
     .limit(1);
   if (existingApp[0]?.supabaseProjectId) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "Cannot connect Neon: this app already has a Supabase project. Disconnect Supabase first.",
-      DyadErrorKind.Precondition,
+      OrianBuilderErrorKind.Precondition,
     );
   }
 }
@@ -187,9 +190,9 @@ export async function assertNoNeonProject(appId: number): Promise<void> {
     .where(eq(apps.id, appId))
     .limit(1);
   if (existingApp[0]?.neonProjectId) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "This app already has a Neon project linked. Disconnect it first.",
-      DyadErrorKind.Precondition,
+      OrianBuilderErrorKind.Precondition,
     );
   }
 }

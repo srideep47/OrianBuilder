@@ -8,7 +8,10 @@ import {
   escapeXmlAttr,
   escapeXmlContent,
 } from "./types";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("edit_ast");
 
@@ -152,15 +155,15 @@ function findTsConfig(appPath: string): string | undefined {
 function resolveFile(appPath: string, relativePath: string): string {
   const abs = path.resolve(appPath, relativePath);
   if (!abs.startsWith(appPath)) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Path "${relativePath}" escapes the app directory.`,
-      DyadErrorKind.Validation,
+      OrianBuilderErrorKind.Validation,
     );
   }
   if (!fs.existsSync(abs)) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `File not found: ${relativePath}`,
-      DyadErrorKind.NotFound,
+      OrianBuilderErrorKind.NotFound,
     );
   }
   return abs;
@@ -191,10 +194,10 @@ async function opRenameSymbol(
   const allIdentifiers = sourceFile.getDescendantsOfKind(SyntaxKind.Identifier);
   const target = allIdentifiers.find((id) => id.getText() === args.old_name);
   if (!target) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Identifier "${args.old_name}" not found in ${args.file}. ` +
         `Make sure you're pointing to the file where it is DEFINED.`,
-      DyadErrorKind.NotFound,
+      OrianBuilderErrorKind.NotFound,
     );
   }
 
@@ -290,9 +293,9 @@ async function opRemoveImport(
     (d) => d.getModuleSpecifierValue() === args.module,
   );
   if (!decl) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `No import from "${args.module}" found in ${args.file}.`,
-      DyadErrorKind.NotFound,
+      OrianBuilderErrorKind.NotFound,
     );
   }
 
@@ -381,10 +384,10 @@ async function opDeleteSymbol(
     return `Deleted variable "${name}" from ${args.file}.`;
   }
 
-  throw new DyadError(
+  throw new OrianBuilderError(
     `Symbol "${name}" not found in ${args.file}. ` +
       `Searched for: function, class, interface, type, enum, variable.`,
-    DyadErrorKind.NotFound,
+    OrianBuilderErrorKind.NotFound,
   );
 }
 
@@ -425,10 +428,10 @@ async function opReplaceFunctionBody(
     }
   }
 
-  throw new DyadError(
+  throw new OrianBuilderError(
     `Function "${name}" not found in ${args.file}. ` +
       `Looked for function declarations and const/let arrow functions.`,
-    DyadErrorKind.NotFound,
+    OrianBuilderErrorKind.NotFound,
   );
 }
 
@@ -471,9 +474,9 @@ async function opInsertAfterSymbol(
   }
 
   if (!targetStmt) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Symbol "${name}" not found in ${args.file}.`,
-      DyadErrorKind.NotFound,
+      OrianBuilderErrorKind.NotFound,
     );
   }
 
@@ -548,7 +551,7 @@ export const editAstTool: ToolDefinition<EditAstArgs> = {
   buildXml: (args, isComplete) => {
     if (!args.operation || !args.file) return undefined;
     if (isComplete) return undefined;
-    return `<dyad-ast-edit operation="${escapeXmlAttr(args.operation ?? "")}" file="${escapeXmlAttr(args.file ?? "")}">Processing…`;
+    return `<orianbuilder-ast-edit operation="${escapeXmlAttr(args.operation ?? "")}" file="${escapeXmlAttr(args.file ?? "")}">Processing…`;
   },
 
   execute: async (args, ctx: AgentContext) => {
@@ -557,7 +560,7 @@ export const editAstTool: ToolDefinition<EditAstArgs> = {
     );
 
     ctx.onXmlStream(
-      `<dyad-ast-edit operation="${escapeXmlAttr(args.operation)}" file="${escapeXmlAttr(args.file)}">Processing…`,
+      `<orianbuilder-ast-edit operation="${escapeXmlAttr(args.operation)}" file="${escapeXmlAttr(args.file)}">Processing…`,
     );
 
     let resultText: string;
@@ -583,12 +586,15 @@ export const editAstTool: ToolDefinition<EditAstArgs> = {
           resultText = await opInsertAfterSymbol(ctx.appPath, args);
           break;
         default:
-          throw new DyadError("Unknown operation", DyadErrorKind.Validation);
+          throw new OrianBuilderError(
+            "Unknown operation",
+            OrianBuilderErrorKind.Validation,
+          );
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       ctx.onXmlComplete(
-        `<dyad-ast-edit operation="${escapeXmlAttr(args.operation)}" file="${escapeXmlAttr(args.file)}" error="${escapeXmlAttr(msg)}"></dyad-ast-edit>`,
+        `<orianbuilder-ast-edit operation="${escapeXmlAttr(args.operation)}" file="${escapeXmlAttr(args.file)}" error="${escapeXmlAttr(msg)}"></orianbuilder-ast-edit>`,
       );
       throw err;
     }
@@ -596,7 +602,7 @@ export const editAstTool: ToolDefinition<EditAstArgs> = {
     logger.log(`edit_ast: done — ${resultText}`);
 
     ctx.onXmlComplete(
-      `<dyad-ast-edit operation="${escapeXmlAttr(args.operation)}" file="${escapeXmlAttr(args.file)}">${escapeXmlContent(resultText)}</dyad-ast-edit>`,
+      `<orianbuilder-ast-edit operation="${escapeXmlAttr(args.operation)}" file="${escapeXmlAttr(args.file)}">${escapeXmlContent(resultText)}</orianbuilder-ast-edit>`,
     );
 
     return resultText;

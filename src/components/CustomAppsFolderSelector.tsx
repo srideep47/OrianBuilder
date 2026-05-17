@@ -47,7 +47,9 @@ export function CustomAppsFolderSelector() {
       await fetchCustomAppsFolder();
       showSuccess("OrianBuilder apps folder reset successfully");
     } catch (error: any) {
-      showError(`Failed to reset Dyad Apps folder path: ${error.message}`);
+      showError(
+        `Failed to reset OrianBuilder Apps folder path: ${error.message}`,
+      );
     }
   };
 

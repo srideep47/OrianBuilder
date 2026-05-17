@@ -8,7 +8,7 @@ import { testSkipIfWindows, Timeout } from "./helpers/test_helper";
 testSkipIfWindows(
   "local-agent - add_dependency consent: always allow",
   async ({ po }) => {
-    await po.setUpDyadPro({ localAgent: true });
+    await po.setUpOrianBuilderPro({ localAgent: true });
     await po.importApp("minimal");
     await po.chatActions.selectLocalAgentMode();
 
@@ -38,7 +38,7 @@ testSkipIfWindows(
 testSkipIfWindows(
   "local-agent - add_dependency consent: allow once",
   async ({ po }) => {
-    await po.setUpDyadPro({ localAgent: true });
+    await po.setUpOrianBuilderPro({ localAgent: true });
     await po.importApp("minimal");
     await po.chatActions.selectLocalAgentMode();
 
@@ -64,7 +64,7 @@ testSkipIfWindows(
 testSkipIfWindows(
   "local-agent - add_dependency consent: decline",
   async ({ po }) => {
-    await po.setUpDyadPro({ localAgent: true });
+    await po.setUpOrianBuilderPro({ localAgent: true });
     await po.importApp("minimal");
     await po.chatActions.selectLocalAgentMode();
 

@@ -434,7 +434,7 @@ export function AIGeneratorTab({
             <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
               <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
               <p className="text-xs text-muted-foreground">
-                Website crawling requires a Dyad Pro API key. Use{" "}
+                Website crawling requires a OrianBuilder Pro API key. Use{" "}
                 <strong>Upload Images</strong> instead, or add a Pro key in
                 Settings to enable URL extraction.
               </p>

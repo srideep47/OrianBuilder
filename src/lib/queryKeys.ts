@@ -33,6 +33,11 @@ export const queryKeys = {
     envVars: ["settings", "envVars"] as const,
   },
 
+  embeddedModel: {
+    all: ["embeddedModel"] as const,
+    status: () => ["embeddedModel", "status"] as const,
+  },
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Apps
   // ─────────────────────────────────────────────────────────────────────────────
@@ -71,6 +76,37 @@ export const queryKeys = {
       appId: number | null;
       chatId: number | null;
     }) => ["plans", "forChat", appId, chatId] as const,
+  },
+
+  missions: {
+    all: ["missions"] as const,
+    list: ({ appId }: { appId: number | null }) =>
+      ["missions", "list", appId] as const,
+    detail: ({ missionId }: { missionId: number | null }) =>
+      ["missions", "detail", missionId] as const,
+    events: ({ missionId }: { missionId: number | null }) =>
+      ["missions", "events", missionId] as const,
+    tasks: ({ missionId }: { missionId: number | null }) =>
+      ["missions", "tasks", missionId] as const,
+    runs: ({ missionId }: { missionId: number | null }) =>
+      ["missions", "runs", missionId] as const,
+    workers: ({ missionId }: { missionId: number | null }) =>
+      ["missions", "workers", missionId] as const,
+    checkpoints: ({ missionId }: { missionId: number | null }) =>
+      ["missions", "checkpoints", missionId] as const,
+    artifacts: ({ missionId }: { missionId: number | null }) =>
+      ["missions", "artifacts", missionId] as const,
+    interrupts: ({ missionId }: { missionId: number | null }) =>
+      ["missions", "interrupts", missionId] as const,
+    memories: ({
+      appId,
+      missionId,
+    }: {
+      appId: number | null;
+      missionId: number | null;
+    }) => ["missions", "memories", appId, missionId] as const,
+    permissionRequests: ({ missionId }: { missionId: number | null }) =>
+      ["missions", "permission-requests", missionId] as const,
   },
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -365,9 +401,13 @@ export type QueryKeyOf<T> = T extends readonly unknown[]
 export type AppQueryKey =
   | QueryKeyOf<(typeof queryKeys.system)[keyof typeof queryKeys.system]>
   | QueryKeyOf<(typeof queryKeys.settings)[keyof typeof queryKeys.settings]>
+  | QueryKeyOf<
+      (typeof queryKeys.embeddedModel)[keyof typeof queryKeys.embeddedModel]
+    >
   | QueryKeyOf<(typeof queryKeys.apps)[keyof typeof queryKeys.apps]>
   | QueryKeyOf<(typeof queryKeys.chats)[keyof typeof queryKeys.chats]>
   | QueryKeyOf<(typeof queryKeys.plans)[keyof typeof queryKeys.plans]>
+  | QueryKeyOf<(typeof queryKeys.missions)[keyof typeof queryKeys.missions]>
   | QueryKeyOf<(typeof queryKeys.proposals)[keyof typeof queryKeys.proposals]>
   | QueryKeyOf<(typeof queryKeys.versions)[keyof typeof queryKeys.versions]>
   | QueryKeyOf<(typeof queryKeys.branches)[keyof typeof queryKeys.branches]>

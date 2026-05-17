@@ -42,7 +42,7 @@ describe("chat mode resolution", () => {
     ).toEqual({ mode: "plan" });
   });
 
-  it("falls back when stored local-agent mode has no provider", () => {
+  it("local-agent mode is always available regardless of provider", () => {
     const settings = makeSettings({ defaultChatMode: "build" });
 
     expect(
@@ -50,12 +50,11 @@ describe("chat mode resolution", () => {
         storedChatMode: "local-agent",
         settings,
         envVars: {},
-        freeAgentQuotaAvailable: true,
       }),
-    ).toEqual({ mode: "build", fallbackReason: "no-provider" });
+    ).toEqual({ mode: "local-agent" });
   });
 
-  it("falls back when stored local-agent mode is out of quota", () => {
+  it("local-agent mode is always available regardless of quota", () => {
     const settings = makeSettings({
       defaultChatMode: "build",
       providerSettings: {
@@ -70,7 +69,7 @@ describe("chat mode resolution", () => {
         envVars: {},
         freeAgentQuotaAvailable: false,
       }),
-    ).toEqual({ mode: "build", fallbackReason: "quota-exhausted" });
+    ).toEqual({ mode: "local-agent" });
   });
 
   it("does not treat unknown quota as exhausted", () => {
@@ -87,62 +86,6 @@ describe("chat mode resolution", () => {
         settings,
         envVars: {},
         freeAgentQuotaAvailable: undefined,
-      }),
-    ).toEqual({ mode: "local-agent" });
-  });
-
-  it("allows basic agent mode when Pro is enabled without a key but free quota is available", () => {
-    const settings = makeSettings({
-      enableDyadPro: true,
-      defaultChatMode: "build",
-      providerSettings: {
-        openai: { apiKey: { value: "test-key" } },
-      },
-    });
-
-    expect(
-      resolveChatMode({
-        storedChatMode: "local-agent",
-        settings,
-        envVars: {},
-        freeAgentQuotaAvailable: true,
-      }),
-    ).toEqual({ mode: "local-agent" });
-  });
-
-  it("reports quota exhausted before Pro required when a provider is configured", () => {
-    const settings = makeSettings({
-      enableDyadPro: true,
-      defaultChatMode: "build",
-      providerSettings: {
-        openai: { apiKey: { value: "test-key" } },
-      },
-    });
-
-    expect(
-      resolveChatMode({
-        storedChatMode: "local-agent",
-        settings,
-        envVars: {},
-        freeAgentQuotaAvailable: false,
-      }),
-    ).toEqual({ mode: "build", fallbackReason: "quota-exhausted" });
-  });
-
-  it("allows stored local-agent mode for Pro users", () => {
-    const settings = makeSettings({
-      enableDyadPro: true,
-      providerSettings: {
-        auto: { apiKey: { value: "dyad-key" } },
-      },
-    });
-
-    expect(
-      resolveChatMode({
-        storedChatMode: "local-agent",
-        settings,
-        envVars: {},
-        freeAgentQuotaAvailable: false,
       }),
     ).toEqual({ mode: "local-agent" });
   });

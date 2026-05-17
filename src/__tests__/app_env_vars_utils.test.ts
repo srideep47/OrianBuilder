@@ -17,7 +17,7 @@ vi.mock("fs", () => ({
 }));
 
 vi.mock("@/paths/paths", () => ({
-  getDyadAppPath: vi.fn((appPath: string) => `/mock/apps/${appPath}`),
+  getOrianBuilderAppPath: vi.fn((appPath: string) => `/mock/apps/${appPath}`),
 }));
 
 function createEnoentError() {

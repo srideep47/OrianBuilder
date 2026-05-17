@@ -16,6 +16,26 @@ export function detectFrameworkType(appPath: string): AppFrameworkType | null {
       }
     }
 
+    const electronConfigs = [
+      "electron.vite.config.js",
+      "electron.vite.config.ts",
+      "electron.vite.config.mjs",
+    ];
+    for (const config of electronConfigs) {
+      if (fs.existsSync(path.join(appPath, config))) {
+        return "electron";
+      }
+    }
+
+    // Expo config file is a reliable signal even before npm install
+    if (
+      fs.existsSync(path.join(appPath, "app.config.js")) ||
+      fs.existsSync(path.join(appPath, "app.config.ts")) ||
+      fs.existsSync(path.join(appPath, "app.json"))
+    ) {
+      return "expo";
+    }
+
     const viteConfigs = ["vite.config.js", "vite.config.ts", "vite.config.mjs"];
     for (const config of viteConfigs) {
       if (fs.existsSync(path.join(appPath, config))) {
@@ -32,16 +52,16 @@ export function detectFrameworkType(appPath: string): AppFrameworkType | null {
         ...packageJson.devDependencies,
       };
       if (deps.next) return "nextjs";
-      if (deps.vite) return "vite";
+      if (
+        deps.electron ||
+        deps["electron-vite"] ||
+        deps["@electron-forge/cli"] ||
+        deps["electron-builder"]
+      ) {
+        return "electron";
+      }
       if (deps.expo) return "expo";
-    }
-
-    // Expo config file is a reliable signal even before npm install
-    if (
-      fs.existsSync(path.join(appPath, "app.config.js")) ||
-      fs.existsSync(path.join(appPath, "app.config.ts"))
-    ) {
-      return "expo";
+      if (deps.vite) return "vite";
     }
 
     return "other";

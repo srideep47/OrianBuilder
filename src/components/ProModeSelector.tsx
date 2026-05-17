@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/accordion";
 import { useSettings } from "@/hooks/useSettings";
 import { ipc } from "@/ipc/types";
-import { hasDyadProKey, type UserSettings } from "@/lib/schemas";
+import { hasOrianBuilderProKey, type UserSettings } from "@/lib/schemas";
 
 export function ProModeSelector() {
   const { settings, updateSettings } = useSettings();
@@ -59,12 +59,13 @@ export function ProModeSelector() {
 
   const toggleProEnabled = () => {
     updateSettings({
-      enableDyadPro: !settings?.enableDyadPro,
+      enableOrianBuilderPro: !settings?.enableOrianBuilderPro,
     });
   };
 
-  const hasProKey = settings ? hasDyadProKey(settings) : false;
-  const proModeTogglable = hasProKey && Boolean(settings?.enableDyadPro);
+  const hasProKey = settings ? hasOrianBuilderProKey(settings) : false;
+  const proModeTogglable =
+    hasProKey && Boolean(settings?.enableOrianBuilderPro);
 
   return (
     <Popover>
@@ -93,9 +94,9 @@ export function ProModeSelector() {
               <a
                 className="inline-flex items-center justify-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm font-medium text-primary shadow-sm transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring cursor-pointer"
                 onClick={() => {
-                  ipc.system.openExternalUrl("https://dyad.sh/pro#ai");
+                  ipc.system.openExternalUrl("https://orianbuilder.sh/pro#ai");
                 }}
-                title="Visit dyad.sh/pro to unlock Pro features"
+                title="Visit orianbuilder.sh/pro to unlock Pro features"
               >
                 Unlock Pro modes
               </a>
@@ -107,7 +108,7 @@ export function ProModeSelector() {
               label="Enable OrianBuilder Pro"
               tooltip="Uses OrianBuilder Pro AI credits for the main AI model and Pro modes."
               isTogglable={hasProKey}
-              settingEnabled={Boolean(settings?.enableDyadPro)}
+              settingEnabled={Boolean(settings?.enableOrianBuilderPro)}
               toggle={toggleProEnabled}
             />
             <Accordion>
@@ -123,7 +124,7 @@ export function ProModeSelector() {
                     <SelectorRow
                       id="web-search"
                       label="Web Access"
-                      tooltip="Allows Dyad to access the web (e.g. search for information)"
+                      tooltip="Allows OrianBuilder to access the web (e.g. search for information)"
                       isTogglable={proModeTogglable}
                       settingEnabled={Boolean(settings?.enableProWebSearch)}
                       toggle={toggleWebSearch}

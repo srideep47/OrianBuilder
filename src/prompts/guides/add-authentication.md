@@ -164,7 +164,7 @@ return (
 ### Environment Variables (`.env.local`)
 
 <code-template label="env-vars" file=".env.local" language="bash">
-# Neon Database (injected by Dyad)
+# Neon Database (injected by OrianBuilder)
 DATABASE_URL=postgresql://user:pass@ep-xxx.us-east-2.aws.neon.tech/dbname?sslmode=require
 
 # Neon Auth (managed by Neon, values from Neon Console > Auth settings)

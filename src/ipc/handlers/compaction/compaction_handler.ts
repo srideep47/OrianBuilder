@@ -27,7 +27,7 @@ import { getPostCompactionMessages } from "./compaction_utils";
 import {
   getProviderOptions,
   getAiHeaders,
-  DYAD_INTERNAL_REQUEST_ID_HEADER,
+  ORIANBUILDER_INTERNAL_REQUEST_ID_HEADER,
 } from "@/ipc/utils/provider_options";
 import { escapeXmlContent } from "../../../../shared/xmlEscape";
 
@@ -118,7 +118,7 @@ export async function performCompaction(
   event: IpcMainInvokeEvent,
   chatId: number,
   appPath: string,
-  dyadRequestId: string,
+  orianbuilderRequestId: string,
   onSummaryChunk?: (accumulatedText: string) => void,
   options?: {
     createdAtStrategy?: "before-latest-user" | "now";
@@ -152,7 +152,7 @@ export async function performCompaction(
       }),
     );
 
-    // Store readable transcript backup in the app's .dyad/chats/ directory
+    // Store readable transcript backup in the app's .orianbuilder/chats/ directory
     const backupPath = await storePreCompactionMessages(
       appPath,
       chatId,
@@ -182,12 +182,12 @@ export async function performCompaction(
         ...getAiHeaders({
           builtinProviderId: modelClient.builtinProviderId,
         }),
-        [DYAD_INTERNAL_REQUEST_ID_HEADER]: dyadRequestId,
+        [ORIANBUILDER_INTERNAL_REQUEST_ID_HEADER]: orianbuilderRequestId,
       },
       providerOptions: getProviderOptions({
-        dyadAppId: 0,
-        dyadRequestId,
-        dyadDisableFiles: true,
+        orianbuilderAppId: 0,
+        orianbuilderRequestId,
+        orianbuilderDisableFiles: true,
         files: [],
         mentionedAppsCodebases: [],
         builtinProviderId: modelClient.builtinProviderId,
@@ -207,9 +207,9 @@ export async function performCompaction(
 
     // Create the compaction indicator message
     // Include relative backup path so the AI can read the full original conversation later
-    const compactionMessageContent = `<dyad-compaction title="Conversation compacted" state="finished">
+    const compactionMessageContent = `<orianbuilder-compaction title="Conversation compacted" state="finished">
 ${escapeXmlContent(summary)}
-</dyad-compaction>
+</orianbuilder-compaction>
 
 If you need to retrieve earlier parts of the conversation history, you can read the backup file at: ${backupPath}
 Note: This file may be large. Read only the sections you need or use grep to search for specific content rather than reading the entire file.`;

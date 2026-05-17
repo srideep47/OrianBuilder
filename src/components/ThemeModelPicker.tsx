@@ -17,7 +17,10 @@ import { useEmbeddedModel } from "@/hooks/useEmbeddedModel";
 import { useLanguageModelsByProviders } from "@/hooks/useLanguageModelsByProviders";
 import { useLanguageModelProviders } from "@/hooks/useLanguageModelProviders";
 import { useSettings } from "@/hooks/useSettings";
-import { isDyadProEnabled, type LargeLanguageModel } from "@/lib/schemas";
+import {
+  isOrianBuilderProEnabled,
+  type LargeLanguageModel,
+} from "@/lib/schemas";
 import { TURBO_MODELS } from "@/ipc/shared/language_model_constants";
 import { PriceBadge } from "@/components/PriceBadge";
 import { cn } from "@/lib/utils";
@@ -123,7 +126,7 @@ export function ThemeModelPicker({ value, onChange }: ThemeModelPickerProps) {
     return !p?.secondary;
   });
 
-  if (settings && isDyadProEnabled(settings)) {
+  if (settings && isOrianBuilderProEnabled(settings)) {
     primaryProviders.unshift(["auto", TURBO_MODELS]);
   }
 
@@ -137,11 +140,12 @@ export function ThemeModelPicker({ value, onChange }: ThemeModelPickerProps) {
     !loading && modelsByProviders?.["auto"]
       ? modelsByProviders["auto"].filter((m) => {
           if (
-            !isDyadProEnabled(settings) &&
+            !isOrianBuilderProEnabled(settings) &&
             ["turbo", "value"].includes(m.apiName)
           )
             return false;
-          if (isDyadProEnabled(settings) && m.apiName === "free") return false;
+          if (isOrianBuilderProEnabled(settings) && m.apiName === "free")
+            return false;
           return true;
         })
       : [];
@@ -372,7 +376,10 @@ export function ThemeModelPicker({ value, onChange }: ThemeModelPickerProps) {
             {primaryProviders.map(([providerId, models]) => {
               const filtered = models.filter(
                 (m) =>
-                  !(isDyadProEnabled(settings) && m.apiName.endsWith(":free")),
+                  !(
+                    isOrianBuilderProEnabled(settings) &&
+                    m.apiName.endsWith(":free")
+                  ),
               );
               const provider = providers?.find((p) => p.id === providerId);
               const name =

@@ -6,8 +6,8 @@ import {
 } from "../types/image_generation";
 import { db } from "../../db";
 import { apps } from "../../db/schema";
-import { getDyadAppPath } from "../../paths/paths";
-import { DYAD_MEDIA_DIR_NAME } from "../utils/media_path_utils";
+import { getOrianBuilderAppPath } from "../../paths/paths";
+import { ORIANBUILDER_MEDIA_DIR_NAME } from "../utils/media_path_utils";
 import { safeJoin } from "../utils/path_utils";
 import { withLock } from "../utils/lock_utils";
 import { readSettings } from "../../main/settings";
@@ -15,15 +15,18 @@ import { eq } from "drizzle-orm";
 import fs from "node:fs";
 import path from "node:path";
 import log from "electron-log";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("image_generation_handlers");
 
 // Track active generation controllers so they can be cancelled from the renderer
 const activeControllers = new Map<string, AbortController>();
 
-const DYAD_ENGINE_URL =
-  process.env.DYAD_ENGINE_URL ?? "https://engine.dyad.sh/v1";
+const ORIANBUILDER_ENGINE_URL =
+  process.env.ORIANBUILDER_ENGINE_URL ?? "https://engine.orianbuilder.sh/v1";
 const OPENAI_IMAGE_URL = "https://api.openai.com/v1/images/generations";
 
 const IMAGE_GENERATION_TIMEOUT_MS = 120_000;
@@ -48,13 +51,13 @@ export function registerImageGenerationHandlers() {
         settings.providerSettings?.auto?.apiKey?.value ??
         settings.providerSettings?.openai?.apiKey?.value;
       const imageEndpoint = settings.providerSettings?.auto?.apiKey?.value
-        ? `${DYAD_ENGINE_URL}/images/generations`
+        ? `${ORIANBUILDER_ENGINE_URL}/images/generations`
         : OPENAI_IMAGE_URL;
 
       if (!apiKey) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Image generation requires an OpenAI API key. Add one in Settings → Providers → OpenAI.",
-          DyadErrorKind.Auth,
+          OrianBuilderErrorKind.Auth,
         );
       }
 
@@ -62,7 +65,10 @@ export function registerImageGenerationHandlers() {
         where: eq(apps.id, params.targetAppId),
       });
       if (!app) {
-        throw new DyadError("Target app not found", DyadErrorKind.NotFound);
+        throw new OrianBuilderError(
+          "Target app not found",
+          OrianBuilderErrorKind.NotFound,
+        );
       }
 
       const systemPrompt = THEME_SYSTEM_PROMPTS[params.themeMode];
@@ -90,7 +96,7 @@ export function registerImageGenerationHandlers() {
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${apiKey}`,
-            "X-Dyad-Request-Id": requestId,
+            "X-OrianBuilder-Request-Id": requestId,
           },
           body: JSON.stringify({
             prompt: fullPrompt,
@@ -103,14 +109,14 @@ export function registerImageGenerationHandlers() {
       } catch (error) {
         activeControllers.delete(requestId);
         if (error instanceof Error && error.name === "AbortError") {
-          throw new DyadError(
+          throw new OrianBuilderError(
             "Image generation cancelled or timed out.",
-            DyadErrorKind.UserCancelled,
+            OrianBuilderErrorKind.UserCancelled,
           );
         }
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Failed to connect to image generation service.",
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       } finally {
         clearTimeout(timeoutId);
@@ -131,17 +137,17 @@ export function registerImageGenerationHandlers() {
       const parsed = ImageGenerationApiResponseSchema.safeParse(rawData);
       if (!parsed.success) {
         logger.error("Invalid image generation response:", parsed.error);
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Invalid response from image generation service",
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
 
       const imageData = parsed.data.data[0];
       if (!imageData?.b64_json && !imageData?.url) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "No image data returned from generation service",
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
 
@@ -150,17 +156,17 @@ export function registerImageGenerationHandlers() {
       if (imageData.b64_json) {
         imageBuffer = Buffer.from(imageData.b64_json, "base64");
         if (imageBuffer.byteLength > MAX_IMAGE_SIZE) {
-          throw new DyadError(
+          throw new OrianBuilderError(
             "Decoded image exceeds maximum allowed size",
-            DyadErrorKind.Validation,
+            OrianBuilderErrorKind.Validation,
           );
         }
       } else if (imageData.url) {
         const imageUrl = new URL(imageData.url);
         if (imageUrl.protocol !== "https:") {
-          throw new DyadError(
+          throw new OrianBuilderError(
             "Image URL must use HTTPS",
-            DyadErrorKind.External,
+            OrianBuilderErrorKind.External,
           );
         }
         const dlController = new AbortController();
@@ -179,17 +185,17 @@ export function registerImageGenerationHandlers() {
           }
           const arrayBuffer = await imgResponse.arrayBuffer();
           if (arrayBuffer.byteLength > MAX_IMAGE_SIZE) {
-            throw new DyadError(
+            throw new OrianBuilderError(
               "Downloaded image exceeds maximum allowed size",
-              DyadErrorKind.Validation,
+              OrianBuilderErrorKind.Validation,
             );
           }
           imageBuffer = Buffer.from(arrayBuffer);
         } catch (dlError) {
           if (dlError instanceof Error && dlError.name === "AbortError") {
-            throw new DyadError(
+            throw new OrianBuilderError(
               "Image download timed out. Please try again.",
-              DyadErrorKind.External,
+              OrianBuilderErrorKind.External,
             );
           }
           throw dlError;
@@ -197,9 +203,9 @@ export function registerImageGenerationHandlers() {
           clearTimeout(dlTimeout);
         }
       } else {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Unexpected image response format",
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
 
@@ -207,8 +213,8 @@ export function registerImageGenerationHandlers() {
       const { fileName, filePath, appPath } = await withLock(
         `media:${params.targetAppId}`,
         async () => {
-          const appPath = getDyadAppPath(app.path);
-          const mediaDir = path.join(appPath, DYAD_MEDIA_DIR_NAME);
+          const appPath = getOrianBuilderAppPath(app.path);
+          const mediaDir = path.join(appPath, ORIANBUILDER_MEDIA_DIR_NAME);
           await fs.promises.mkdir(mediaDir, { recursive: true });
 
           const timestamp = Date.now();

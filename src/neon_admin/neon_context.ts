@@ -2,7 +2,10 @@ import { neon } from "@neondatabase/serverless";
 import log from "electron-log";
 import { getNeonClient } from "./neon_management_client";
 import { IS_TEST_BUILD } from "@/ipc/utils/test_utils";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import type { AppFrameworkType } from "@/lib/framework_constants";
 
 const logger = log.scope("neon_context");
@@ -153,9 +156,9 @@ export async function executeNeonSql({
     return JSON.stringify(result, null, 2);
   } catch (error) {
     logger.error("Error executing Neon SQL:", error);
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Failed to execute SQL on Neon: ${error instanceof Error ? error.message : String(error)}`,
-      DyadErrorKind.External,
+      OrianBuilderErrorKind.External,
     );
   }
 }
@@ -326,9 +329,9 @@ ${JSON.stringify(tableNames)}
 `;
   } catch (error) {
     logger.error("Error getting Neon project info:", error);
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Failed to get Neon project info: ${error instanceof Error ? error.message : String(error)}`,
-      DyadErrorKind.External,
+      OrianBuilderErrorKind.External,
     );
   }
 }
@@ -376,9 +379,9 @@ export async function getNeonTableSchema({
     );
   } catch (error) {
     logger.error("Error getting Neon table schema:", error);
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Failed to get Neon table schema: ${error instanceof Error ? error.message : String(error)}`,
-      DyadErrorKind.External,
+      OrianBuilderErrorKind.External,
     );
   }
 }

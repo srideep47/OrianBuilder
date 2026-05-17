@@ -46,7 +46,9 @@ describe("deployAllSupabaseFunctions progress", () => {
   let appPath: string;
 
   beforeEach(async () => {
-    appPath = await fs.mkdtemp(path.join(os.tmpdir(), "dyad-supabase-"));
+    appPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "orianbuilder-supabase-"),
+    );
     for (const functionName of ["alpha", "beta"]) {
       await fs.mkdir(
         path.join(appPath, "supabase", "functions", functionName),

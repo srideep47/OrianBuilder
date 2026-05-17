@@ -26,7 +26,7 @@
   - img
   - text: "Summary: this file will be partially written"
 - paragraph: Finished writing file.
-- paragraph: "[[dyad-dump-path=*]]"
+- paragraph: "[[orianbuilder-dump-path=*]]"
 - button "Copy":
   - img
 - img

@@ -18,6 +18,7 @@ import {
   Lock,
   Mic,
   MicOff,
+  CloudUpload,
 } from "lucide-react";
 import type React from "react";
 import {
@@ -39,11 +40,13 @@ import {
   pendingAgentConsentsAtom,
   agentTodosByChatIdAtom,
   needsFreshPlanChatAtom,
+  activeMissionByChatIdAtom,
 } from "@/atoms/chatAtoms";
 import { atom, useAtom, useSetAtom, useAtomValue } from "jotai";
 import { useStreamChat } from "@/hooks/useStreamChat";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { useProposal } from "@/hooks/useProposal";
 import {
   ActionProposal,
@@ -65,7 +68,12 @@ import { useAttachments } from "@/hooks/useAttachments";
 import { AttachmentsList } from "./AttachmentsList";
 import { DragDropOverlay } from "./DragDropOverlay";
 import { FileAttachmentTypeDialog } from "./FileAttachmentTypeDialog";
-import { showExtraFilesToast, showInfo, showWarning } from "@/lib/toast";
+import {
+  showExtraFilesToast,
+  showInfo,
+  showSuccess,
+  showWarning,
+} from "@/lib/toast";
 import { useSummarizeInNewChat } from "./SummarizeInNewChatButton";
 import { ChatInputControls } from "../ChatInputControls";
 import { ChatErrorBox } from "./ChatErrorBox";
@@ -111,7 +119,7 @@ import { useRouter } from "@tanstack/react-router";
 import { showError as showErrorToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { useVoiceToText } from "@/hooks/useVoiceToText";
-import { isDyadProEnabled } from "@/lib/schemas";
+import { isOrianBuilderProEnabled } from "@/lib/schemas";
 import { useChatMode } from "@/hooks/useChatMode";
 import { useInitialChatMode } from "@/hooks/useInitialChatMode";
 
@@ -121,7 +129,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
   const { t } = useTranslation("chat");
   const posthog = usePostHog();
   const [inputValue, setInputValue] = useAtom(chatInputValueAtom);
-  const { settings } = useSettings();
+  const { settings, updateSettings } = useSettings();
   const {
     selectedMode: chatMode,
     effectiveMode,
@@ -185,6 +193,10 @@ export function ChatInput({ chatId }: { chatId?: number }) {
     (c) => c.chatId === chatId,
   );
   const pendingAgentConsent = consentsForThisChat[0] ?? null;
+  const activeMissionByChatId = useAtomValue(activeMissionByChatIdAtom);
+  const activeMissionId = chatId
+    ? activeMissionByChatId.get(chatId)
+    : undefined;
 
   // Get todos for this chat
   const agentTodosByChatId = useAtomValue(agentTodosByChatIdAtom);
@@ -198,6 +210,8 @@ export function ChatInput({ chatId }: { chatId?: number }) {
   const handleOpenImageGenerator = useCallback(() => {
     setImageGeneratorOpen(true);
   }, []);
+  const [isAutoPublishing, setIsAutoPublishing] = useState(false);
+  const isAutoPublishEnabled = !!settings?.autoPublishAfterChecks;
 
   // Image generation jobs for auto-adding to chat on send
   const chatImageJobs = useAtomValue(chatImageGenerationJobsAtom);
@@ -264,7 +278,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
   }, [chatId, messagesById]);
 
   const { userBudget } = useUserBudgetInfo();
-  const isProEnabled = settings ? isDyadProEnabled(settings) : false;
+  const isProEnabled = settings ? isOrianBuilderProEnabled(settings) : false;
 
   const handleTranscription = useCallback(
     (text: string) => {
@@ -358,7 +372,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
     setVisualEditingSelectedComponent(null);
     if (previewIframeRef?.contentWindow) {
       previewIframeRef.contentWindow.postMessage(
-        { type: "clear-dyad-component-overlays" },
+        { type: "clear-orianbuilder-component-overlays" },
         "*",
       );
     }
@@ -479,6 +493,111 @@ export function ChatInput({ chatId }: { chatId?: number }) {
     [editingQueuedMessageId, removeQueuedMessage, resetEditingState],
   );
 
+  const publishAfterChecks = useCallback(async () => {
+    if (!appId || !settings?.autoPublishAfterChecks || isAutoPublishing) {
+      return;
+    }
+    if (
+      !settings.githubAccessToken?.value ||
+      !settings.vercelAccessToken?.value
+    ) {
+      showWarning(
+        "Auto-publish is on, but GitHub and Vercel must both be connected first.",
+      );
+      return;
+    }
+
+    setIsAutoPublishing(true);
+    try {
+      showInfo("Auto-publish: running checks before publishing.");
+      const problemReport = await ipc.misc.checkProblems({ appId });
+      if (problemReport.problems.length > 0) {
+        showWarning(
+          `Auto-publish skipped: ${problemReport.problems.length} problem${
+            problemReport.problems.length === 1 ? "" : "s"
+          } found.`,
+        );
+        return;
+      }
+
+      let app = await ipc.app.getApp(appId);
+      if (!app.githubOrg || !app.githubRepo) {
+        await ipc.github.createRepo({
+          appId,
+          org: "",
+          repo: app.name,
+          branch: "main",
+        });
+      } else {
+        const files = await ipc.git.getUncommittedFiles({ appId });
+        if (files.length > 0) {
+          await ipc.git.commitChanges({
+            appId,
+            message: "chore: publish latest app changes",
+          });
+        }
+      }
+
+      await ipc.github.push({ appId });
+      app = await ipc.app.getApp(appId);
+
+      if (!app.vercelProjectId) {
+        const projects = await ipc.vercel.listProjects();
+        const existing = projects.find((project) => project.name === app.name);
+        if (existing) {
+          await ipc.vercel.connectExistingProject({
+            appId,
+            projectId: existing.id,
+          });
+        } else {
+          await ipc.vercel.createProject({
+            appId,
+            name: app.name,
+          });
+        }
+      }
+
+      let deploymentUrl: string | null = null;
+      try {
+        const deployments = await ipc.vercel.getDeployments({ appId });
+        const readyDeployment = deployments.find(
+          (deployment) =>
+            deployment.readyState === "READY" &&
+            deployment.target === "production",
+        );
+        if (readyDeployment?.url) {
+          deploymentUrl = readyDeployment.url.startsWith("http")
+            ? readyDeployment.url
+            : `https://${readyDeployment.url}`;
+        }
+      } catch {
+        // A just-created deployment can still be building; the app row is the fallback.
+      }
+
+      const refreshedApp = await ipc.app.getApp(appId);
+      const url = deploymentUrl || refreshedApp.vercelDeploymentUrl;
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.apps.detail({ appId }),
+      });
+      showSuccess(
+        url
+          ? `Published to Vercel: ${url}`
+          : "Published to GitHub and started Vercel deployment.",
+      );
+    } catch (error: any) {
+      showWarning(error?.message || "Auto-publish failed.");
+    } finally {
+      setIsAutoPublishing(false);
+    }
+  }, [
+    appId,
+    isAutoPublishing,
+    queryClient,
+    settings?.autoPublishAfterChecks,
+    settings?.githubAccessToken?.value,
+    settings?.vercelAccessToken?.value,
+  ]);
+
   const handleSubmit = async () => {
     if (
       (!inputValue.trim() &&
@@ -536,6 +655,12 @@ export function ChatInput({ chatId }: { chatId?: number }) {
         attachments,
         redo: false,
         requestedChatMode: "plan",
+        missionId: activeMissionId,
+        onSettled: ({ success }) => {
+          if (success) {
+            void publishAfterChecks();
+          }
+        },
       });
       clearAttachments();
       posthog.capture("chat:submit", { chatMode });
@@ -556,6 +681,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
         prompt: currentInput,
         attachments,
         selectedComponents: componentsToSend,
+        missionId: activeMissionId,
       });
       resetEditingState();
       return;
@@ -578,7 +704,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
         // Clear overlays in the preview iframe
         if (previewIframeRef?.contentWindow) {
           previewIframeRef.contentWindow.postMessage(
-            { type: "clear-dyad-component-overlays" },
+            { type: "clear-orianbuilder-component-overlays" },
             "*",
           );
         }
@@ -595,7 +721,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
     // Clear overlays in the preview iframe
     if (previewIframeRef?.contentWindow) {
       previewIframeRef.contentWindow.postMessage(
-        { type: "clear-dyad-component-overlays" },
+        { type: "clear-orianbuilder-component-overlays" },
         "*",
       );
     }
@@ -608,6 +734,12 @@ export function ChatInput({ chatId }: { chatId?: number }) {
       redo: false,
       selectedComponents: componentsToSend,
       requestedChatMode: isChatModeLoading ? null : chatMode,
+      missionId: activeMissionId,
+      onSettled: ({ success }) => {
+        if (success) {
+          void publishAfterChecks();
+        }
+      },
     });
     clearAttachments();
     posthog.capture("chat:submit", { chatMode });
@@ -736,7 +868,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
         <ChatErrorBox
           onDismiss={dismissError}
           error={error}
-          isDyadProEnabled={settings.enableDyadPro ?? false}
+          isOrianBuilderProEnabled={settings.enableOrianBuilderPro ?? false}
           onStartNewChat={handleNewChat}
         />
       )}
@@ -751,7 +883,10 @@ export function ChatInput({ chatId }: { chatId?: number }) {
           {t("errorLoadingProposal", { message: proposalError.message })}
         </div>
       )}
-      <div className="p-2 pt-0" data-testid="chat-input-container">
+      <div
+        className="px-2 pt-0 pb-5 max-w-3xl mx-auto w-full"
+        data-testid="chat-input-container"
+      >
         {/* Show context limit banner above chat input for visibility */}
         {showBanner && tokenCountResult && (
           <ContextLimitBanner
@@ -877,7 +1012,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
                 // Deactivate component selector in iframe
                 if (previewIframeRef?.contentWindow) {
                   previewIframeRef.contentWindow.postMessage(
-                    { type: "deactivate-dyad-component-selector" },
+                    { type: "deactivate-orianbuilder-component-selector" },
                     "*",
                   );
                 }
@@ -891,7 +1026,9 @@ export function ChatInput({ chatId }: { chatId?: number }) {
                     render={
                       <button
                         onClick={() => {
-                          ipc.system.openExternalUrl("https://dyad.sh/pro");
+                          ipc.system.openExternalUrl(
+                            "https://orianbuilder.sh/pro",
+                          );
                         }}
                         className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors cursor-pointer"
                       />
@@ -937,10 +1074,11 @@ export function ChatInput({ chatId }: { chatId?: number }) {
               onChange={setInputValue}
               onSubmit={handleSubmit}
               onPaste={handlePaste}
-              placeholder={t("askDyadToBuild")}
+              placeholder={t("askOrianBuilderToBuild")}
               excludeCurrentApp={true}
               disableSendButton={disableSendButton}
               messageHistory={userMessageHistory}
+              inputClassName="min-h-[60px] text-[16px]"
             />
 
             {/* Voice-to-text button */}
@@ -989,7 +1127,9 @@ export function ChatInput({ chatId }: { chatId?: number }) {
                   render={
                     <button
                       onClick={() =>
-                        ipc.system.openExternalUrl("https://dyad.sh/pro")
+                        ipc.system.openExternalUrl(
+                          "https://orianbuilder.sh/pro",
+                        )
                       }
                       aria-label={t("voiceToTextPro", "Voice to text (Pro)")}
                       className="px-2 py-2 mb-0.5 text-muted-foreground hover:text-primary rounded-lg transition-colors duration-150 cursor-pointer relative"
@@ -1044,8 +1184,43 @@ export function ChatInput({ chatId }: { chatId?: number }) {
             )}
           </div>
           <div className="px-2 flex items-center justify-between pb-0.5 pt-0.5">
-            <div className="flex items-center">
+            <div className="flex items-center gap-2">
               <ChatInputControls showContextFilesPicker={false} />
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <label
+                      htmlFor="auto-publish-after-checks"
+                      className={cn(
+                        "chip glass-soft h-7 rounded-md px-2 text-[11px] font-medium",
+                        "border-white/10 text-white/65 hover:border-primary/40 hover:bg-primary/10 hover:text-white",
+                        isAutoPublishEnabled &&
+                          "border-primary/40 bg-primary/15 text-white shadow-[0_0_18px_-10px_rgba(168,140,255,.8)]",
+                        isAutoPublishing && "opacity-70",
+                      )}
+                    />
+                  }
+                >
+                  <CloudUpload size={14} />
+                  <span>Publish</span>
+                  <Switch
+                    id="auto-publish-after-checks"
+                    checked={isAutoPublishEnabled}
+                    disabled={isAutoPublishing}
+                    onCheckedChange={(checked) => {
+                      void updateSettings({
+                        autoPublishAfterChecks: checked,
+                      });
+                    }}
+                    onClick={(event) => event.stopPropagation()}
+                    aria-label="Auto-publish after checks"
+                  />
+                </TooltipTrigger>
+                <TooltipContent>
+                  Push to GitHub and deploy to Vercel after a successful checked
+                  turn.
+                </TooltipContent>
+              </Tooltip>
             </div>
 
             <AuxiliaryActionsMenu
@@ -1155,7 +1330,7 @@ function WriteCodeProperlyButton() {
       return;
     }
     streamMessage({
-      prompt: `Write the code in the previous message in the correct format using \`<dyad-write>\` tags!`,
+      prompt: `Write the code in the previous message in the correct format using \`<orianbuilder-write>\` tags!`,
       chatId,
       redo: false,
     });

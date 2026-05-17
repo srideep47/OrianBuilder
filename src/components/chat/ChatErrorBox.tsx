@@ -16,12 +16,12 @@ import {
 export function ChatErrorBox({
   onDismiss,
   error,
-  isDyadProEnabled: _isDyadProEnabled,
+  isOrianBuilderProEnabled: _isOrianBuilderProEnabled,
   onStartNewChat,
 }: {
   onDismiss: () => void;
   error: string;
-  isDyadProEnabled: boolean;
+  isOrianBuilderProEnabled: boolean;
   onStartNewChat?: () => void;
 }) {
   // Strip fallback model list noise from error messages
@@ -49,7 +49,7 @@ export function ChatErrorBox({
               </TooltipContent>
             </Tooltip>
           )}
-        <ExternalLink href="https://www.dyad.sh/docs/faq">
+        <ExternalLink href="https://www.orianbuilder.sh/docs/faq">
           Read docs
         </ExternalLink>
       </div>

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAppMediaFiles } from "@/hooks/useAppMediaFiles";
 import { useLoadApps } from "@/hooks/useLoadApps";
 import { Image, ImagePlus, Loader2 } from "lucide-react";
-import { DyadAppMediaFolder } from "@/components/DyadAppMediaFolder";
+import { OrianBuilderAppMediaFolder } from "@/components/OrianBuilderAppMediaFolder";
 import { LibrarySearchBar } from "@/components/LibrarySearchBar";
 import { Button } from "@/components/ui/button";
 import { ImageGeneratorDialog } from "@/components/ImageGeneratorDialog";
@@ -28,7 +28,7 @@ export default function MediaPage() {
     <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="flex items-center text-2xl font-bold sm:text-3xl">
+          <h1 className="flex items-center text-2xl font-bold sm:text-3xl page-title">
             <Image className="mr-2 h-7 w-7 sm:h-8 sm:w-8" />
             Media
           </h1>
@@ -60,7 +60,7 @@ export default function MediaPage() {
         ) : (
           <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4">
             {filteredMediaApps.map((app) => (
-              <DyadAppMediaFolder
+              <OrianBuilderAppMediaFolder
                 key={`media-${app.appId}`}
                 appId={app.appId}
                 appPath={app.appPath}

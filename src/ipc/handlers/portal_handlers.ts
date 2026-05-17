@@ -3,11 +3,14 @@ import log from "electron-log";
 import { db } from "../../db";
 import { apps } from "../../db/schema";
 import { eq } from "drizzle-orm";
-import { getDyadAppPath } from "../../paths/paths";
+import { getOrianBuilderAppPath } from "../../paths/paths";
 import { spawn } from "child_process";
 import { gitCommit, gitAdd } from "../utils/git_utils";
 import { storeDbTimestampAtCurrentVersion } from "../utils/neon_timestamp_utils";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("portal_handlers");
 const handle = createLoggedHandler(logger);
@@ -17,9 +20,9 @@ async function getApp(appId: number) {
     where: eq(apps.id, appId),
   });
   if (!app) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `App with id ${appId} not found`,
-      DyadErrorKind.NotFound,
+      OrianBuilderErrorKind.NotFound,
     );
   }
   return app;
@@ -30,7 +33,7 @@ export function registerPortalHandlers() {
     "portal:migrate-create",
     async (_, { appId }: { appId: number }): Promise<{ output: string }> => {
       const app = await getApp(appId);
-      const appPath = getDyadAppPath(app.path);
+      const appPath = getOrianBuilderAppPath(app.path);
 
       // Run the migration command
       const migrationOutput = await new Promise<string>((resolve, reject) => {
@@ -122,16 +125,16 @@ export function registerPortalHandlers() {
 
         const commitHash = await gitCommit({
           path: appPath,
-          message: "[dyad] Generate database migration file",
+          message: "[orianbuilder] Generate database migration file",
         });
 
         logger.info(`Successfully committed migration changes: ${commitHash}`);
         return { output: migrationOutput };
       } catch (gitError) {
         logger.error(`Migration created but failed to commit: ${gitError}`);
-        throw new DyadError(
+        throw new OrianBuilderError(
           `Migration created but failed to commit: ${gitError}`,
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
     },

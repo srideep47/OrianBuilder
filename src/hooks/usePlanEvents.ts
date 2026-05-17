@@ -125,7 +125,7 @@ export function usePlanEvents() {
           return;
         }
 
-        // Always persist the plan to .dyad/plans/
+        // Always persist the plan to .orianbuilder/plans/
         let planSlug: string;
         try {
           planSlug = await planClient.createPlan({
@@ -187,7 +187,7 @@ export function usePlanEvents() {
           const app = queryClient.getQueryData<App | null>(
             queryKeys.apps.detail({ appId: selectedAppIdRef.current! }),
           );
-          new Notification(app?.name ?? "Dyad", {
+          new Notification(app?.name ?? "OrianBuilder", {
             body: "A questionnaire needs your input",
           });
         }

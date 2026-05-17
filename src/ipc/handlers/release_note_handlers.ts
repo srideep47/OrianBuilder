@@ -3,7 +3,10 @@ import fetch from "node-fetch";
 import { IS_TEST_BUILD } from "../utils/test_utils";
 import { createTypedHandler } from "./base";
 import { systemContracts } from "../types/system";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("release_note_handlers");
 
@@ -14,9 +17,9 @@ export function registerReleaseNoteHandlers() {
       const { version } = params;
 
       if (!version || typeof version !== "string") {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Invalid version provided",
-          DyadErrorKind.Validation,
+          OrianBuilderErrorKind.Validation,
         );
       }
 
@@ -25,7 +28,7 @@ export function registerReleaseNoteHandlers() {
       if (IS_TEST_BUILD) {
         return { exists: false };
       }
-      const releaseNoteUrl = `https://www.dyad.sh/docs/releases/${version}`;
+      const releaseNoteUrl = `https://www.orianbuilder.sh/docs/releases/${version}`;
 
       logger.debug(`Checking for release note at: ${releaseNoteUrl}`);
 

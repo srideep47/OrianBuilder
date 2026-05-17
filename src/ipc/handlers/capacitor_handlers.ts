@@ -2,14 +2,17 @@ import log from "electron-log";
 import { db } from "../../db";
 import { apps } from "../../db/schema";
 import { eq } from "drizzle-orm";
-import { getDyadAppPath } from "../../paths/paths";
+import { getOrianBuilderAppPath } from "../../paths/paths";
 import fs from "node:fs";
 import path from "node:path";
 import { simpleSpawn } from "../utils/simpleSpawn";
 import { IS_TEST_BUILD } from "../utils/test_utils";
 import { createTypedHandler } from "./base";
 import { capacitorContracts } from "../types/capacitor";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("capacitor_handlers");
 
@@ -18,9 +21,9 @@ async function getApp(appId: number) {
     where: eq(apps.id, appId),
   });
   if (!app) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `App with id ${appId} not found`,
-      DyadErrorKind.NotFound,
+      OrianBuilderErrorKind.NotFound,
     );
   }
   return app;
@@ -41,7 +44,7 @@ function isCapacitorInstalled(appPath: string): boolean {
 export function registerCapacitorHandlers() {
   createTypedHandler(capacitorContracts.isCapacitor, async (_, params) => {
     const app = await getApp(params.appId);
-    const appPath = getDyadAppPath(app.path);
+    const appPath = getOrianBuilderAppPath(app.path);
 
     // check for the required Node.js version before running any commands
     const currentNodeVersion = process.version;
@@ -61,12 +64,12 @@ export function registerCapacitorHandlers() {
 
   createTypedHandler(capacitorContracts.syncCapacitor, async (_, params) => {
     const app = await getApp(params.appId);
-    const appPath = getDyadAppPath(app.path);
+    const appPath = getOrianBuilderAppPath(app.path);
 
     if (!isCapacitorInstalled(appPath)) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Capacitor is not installed in this app",
-        DyadErrorKind.Precondition,
+        OrianBuilderErrorKind.Precondition,
       );
     }
 
@@ -91,12 +94,12 @@ export function registerCapacitorHandlers() {
 
   createTypedHandler(capacitorContracts.openIos, async (_, params) => {
     const app = await getApp(params.appId);
-    const appPath = getDyadAppPath(app.path);
+    const appPath = getOrianBuilderAppPath(app.path);
 
     if (!isCapacitorInstalled(appPath)) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Capacitor is not installed in this app",
-        DyadErrorKind.Precondition,
+        OrianBuilderErrorKind.Precondition,
       );
     }
 
@@ -116,12 +119,12 @@ export function registerCapacitorHandlers() {
 
   createTypedHandler(capacitorContracts.openAndroid, async (_, params) => {
     const app = await getApp(params.appId);
-    const appPath = getDyadAppPath(app.path);
+    const appPath = getOrianBuilderAppPath(app.path);
 
     if (!isCapacitorInstalled(appPath)) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Capacitor is not installed in this app",
-        DyadErrorKind.Precondition,
+        OrianBuilderErrorKind.Precondition,
       );
     }
 

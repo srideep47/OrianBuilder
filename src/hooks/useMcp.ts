@@ -11,6 +11,13 @@ import type {
 import { queryKeys } from "@/lib/queryKeys";
 
 export type Transport = "stdio" | "http";
+export type McpToolRiskOverride = "low" | "medium" | "high" | "critical";
+export type McpToolStateScopeOverride =
+  | "read_only"
+  | "workspace"
+  | "runtime"
+  | "external"
+  | "host";
 
 export function useMcp() {
   const queryClient = useQueryClient();
@@ -111,6 +118,25 @@ export function useMcp() {
     meta: { showErrorToast: true },
   });
 
+  const setTrustOverrideMutation = useMutation({
+    mutationFn: async (params: {
+      serverId: number;
+      toolName: string;
+      riskOverride?: McpToolRiskOverride | null;
+      stateScopeOverride?: McpToolStateScopeOverride | null;
+      requiresExplicitConsentOverride?: boolean | null;
+    }) => {
+      return ipc.mcp.setToolTrustOverride(params);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.mcp.consents });
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.mcp.toolsByServer.all,
+      });
+    },
+    meta: { showErrorToast: true },
+  });
+
   const createServer = async (params: CreateMcpServer) =>
     createServerMutation.mutateAsync(params);
 
@@ -128,6 +154,14 @@ export function useMcp() {
     toolName: string,
     consent: McpToolConsent["consent"],
   ) => setConsentMutation.mutateAsync({ serverId, toolName, consent });
+
+  const setToolTrustOverride = async (params: {
+    serverId: number;
+    toolName: string;
+    riskOverride?: McpToolRiskOverride | null;
+    stateScopeOverride?: McpToolStateScopeOverride | null;
+    requiresExplicitConsentOverride?: boolean | null;
+  }) => setTrustOverrideMutation.mutateAsync(params);
 
   const refetchAll = async () => {
     await Promise.all([
@@ -158,6 +192,7 @@ export function useMcp() {
     updateServer,
     deleteServer,
     setToolConsent,
+    setToolTrustOverride,
 
     // Status flags
     isCreating: createServerMutation.isPending,
@@ -165,5 +200,6 @@ export function useMcp() {
     isUpdatingServer: updateServerMutation.isPending,
     isDeleting: deleteServerMutation.isPending,
     isSettingConsent: setConsentMutation.isPending,
+    isSettingTrustOverride: setTrustOverrideMutation.isPending,
   } as const;
 }

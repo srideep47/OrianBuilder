@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { ToolDefinition, AgentContext, escapeXmlContent } from "./types";
 import { getSupabaseProjectInfo } from "../../../../../../supabase_admin/supabase_context";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const getSupabaseProjectInfoSchema = z.object({
   includeDbFunctions: z
@@ -26,14 +29,14 @@ export const getSupabaseProjectInfoTool: ToolDefinition<
 
   execute: async (args, ctx: AgentContext) => {
     if (!ctx.supabaseProjectId) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Supabase is not connected to this app",
-        DyadErrorKind.Precondition,
+        OrianBuilderErrorKind.Precondition,
       );
     }
 
     ctx.onXmlStream(
-      "<dyad-supabase-project-info></dyad-supabase-project-info>",
+      "<orianbuilder-supabase-project-info></orianbuilder-supabase-project-info>",
     );
 
     const info = await getSupabaseProjectInfo({
@@ -43,7 +46,7 @@ export const getSupabaseProjectInfoTool: ToolDefinition<
     });
 
     ctx.onXmlComplete(
-      `<dyad-supabase-project-info>\n${escapeXmlContent(info)}\n</dyad-supabase-project-info>`,
+      `<orianbuilder-supabase-project-info>\n${escapeXmlContent(info)}\n</orianbuilder-supabase-project-info>`,
     );
 
     return info;

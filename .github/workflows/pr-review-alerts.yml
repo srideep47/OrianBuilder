@@ -24,9 +24,9 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v2
         with:
-          app-id: ${{ vars.DYAD_GITHUB_APP_ID }}
-          private-key: ${{ secrets.DYAD_GITHUB_APP_PRIVATE_KEY }}
-          owner: dyad-sh
+          app-id: ${{ vars.ORIANBUILDER_GITHUB_APP_ID }}
+          private-key: ${{ secrets.ORIANBUILDER_GITHUB_APP_PRIVATE_KEY }}
+          owner: orianbuilder-sh
 
       - name: Checkout repository
         uses: actions/checkout@v5

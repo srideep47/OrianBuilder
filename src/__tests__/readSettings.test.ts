@@ -12,7 +12,10 @@ import {
 } from "@/main/settings";
 import { getUserDataPath } from "@/paths/paths";
 import { UserSettings } from "@/lib/schemas";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { getRemoteDesktopConfig } from "@/ipc/shared/remote_desktop_config";
 
 // Mock dependencies
@@ -452,7 +455,10 @@ describe("readSettings", () => {
     it("should return default settings when file read fails", () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockImplementation(() => {
-        throw new DyadError("File read error", DyadErrorKind.External);
+        throw new OrianBuilderError(
+          "File read error",
+          OrianBuilderErrorKind.External,
+        );
       });
 
       const result = readSettings();
@@ -535,7 +541,10 @@ describe("readSettings", () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(mockFileContent));
       mockSafeStorage.decryptString.mockImplementation(() => {
-        throw new DyadError("Decryption failed", DyadErrorKind.External);
+        throw new OrianBuilderError(
+          "Decryption failed",
+          OrianBuilderErrorKind.External,
+        );
       });
 
       const result = readSettings();

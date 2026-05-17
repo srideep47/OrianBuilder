@@ -25,9 +25,9 @@ export const addIntegrationTool: ToolDefinition<
 
   buildXml: (args, _isComplete) => {
     if (args.provider && args.provider !== "none") {
-      return `<dyad-add-integration provider="${escapeXmlAttr(args.provider)}"></dyad-add-integration>`;
+      return `<orianbuilder-add-integration provider="${escapeXmlAttr(args.provider)}"></orianbuilder-add-integration>`;
     }
-    return `<dyad-add-integration></dyad-add-integration>`;
+    return `<orianbuilder-add-integration></orianbuilder-add-integration>`;
   },
 
   execute: async () => {

@@ -1,43 +1,43 @@
 import { safeSend } from "../utils/safe_sender";
 import { cleanFullResponse } from "../utils/cleanFullResponse";
 
-// e.g. [dyad-qa=add-dep]
+// e.g. [orianbuilder-qa=add-dep]
 // Canned responses for test prompts
 const TEST_RESPONSES: Record<string, string> = {
   "ts-error": `This will get a TypeScript error.
   
-  <dyad-write path="src/bad-file.ts" description="This will get a TypeScript error.">
+  <orianbuilder-write path="src/bad-file.ts" description="This will get a TypeScript error.">
   import NonExistentClass from 'non-existent-class';
 
   const x = new Object();
   x.nonExistentMethod();
-  </dyad-write>
+  </orianbuilder-write>
   
   EOM`,
   "add-dep": `I'll add that dependency for you.
   
-  <dyad-add-dependency packages="deno"></dyad-add-dependency>
+  <orianbuilder-add-dependency packages="deno"></orianbuilder-add-dependency>
   
   EOM`,
   "add-non-existing-dep": `I'll add that dependency for you.
   
-  <dyad-add-dependency packages="@angular/does-not-exist"></dyad-add-dependency>
+  <orianbuilder-add-dependency packages="@angular/does-not-exist"></orianbuilder-add-dependency>
   
   EOM`,
   "add-multiple-deps": `I'll add that dependency for you.
   
-  <dyad-add-dependency packages="react-router-dom react-query"></dyad-add-dependency>
+  <orianbuilder-add-dependency packages="react-router-dom react-query"></orianbuilder-add-dependency>
   
   EOM`,
   write: `Hello world
-  <dyad-write path="src/hello.ts" content="Hello world">
+  <orianbuilder-write path="src/hello.ts" content="Hello world">
   console.log("Hello world");
-  </dyad-write>
+  </orianbuilder-write>
   EOM`,
   "string-literal-leak": `BEFORE TAG
-  <dyad-write path="src/pages/locations/neighborhoods/louisville/Highlands.tsx" description="Updating Highlands neighborhood page to use <a> tags.">
+  <orianbuilder-write path="src/pages/locations/neighborhoods/louisville/Highlands.tsx" description="Updating Highlands neighborhood page to use <a> tags.">
 import React from 'react';
-</dyad-write>
+</orianbuilder-write>
 AFTER TAG
 `,
 };
@@ -48,7 +48,7 @@ AFTER TAG
  * @returns The canned response if it's a test prompt, null otherwise
  */
 export function getTestResponse(prompt: string): string | null {
-  const match = prompt.match(/\[dyad-qa=([^\]]+)\]/);
+  const match = prompt.match(/\[orianbuilder-qa=([^\]]+)\]/);
   if (match) {
     const testKey = match[1];
     return TEST_RESPONSES[testKey] || null;

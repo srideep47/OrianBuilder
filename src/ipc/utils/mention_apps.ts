@@ -1,5 +1,5 @@
 import { db } from "../../db";
-import { getDyadAppPath } from "../../paths/paths";
+import { getOrianBuilderAppPath } from "../../paths/paths";
 import { CodebaseFile, extractCodebase } from "../../utils/codebase";
 import { validateChatContext } from "../utils/context_paths_utils";
 import log from "electron-log";
@@ -68,7 +68,7 @@ export async function extractMentionedAppsReferences(
   );
   return dedupedApps.map((app) => ({
     appName: app.name,
-    appPath: getDyadAppPath(app.path),
+    appPath: getOrianBuilderAppPath(app.path),
   }));
 }
 
@@ -86,7 +86,7 @@ export async function extractMentionedAppsCodebases(
 
   for (const app of dedupedApps) {
     try {
-      const appPath = getDyadAppPath(app.path);
+      const appPath = getOrianBuilderAppPath(app.path);
       const chatContext = validateChatContext(app.chatContext);
 
       const { formattedOutput, files } = await extractCodebase({

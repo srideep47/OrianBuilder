@@ -1,6 +1,6 @@
 {
   "body": {
-    "model": "dyad/auto",
+    "model": "orianbuilder/auto",
     "max_tokens": 32000,
     "temperature": 0,
     "messages": [
@@ -14,7 +14,7 @@
       }
     ],
     "stream": true,
-    "dyad_options": {
+    "orianbuilder_options": {
       "files": [
         {
           "path": ".gitignore",
@@ -38,7 +38,7 @@
         },
         {
           "path": "index.html",
-          "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>dyad-generated-app</title>\n  </head>\n\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx\"></script>\n  </body>\n</html>\n",
+          "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>orianbuilder-generated-app</title>\n  </head>\n\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx\"></script>\n  </body>\n</html>\n",
           "force": false
         },
         {
@@ -68,7 +68,7 @@
         },
         {
           "path": "README.md",
-          "content": "# Welcome to your Dyad app\n",
+          "content": "# Welcome to your OrianBuilder app\n",
           "force": false
         },
         {
@@ -82,8 +82,8 @@
           "force": false
         },
         {
-          "path": "src/components/made-with-dyad.tsx",
-          "content": "export const MadeWithDyad = () => {\n  return (\n    <div className=\"p-4 text-center\">\n      <a\n        href=\"https://www.dyad.sh/\"\n        target=\"_blank\"\n        rel=\"noopener noreferrer\"\n        className=\"text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200\"\n      >\n        Made with Dyad\n      </a>\n    </div>\n  );\n};\n",
+          "path": "src/components/made-with-orianbuilder.tsx",
+          "content": "export const MadeWithOrianBuilder = () => {\n  return (\n    <div className=\"p-4 text-center\">\n      <a\n        href=\"https://www.orianbuilder.sh/\"\n        target=\"_blank\"\n        rel=\"noopener noreferrer\"\n        className=\"text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200\"\n      >\n        Made with OrianBuilder\n      </a>\n    </div>\n  );\n};\n",
           "force": false
         },
         {
@@ -358,7 +358,7 @@
         },
         {
           "path": "src/pages/Index.tsx",
-          "content": "// Update this page (the content is just a fallback if you fail to update the page)\n\nimport { MadeWithDyad } from \"@/components/made-with-dyad\";\n\nconst Index = () => {\n  return (\n    <div className=\"min-h-screen flex items-center justify-center bg-gray-100\">\n      <div className=\"text-center\">\n        <h1 className=\"text-4xl font-bold mb-4\">Welcome to Your Blank App</h1>\n        <p className=\"text-xl text-gray-600\">\n          Start building your amazing project here!\n        </p>\n      </div>\n      <MadeWithDyad />\n    </div>\n  );\n};\n\nexport default Index;\n",
+          "content": "// Update this page (the content is just a fallback if you fail to update the page)\n\nimport { MadeWithOrianBuilder } from \"@/components/made-with-orianbuilder\";\n\nconst Index = () => {\n  return (\n    <div className=\"min-h-screen flex items-center justify-center bg-gray-100\">\n      <div className=\"text-center\">\n        <h1 className=\"text-4xl font-bold mb-4\">Welcome to Your Blank App</h1>\n        <p className=\"text-xl text-gray-600\">\n          Start building your amazing project here!\n        </p>\n      </div>\n      <MadeWithOrianBuilder />\n    </div>\n  );\n};\n\nexport default Index;\n",
           "force": false
         },
         {
@@ -403,7 +403,7 @@
         },
         {
           "path": "vite.config.ts",
-          "content": "import { defineConfig } from \"vite\";\nimport dyadComponentTagger from \"@dyad-sh/react-vite-component-tagger\";\nimport react from \"@vitejs/plugin-react-swc\";\nimport path from \"path\";\n\nexport default defineConfig(() => ({\n  server: {\n    host: \"::\",\n    port: 8080,\n  },\n  plugins: [dyadComponentTagger(), react()],\n  resolve: {\n    alias: {\n      \"@\": path.resolve(__dirname, \"./src\"),\n    },\n  },\n}));\n",
+          "content": "import { defineConfig } from \"vite\";\nimport orianbuilderComponentTagger from \"@dyad-sh/react-vite-component-tagger\";\nimport react from \"@vitejs/plugin-react-swc\";\nimport path from \"path\";\n\nexport default defineConfig(() => ({\n  server: {\n    host: \"::\",\n    port: 8080,\n  },\n  plugins: [orianbuilderComponentTagger(), react()],\n  resolve: {\n    alias: {\n      \"@\": path.resolve(__dirname, \"./src\"),\n    },\n  },\n}));\n",
           "force": false
         }
       ],
@@ -414,6 +414,6 @@
     }
   },
   "headers": {
-    "authorization": "Bearer testdyadkey"
+    "authorization": "Bearer testorianbuilderkey"
   }
 }

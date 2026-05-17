@@ -14,18 +14,28 @@ const RULES: TemplateRule[] = [
       /\belectron\s*app\b/i,
       /\bdesktop\s*app\b/i,
       /\bnative\s*desktop\b/i,
+      /\bwindows\s+(?:app|desktop|installer|exe)\b/i,
+      /\bmac(?:os)?\s+(?:app|desktop|dmg)\b/i,
+      /\blinux\s+(?:app|desktop|appimage|deb|rpm)\b/i,
       /\belectron[\s-]?vite\b/i,
     ],
   },
   // Chrome extension
   {
-    templateId: "tonedice/dyad-chrome-extension-template",
+    templateId: "tonedice/orianbuilder-chrome-extension-template",
     keywords: [/chrome\s*extension/i, /browser\s*extension/i, /manifest\s*v3/i],
   },
   // Mobile (official Expo scaffold — listed before community template so it takes priority)
   {
     templateId: "expo",
     keywords: [
+      /\bandroid\s*(?:app|application|apk|todo|to[-\s]?do)?\b/i,
+      /\bapk\b/i,
+      /\baab\b/i,
+      /\bgoogle\s+play\b/i,
+      /\bplay\s+store\b/i,
+      /\biphone\s+app\b/i,
+      /\bios\s+app\b/i,
       /react\s*native/i,
       /\bexpo\s*(?:sdk|router|app|go)?\b/i,
       /mobile\s*app/i,
@@ -58,17 +68,17 @@ const RULES: TemplateRule[] = [
   },
   // Angular
   {
-    templateId: "jeff-kazzee/dyad-template-angular",
+    templateId: "jeff-kazzee/orianbuilder-template-angular",
     keywords: [/\bangular\b/i],
   },
   // Vue
   {
-    templateId: "k1lgor/dyad-vue-template",
+    templateId: "k1lgor/orianbuilder-vue-template",
     keywords: [/\bvue\b/i, /\bpinia\b/i, /\bnuxt\b/i],
   },
   // Docker
   {
-    templateId: "stgreenb/docker-dyad-template",
+    templateId: "stgreenb/docker-orianbuilder-template",
     keywords: [
       /\bdocker\b/i,
       /\bcontainer(ize|ized|ization)?\b/i,
@@ -88,7 +98,7 @@ const RULES: TemplateRule[] = [
   },
   // React Router 7 / Full-stack with Prisma
   {
-    templateId: "sparkie-dev/dyad-react-router-7-fs-routes-template",
+    templateId: "sparkie-dev/orianbuilder-react-router-7-fs-routes-template",
     keywords: [
       /\bprisma\b/i,
       /\bfull[\s-]?stack\b/i,

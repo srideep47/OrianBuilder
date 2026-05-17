@@ -14,6 +14,10 @@ import { addDependencyTool } from "./tools/add_dependency";
 import { executeSqlTool } from "./tools/execute_sql";
 import { getNeonProjectInfoTool } from "./tools/get_neon_project_info";
 import { getDatabaseTableSchemaTool } from "./tools/get_database_table_schema";
+import { browserControlTool } from "./tools/browser_control";
+import { browserQaGateTool } from "./tools/browser_qa_gate";
+import { deployPreviewTool } from "./tools/deploy_preview";
+import { packageNativeArtifactTool } from "./tools/package_native_artifact";
 
 import { readFileTool } from "./tools/read_file";
 import { listFilesTool } from "./tools/list_files";
@@ -25,14 +29,26 @@ import { readConsoleOutputTool } from "./tools/read_console_output";
 import { runTerminalCommandTool } from "./tools/run_terminal_command";
 import { takeScreenshotTool } from "./tools/take_screenshot";
 import { getAccessibilityTreeTool } from "./tools/get_accessibility_tree";
+import { createProjectTool } from "./tools/create_project";
+import { verifyProjectTool } from "./tools/verify_project";
+import {
+  readDevServerOutputTool,
+  startDevServerTool,
+  stopDevServerTool,
+} from "./tools/start_dev_server";
+import { detectProjectStackTool } from "./tools/detect_project_stack";
 import { getRepoMapTool } from "./tools/get_repo_map";
 import { searchReplaceTool } from "./tools/search_replace";
 import { webSearchTool } from "./tools/web_search";
 import { webCrawlTool } from "./tools/web_crawl";
 import { webFetchTool } from "./tools/web_fetch";
 import { generateImageTool } from "./tools/generate_image";
+import { generateMediaAssetTool } from "./tools/generate_media_asset";
+import { manageMcpServerTool } from "./tools/manage_mcp_server";
 import { updateTodosTool } from "./tools/update_todos";
+import { runProjectCheckTool } from "./tools/run_project_check";
 import { runTypeChecksTool } from "./tools/run_type_checks";
+import { listToolCapabilitiesTool } from "./tools/list_tool_capabilities";
 import { grepTool } from "./tools/grep";
 import { codeSearchTool } from "./tools/code_search";
 import { planningQuestionnaireTool } from "./tools/planning_questionnaire";
@@ -40,6 +56,7 @@ import { writePlanTool } from "./tools/write_plan";
 import { exitPlanTool } from "./tools/exit_plan";
 import { readGuideTool } from "./tools/read_guide";
 import { editAstTool } from "./tools/edit_ast";
+import { githubPrTool } from "./tools/github_pr";
 import type { LanguageModelV3ToolResultOutput } from "@ai-sdk/provider";
 import {
   escapeXmlAttr,
@@ -53,7 +70,10 @@ import {
 import { AgentToolConsent } from "@/lib/schemas";
 import { getSupabaseClientCode } from "@/supabase_admin/supabase_context";
 import { getNeonClientCode } from "@/neon_admin/neon_context";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { ExecuteAddDependencyError } from "@/ipc/processors/executeAddDependency";
 
 function getToolErrorDisplayDetails(error: unknown): string {
@@ -70,6 +90,10 @@ function getToolErrorSummary(error: unknown): string {
   }
 
   return error instanceof Error ? error.message : String(error);
+}
+
+function getToolOutputPreview(result: ToolResult): string {
+  return String(result).slice(0, 500);
 }
 
 // Combined tool definitions array
@@ -89,11 +113,22 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   getSupabaseProjectInfoTool,
   getNeonProjectInfoTool,
   getDatabaseTableSchemaTool,
+  browserControlTool,
+  browserQaGateTool,
+  deployPreviewTool,
+  packageNativeArtifactTool,
+  githubPrTool,
   setChatSummaryTool,
   addIntegrationTool,
   readLogsTool,
   readConsoleOutputTool,
   runTerminalCommandTool,
+  detectProjectStackTool,
+  createProjectTool,
+  verifyProjectTool,
+  startDevServerTool,
+  stopDevServerTool,
+  readDevServerOutputTool,
   takeScreenshotTool,
   getAccessibilityTreeTool,
   getRepoMapTool,
@@ -101,7 +136,11 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   webCrawlTool,
   webFetchTool,
   generateImageTool,
+  generateMediaAssetTool,
+  manageMcpServerTool,
   updateTodosTool,
+  listToolCapabilitiesTool,
+  runProjectCheckTool,
   runTypeChecksTool,
   readGuideTool,
   // Plan mode tools
@@ -285,9 +324,9 @@ export async function requireAgentToolConsent(
 
   if (current === "always") return true;
   if (current === "never")
-    throw new DyadError(
+    throw new OrianBuilderError(
       "Should not ask for consent for a tool marked as 'never'",
-      DyadErrorKind.Internal,
+      OrianBuilderErrorKind.Internal,
     );
 
   // Ask renderer for a decision via event bridge
@@ -386,9 +425,9 @@ function convertToolResultForAiSdk(
   if (typeof result === "string") {
     return { type: "text", value: result };
   }
-  throw new DyadError(
+  throw new OrianBuilderError(
     `Unsupported tool result type: ${typeof result}`,
-    DyadErrorKind.Internal,
+    OrianBuilderErrorKind.Internal,
   );
 }
 
@@ -408,6 +447,13 @@ export interface BuildAgentToolSetOptions {
    * Used for basic agent mode where some tools may not be available.
    */
   basicAgentMode?: boolean;
+  /**
+   * If true, the mission is running in full-autopilot-sandbox mode.
+   * Tools that pause the loop to ask the user (planning_questionnaire,
+   * write_plan, exit_plan) are filtered out so the agent must decide and
+   * proceed without mid-turn user interaction.
+   */
+  autopilotMode?: boolean;
 }
 
 const FILE_EDIT_TOOLS: Set<FileEditToolName> = new Set(FILE_EDIT_TOOL_NAMES);
@@ -458,6 +504,17 @@ const PLANNING_SPECIFIC_TOOLS = new Set([
 const PRO_AGENT_ONLY_TOOLS = new Set<string>();
 
 /**
+ * Tools blocked when running in autopilot mode. These tools pause the agent
+ * loop waiting for user input, which contradicts the "no middle questions"
+ * contract of full-autopilot missions.
+ */
+const BLOCKED_IN_AUTOPILOT_TOOLS = new Set([
+  "planning_questionnaire",
+  "write_plan",
+  "exit_plan",
+]);
+
+/**
  * Build ToolSet for AI SDK from tool definitions
  */
 export function buildAgentToolSet(
@@ -491,6 +548,11 @@ export function buildAgentToolSet(
       continue;
     }
 
+    // In autopilot mode, skip tools that pause for user input
+    if (options.autopilotMode && BLOCKED_IN_AUTOPILOT_TOOLS.has(tool.name)) {
+      continue;
+    }
+
     // In read-only mode, skip tools that modify state
     if (options.readOnly && tool.modifiesState) {
       continue;
@@ -504,6 +566,7 @@ export function buildAgentToolSet(
       description: tool.description,
       inputSchema: tool.inputSchema,
       execute: async (args: any) => {
+        let startedAt: number | null = null;
         try {
           const processedArgs = await processArgPlaceholders(args, ctx);
 
@@ -514,9 +577,9 @@ export function buildAgentToolSet(
             inputPreview: tool.getConsentPreview?.(processedArgs) ?? null,
           });
           if (!allowed) {
-            throw new DyadError(
+            throw new OrianBuilderError(
               `User denied permission for ${tool.name}`,
-              DyadErrorKind.UserCancelled,
+              OrianBuilderErrorKind.UserCancelled,
             );
           }
 
@@ -524,15 +587,38 @@ export function buildAgentToolSet(
           // (including failures) for retry/fallback telemetry
           trackFileEditTool(ctx, tool.name, processedArgs);
 
+          const inputPreview = tool.getConsentPreview?.(processedArgs) ?? null;
+          startedAt = Date.now();
+          ctx.onToolExecutionStart?.({
+            toolName: tool.name,
+            inputPreview,
+            modifiesState: !!tool.modifiesState,
+          });
+
           const result = await tool.execute(processedArgs, ctx);
+          ctx.onToolExecutionComplete?.({
+            toolName: tool.name,
+            status: "completed",
+            durationMs: Date.now() - startedAt,
+            outputPreview: getToolOutputPreview(result),
+            modifiesState: !!tool.modifiesState,
+          });
 
           return convertToolResultForAiSdk(result);
         } catch (error) {
           const errorMessage = getToolErrorSummary(error);
           const errorDetails = getToolErrorDisplayDetails(error);
 
+          ctx.onToolExecutionComplete?.({
+            toolName: tool.name,
+            status: "failed",
+            durationMs: startedAt ? Date.now() - startedAt : 0,
+            error: errorMessage,
+            modifiesState: !!tool.modifiesState,
+          });
+
           ctx.onXmlComplete(
-            `<dyad-output type="error" message="Tool '${tool.name}' failed: ${escapeXmlAttr(errorMessage)}">${escapeXmlContent(errorDetails)}</dyad-output>`,
+            `<orianbuilder-output type="error" message="Tool '${tool.name}' failed: ${escapeXmlAttr(errorMessage)}">${escapeXmlContent(errorDetails)}</orianbuilder-output>`,
           );
           throw error;
         }

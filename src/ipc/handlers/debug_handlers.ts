@@ -23,9 +23,12 @@ import {
   mcpServers,
 } from "../../db/schema";
 import { eq } from "drizzle-orm";
-import { getDyadAppPath } from "../../paths/paths";
+import { getOrianBuilderAppPath } from "../../paths/paths";
 import { validateChatContext } from "../utils/context_paths_utils";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 // Shared function to get system debug info
 async function getSystemDebugInfo({
@@ -63,12 +66,12 @@ async function getSystemDebugInfo({
     console.error("Failed to get node path:", err);
   }
 
-  // Get Dyad version from package.json
+  // Get OrianBuilder version from package.json
   const packageJsonPath = path.resolve(__dirname, "..", "..", "package.json");
-  let dyadVersion = "unknown";
+  let orianbuilderVersion = "unknown";
   try {
     const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
-    dyadVersion = packageJson.version;
+    orianbuilderVersion = packageJson.version;
   } catch (err) {
     console.error("Failed to read package.json:", err);
   }
@@ -119,7 +122,7 @@ async function getSystemDebugInfo({
       serializeModelForDebug(settings.selectedModel) || "unknown",
     telemetryConsent: settings.telemetryConsent || "unknown",
     telemetryUrl: "https://us.i.posthog.com", // Hardcoded from renderer.tsx
-    dyadVersion,
+    orianbuilderVersion,
     platform: process.platform,
     architecture: arch(),
     logs,
@@ -159,7 +162,7 @@ function sanitizeSettingsForDebug(settings: UserSettings) {
     selectedChatMode: settings.selectedChatMode ?? null,
     defaultChatMode: settings.defaultChatMode ?? null,
     autoApproveChanges: settings.autoApproveChanges ?? null,
-    enableDyadPro: settings.enableDyadPro ?? null,
+    enableOrianBuilderPro: settings.enableOrianBuilderPro ?? null,
     thinkingBudget: settings.thinkingBudget ?? null,
     maxChatTurnsInContext: settings.maxChatTurnsInContext ?? null,
     enableAutoFixProblems: settings.enableAutoFixProblems ?? null,
@@ -275,19 +278,19 @@ export function registerDebugHandlers() {
     try {
       const settings = readSettings();
 
-      // Get Dyad version
+      // Get OrianBuilder version
       const packageJsonPath = path.resolve(
         __dirname,
         "..",
         "..",
         "package.json",
       );
-      let dyadVersion = "unknown";
+      let orianbuilderVersion = "unknown";
       try {
         const packageJson = JSON.parse(
           fs.readFileSync(packageJsonPath, "utf8"),
         );
-        dyadVersion = packageJson.version;
+        orianbuilderVersion = packageJson.version;
       } catch (err) {
         console.error("Failed to read package.json:", err);
       }
@@ -313,9 +316,9 @@ export function registerDebugHandlers() {
       });
 
       if (!chatRecord) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `Chat with ID ${chatId} not found`,
-          DyadErrorKind.NotFound,
+          OrianBuilderErrorKind.NotFound,
         );
       }
 
@@ -325,9 +328,9 @@ export function registerDebugHandlers() {
       });
 
       if (!app) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `App with ID ${chatRecord.appId} not found`,
-          DyadErrorKind.NotFound,
+          OrianBuilderErrorKind.NotFound,
         );
       }
 
@@ -338,7 +341,7 @@ export function registerDebugHandlers() {
           db.select().from(language_models),
           db.select().from(mcpServers),
           extractCodebase({
-            appPath: getDyadAppPath(app.path),
+            appPath: getOrianBuilderAppPath(app.path),
             chatContext: validateChatContext(app.chatContext),
           }).then((result) => result.formattedOutput),
         ]);
@@ -352,7 +355,7 @@ export function registerDebugHandlers() {
         exportedAt: new Date().toISOString(),
 
         system: {
-          dyadVersion,
+          orianbuilderVersion,
           platform: process.platform,
           architecture: arch(),
           nodeVersion,
@@ -462,9 +465,9 @@ export function registerDebugHandlers() {
     const image = await win.capturePage();
     // Validate image
     if (!image || image.isEmpty()) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Failed to capture screenshot",
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
     // Write the image to the clipboard

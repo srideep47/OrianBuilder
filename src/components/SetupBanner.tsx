@@ -174,7 +174,7 @@ export function SetupBanner() {
   return (
     <>
       <p className="text-xl font-medium text-zinc-700 dark:text-zinc-300 p-4 pt-6">
-        {t("setup.setupDyad")}
+        {t("setup.setupOrianBuilder")}
       </p>
       <OnboardingBanner
         isVisible={isOnboardingVisible}
@@ -437,7 +437,8 @@ function NodeInstallButton({
     case "finished-checking":
       return (
         <div className="mt-3 text-sm text-red-600 dark:text-red-400">
-          Node.js not detected. Closing and re-opening Dyad usually fixes this.
+          Node.js not detected. Closing and re-opening OrianBuilder usually
+          fixes this.
         </div>
       );
     default:

@@ -1,7 +1,7 @@
 OK, I'm going to write an app with an image now...
 
-<dyad-write path="src/pages/Index.tsx" description="write-description">
-import { MadeWithDyad } from "@/components/made-with-dyad";
+<orianbuilder-write path="src/pages/Index.tsx" description="write-description">
+import { MadeWithOrianBuilder } from "@/components/made-with-orianbuilder";
 
 const Index = () => {
   return (
@@ -13,12 +13,12 @@ const Index = () => {
           Start building your amazing project here!
         </p>
       </div>
-      <MadeWithDyad />
+      <MadeWithOrianBuilder />
     </div>
   );
 };
 
 export default Index;
-</dyad-write>
+</orianbuilder-write>
 
 And it's done!

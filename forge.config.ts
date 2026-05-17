@@ -10,8 +10,144 @@ import { VitePlugin } from "@electron-forge/plugin-vite";
 import { FusesPlugin } from "@electron-forge/plugin-fuses";
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
 import { AutoUnpackNativesPlugin } from "@electron-forge/plugin-auto-unpack-natives";
+import fs from "node:fs";
+import path from "node:path";
 
 console.log("AZURE_CODE_SIGNING_DLIB", process.env.AZURE_CODE_SIGNING_DLIB);
+
+function getRootNodeModulePackage(file: string): string | null {
+  const prefix = "/node_modules/";
+  if (!file.startsWith(prefix)) {
+    return null;
+  }
+  const parts = file.slice(prefix.length).split("/");
+  if (parts[0]?.startsWith("@")) {
+    return parts[1] ? `${parts[0]}/${parts[1]}` : parts[0];
+  }
+  return parts[0] || null;
+}
+
+function getPackagePathSegments(packageName: string): string[] {
+  return packageName.split("/");
+}
+
+function getRootPackageNameForPackageJson(
+  packageJsonPath: string,
+): string | null {
+  const relative = path.relative(process.cwd(), packageJsonPath);
+  const parts = relative.split(path.sep);
+  const nodeModulesIndex = parts.indexOf("node_modules");
+  if (nodeModulesIndex < 0) {
+    return null;
+  }
+  const first = parts[nodeModulesIndex + 1];
+  if (!first) {
+    return null;
+  }
+  if (first.startsWith("@")) {
+    const second = parts[nodeModulesIndex + 2];
+    return second ? `${first}/${second}` : first;
+  }
+  return first;
+}
+
+function resolveDependencyPackageJson(
+  fromDirectory: string,
+  dependencyName: string,
+): string | null {
+  let current = fromDirectory;
+  while (true) {
+    const candidate = path.join(
+      current,
+      "node_modules",
+      ...getPackagePathSegments(dependencyName),
+      "package.json",
+    );
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return null;
+    }
+    current = parent;
+  }
+}
+
+function collectNodeModuleDependencyClosure(rootPackage: string): Set<string> {
+  const fallback = new Set([
+    "node-llama-cpp",
+    "@node-llama-cpp/win-x64",
+    "@node-llama-cpp/win-x64-cuda",
+    "@node-llama-cpp/win-x64-cuda-ext",
+    "@node-llama-cpp/win-x64-vulkan",
+    "lifecycle-utils",
+    "node-addon-api",
+  ]);
+
+  try {
+    const rootPackageJsonPath = path.join(
+      process.cwd(),
+      "node_modules",
+      ...getPackagePathSegments(rootPackage),
+      "package.json",
+    );
+    const seenPackageJsonPaths = new Set<string>();
+    const includedRootPackages = new Set<string>();
+    const stack = [rootPackageJsonPath];
+
+    while (stack.length > 0) {
+      const packageJsonPath = stack.pop();
+      if (
+        !packageJsonPath ||
+        seenPackageJsonPaths.has(packageJsonPath) ||
+        !fs.existsSync(packageJsonPath)
+      ) {
+        continue;
+      }
+      seenPackageJsonPaths.add(packageJsonPath);
+
+      const rootPackageName = getRootPackageNameForPackageJson(packageJsonPath);
+      if (rootPackageName) {
+        includedRootPackages.add(rootPackageName);
+      }
+
+      const pkg = JSON.parse(fs.readFileSync(packageJsonPath, "utf8")) as {
+        dependencies?: Record<string, string>;
+        optionalDependencies?: Record<string, string>;
+      };
+      const packageDir = path.dirname(packageJsonPath);
+      for (const dependencyName of Object.keys(pkg.dependencies ?? {})) {
+        const dependencyPackageJsonPath = resolveDependencyPackageJson(
+          packageDir,
+          dependencyName,
+        );
+        if (dependencyPackageJsonPath) {
+          stack.push(dependencyPackageJsonPath);
+        }
+      }
+      for (const dependencyName of Object.keys(
+        pkg.optionalDependencies ?? {},
+      )) {
+        const dependencyPackageJsonPath = resolveDependencyPackageJson(
+          packageDir,
+          dependencyName,
+        );
+        if (dependencyPackageJsonPath) {
+          stack.push(dependencyPackageJsonPath);
+        }
+      }
+    }
+
+    return includedRootPackages.size > 0 ? includedRootPackages : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+const nodeLlamaCppRuntimePackages =
+  collectNodeModuleDependencyClosure("node-llama-cpp");
 
 // Based on https://github.com/electron/forge/blob/6b2d547a7216c30fde1e1fddd1118eee5d872945/packages/plugin/vite/src/VitePlugin.ts#L124
 const ignore = (file: string) => {
@@ -44,7 +180,11 @@ const ignore = (file: string) => {
     return false;
   }
   if (file.startsWith("/node_modules/node-pty")) {
-    return true;
+    return false;
+  }
+  const nodeModulePackage = getRootNodeModulePackage(file);
+  if (nodeModulePackage && nodeLlamaCppRuntimePackages.has(nodeModulePackage)) {
+    return false;
   }
   if (file.startsWith("/node_modules/playwright")) {
     return false;
@@ -133,7 +273,7 @@ const config: ForgeConfig = {
         },
     asar: {
       unpackDir:
-        "{node_modules/node-llama-cpp,node_modules/@node-llama-cpp,node_modules/playwright,node_modules/playwright-core,node_modules/chromium-bidi}",
+        "{node_modules/node-pty,node_modules/node-llama-cpp,node_modules/@node-llama-cpp,node_modules/playwright,node_modules/playwright-core,node_modules/chromium-bidi}",
     },
     ignore,
     extraResource: [
@@ -141,13 +281,14 @@ const config: ForgeConfig = {
       "node_modules/@vscode",
       "native/tensorrt-runner/bin",
       "native/trt-llm-runner",
+      "mediaai-backend",
       "scripts/build-tensorrt-engine.ps1",
       "scripts/build-trt-llm-engine.ps1",
     ],
     // ignore: [/node_modules\/(?!(better-sqlite3|bindings|file-uri-to-path)\/)/],
   },
   rebuildConfig: {
-    extraModules: ["better-sqlite3", "node-llama-cpp"],
+    onlyModules: ["better-sqlite3", "node-llama-cpp"],
     force: true,
   },
   makers: [

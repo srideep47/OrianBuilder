@@ -1,5 +1,4 @@
 import type { ChatMode, UserSettings } from "./schemas";
-import { isDyadProEnabled } from "./schemas";
 import type { ChatModeFallbackReason } from "./chatMode";
 import {
   getChatModeFallbackToastId,
@@ -22,7 +21,6 @@ export function handleEffectiveChatModeChunk(
     showChatModeFallbackToast({
       reason: chunk.chatModeFallbackReason,
       effectiveMode: chunk.effectiveChatMode,
-      isPro: settings ? isDyadProEnabled(settings) : false,
       toastId: getChatModeFallbackToastId({
         chatId,
         reason: chunk.chatModeFallbackReason,

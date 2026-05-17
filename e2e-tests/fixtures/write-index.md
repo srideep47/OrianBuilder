@@ -1,6 +1,6 @@
 OK, I'm going to do some writing now...
 
-<dyad-write path="src/pages/Index.tsx" description="write-description">
+<orianbuilder-write path="src/pages/Index.tsx" description="write-description">
 const Index = () => {
   return (
     <div>
@@ -10,6 +10,6 @@ const Index = () => {
 };
 
 export default Index;
-</dyad-write>
+</orianbuilder-write>
 
 And it's done!

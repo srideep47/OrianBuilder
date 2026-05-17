@@ -2,9 +2,12 @@ import fs from "node:fs";
 import { z } from "zod";
 import { ToolDefinition, AgentContext, escapeXmlAttr } from "./types";
 import { safeJoin } from "@/ipc/utils/path_utils";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
 import {
-  assertDyadInternalAccessAllowed,
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
+import {
+  assertOrianBuilderInternalAccessAllowed,
   resolveTargetAppPath,
 } from "./resolve_app_context";
 
@@ -92,7 +95,7 @@ export const readFileTool: ToolDefinition<z.infer<typeof readFileSchema>> = {
         `end_line="${escapeXmlAttr(String(args.end_line_one_indexed_inclusive))}"`,
       );
     }
-    return `<dyad-read ${attrs.join(" ")}></dyad-read>`;
+    return `<orianbuilder-read ${attrs.join(" ")}></orianbuilder-read>`;
   },
 
   execute: async (args, ctx: AgentContext) => {
@@ -100,7 +103,7 @@ export const readFileTool: ToolDefinition<z.infer<typeof readFileSchema>> = {
 
     const fullFilePath = safeJoin(targetAppPath, args.path);
 
-    assertDyadInternalAccessAllowed({
+    assertOrianBuilderInternalAccessAllowed({
       targetAppPath,
       fullFilePath,
       appName: args.app_name,
@@ -108,9 +111,9 @@ export const readFileTool: ToolDefinition<z.infer<typeof readFileSchema>> = {
 
     if (!fs.existsSync(fullFilePath)) {
       const appContext = args.app_name ? ` (in app: ${args.app_name})` : "";
-      throw new DyadError(
+      throw new OrianBuilderError(
         `File does not exist: ${args.path}${appContext}`,
-        DyadErrorKind.NotFound,
+        OrianBuilderErrorKind.NotFound,
       );
     }
 

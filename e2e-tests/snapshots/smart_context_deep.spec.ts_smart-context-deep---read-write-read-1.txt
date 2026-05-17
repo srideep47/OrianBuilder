@@ -1,6 +1,6 @@
 {
   "body": {
-    "model": "dyad/auto",
+    "model": "orianbuilder/auto",
     "max_tokens": 32000,
     "temperature": 0,
     "messages": [
@@ -14,7 +14,7 @@
       },
       {
         "role": "assistant",
-        "content": "Read the index page:\n<dyad-read path=\"src/pages/Index.tsx\"></dyad-read>\nDone."
+        "content": "Read the index page:\n<orianbuilder-read path=\"src/pages/Index.tsx\"></orianbuilder-read>\nDone."
       },
       {
         "role": "user",
@@ -22,7 +22,7 @@
       },
       {
         "role": "assistant",
-        "content": "First read\n<dyad-write path=\"src/pages/Index.tsx\" description=\"replace file\">\n// this file has been replaced\n</dyad-write>"
+        "content": "First read\n<orianbuilder-write path=\"src/pages/Index.tsx\" description=\"replace file\">\n// this file has been replaced\n</orianbuilder-write>"
       },
       {
         "role": "user",
@@ -30,7 +30,7 @@
       },
       {
         "role": "assistant",
-        "content": "Read the index page:\n<dyad-read path=\"src/pages/Index.tsx\"></dyad-read>\nDone."
+        "content": "Read the index page:\n<orianbuilder-read path=\"src/pages/Index.tsx\"></orianbuilder-read>\nDone."
       },
       {
         "role": "user",
@@ -38,7 +38,7 @@
       }
     ],
     "stream": true,
-    "dyad_options": {
+    "orianbuilder_options": {
       "versioned_files": {
         "fileIdToContent": {
           "[[FILE_ID_0]]": "{\n  \"$schema\": \"https://openapi.vercel.sh/vercel.json\",\n  \"rewrites\": [\n    {\n      \"source\": \"/(.*)\",\n      \"destination\": \"/index.html\"\n    }\n  ]\n}\n",
@@ -50,19 +50,19 @@
           "[[FILE_ID_6]]": "@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\n@layer base {\n  :root {\n    --background: 0 0% 100%;\n    --foreground: 222.2 84% 4.9%;\n\n    --card: 0 0% 100%;\n    --card-foreground: 222.2 84% 4.9%;\n\n    --popover: 0 0% 100%;\n    --popover-foreground: 222.2 84% 4.9%;\n\n    --primary: 222.2 47.4% 11.2%;\n    --primary-foreground: 210 40% 98%;\n\n    --secondary: 210 40% 96.1%;\n    --secondary-foreground: 222.2 47.4% 11.2%;\n\n    --muted: 210 40% 96.1%;\n    --muted-foreground: 215.4 16.3% 46.9%;\n\n    --accent: 210 40% 96.1%;\n    --accent-foreground: 222.2 47.4% 11.2%;\n\n    --destructive: 0 84.2% 60.2%;\n    --destructive-foreground: 210 40% 98%;\n\n    --border: 214.3 31.8% 91.4%;\n    --input: 214.3 31.8% 91.4%;\n    --ring: 222.2 84% 4.9%;\n\n    --radius: 0.5rem;\n\n    --sidebar-background: 0 0% 98%;\n\n    --sidebar-foreground: 240 5.3% 26.1%;\n\n    --sidebar-primary: 240 5.9% 10%;\n\n    --sidebar-primary-foreground: 0 0% 98%;\n\n    --sidebar-accent: 240 4.8% 95.9%;\n\n    --sidebar-accent-foreground: 240 5.9% 10%;\n\n    --sidebar-border: 220 13% 91%;\n\n    --sidebar-ring: 217.2 91.2% 59.8%;\n  }\n\n  .dark {\n    --background: 222.2 84% 4.9%;\n    --foreground: 210 40% 98%;\n\n    --card: 222.2 84% 4.9%;\n    --card-foreground: 210 40% 98%;\n\n    --popover: 222.2 84% 4.9%;\n    --popover-foreground: 210 40% 98%;\n\n    --primary: 210 40% 98%;\n    --primary-foreground: 222.2 47.4% 11.2%;\n\n    --secondary: 217.2 32.6% 17.5%;\n    --secondary-foreground: 210 40% 98%;\n\n    --muted: 217.2 32.6% 17.5%;\n    --muted-foreground: 215 20.2% 65.1%;\n\n    --accent: 217.2 32.6% 17.5%;\n    --accent-foreground: 210 40% 98%;\n\n    --destructive: 0 62.8% 30.6%;\n    --destructive-foreground: 210 40% 98%;\n\n    --border: 217.2 32.6% 17.5%;\n    --input: 217.2 32.6% 17.5%;\n    --ring: 212.7 26.8% 83.9%;\n    --sidebar-background: 240 5.9% 10%;\n    --sidebar-foreground: 240 4.8% 95.9%;\n    --sidebar-primary: 224.3 76.3% 48%;\n    --sidebar-primary-foreground: 0 0% 100%;\n    --sidebar-accent: 240 3.7% 15.9%;\n    --sidebar-accent-foreground: 240 4.8% 95.9%;\n    --sidebar-border: 240 3.7% 15.9%;\n    --sidebar-ring: 217.2 91.2% 59.8%;\n  }\n}\n\n@layer base {\n  * {\n    @apply border-border;\n  }\n\n  body {\n    @apply bg-background text-foreground;\n  }\n}\n",
           "[[FILE_ID_7]]": "// File contents excluded from context",
           "[[FILE_ID_8]]": "// this file has been replaced",
-          "[[FILE_ID_9]]": "// Update this page (the content is just a fallback if you fail to update the page)\n\nimport { MadeWithDyad } from \"@/components/made-with-dyad\";\n\nconst Index = () => {\n  return (\n    <div className=\"min-h-screen flex items-center justify-center bg-gray-100\">\n      <div className=\"text-center\">\n        <h1 className=\"text-4xl font-bold mb-4\">Welcome to Your Blank App</h1>\n        <p className=\"text-xl text-gray-600\">\n          Start building your amazing project here!\n        </p>\n      </div>\n      <MadeWithDyad />\n    </div>\n  );\n};\n\nexport default Index;\n",
+          "[[FILE_ID_9]]": "// Update this page (the content is just a fallback if you fail to update the page)\n\nimport { MadeWithOrianBuilder } from \"@/components/made-with-orianbuilder\";\n\nconst Index = () => {\n  return (\n    <div className=\"min-h-screen flex items-center justify-center bg-gray-100\">\n      <div className=\"text-center\">\n        <h1 className=\"text-4xl font-bold mb-4\">Welcome to Your Blank App</h1>\n        <p className=\"text-xl text-gray-600\">\n          Start building your amazing project here!\n        </p>\n      </div>\n      <MadeWithOrianBuilder />\n    </div>\n  );\n};\n\nexport default Index;\n",
           "[[FILE_ID_10]]": "/// <reference types=\"vite/client\" />\n",
           "[[FILE_ID_11]]": "# Logs\nlogs\n*.log\nnpm-debug.log*\nyarn-debug.log*\nyarn-error.log*\npnpm-debug.log*\nlerna-debug.log*\n\nnode_modules\ndist\ndist-ssr\n*.local\n\n# Editor directories and files\n.vscode/*\n!.vscode/extensions.json\n.idea\n.DS_Store\n*.suo\n*.ntvs*\n*.njsproj\n*.sln\n*.sw?\n",
           "[[FILE_ID_12]]": "# Tech Stack\n\n- You are building a React application.\n- Use TypeScript.\n- Use React Router. KEEP the routes in src/App.tsx\n- Always put source code in the src folder.\n- Put pages into src/pages/\n- Put components into src/components/\n- The main page (default page) is src/pages/Index.tsx\n- UPDATE the main page to include the new components. OTHERWISE, the user can NOT see any components!\n- ALWAYS try to use the shadcn/ui library.\n- Tailwind CSS: always use Tailwind CSS for styling components. Utilize Tailwind classes extensively for layout, spacing, colors, and other design aspects.\n\nAvailable packages and libraries:\n\n- The lucide-react package is installed for icons.\n- You ALREADY have ALL the shadcn/ui components and their dependencies installed. So you don't need to install them again.\n- You have ALL the necessary Radix UI components installed.\n- Use prebuilt components from the shadcn/ui library after importing them. Note that these files shouldn't be edited, so make new components if you need to change them.\n",
-          "[[FILE_ID_13]]": "# Welcome to your Dyad app\n",
+          "[[FILE_ID_13]]": "# Welcome to your OrianBuilder app\n",
           "[[FILE_ID_14]]": "#root {\n  max-width: 1280px;\n  margin: 0 auto;\n  padding: 2rem;\n  text-align: center;\n}\n\n.logo {\n  height: 6em;\n  padding: 1.5em;\n  will-change: filter;\n  transition: filter 300ms;\n}\n.logo:hover {\n  filter: drop-shadow(0 0 2em #646cffaa);\n}\n.logo.react:hover {\n  filter: drop-shadow(0 0 2em #61dafbaa);\n}\n\n@keyframes logo-spin {\n  from {\n    transform: rotate(0deg);\n  }\n  to {\n    transform: rotate(360deg);\n  }\n}\n\n@media (prefers-reduced-motion: no-preference) {\n  a:nth-of-type(2) .logo {\n    animation: logo-spin infinite 20s linear;\n  }\n}\n\n.card {\n  padding: 2em;\n}\n\n.read-the-docs {\n  color: #888;\n}\n",
-          "[[FILE_ID_15]]": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>dyad-generated-app</title>\n  </head>\n\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx\"></script>\n  </body>\n</html>\n",
-          "[[FILE_ID_16]]": "export const MadeWithDyad = () => {\n  return (\n    <div className=\"p-4 text-center\">\n      <a\n        href=\"https://www.dyad.sh/\"\n        target=\"_blank\"\n        rel=\"noopener noreferrer\"\n        className=\"text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200\"\n      >\n        Made with Dyad\n      </a>\n    </div>\n  );\n};\n",
+          "[[FILE_ID_15]]": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>orianbuilder-generated-app</title>\n  </head>\n\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx\"></script>\n  </body>\n</html>\n",
+          "[[FILE_ID_16]]": "export const MadeWithOrianBuilder = () => {\n  return (\n    <div className=\"p-4 text-center\">\n      <a\n        href=\"https://www.orianbuilder.sh/\"\n        target=\"_blank\"\n        rel=\"noopener noreferrer\"\n        className=\"text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200\"\n      >\n        Made with OrianBuilder\n      </a>\n    </div>\n  );\n};\n",
           "[[FILE_ID_17]]": "export default {\n  plugins: {\n    tailwindcss: {},\n    autoprefixer: {},\n  },\n};\n",
           "[[FILE_ID_18]]": "import { clsx, type ClassValue } from \"clsx\";\nimport { twMerge } from \"tailwind-merge\";\n\nexport function cn(...inputs: ClassValue[]) {\n  return twMerge(clsx(inputs));\n}\n",
           "[[FILE_ID_19]]": "import { cn } from \"@/lib/utils\";\n\nfunction Skeleton({\n  className,\n  ...props\n}: React.HTMLAttributes<HTMLDivElement>) {\n  return (\n    <div\n      className={cn(\"animate-pulse rounded-md bg-muted\", className)}\n      {...props}\n    />\n  );\n}\n\nexport { Skeleton };\n",
           "[[FILE_ID_20]]": "import { createRoot } from \"react-dom/client\";\nimport App from \"./App.tsx\";\nimport \"./globals.css\";\n\ncreateRoot(document.getElementById(\"root\")!).render(<App />);\n",
-          "[[FILE_ID_21]]": "import { defineConfig } from \"vite\";\nimport dyadComponentTagger from \"@dyad-sh/react-vite-component-tagger\";\nimport react from \"@vitejs/plugin-react-swc\";\nimport path from \"path\";\n\nexport default defineConfig(() => ({\n  server: {\n    host: \"::\",\n    port: 8080,\n  },\n  plugins: [dyadComponentTagger(), react()],\n  resolve: {\n    alias: {\n      \"@\": path.resolve(__dirname, \"./src\"),\n    },\n  },\n}));\n",
+          "[[FILE_ID_21]]": "import { defineConfig } from \"vite\";\nimport orianbuilderComponentTagger from \"@dyad-sh/react-vite-component-tagger\";\nimport react from \"@vitejs/plugin-react-swc\";\nimport path from \"path\";\n\nexport default defineConfig(() => ({\n  server: {\n    host: \"::\",\n    port: 8080,\n  },\n  plugins: [orianbuilderComponentTagger(), react()],\n  resolve: {\n    alias: {\n      \"@\": path.resolve(__dirname, \"./src\"),\n    },\n  },\n}));\n",
           "[[FILE_ID_22]]": "import { GripVertical } from \"lucide-react\";\nimport * as ResizablePrimitive from \"react-resizable-panels\";\n\nimport { cn } from \"@/lib/utils\";\n\nconst ResizablePanelGroup = ({\n  className,\n  ...props\n}: React.ComponentProps<typeof ResizablePrimitive.PanelGroup>) => (\n  <ResizablePrimitive.PanelGroup\n    className={cn(\n      \"flex h-full w-full data-[panel-group-direction=vertical]:flex-col\",\n      className,\n    )}\n    {...props}\n  />\n);\n\nconst ResizablePanel = ResizablePrimitive.Panel;\n\nconst ResizableHandle = ({\n  withHandle,\n  className,\n  ...props\n}: React.ComponentProps<typeof ResizablePrimitive.PanelResizeHandle> & {\n  withHandle?: boolean;\n}) => (\n  <ResizablePrimitive.PanelResizeHandle\n    className={cn(\n      \"relative flex w-px items-center justify-center bg-border after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 data-[panel-group-direction=vertical]:h-px data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:after:left-0 data-[panel-group-direction=vertical]:after:h-1 data-[panel-group-direction=vertical]:after:w-full data-[panel-group-direction=vertical]:after:-translate-y-1/2 data-[panel-group-direction=vertical]:after:translate-x-0 [&[data-panel-group-direction=vertical]>div]:rotate-90\",\n      className,\n    )}\n    {...props}\n  >\n    {withHandle && (\n      <div className=\"z-10 flex h-4 w-3 items-center justify-center rounded-sm border bg-border\">\n        <GripVertical className=\"h-2.5 w-2.5\" />\n      </div>\n    )}\n  </ResizablePrimitive.PanelResizeHandle>\n);\n\nexport { ResizablePanelGroup, ResizablePanel, ResizableHandle };\n",
           "[[FILE_ID_23]]": "import { toast } from \"sonner\";\n\nexport const showSuccess = (message: string) => {\n  toast.success(message);\n};\n\nexport const showError = (message: string) => {\n  toast.error(message);\n};\n\nexport const showLoading = (message: string) => {\n  return toast.loading(message);\n};\n\nexport const dismissToast = (toastId: string) => {\n  toast.dismiss(toastId);\n};\n",
           "[[FILE_ID_24]]": "import { Toaster } from \"@/components/ui/toaster\";\nimport { Toaster as Sonner } from \"@/components/ui/sonner\";\nimport { TooltipProvider } from \"@/components/ui/tooltip\";\nimport { QueryClient, QueryClientProvider } from \"@tanstack/react-query\";\nimport { BrowserRouter, Routes, Route } from \"react-router-dom\";\nimport Index from \"./pages/Index\";\nimport NotFound from \"./pages/NotFound\";\n\nconst queryClient = new QueryClient();\n\nconst App = () => (\n  <QueryClientProvider client={queryClient}>\n    <TooltipProvider>\n      <Toaster />\n      <Sonner />\n      <BrowserRouter>\n        <Routes>\n          <Route path=\"/\" element={<Index />} />\n          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL \"*\" ROUTE */}\n          <Route path=\"*\" element={<NotFound />} />\n        </Routes>\n      </BrowserRouter>\n    </TooltipProvider>\n  </QueryClientProvider>\n);\n\nexport default App;\n",
@@ -186,7 +186,7 @@
             "fileId": "[[FILE_ID_24]]"
           },
           {
-            "path": "src/components/made-with-dyad.tsx",
+            "path": "src/components/made-with-orianbuilder.tsx",
             "force": false,
             "fileId": "[[FILE_ID_16]]"
           },
@@ -530,6 +530,6 @@
     }
   },
   "headers": {
-    "authorization": "Bearer testdyadkey"
+    "authorization": "Bearer testorianbuilderkey"
   }
 }

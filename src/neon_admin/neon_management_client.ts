@@ -3,7 +3,10 @@ import { readSettings, writeSettings } from "../main/settings";
 import { Api, createApiClient } from "@neondatabase/api-client";
 import log from "electron-log";
 import { IS_TEST_BUILD } from "../ipc/utils/test_utils";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("neon_management_client");
 
@@ -36,16 +39,16 @@ export async function refreshNeonToken(): Promise<void> {
   }
 
   if (!refreshToken) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "Neon refresh token not found. Please authenticate first.",
-      DyadErrorKind.Auth,
+      OrianBuilderErrorKind.Auth,
     );
   }
 
   try {
     // Make request to Neon refresh endpoint
     const response = await fetch(
-      "https://oauth.dyad.sh/api/integrations/neon/refresh",
+      "https://oauth.orianbuilder.sh/api/integrations/neon/refresh",
 
       {
         method: "POST",
@@ -57,9 +60,9 @@ export async function refreshNeonToken(): Promise<void> {
     );
 
     if (!response.ok) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Token refresh failed: ${response.statusText}`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
 
@@ -330,9 +333,9 @@ export async function getNeonClient(): Promise<Api<unknown>> {
   const expiresIn = settings.neon?.expiresIn;
 
   if (!neonAccessToken) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "Neon access token not found. Please authenticate first.",
-      DyadErrorKind.Auth,
+      OrianBuilderErrorKind.Auth,
     );
   }
 
@@ -344,9 +347,9 @@ export async function getNeonClient(): Promise<Api<unknown>> {
     const newAccessToken = updatedSettings.neon?.accessToken?.value;
 
     if (!newAccessToken) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Failed to refresh Neon access token",
-        DyadErrorKind.Auth,
+        OrianBuilderErrorKind.Auth,
       );
     }
 
@@ -377,9 +380,9 @@ export async function getNeonOrganizationId(): Promise<string> {
       !response.data?.organizations ||
       response.data.organizations.length === 0
     ) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "No organizations found for this Neon account",
-        DyadErrorKind.NotFound,
+        OrianBuilderErrorKind.NotFound,
       );
     }
 
@@ -387,9 +390,9 @@ export async function getNeonOrganizationId(): Promise<string> {
     return response.data.organizations[0].id;
   } catch (error) {
     logger.error("Error fetching Neon organizations:", error);
-    throw new DyadError(
+    throw new OrianBuilderError(
       "Failed to fetch Neon organizations",
-      DyadErrorKind.External,
+      OrianBuilderErrorKind.External,
     );
   }
 }

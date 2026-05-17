@@ -10,12 +10,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useMcp, type Transport } from "@/hooks/useMcp";
+import {
+  useMcp,
+  type McpToolRiskOverride,
+  type McpToolStateScopeOverride,
+  type Transport,
+} from "@/hooks/useMcp";
 import { showError, showInfo, showSuccess } from "@/lib/toast";
 import { Edit2, Plus, Save, Trash2, X } from "lucide-react";
 import { useDeepLink } from "@/contexts/DeepLinkContext";
 import { AddMcpServerDeepLinkData } from "@/ipc/deep_link_data";
 import { useTranslation } from "react-i18next";
+import { getMcpToolCapability } from "@/ipc/utils/mcp_tool_capabilities";
+import { buildMcpToolKey, sanitizeMcpName } from "@/ipc/utils/mcp_tool_utils";
 
 type KeyValue = { key: string; value: string };
 
@@ -44,6 +51,21 @@ function arrayToJsonObject(envVars: KeyValue[]): Record<string, string> {
     env[key.trim()] = value;
   }
   return env;
+}
+
+function getInferredMcpToolCapabilitySummary(
+  serverName: string,
+  toolName: string,
+) {
+  const key = buildMcpToolKey(
+    sanitizeMcpName(serverName),
+    sanitizeMcpName(toolName),
+  );
+  const capability = getMcpToolCapability(key);
+  if (!capability) {
+    return "No inferred capability";
+  }
+  return `Inferred: ${capability.risk} risk, ${capability.stateScope.replace(/_/g, " ")} scope, ${capability.requiresExplicitConsent ? "explicit ask" : "policy allowed"} (${capability.trust})`;
 }
 
 function KeyValueEditor({
@@ -307,6 +329,7 @@ export function ToolsMcpSettings() {
     toggleEnabled: toggleServerEnabled,
     deleteServer,
     setToolConsent: updateToolConsent,
+    setToolTrustOverride,
     updateServer,
     isUpdatingServer,
   } = useMcp();
@@ -385,6 +408,22 @@ export function ToolsMcpSettings() {
   ) => {
     await updateToolConsent(serverId, toolName, consent);
     setConsents((prev) => ({ ...prev, [`${serverId}:${toolName}`]: consent }));
+  };
+
+  const onSetToolTrustOverride = async (
+    serverId: number,
+    toolName: string,
+    overrides: {
+      riskOverride?: McpToolRiskOverride | null;
+      stateScopeOverride?: McpToolStateScopeOverride | null;
+      requiresExplicitConsentOverride?: boolean | null;
+    },
+  ) => {
+    await setToolTrustOverride({
+      serverId,
+      toolName,
+      ...overrides,
+    });
   };
 
   return (
@@ -523,10 +562,12 @@ export function ToolsMcpSettings() {
             )}
             <div className="mt-3 space-y-2">
               {(toolsByServer[s.id] || []).map((t) => (
-                <div key={t.name} className="border rounded p-2">
-                  <div className="flex items-center gap-4">
-                    <div className="font-mono text-sm truncate">{t.name}</div>
-                    <div className="flex items-center gap-2">
+                <div key={t.name} className="border rounded p-2 space-y-2">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="font-mono text-sm truncate flex-1 min-w-[160px]">
+                      {t.name}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
                       <Select
                         value={consents[`${s.id}:${t.name}`] || "ask"}
                         onValueChange={(v) =>
@@ -542,6 +583,73 @@ export function ToolsMcpSettings() {
                           <SelectItem value="denied">Deny</SelectItem>
                         </SelectContent>
                       </Select>
+                      <Select
+                        value={t.riskOverride ?? "auto"}
+                        onValueChange={(v) =>
+                          onSetToolTrustOverride(s.id, t.name, {
+                            riskOverride:
+                              v === "auto" ? null : (v as McpToolRiskOverride),
+                          })
+                        }
+                      >
+                        <SelectTrigger className="w-[120px] h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">Auto risk</SelectItem>
+                          <SelectItem value="low">Low risk</SelectItem>
+                          <SelectItem value="medium">Medium risk</SelectItem>
+                          <SelectItem value="high">High risk</SelectItem>
+                          <SelectItem value="critical">Critical</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={t.stateScopeOverride ?? "auto"}
+                        onValueChange={(v) =>
+                          onSetToolTrustOverride(s.id, t.name, {
+                            stateScopeOverride:
+                              v === "auto"
+                                ? null
+                                : (v as McpToolStateScopeOverride),
+                          })
+                        }
+                      >
+                        <SelectTrigger className="w-[145px] h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">Auto scope</SelectItem>
+                          <SelectItem value="read_only">Read only</SelectItem>
+                          <SelectItem value="workspace">Workspace</SelectItem>
+                          <SelectItem value="runtime">Runtime</SelectItem>
+                          <SelectItem value="external">External</SelectItem>
+                          <SelectItem value="host">Host</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={
+                          t.requiresExplicitConsentOverride == null
+                            ? "auto"
+                            : t.requiresExplicitConsentOverride
+                              ? "ask"
+                              : "allow"
+                        }
+                        onValueChange={(v) =>
+                          onSetToolTrustOverride(s.id, t.name, {
+                            requiresExplicitConsentOverride:
+                              v === "auto" ? null : v === "ask",
+                          })
+                        }
+                      >
+                        <SelectTrigger className="w-[145px] h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">Auto trust</SelectItem>
+                          <SelectItem value="ask">Require ask</SelectItem>
+                          <SelectItem value="allow">Allow policy</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                   {t.description && (
@@ -549,6 +657,9 @@ export function ToolsMcpSettings() {
                       {t.description}
                     </div>
                   )}
+                  <div className="text-xs text-muted-foreground">
+                    {getInferredMcpToolCapabilitySummary(s.name, t.name)}
+                  </div>
                 </div>
               ))}
               {(toolsByServer[s.id] || []).length === 0 && (

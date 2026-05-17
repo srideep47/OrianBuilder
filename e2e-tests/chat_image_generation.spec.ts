@@ -7,7 +7,7 @@ import { test, Timeout } from "./helpers/test_helper";
  */
 
 test("generate image from chat - full flow", async ({ po }) => {
-  await po.setUpDyadPro();
+  await po.setUpOrianBuilderPro();
   await po.importApp("minimal");
 
   // Approve the code proposal from the import so the send button is unblocked

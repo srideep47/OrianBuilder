@@ -4,7 +4,7 @@ export type SearchReplaceBlock = {
 };
 
 const BLOCK_REGEX =
-  /(?:^|\n)<<<<<<<\s+SEARCH>?\s*\n([\s\S]*?)(?:\n)?(?:(?<=\n)(?<!\\)=======\s*\n)([\s\S]*?)(?:\n)?(?:(?<=\n)(?<!\\)>>>>>>>\s+REPLACE)(?=\n|$)/g;
+  /(?:^|\n)<<<<<<<\s+SEARCH>?\s*\n([\s\S]*?)(?:\n)?(?:(?<=\n)(?<!\\)=======\s*\n)([\s\S]*?)(?:\n)?(?:(?<=\n)(?<!\\)>>>>>>>\s+REPLACE)(?=\r?\n|$)/g;
 
 export function parseSearchReplaceBlocks(
   diffContent: string,

@@ -4,11 +4,11 @@ import { Timeout, testSkipIfWindows } from "./helpers/test_helper";
 /**
  * E2E test for the step limit feature.
  * When the local agent hits 50 tool call steps, it pauses and shows
- * a <dyad-step-limit> notification card.
+ * a <orianbuilder-step-limit> notification card.
  */
 
 testSkipIfWindows("local-agent - step limit pause", async ({ po }) => {
-  await po.setUpDyadPro({ localAgent: true });
+  await po.setUpOrianBuilderPro({ localAgent: true });
   await po.importApp("minimal");
   await po.chatActions.selectLocalAgentMode();
 

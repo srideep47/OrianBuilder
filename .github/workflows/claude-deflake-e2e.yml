@@ -25,8 +25,8 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v2
         with:
-          app-id: ${{ vars.DYAD_GITHUB_APP_ID }}
-          private-key: ${{ secrets.DYAD_GITHUB_APP_PRIVATE_KEY }}
+          app-id: ${{ vars.ORIANBUILDER_GITHUB_APP_ID }}
+          private-key: ${{ secrets.ORIANBUILDER_GITHUB_APP_PRIVATE_KEY }}
           permission-actions: write
           permission-contents: write
           permission-issues: write
@@ -57,7 +57,7 @@ jobs:
           version: latest
 
       - name: Clone nextjs-template
-        run: git clone --depth 1 https://github.com/dyad-sh/nextjs-template.git nextjs-template
+        run: git clone --depth 1 https://github.com/orianbuilder-sh/nextjs-template.git nextjs-template
 
       - name: Install scaffold dependencies
         run: cd scaffold && pnpm install
@@ -82,7 +82,7 @@ jobs:
           claude_args: --model claude-opus-4-6
           display_report: true
           prompt: |
-            /dyad:deflake-e2e-recent-commits ${{ inputs.commit_count || '10' }}
+            /orianbuilder:deflake-e2e-recent-commits ${{ inputs.commit_count || '10' }}
       - name: Cleanup (self-hosted macOS)
         if: always()
         run: bash scripts/ci-cleanup-macos.sh

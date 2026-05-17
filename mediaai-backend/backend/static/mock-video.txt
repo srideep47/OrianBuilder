@@ -1,0 +1,2 @@
+Mock video placeholder. Replace this with a generated MP4, GIF, or other playable video file in a later phase.
+

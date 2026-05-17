@@ -16,6 +16,10 @@ import { Button } from "@/components/ui/button";
 import { useNavigate } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import {
+  getEffectiveKvContextSize,
+  getRecommendedAgentContextSize,
+} from "@/lib/embedded_model_allocation";
+import {
   Cpu,
   FolderOpen,
   Loader2,
@@ -80,24 +84,6 @@ function StatCard({
 function formatMemoryMb(mb: number): string {
   if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
   return `${Math.max(0, Math.round(mb))} MB`;
-}
-
-function getEffectiveKvContextSize(
-  contextSize: number,
-  attentionSlidingWindow?: number | null,
-  attentionSlidingWindowPattern?: number | null,
-  flashAttention?: boolean,
-): number {
-  const slidingWindow = attentionSlidingWindow ?? 0;
-  if (slidingWindow <= 0 || slidingWindow >= contextSize) {
-    return contextSize;
-  }
-  const pattern = Math.max(1, attentionSlidingWindowPattern ?? 1);
-  const nonSwaPercent =
-    pattern <= 1 ? 1 : 1 / (pattern + (flashAttention ? -0.5 : -1));
-  return Math.ceil(
-    (1 - nonSwaPercent) * slidingWindow + nonSwaPercent * contextSize,
-  );
 }
 
 function getContextSizeForEffectiveKv(
@@ -577,12 +563,12 @@ const DEFAULT_CONFIG: EmbeddedModelConfig = {
   tensorRtEngineDir: null,
   gpuMemoryUtilization: 0.98,
   vramHeadroomMb: 512,
-  contextSize: 8192,
+  contextSize: 65536,
   batchSize: 512,
-  temperature: 0.7,
+  temperature: 0.6,
   topP: 0.95,
-  topK: 40,
-  repeatPenalty: 1.1,
+  topK: 20,
+  repeatPenalty: 1.0,
   seed: null,
   flashAttention: true,
   aggressiveMemory: true,
@@ -921,18 +907,38 @@ export default function InferencePage() {
           Math.floor(requestedGpuBudgetMb / (layerSizeMb + kvMbPerLayer)),
         )
       : 0;
+  const recommendedAgentContext =
+    modelInfo && vramMb > 0
+      ? getRecommendedAgentContextSize({
+          fileName: modelInfo.fileName,
+          architecture: modelInfo.architecture,
+          contextLengthTrained: modelInfo.contextLengthTrained,
+          gpuBudgetMb: requestedGpuBudgetMb,
+          layerSizeMb,
+          totalLayers,
+          kvBytesPerTokenPerLayer,
+          attentionSlidingWindow: modelInfo.attentionSlidingWindow,
+          attentionSlidingWindowPattern:
+            modelInfo.attentionSlidingWindowPattern,
+          flashAttention: config.flashAttention,
+        })
+      : null;
   const applyBalancedAllocation = () => {
     const preferredContexts = [
+      recommendedAgentContext,
       modelMaxContextSize,
       131072,
       65536,
       32768,
       16384,
-    ].filter(
-      (ctx, index, values) =>
-        values.indexOf(ctx) === index && ctx <= modelMaxContextSize,
-    );
+    ]
+      .filter(
+        (ctx): ctx is number =>
+          typeof ctx === "number" && ctx <= modelMaxContextSize,
+      )
+      .filter((ctx, index, values) => values.indexOf(ctx) === index);
     const pickedContext =
+      recommendedAgentContext ??
       preferredContexts.find((ctx) => {
         const effectiveCtx = getEffectiveKvContextSize(
           ctx,
@@ -948,7 +954,8 @@ export default function InferencePage() {
           Math.floor(requestedGpuBudgetMb / (layerSizeMb + kvForCtx)),
         );
         return ctx >= 32768 && layers >= Math.floor(totalLayers * 0.65);
-      }) ?? maxFeasibleContextSnapped;
+      }) ??
+      maxFeasibleContextSnapped;
 
     patch({
       gpuLayersMode: "auto",
@@ -961,10 +968,10 @@ export default function InferencePage() {
   };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-background">
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b px-6 py-4 flex items-center justify-between shrink-0">
+    <div className="flex flex-col h-full overflow-hidden bg-transparent">
+      <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-xl border-b border-border/50 px-6 py-4 flex items-center justify-between shrink-0">
         <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
+          <h1 className="text-xl font-bold flex items-center gap-2 page-title">
             <Zap className="w-5 h-5 text-yellow-500" />
             Inference Engine
           </h1>
@@ -1689,9 +1696,9 @@ export default function InferencePage() {
                             <strong className="text-yellow-700 dark:text-yellow-400">
                               Context too small for app building.
                             </strong>{" "}
-                            Dyad's system prompt needs ~30K–60K tokens. Use Max
-                            Context or move fewer layers to GPU, then reload
-                            with ≥ 32K.
+                            OrianBuilder's system prompt needs ~30K–60K tokens.
+                            Use Max Context or move fewer layers to GPU, then
+                            reload with ≥ 32K.
                           </>
                         )}
                       </span>
@@ -1732,11 +1739,10 @@ export default function InferencePage() {
                       <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                       <span>
                         <strong>App building needs ≥ 32K context.</strong>{" "}
-                        Dyad's system prompt carries your app's source code —
-                        typically 30K–60K tokens. Below 32K, the prompt gets
-                        truncated and the model can barely generate a response.
-                        Use Max Context or move fewer layers to GPU, then set
-                        context to 32K.
+                        OrianBuilder's system prompt carries your app's source
+                        code — typically 30K–60K tokens. Below 32K, the prompt
+                        gets truncated; 64K+ is recommended for autonomous app
+                        builds.
                       </span>
                     </div>
                   )}
@@ -1762,7 +1768,7 @@ export default function InferencePage() {
                         Model max {(modelMaxContextSize / 1024).toFixed(0)}K
                       </span>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
                       <Button
                         variant="outline"
                         size="sm"
@@ -1770,6 +1776,17 @@ export default function InferencePage() {
                       >
                         Min
                       </Button>
+                      {recommendedAgentContext ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            patch({ contextSize: recommendedAgentContext })
+                          }
+                        >
+                          Agent {(recommendedAgentContext / 1024).toFixed(0)}K
+                        </Button>
+                      ) : null}
                       <Button
                         variant="outline"
                         size="sm"

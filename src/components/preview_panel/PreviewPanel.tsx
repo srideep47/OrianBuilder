@@ -7,6 +7,7 @@ import {
 } from "../../atoms/appAtoms";
 
 import { CodeView } from "./CodeView";
+import { ElectronPreviewPanel } from "./ElectronPreviewPanel";
 import { ExpoPreviewPanel } from "./ExpoPreviewPanel";
 import { PreviewIframe } from "./PreviewIframe";
 import { Problems } from "./Problems";
@@ -136,6 +137,8 @@ export function PreviewPanel() {
               {previewMode === "preview" ? (
                 app?.frameworkType === "expo" && app.id ? (
                   <ExpoPreviewPanel appId={app.id} />
+                ) : app?.frameworkType === "electron" && app.id ? (
+                  <ElectronPreviewPanel appId={app.id} />
                 ) : (
                   <PreviewIframe key={key} loading={loading} />
                 )

@@ -72,7 +72,7 @@ function FooterComponent({ context }: { context?: FooterContext }) {
     setMessagesById,
     settings,
     userBudget,
-    renderSetupBanner,
+    renderSetupBanner: _renderSetupBanner,
   } = context;
 
   const questionnaireState =
@@ -252,7 +252,7 @@ function FooterComponent({ context }: { context?: FooterContext }) {
         </div>
       )}
       {isStreaming &&
-        !settings?.enableDyadPro &&
+        !settings?.enableOrianBuilderPro &&
         !userBudget &&
         messages.length > 0 && (
           <PromoMessage
@@ -260,7 +260,6 @@ function FooterComponent({ context }: { context?: FooterContext }) {
           />
         )}
       <div ref={messagesEndRef} />
-      {renderSetupBanner()}
     </>
   );
 }
@@ -336,7 +335,7 @@ export const MessagesList = forwardRef<HTMLDivElement, MessagesListProps>(
         const messageKey = message.id;
 
         return (
-          <div className="px-4" key={messageKey}>
+          <div className="px-4 max-w-3xl mx-auto w-full" key={messageKey}>
             <MemoizedChatMessage
               message={message}
               isLastMessage={isLastMessage}
@@ -388,29 +387,17 @@ export const MessagesList = forwardRef<HTMLDivElement, MessagesListProps>(
       ],
     );
 
-    // Render empty state or setup banner
+    // Render empty state — no setup banner in the chat section
     if (messages.length === 0) {
-      const setupBanner = renderSetupBanner();
-      if (setupBanner) {
-        return (
-          <div
-            className="absolute inset-0 overflow-y-auto p-4 pb-0 pr-0"
-            ref={ref}
-            data-testid="messages-list"
-          >
-            {setupBanner}
-          </div>
-        );
-      }
       return (
         <div
           className="absolute inset-0 overflow-y-auto p-4 pb-0 pr-0"
           ref={ref}
           data-testid="messages-list"
         >
-          <div className="flex flex-col items-center justify-center h-full max-w-2xl mx-auto">
-            <div className="flex flex-1 items-center justify-center text-gray-500">
-              No messages yet
+          <div className="flex flex-col items-center justify-center h-full">
+            <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">
+              Start the conversation — type a message below
             </div>
           </div>
         </div>
@@ -449,17 +436,19 @@ export const MessagesList = forwardRef<HTMLDivElement, MessagesListProps>(
         ref={ref}
         data-testid="messages-list"
       >
-        <Virtuoso
-          data={messages}
-          increaseViewportBy={{ top: 1000, bottom: 500 }}
-          initialTopMostItemIndex={messages.length - 1}
-          itemContent={itemContent}
-          components={{ Footer: FooterComponent }}
-          context={footerContext}
-          atBottomThreshold={80}
-          atBottomStateChange={onAtBottomChange}
-          followOutput={(isAtBottom) => (isAtBottom ? "auto" : false)}
-        />
+        <div className="max-w-3xl mx-auto w-full h-full">
+          <Virtuoso
+            data={messages}
+            increaseViewportBy={{ top: 1000, bottom: 500 }}
+            initialTopMostItemIndex={messages.length - 1}
+            itemContent={itemContent}
+            components={{ Footer: FooterComponent }}
+            context={footerContext}
+            atBottomThreshold={80}
+            atBottomStateChange={onAtBottomChange}
+            followOutput={(isAtBottom) => (isAtBottom ? "auto" : false)}
+          />
+        </div>
       </div>
     );
   },

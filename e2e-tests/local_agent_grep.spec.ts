@@ -9,23 +9,27 @@ import { testSkipIfWindows } from "./helpers/test_helper";
  */
 
 testSkipIfWindows("local-agent - grep search", async ({ po }) => {
-  await po.setUpDyadPro({ localAgent: true });
+  await po.setUpOrianBuilderPro({ localAgent: true });
   await po.importApp("minimal");
   await po.chatActions.selectLocalAgentMode();
 
   await po.sendPrompt("tc=local-agent/grep-search");
 
-  await po.page.getByTestId("dyad-grep").first().click();
-  await po.page.getByTestId("dyad-grep").nth(1).click();
+  await po.page.getByTestId("orianbuilder-grep").first().click();
+  await po.page.getByTestId("orianbuilder-grep").nth(1).click();
   await po.snapshotMessages();
-  await expect(po.page.getByTestId("dyad-grep").first()).toMatchAriaSnapshot();
-  await expect(po.page.getByTestId("dyad-grep").nth(1)).toMatchAriaSnapshot();
+  await expect(
+    po.page.getByTestId("orianbuilder-grep").first(),
+  ).toMatchAriaSnapshot();
+  await expect(
+    po.page.getByTestId("orianbuilder-grep").nth(1),
+  ).toMatchAriaSnapshot();
 });
 
 testSkipIfWindows(
   "local-agent - grep searches ignored files when requested",
   async ({ po }) => {
-    await po.setUpDyadPro({ localAgent: true });
+    await po.setUpOrianBuilderPro({ localAgent: true });
     await po.importApp("minimal");
     await po.chatActions.selectLocalAgentMode();
 
@@ -39,7 +43,7 @@ testSkipIfWindows(
 
     await po.sendPrompt("tc=local-agent/grep-include-ignored");
 
-    const grepCard = po.page.getByTestId("dyad-grep").first();
+    const grepCard = po.page.getByTestId("orianbuilder-grep").first();
     await expect(grepCard).toContainText('"ignoredNeedle"');
     await grepCard.click();
     await expect(grepCard).toContainText("node_modules/ignored-pkg/index.js");

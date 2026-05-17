@@ -62,9 +62,9 @@ line 5`;
       frameworkType: null,
       messageId: 1,
       isSharedModulesChanged: false,
-      isDyadPro: false,
+      isOrianBuilderPro: false,
       todos: [],
-      dyadRequestId: "test-request",
+      orianbuilderRequestId: "test-request",
       fileEditTracker: {},
       onXmlStream: vi.fn(),
       onXmlComplete: vi.fn(),
@@ -390,7 +390,9 @@ line 5`;
 
     it("builds XML with path only", () => {
       const result = readFileTool.buildXml?.({ path: "src/App.tsx" }, false);
-      expect(result).toBe('<dyad-read path="src/App.tsx"></dyad-read>');
+      expect(result).toBe(
+        '<orianbuilder-read path="src/App.tsx"></orianbuilder-read>',
+      );
     });
 
     it("includes start_line attribute when provided", () => {
@@ -399,7 +401,7 @@ line 5`;
         false,
       );
       expect(result).toBe(
-        '<dyad-read path="src/App.tsx" start_line="10"></dyad-read>',
+        '<orianbuilder-read path="src/App.tsx" start_line="10"></orianbuilder-read>',
       );
     });
 
@@ -409,7 +411,7 @@ line 5`;
         false,
       );
       expect(result).toBe(
-        '<dyad-read path="src/App.tsx" end_line="50"></dyad-read>',
+        '<orianbuilder-read path="src/App.tsx" end_line="50"></orianbuilder-read>',
       );
     });
 
@@ -423,7 +425,7 @@ line 5`;
         false,
       );
       expect(result).toBe(
-        '<dyad-read path="src/App.tsx" start_line="10" end_line="50"></dyad-read>',
+        '<orianbuilder-read path="src/App.tsx" start_line="10" end_line="50"></orianbuilder-read>',
       );
     });
 
@@ -443,7 +445,7 @@ line 5`;
         false,
       );
       expect(result).toBe(
-        '<dyad-read path="src/App.tsx" app_name="other-app"></dyad-read>',
+        '<orianbuilder-read path="src/App.tsx" app_name="other-app"></orianbuilder-read>',
       );
     });
   });
@@ -523,22 +525,24 @@ line 5`;
       ).rejects.toThrow("File does not exist: missing.txt (in app: other-app)");
     });
 
-    it("blocks .dyad/ paths when targeting a referenced app", async () => {
+    it("blocks .orianbuilder/ paths when targeting a referenced app", async () => {
       mockContext.referencedApps.set("other-app", otherAppDir);
       await expect(
         readFileTool.execute(
-          { path: ".dyad/chats/secret.md", app_name: "other-app" },
+          { path: ".orianbuilder/chats/secret.md", app_name: "other-app" },
           mockContext,
         ),
-      ).rejects.toThrow(/Cannot read \.dyad\/ paths from referenced apps/);
+      ).rejects.toThrow(
+        /Cannot read \.orianbuilder\/ paths from referenced apps/,
+      );
     });
 
-    it("blocks .dyad/ paths reached via traversal aliases (e.g. src/../.dyad/...)", async () => {
+    it("blocks .orianbuilder/ paths reached via traversal aliases (e.g. src/../.orianbuilder/...)", async () => {
       mockContext.referencedApps.set("other-app", otherAppDir);
-      const dyadDir = path.join(otherAppDir, ".dyad");
-      await fs.promises.mkdir(dyadDir, { recursive: true });
+      const orianbuilderDir = path.join(otherAppDir, ".orianbuilder");
+      await fs.promises.mkdir(orianbuilderDir, { recursive: true });
       await fs.promises.writeFile(
-        path.join(dyadDir, "secret.md"),
+        path.join(orianbuilderDir, "secret.md"),
         "should not be exposed",
       );
       await fs.promises.mkdir(path.join(otherAppDir, "src"), {
@@ -547,24 +551,26 @@ line 5`;
 
       await expect(
         readFileTool.execute(
-          { path: "src/../.dyad/secret.md", app_name: "other-app" },
+          { path: "src/../.orianbuilder/secret.md", app_name: "other-app" },
           mockContext,
         ),
-      ).rejects.toThrow(/Cannot read \.dyad\/ paths from referenced apps/);
+      ).rejects.toThrow(
+        /Cannot read \.orianbuilder\/ paths from referenced apps/,
+      );
     });
 
-    it("allows .dyad/ paths on the current app (no app_name)", async () => {
-      const dyadDir = path.join(testDir, ".dyad");
-      await fs.promises.mkdir(dyadDir, { recursive: true });
+    it("allows .orianbuilder/ paths on the current app (no app_name)", async () => {
+      const orianbuilderDir = path.join(testDir, ".orianbuilder");
+      await fs.promises.mkdir(orianbuilderDir, { recursive: true });
       await fs.promises.writeFile(
-        path.join(dyadDir, "notes.md"),
-        "local dyad metadata",
+        path.join(orianbuilderDir, "notes.md"),
+        "local orianbuilder metadata",
       );
       const result = await readFileTool.execute(
-        { path: ".dyad/notes.md" },
+        { path: ".orianbuilder/notes.md" },
         mockContext,
       );
-      expect(result).toBe("local dyad metadata");
+      expect(result).toBe("local orianbuilder metadata");
     });
   });
 

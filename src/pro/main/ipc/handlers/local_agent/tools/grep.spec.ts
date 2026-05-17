@@ -97,9 +97,9 @@ function deepHello() {
       frameworkType: null,
       messageId: 1,
       isSharedModulesChanged: false,
-      isDyadPro: false,
+      isOrianBuilderPro: false,
       todos: [],
-      dyadRequestId: "test-request",
+      orianbuilderRequestId: "test-request",
       fileEditTracker: {},
       onXmlStream: vi.fn(),
       onXmlComplete: vi.fn(),
@@ -191,10 +191,10 @@ function deepHello() {
       await grepTool.execute({ query: "hello" }, mockContext);
 
       expect(mockContext.onXmlComplete).toHaveBeenCalledWith(
-        expect.stringContaining("<dyad-grep"),
+        expect.stringContaining("<orianbuilder-grep"),
       );
       expect(mockContext.onXmlComplete).toHaveBeenCalledWith(
-        expect.stringContaining("</dyad-grep>"),
+        expect.stringContaining("</orianbuilder-grep>"),
       );
     });
   });
@@ -313,10 +313,10 @@ function deepHello() {
     });
 
     it("searches hidden ignored files when include_ignored is true", async () => {
-      const dyadDir = path.join(testDir, ".dyad");
-      await fs.promises.mkdir(dyadDir, { recursive: true });
+      const orianbuilderDir = path.join(testDir, ".orianbuilder");
+      await fs.promises.mkdir(orianbuilderDir, { recursive: true });
       await fs.promises.writeFile(
-        path.join(dyadDir, "backup.txt"),
+        path.join(orianbuilderDir, "backup.txt"),
         "hiddenIgnoredNeedle",
       );
 
@@ -324,12 +324,12 @@ function deepHello() {
         {
           query: "hiddenIgnoredNeedle",
           include_ignored: true,
-          include_pattern: ".dyad/**",
+          include_pattern: ".orianbuilder/**",
         },
         mockContext,
       );
 
-      expect(result).toContain(".dyad/backup.txt");
+      expect(result).toContain(".orianbuilder/backup.txt");
     });
 
     it("keeps .git excluded when include_ignored is true", async () => {
@@ -516,7 +516,7 @@ function deepHello() {
 
     it("builds partial XML during streaming", () => {
       const result = grepTool.buildXml?.({ query: "hello" }, false);
-      expect(result).toContain("<dyad-grep");
+      expect(result).toContain("<orianbuilder-grep");
       expect(result).toContain('query="hello"');
       expect(result).toContain("Searching...");
     });

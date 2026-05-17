@@ -4,7 +4,7 @@ import { desc, eq, and, gt, gte } from "drizzle-orm";
 import type { GitCommit } from "../git_types";
 import fs from "node:fs";
 import path from "node:path";
-import { getDyadAppPath } from "../../paths/paths";
+import { getOrianBuilderAppPath } from "../../paths/paths";
 import { withLock } from "../utils/lock_utils";
 import log from "electron-log";
 import { createTypedHandler } from "./base";
@@ -33,7 +33,10 @@ import {
 } from "../utils/app_env_var_utils";
 import { storeDbTimestampAtCurrentVersion } from "../utils/neon_timestamp_utils";
 import { retryOnLocked } from "../utils/retryOnLocked";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { syncCloudSandboxSnapshot } from "../utils/cloud_sandbox_provider";
 
 const logger = log.scope("version_handlers");
@@ -91,7 +94,7 @@ export function registerVersionHandlers() {
       return [];
     }
 
-    const appPath = getDyadAppPath(app.path);
+    const appPath = getOrianBuilderAppPath(app.path);
 
     // Just return an empty array if the app is not a git repo.
     if (!fs.existsSync(path.join(appPath, ".git"))) {
@@ -138,14 +141,20 @@ export function registerVersionHandlers() {
     });
 
     if (!app) {
-      throw new DyadError("App not found", DyadErrorKind.NotFound);
+      throw new OrianBuilderError(
+        "App not found",
+        OrianBuilderErrorKind.NotFound,
+      );
     }
 
-    const appPath = getDyadAppPath(app.path);
+    const appPath = getOrianBuilderAppPath(app.path);
 
     // Return appropriate result if the app is not a git repo
     if (!fs.existsSync(path.join(appPath, ".git"))) {
-      throw new DyadError("Not a git repository", DyadErrorKind.External);
+      throw new OrianBuilderError(
+        "Not a git repository",
+        OrianBuilderErrorKind.External,
+      );
     }
 
     try {
@@ -156,9 +165,9 @@ export function registerVersionHandlers() {
       };
     } catch (error: any) {
       logger.error(`Error getting current branch for app ${appId}:`, error);
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to get current branch: ${error.message}`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
   });
@@ -173,10 +182,13 @@ export function registerVersionHandlers() {
       });
 
       if (!app) {
-        throw new DyadError("App not found", DyadErrorKind.NotFound);
+        throw new OrianBuilderError(
+          "App not found",
+          OrianBuilderErrorKind.NotFound,
+        );
       }
 
-      const appPath = getDyadAppPath(app.path);
+      const appPath = getOrianBuilderAppPath(app.path);
       // Get the current commit hash before reverting
       const currentCommitHash = await getCurrentCommitHash({
         path: appPath,
@@ -307,9 +319,9 @@ export function registerVersionHandlers() {
 
             const preserveBranchId = response.data.branch.parent_id;
             if (!preserveBranchId) {
-              throw new DyadError(
+              throw new OrianBuilderError(
                 "Preserve branch ID not found",
-                DyadErrorKind.NotFound,
+                OrianBuilderErrorKind.NotFound,
               );
             }
             logger.info(
@@ -394,7 +406,10 @@ export function registerVersionHandlers() {
       });
 
       if (!app) {
-        throw new DyadError("App not found", DyadErrorKind.NotFound);
+        throw new OrianBuilderError(
+          "App not found",
+          OrianBuilderErrorKind.NotFound,
+        );
       }
 
       if (
@@ -453,7 +468,7 @@ export function registerVersionHandlers() {
           }
         }
       }
-      const fullAppPath = getDyadAppPath(app.path);
+      const fullAppPath = getOrianBuilderAppPath(app.path);
       await gitCheckout({
         path: fullAppPath,
         ref: gitRef,

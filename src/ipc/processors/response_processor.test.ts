@@ -52,7 +52,7 @@ vi.mock("../../db", () => ({
 }));
 
 vi.mock("../../paths/paths", () => ({
-  getDyadAppPath: vi.fn((appPath: string) => `/mock/apps/${appPath}`),
+  getOrianBuilderAppPath: vi.fn((appPath: string) => `/mock/apps/${appPath}`),
 }));
 
 vi.mock("../utils/git_utils", () => ({
@@ -106,7 +106,8 @@ describe("processFullResponseActions add dependency errors", () => {
     } as any);
     vi.mocked(db.query.messages.findFirst).mockResolvedValue({
       id: 1,
-      content: '<dyad-add-dependency packages="react"></dyad-add-dependency>',
+      content:
+        '<orianbuilder-add-dependency packages="react"></orianbuilder-add-dependency>',
     } as any);
   });
 
@@ -125,7 +126,7 @@ describe("processFullResponseActions add dependency errors", () => {
     );
 
     await processFullResponseActions(
-      '<dyad-add-dependency packages="react"></dyad-add-dependency>',
+      '<orianbuilder-add-dependency packages="react"></orianbuilder-add-dependency>',
       1,
       {
         chatSummary: undefined,
@@ -156,7 +157,7 @@ describe("processFullResponseActions add dependency errors", () => {
     vi.mocked(gitAdd).mockRejectedValueOnce(new Error("git add failed"));
 
     const result = await processFullResponseActions(
-      '<dyad-add-dependency packages="react"></dyad-add-dependency>',
+      '<orianbuilder-add-dependency packages="react"></orianbuilder-add-dependency>',
       1,
       {
         chatSummary: undefined,
@@ -175,8 +176,8 @@ describe("processFullResponseActions add dependency errors", () => {
 
     const result = await processFullResponseActions(
       `
-      <dyad-write path="src/file1.js">console.log("Hello");</dyad-write>
-      <dyad-delete path="src/missing.js"></dyad-delete>
+      <orianbuilder-write path="src/file1.js">console.log("Hello");</orianbuilder-write>
+      <orianbuilder-delete path="src/missing.js"></orianbuilder-delete>
       `,
       1,
       {

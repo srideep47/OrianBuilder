@@ -1,9 +1,12 @@
 import type { Message } from "@/ipc/types";
 import {
-  DyadMarkdownParser,
+  OrianBuilderMarkdownParser,
   VanillaMarkdownParser,
-} from "./DyadMarkdownParser";
-import { DyadAttachment, type AttachmentSize } from "./DyadAttachment";
+} from "./OrianBuilderMarkdownParser";
+import {
+  OrianBuilderAttachment,
+  type AttachmentSize,
+} from "./OrianBuilderAttachment";
 import { useStreamChat } from "@/hooks/useStreamChat";
 import { StreamingLoadingAnimation } from "./StreamingLoadingAnimation";
 import {
@@ -34,7 +37,7 @@ import {
   stripCancelledResponseNotice,
 } from "@/shared/chatCancellation";
 
-/** Extract <dyad-attachment> tags from message content and return parsed attachment data. */
+/** Extract <orianbuilder-attachment> tags from message content and return parsed attachment data. */
 function extractAttachments(content: string): {
   name: string;
   type: string;
@@ -42,7 +45,8 @@ function extractAttachments(content: string): {
   path: string;
   attachmentType: string;
 }[] {
-  const tagRegex = /<dyad-attachment\s+([^>]*)><\/dyad-attachment>/g;
+  const tagRegex =
+    /<orianbuilder-attachment\s+([^>]*)><\/orianbuilder-attachment>/g;
   const attrRegex = /([\w-]+)="([^"]*)"/g;
   const results: {
     name: string;
@@ -71,10 +75,13 @@ function extractAttachments(content: string): {
   return results;
 }
 
-/** Strip <dyad-attachment> tags from user message content. */
+/** Strip <orianbuilder-attachment> tags from user message content. */
 function stripAttachmentInfo(content: string): string {
   return content
-    .replace(/<dyad-attachment\s+[^>]*><\/dyad-attachment>/g, "")
+    .replace(
+      /<orianbuilder-attachment\s+[^>]*><\/orianbuilder-attachment>/g,
+      "",
+    )
     .trim();
 }
 
@@ -197,7 +204,9 @@ const ChatMessage = ({
               >
                 {message.role === "assistant" ? (
                   <>
-                    <DyadMarkdownParser content={assistantTextContent} />
+                    <OrianBuilderMarkdownParser
+                      content={assistantTextContent}
+                    />
                     {isLastMessage && isStreaming && (
                       <StreamingLoadingAnimation variant="streaming" />
                     )}
@@ -268,7 +277,7 @@ const ChatMessage = ({
         {attachments.length > 0 && (
           <div className="mt-2 ml-24 flex flex-wrap gap-2 justify-end">
             {attachments.map((att, i) => (
-              <DyadAttachment
+              <OrianBuilderAttachment
                 key={i}
                 size={attachmentSize}
                 node={{
@@ -301,7 +310,7 @@ const ChatMessage = ({
                 >
                   {
                     messageVersion.message
-                      .replace(/^\[dyad\]\s*/i, "")
+                      .replace(/^\[orianbuilder\]\s*/i, "")
                       .split("\n")[0]
                   }
                 </span>

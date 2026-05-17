@@ -14,7 +14,7 @@ import {
 import {
   GPT_5_4,
   getEvalModel,
-  hasDyadProKey,
+  hasOrianBuilderProKey,
   type EvalProvider,
 } from "./helpers/get_eval_model";
 import {
@@ -878,7 +878,7 @@ if (!SUITE_FILTER_RAW || !MODEL_FILTER_RAW) {
       `  Set EVAL_SUITE to "all" or an exact name (comma-separated for multiple) from: ${suiteOptions}\n` +
       `  Set EVAL_MODEL to "all" or a substring of a label: ${modelOptions}\n` +
       `  Example:\n` +
-      `    EVAL_SUITE=all EVAL_MODEL=all DYAD_PRO_API_KEY="..." npm run eval\n`,
+      `    EVAL_SUITE=all EVAL_MODEL=all ORIANBUILDER_PRO_API_KEY="..." npm run eval\n`,
   );
   // Register a single skipped describe so vitest still reports something
   // coherent (rather than "no tests found").
@@ -950,7 +950,7 @@ if (!SUITE_FILTER_RAW || !MODEL_FILTER_RAW) {
   } else {
     for (const suite of ACTIVE_SUITES) {
       for (const { provider, modelName, label, temperature } of MODELS) {
-        describe.skipIf(!hasDyadProKey())(
+        describe.skipIf(!hasOrianBuilderProKey())(
           `${suite.displayName} — ${label}`,
           () => {
             for (const c of CASES) {

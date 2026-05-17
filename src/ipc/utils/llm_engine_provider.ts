@@ -7,9 +7,12 @@ import {
 } from "@ai-sdk/provider-utils";
 
 import log from "electron-log";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { getExtraProviderOptions } from "./thinking_utils";
-import { DYAD_INTERNAL_REQUEST_ID_HEADER } from "./provider_options";
+import { ORIANBUILDER_INTERNAL_REQUEST_ID_HEADER } from "./provider_options";
 import type { UserSettings } from "../../lib/schemas";
 import type { LanguageModel } from "ai";
 
@@ -42,7 +45,7 @@ or to provide a custom fetch implementation for e.g. testing.
 */
   fetch?: FetchFunction;
 
-  dyadOptions: {
+  orianbuilderOptions: {
     enableLazyEdits?: boolean;
     enableSmartFilesContext?: boolean;
     enableWebSearch?: boolean;
@@ -50,7 +53,7 @@ or to provide a custom fetch implementation for e.g. testing.
   settings: UserSettings;
 }
 
-export interface DyadEngineProvider {
+export interface OrianBuilderEngineProvider {
   /**
 Creates a model for text generation.
 */
@@ -64,11 +67,11 @@ Creates a chat model for text generation.
   responses(modelId: ExampleChatModelId, chatParams: ChatParams): LanguageModel;
 }
 
-export function createDyadEngine(
+export function createOrianBuilderEngine(
   options: ExampleProviderSettings,
-): DyadEngineProvider {
+): OrianBuilderEngineProvider {
   const baseURL = withoutTrailingSlash(options.baseURL);
-  logger.info("creating dyad engine with baseURL", baseURL);
+  logger.info("creating orianbuilder engine with baseURL", baseURL);
 
   // Track request ID attempts
   const requestIdAttempts = new Map<string, number>();
@@ -76,7 +79,7 @@ export function createDyadEngine(
   const getHeaders = () => ({
     Authorization: `Bearer ${loadApiKey({
       apiKey: options.apiKey,
-      environmentVariableName: "DYAD_PRO_API_KEY",
+      environmentVariableName: "ORIANBUILDER_PRO_API_KEY",
       description: "Example API key",
     })}`,
     ...options.headers,
@@ -90,7 +93,7 @@ export function createDyadEngine(
   }
 
   const getCommonModelConfig = (): CommonModelConfig => ({
-    provider: `dyad-engine`,
+    provider: `orianbuilder-engine`,
     url: ({ path }) => {
       const url = new URL(`${baseURL}${path}`);
       if (options.queryParams) {
@@ -102,8 +105,8 @@ export function createDyadEngine(
     fetch: options.fetch,
   });
 
-  // Custom fetch implementation that adds dyad-specific options to the request
-  const createDyadFetch = ({
+  // Custom fetch implementation that adds orianbuilder-specific options to the request
+  const createOrianBuilderFetch = ({
     providerId,
   }: {
     providerId: string;
@@ -121,40 +124,42 @@ export function createDyadEngine(
           ...getExtraProviderOptions(providerId, options.settings),
         };
 
-        const dyadVersionedFiles = parsedBody.dyadVersionedFiles;
-        if ("dyadVersionedFiles" in parsedBody) {
-          delete parsedBody.dyadVersionedFiles;
+        const orianbuilderVersionedFiles =
+          parsedBody.orianbuilderVersionedFiles;
+        if ("orianbuilderVersionedFiles" in parsedBody) {
+          delete parsedBody.orianbuilderVersionedFiles;
         }
-        const dyadFiles = parsedBody.dyadFiles;
-        if ("dyadFiles" in parsedBody) {
-          delete parsedBody.dyadFiles;
+        const orianbuilderFiles = parsedBody.orianbuilderFiles;
+        if ("orianbuilderFiles" in parsedBody) {
+          delete parsedBody.orianbuilderFiles;
         }
         // Read from body (OpenAICompatible models spread providerOptions into
         // the body) with a fallback to an internal header (OpenAIResponses
         // models don't forward providerOptions, so we pass it via header).
         const requestId =
-          parsedBody.dyadRequestId ??
+          parsedBody.orianbuilderRequestId ??
           (init.headers as Record<string, string> | undefined)?.[
-            DYAD_INTERNAL_REQUEST_ID_HEADER
+            ORIANBUILDER_INTERNAL_REQUEST_ID_HEADER
           ];
-        if ("dyadRequestId" in parsedBody) {
-          delete parsedBody.dyadRequestId;
+        if ("orianbuilderRequestId" in parsedBody) {
+          delete parsedBody.orianbuilderRequestId;
         }
-        const dyadAppId = parsedBody.dyadAppId;
-        if ("dyadAppId" in parsedBody) {
-          delete parsedBody.dyadAppId;
+        const orianbuilderAppId = parsedBody.orianbuilderAppId;
+        if ("orianbuilderAppId" in parsedBody) {
+          delete parsedBody.orianbuilderAppId;
         }
-        const dyadDisableFiles = parsedBody.dyadDisableFiles;
-        if ("dyadDisableFiles" in parsedBody) {
-          delete parsedBody.dyadDisableFiles;
+        const orianbuilderDisableFiles = parsedBody.orianbuilderDisableFiles;
+        if ("orianbuilderDisableFiles" in parsedBody) {
+          delete parsedBody.orianbuilderDisableFiles;
         }
-        const dyadMentionedApps = parsedBody.dyadMentionedApps;
-        if ("dyadMentionedApps" in parsedBody) {
-          delete parsedBody.dyadMentionedApps;
+        const orianbuilderMentionedApps = parsedBody.orianbuilderMentionedApps;
+        if ("orianbuilderMentionedApps" in parsedBody) {
+          delete parsedBody.orianbuilderMentionedApps;
         }
-        const dyadSmartContextMode = parsedBody.dyadSmartContextMode;
-        if ("dyadSmartContextMode" in parsedBody) {
-          delete parsedBody.dyadSmartContextMode;
+        const orianbuilderSmartContextMode =
+          parsedBody.orianbuilderSmartContextMode;
+        if ("orianbuilderSmartContextMode" in parsedBody) {
+          delete parsedBody.orianbuilderSmartContextMode;
         }
 
         // Track and modify requestId with attempt number
@@ -166,31 +171,34 @@ export function createDyadEngine(
         }
 
         // Add files to the request if they exist
-        if (!dyadDisableFiles) {
-          parsedBody.dyad_options = {
-            files: dyadFiles,
-            versioned_files: dyadVersionedFiles,
-            enable_lazy_edits: options.dyadOptions.enableLazyEdits,
+        if (!orianbuilderDisableFiles) {
+          parsedBody.orianbuilder_options = {
+            files: orianbuilderFiles,
+            versioned_files: orianbuilderVersionedFiles,
+            enable_lazy_edits: options.orianbuilderOptions.enableLazyEdits,
             enable_smart_files_context:
-              options.dyadOptions.enableSmartFilesContext,
-            smart_context_mode: dyadSmartContextMode,
-            enable_web_search: options.dyadOptions.enableWebSearch,
-            app_id: dyadAppId,
+              options.orianbuilderOptions.enableSmartFilesContext,
+            smart_context_mode: orianbuilderSmartContextMode,
+            enable_web_search: options.orianbuilderOptions.enableWebSearch,
+            app_id: orianbuilderAppId,
           };
-          if (dyadMentionedApps?.length) {
-            parsedBody.dyad_options.mentioned_apps = dyadMentionedApps;
+          if (orianbuilderMentionedApps?.length) {
+            parsedBody.orianbuilder_options.mentioned_apps =
+              orianbuilderMentionedApps;
           }
         }
 
         // Return modified request with files included and requestId in headers
-        const { [DYAD_INTERNAL_REQUEST_ID_HEADER]: _, ...outgoingHeaders } =
-          (init.headers as Record<string, string>) ?? {};
+        const {
+          [ORIANBUILDER_INTERNAL_REQUEST_ID_HEADER]: _,
+          ...outgoingHeaders
+        } = (init.headers as Record<string, string>) ?? {};
         const modifiedInit = {
           ...init,
           headers: {
             ...outgoingHeaders,
             ...(modifiedRequestId && {
-              "X-Dyad-Request-Id": modifiedRequestId,
+              "X-OrianBuilder-Request-Id": modifiedRequestId,
             }),
           },
           body: JSON.stringify(parsedBody),
@@ -212,7 +220,7 @@ export function createDyadEngine(
   ) => {
     const config = {
       ...getCommonModelConfig(),
-      fetch: createDyadFetch({ providerId: chatParams.providerId }),
+      fetch: createOrianBuilderFetch({ providerId: chatParams.providerId }),
     };
 
     return new OpenAICompatibleChatLanguageModel(modelId, config);
@@ -224,7 +232,7 @@ export function createDyadEngine(
   ) => {
     const config = {
       ...getCommonModelConfig(),
-      fetch: createDyadFetch({ providerId: chatParams.providerId }),
+      fetch: createOrianBuilderFetch({ providerId: chatParams.providerId }),
     };
 
     return new OpenAIResponsesLanguageModel(modelId, config);
@@ -239,7 +247,7 @@ export function createDyadEngine(
   return provider;
 }
 
-export async function transcribeWithDyadEngine(
+export async function transcribeWithOrianBuilderEngine(
   audioBuffer: Buffer,
   filename: string,
   requestId: string,
@@ -248,10 +256,10 @@ export async function transcribeWithDyadEngine(
   const baseURL = withoutTrailingSlash(options.baseURL);
   const apiKey = loadApiKey({
     apiKey: options.apiKey,
-    environmentVariableName: "DYAD_PRO_API_KEY",
-    description: "Dyad Pro API key",
+    environmentVariableName: "ORIANBUILDER_PRO_API_KEY",
+    description: "OrianBuilder Pro API key",
   });
-  logger.info("transcribing with dyad engine with baseURL", baseURL);
+  logger.info("transcribing with orianbuilder engine with baseURL", baseURL);
 
   const formData = new FormData();
   const mimeType = filename.endsWith(".webm")
@@ -272,7 +280,7 @@ export async function transcribeWithDyadEngine(
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
-      "X-Dyad-Request-Id": requestId,
+      "X-OrianBuilder-Request-Id": requestId,
       ...options.headers,
     },
     body: formData,
@@ -280,9 +288,9 @@ export async function transcribeWithDyadEngine(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new DyadError(
-      `Dyad Engine transcription failed: ${response.status} ${response.statusText} - ${errorText}`,
-      DyadErrorKind.External,
+    throw new OrianBuilderError(
+      `OrianBuilder Engine transcription failed: ${response.status} ${response.statusText} - ${errorText}`,
+      OrianBuilderErrorKind.External,
     );
   }
   const data = (await response.json()) as { text: string };

@@ -1,3 +1,3 @@
 chat2
 
-<dyad-chat-summary>Chat 2</dyad-chat-summary>
+<orianbuilder-chat-summary>Chat 2</orianbuilder-chat-summary>

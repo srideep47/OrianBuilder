@@ -45,7 +45,7 @@ export function MacNotificationGuideDialog({
               Open{" "}
               <strong>
                 System Settings → Notifications → Application Notifications →
-                Dyad
+                OrianBuilder
               </strong>{" "}
               and enable <strong>"Allow Notifications"</strong>.
             </p>

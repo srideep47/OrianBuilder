@@ -1,42 +1,37 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type React from "react";
 import {
-  Sparkles,
-  Image,
-  Music,
-  Video,
-  MessageSquare,
-  Send,
-  Loader2,
+  CheckCircle2,
   Download,
+  Image,
+  Loader2,
+  MessageSquare,
+  Music,
+  Play,
+  RefreshCw,
+  Send,
   Server,
   ServerOff,
-  Settings,
+  Sparkles,
+  Square,
+  Video,
+  Wrench,
 } from "lucide-react";
+import { ipc, type MediaAiModelId, type MediaAiStatus } from "@/ipc/types";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
-  CardDescription,
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-
-// Media AI Backend Configuration
-// Use 127.0.0.1 instead of localhost to force IPv4 — on Windows, `localhost`
-// often resolves to IPv6 (::1) first, and if a different process is bound to
-// the IPv6 loopback on :8000 the health check hits the wrong server and the
-// backend appears "offline" even when it's running.
-const MEDIA_AI_BACKEND_URL = "http://127.0.0.1:8000";
-const BACKEND_SETUP_COMMANDS = `cd mediaai-backend/backend
-pip install -r requirements.txt
-$env:PYTHONPATH = "c:\\own_ai\\OrianBuilder\\mediaai-backend\\backend"
-python -m uvicorn app.main:app --reload --port 8000`;
+import { cn } from "@/lib/utils";
 
 type GenerationType = "text" | "image" | "audio" | "video";
 
@@ -45,18 +40,25 @@ interface GenerationResult {
   content?: string;
   url?: string;
   // When set, the renderer uses this URL directly (no server prefix). Used by
-  // cloud image/video sources like Pollinations.ai.
+  // cloud image sources like Pollinations.ai.
   absoluteUrl?: string;
-  // Video-as-slideshow frames (cloud video). Renderer cycles these to simulate
+  // Video-as-slideshow frames (cloud video). Renderer cycles them to simulate
   // motion when a true text-to-video model isn't available.
   frames?: string[];
   filename?: string;
   source?: "cloud" | "local";
 }
 
-// Pollinations.ai — free public text-to-image service. No auth, no key, no
-// rate limit, returns image/jpeg directly. We pass nologo=true so the output
-// isn't watermarked, and add a random seed for variety.
+const MODEL_SIZE_HINTS: Record<MediaAiModelId, string> = {
+  text: "Phi-3 GGUF, around 2 GB",
+  image: "Stable Diffusion ONNX, several GB",
+  audio: "SpeechT5 + HiFi-GAN, under 1 GB",
+  video: "Text-to-video, very large",
+};
+
+// Pollinations.ai — free public text-to-image service. No auth, no key. Used as
+// a cloud fallback for image/video so users don't have to set up the broken
+// Python ONNX pipeline (Python 3.14 + Windows path issues).
 const POLLINATIONS_BASE = "https://image.pollinations.ai/prompt";
 
 function pollinationsUrl(
@@ -79,35 +81,62 @@ export default function MediaAIPage() {
   const [prompt, setPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [result, setResult] = useState<GenerationResult | null>(null);
-  const [backendStatus, setBackendStatus] = useState<
-    "checking" | "online" | "offline"
-  >("checking");
-  const [serverUrl, setServerUrl] = useState(MEDIA_AI_BACKEND_URL);
-  const [showSettings, setShowSettings] = useState(false);
+  const [status, setStatus] = useState<MediaAiStatus | null>(null);
+  const [setupAction, setSetupAction] = useState<string | null>(null);
 
-  // Check backend health
-  const checkBackendHealth = async () => {
+  const serverUrl = status?.serverUrl ?? "http://127.0.0.1:8000";
+  const isBackendOnline = status?.healthy === true;
+
+  const refreshStatus = useCallback(async () => {
+    const nextStatus = await ipc.mediaAi.getStatus(undefined);
+    setStatus(nextStatus);
+  }, []);
+
+  useEffect(() => {
+    void refreshStatus();
+    const interval = setInterval(() => void refreshStatus(), 30000);
+    return () => clearInterval(interval);
+  }, [refreshStatus]);
+
+  const runSetupAction = async (
+    actionName: string,
+    action: () => Promise<void>,
+  ) => {
+    setSetupAction(actionName);
     try {
-      const response = await fetch(`${serverUrl}/health`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (response.ok) {
-        setBackendStatus("online");
-      } else {
-        setBackendStatus("offline");
-      }
-    } catch {
-      setBackendStatus("offline");
+      await action();
+      await refreshStatus();
+    } catch (error) {
+      console.error(error);
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSetupAction(null);
     }
   };
 
-  // Check health on mount and when server URL changes
-  useState(() => {
-    checkBackendHealth();
-    const interval = setInterval(checkBackendHealth, 30000);
-    return () => clearInterval(interval);
-  });
+  const installDependencies = () =>
+    runSetupAction("install", async () => {
+      await ipc.mediaAi.installDependencies(undefined);
+      toast.success("Media AI dependencies installed");
+    });
+
+  const downloadModels = (models: MediaAiModelId[]) =>
+    runSetupAction(`download:${models.join(",")}`, async () => {
+      await ipc.mediaAi.downloadModels({ models });
+      toast.success("Model download completed");
+    });
+
+  const startBackend = () =>
+    runSetupAction("start", async () => {
+      await ipc.mediaAi.startBackend(undefined);
+      toast.success("Media AI backend started");
+    });
+
+  const stopBackend = () =>
+    runSetupAction("stop", async () => {
+      await ipc.mediaAi.stopBackend(undefined);
+      toast.success("Media AI backend stopped");
+    });
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
@@ -118,15 +147,11 @@ export default function MediaAIPage() {
     setIsGenerating(true);
     setResult(null);
 
-    // Image & Video: bypass the broken Python pipeline and use Pollinations.ai
-    // directly. Works without any backend, no auth, free.
+    // Image & Video: cloud-first via Pollinations.ai (no backend required).
+    // This bypasses the Python ONNX pipeline that fails on Python 3.14.
     if (activeTab === "image") {
       try {
-        const url = pollinationsUrl(prompt.trim(), {
-          width: 768,
-          height: 768,
-        });
-        // Pre-load to confirm Pollinations is reachable and the image renders
+        const url = pollinationsUrl(prompt.trim(), { width: 768, height: 768 });
         await new Promise<void>((resolve, reject) => {
           const probe = new window.Image();
           probe.onload = () => resolve();
@@ -140,10 +165,11 @@ export default function MediaAIPage() {
           filename: `image-${Date.now()}.jpg`,
           source: "cloud",
         });
-        toast.success("Image generated!");
+        toast.success("Image generated");
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        toast.error(`Image generation failed: ${msg}`);
+        toast.error(
+          err instanceof Error ? err.message : "Image generation failed",
+        );
       } finally {
         setIsGenerating(false);
       }
@@ -152,22 +178,14 @@ export default function MediaAIPage() {
 
     if (activeTab === "video") {
       try {
-        // Generate 6 keyframes with sequential seeds so the same subject
-        // appears across frames with small variation. Rendered as a cycling
-        // slideshow for a motion-sequence effect.
         const baseSeed = Math.floor(Math.random() * 1_000_000);
-        const frameCount = 6;
-        const frames: string[] = [];
-        for (let i = 0; i < frameCount; i++) {
-          frames.push(
-            pollinationsUrl(prompt.trim(), {
-              width: 640,
-              height: 360,
-              seed: baseSeed + i,
-            }),
-          );
-        }
-        // Pre-load the first 2 frames so playback starts smoothly
+        const frames = Array.from({ length: 6 }, (_, i) =>
+          pollinationsUrl(prompt.trim(), {
+            width: 640,
+            height: 360,
+            seed: baseSeed + i,
+          }),
+        );
         await Promise.all(
           frames.slice(0, 2).map(
             (u) =>
@@ -186,28 +204,26 @@ export default function MediaAIPage() {
           filename: `video-${Date.now()}.gif`,
           source: "cloud",
         });
-        toast.success("Motion sequence generated! Remaining frames loading…");
+        toast.success("Motion sequence generated");
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        toast.error(`Video generation failed: ${msg}`);
+        toast.error(
+          err instanceof Error ? err.message : "Video generation failed",
+        );
       } finally {
         setIsGenerating(false);
       }
       return;
     }
 
-    // Text & Audio still use the local backend
-    if (backendStatus !== "online") {
-      toast.error(
-        "Media AI backend is offline. Please start the backend server.",
-      );
+    // Text & Audio still require the local backend
+    if (!isBackendOnline) {
+      toast.error("Start the Media AI backend before generating.");
       setIsGenerating(false);
       return;
     }
 
     try {
-      const endpoint = `/generate/${activeTab}`;
-      const response = await fetch(`${serverUrl}${endpoint}`, {
+      const response = await fetch(`${serverUrl}/generate/${activeTab}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: prompt.trim() }),
@@ -216,14 +232,11 @@ export default function MediaAIPage() {
       if (!response.ok) {
         const errorData = await response
           .json()
-          .catch(() => ({ detail: `HTTP error! status: ${response.status}` }));
-        throw new Error(
-          errorData.detail || `HTTP error! status: ${response.status}`,
-        );
+          .catch(() => ({ detail: `HTTP ${response.status}` }));
+        throw new Error(errorData.detail || `HTTP ${response.status}`);
       }
 
       const data = await response.json();
-
       setResult({
         type: activeTab,
         content: data.text || data.response,
@@ -232,61 +245,10 @@ export default function MediaAIPage() {
         source: "local",
       });
 
-      toast.success(
-        `${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} generated successfully!`,
-      );
+      toast.success(`${activeTab} generated successfully`);
     } catch (error) {
       console.error("Generation error:", error);
-      const errorMsg = error instanceof Error ? error.message : "Unknown error";
-
-      const isOnnxError =
-        /OMNIGEN_IMAGE_EXPORT_ONNX|Python 3\.14|Optimum ONNX export|onnx.*Invalid argument|nmkd\/stable-diffusion-1\.5-onnx|stable-diffusion-1\.5-onnx/i.test(
-          errorMsg,
-        );
-      const isErrno22 = /\[Errno 22\]|Invalid argument/i.test(errorMsg);
-      const isMemory = /out of memory|MemoryError/i.test(errorMsg);
-
-      if (isOnnxError || isErrno22) {
-        toast.error(
-          `${activeTab} model can't load. See the help panel below for fix steps.`,
-          { duration: 10000 },
-        );
-        setResult({
-          type: activeTab,
-          content:
-            `Couldn't load the ${activeTab} model on this backend setup.\n\n` +
-            `WHY: Either the ONNX runtime can't load on Python 3.14, or the\n` +
-            `HuggingFace cache path is too long / has Windows symlink issues.\n\n` +
-            `FIX OPTIONS — try in order:\n\n` +
-            `1) Use a short HuggingFace cache dir (one-line fix):\n` +
-            `   [Environment]::SetEnvironmentVariable("HF_HOME","C:\\hf",[EnvironmentVariableTarget]::User)\n` +
-            `   # then restart the backend\n\n` +
-            `2) Enable Windows Developer Mode (allows symlinks):\n` +
-            `   Settings → Privacy & Security → For developers → Developer Mode = On\n\n` +
-            `3) Re-create the backend venv on Python 3.12:\n` +
-            `   py -3.12 -m venv mediaai-backend\\backend\\.venv\n` +
-            `   .\\mediaai-backend\\backend\\.venv\\Scripts\\Activate.ps1\n` +
-            `   pip install -r mediaai-backend\\backend\\requirements.txt\n\n` +
-            `4) Disable ONNX export (if set):\n` +
-            `   Remove-Item Env:OMNIGEN_IMAGE_EXPORT_ONNX\n\n` +
-            `After any fix, restart the backend and try again.\n\n` +
-            `Original error: ${errorMsg}`,
-        });
-      } else if (isMemory) {
-        toast.error(
-          `${activeTab} generation ran out of memory. Try a smaller model or close other apps.`,
-          { duration: 8000 },
-        );
-        setResult({
-          type: activeTab,
-          content:
-            `Out of memory while generating ${activeTab}.\n\n` +
-            `Try: close other apps, use a smaller prompt, or switch to a quantised model.\n\n` +
-            `Original error: ${errorMsg}`,
-        });
-      } else {
-        toast.error(`Failed to generate ${activeTab}: ${errorMsg}`);
-      }
+      toast.error(error instanceof Error ? error.message : String(error));
     } finally {
       setIsGenerating(false);
     }
@@ -300,8 +262,6 @@ export default function MediaAIPage() {
     } else if (result.url) {
       href = `${serverUrl}${result.url}`;
     } else if (result.frames && result.frames.length > 0) {
-      // Video slideshow: download the first frame as a representative image.
-      // (Browser can't build a real MP4 from URLs without ffmpeg.wasm.)
       href = result.frames[0];
     }
     if (!href) return;
@@ -330,8 +290,7 @@ export default function MediaAIPage() {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle className="flex items-center gap-2">
-              Generated{" "}
-              {result.type.charAt(0).toUpperCase() + result.type.slice(1)}
+              Generated {result.type}
               {result.source === "cloud" && (
                 <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-medium uppercase text-sky-500">
                   Cloud
@@ -356,8 +315,10 @@ export default function MediaAIPage() {
         </CardHeader>
         <CardContent>
           {result.type === "text" && result.content && (
-            <div className="prose max-w-none">
-              <p className="whitespace-pre-wrap">{result.content}</p>
+            <div className="rounded-lg border bg-muted/30 p-4">
+              <p className="whitespace-pre-wrap text-sm leading-6">
+                {result.content}
+              </p>
             </div>
           )}
           {result.type === "image" && imageSrc && (
@@ -365,18 +326,14 @@ export default function MediaAIPage() {
               <img
                 src={imageSrc}
                 alt="Generated"
-                className="max-w-full rounded-lg shadow-lg"
-                style={{ maxHeight: "512px" }}
+                className="max-h-[512px] max-w-full rounded-lg border shadow-sm"
               />
             </div>
           )}
           {result.type === "audio" && result.url && (
-            <div className="flex flex-col items-center gap-4">
-              <audio controls className="w-full max-w-md">
-                <source src={`${serverUrl}${result.url}`} type="audio/wav" />
-                Your browser does not support the audio element.
-              </audio>
-            </div>
+            <audio controls className="w-full">
+              <source src={`${serverUrl}${result.url}`} type="audio/wav" />
+            </audio>
           )}
           {result.type === "video" &&
             result.frames &&
@@ -384,16 +341,9 @@ export default function MediaAIPage() {
               <VideoSlideshow frames={result.frames} />
             )}
           {result.type === "video" && result.url && !result.frames && (
-            <div className="flex justify-center">
-              <video
-                controls
-                className="max-w-full rounded-lg shadow-lg"
-                style={{ maxHeight: "400px" }}
-              >
-                <source src={`${serverUrl}${result.url}`} type="video/mp4" />
-                Your browser does not support the video element.
-              </video>
-            </div>
+            <video controls className="max-h-[420px] w-full rounded-lg border">
+              <source src={`${serverUrl}${result.url}`} type="video/mp4" />
+            </video>
           )}
         </CardContent>
       </Card>
@@ -402,80 +352,165 @@ export default function MediaAIPage() {
 
   return (
     <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-4xl">
-        {/* Header */}
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="flex items-center text-3xl font-bold">
               <Sparkles className="mr-3 h-8 w-8 text-primary" />
               Media AI
             </h1>
             <p className="mt-2 text-muted-foreground">
-              Generate text, images, audio, and video using local AI models
+              Generate text, images, audio, and video with the bundled OmniGen
+              backend.
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            {/* Backend Status */}
-            <div className="flex items-center gap-2 rounded-lg border px-3 py-2">
-              {backendStatus === "online" ? (
-                <>
-                  <Server className="h-4 w-4 text-green-500" />
-                  <span className="text-sm text-green-600">Backend Online</span>
-                </>
-              ) : backendStatus === "offline" ? (
-                <>
-                  <ServerOff className="h-4 w-4 text-red-500" />
-                  <span className="text-sm text-red-600">Backend Offline</span>
-                </>
-              ) : (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin text-yellow-500" />
-                  <span className="text-sm text-yellow-600">Checking...</span>
-                </>
-              )}
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowSettings(!showSettings)}
-              className={showSettings ? "bg-accent" : ""}
-            >
-              <Settings className="h-5 w-5" />
-            </Button>
+          <div
+            className={cn(
+              "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm",
+              isBackendOnline
+                ? "border-green-500/30 text-green-600"
+                : "border-red-500/30 text-red-600",
+            )}
+          >
+            {isBackendOnline ? (
+              <Server className="h-4 w-4" />
+            ) : (
+              <ServerOff className="h-4 w-4" />
+            )}
+            {isBackendOnline ? "Backend online" : "Backend offline"}
           </div>
         </div>
 
-        {/* Settings Panel */}
-        {showSettings && (
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>Backend Settings</CardTitle>
-              <CardDescription>
-                Configure the Media AI backend server URL
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2">
-                <Input
-                  value={serverUrl}
-                  onChange={(e) => setServerUrl(e.target.value)}
-                  placeholder="http://127.0.0.1:8000"
-                  className="flex-1"
-                />
-                <Button onClick={checkBackendHealth} variant="secondary">
-                  Test Connection
-                </Button>
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Default: http://127.0.0.1:8000. Make sure the OmniGen backend is
-                running. Use 127.0.0.1 instead of localhost to avoid IPv6
-                resolution issues on Windows.
-              </p>
-            </CardContent>
-          </Card>
-        )}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Wrench className="h-5 w-5" />
+              OmniGen Setup
+            </CardTitle>
+            <CardDescription>
+              Install the local Python runtime packages, download model groups,
+              and control the bundled FastAPI server.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="grid gap-3 text-sm md:grid-cols-2">
+              <StatusRow label="Backend" value={status?.backendPath} />
+              <StatusRow label="Models" value={status?.modelsPath} />
+              <StatusRow
+                label="Python environment"
+                value={status?.venvExists ? status.pythonPath : "Not installed"}
+              />
+              <StatusRow label="Server" value={serverUrl} />
+            </div>
 
-        {/* Generation Tabs */}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => void refreshStatus()}
+                disabled={setupAction !== null}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Refresh
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => void installDependencies()}
+                disabled={setupAction !== null || !status?.backendAvailable}
+              >
+                {setupAction === "install" ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                Install Backend Dependencies
+              </Button>
+              {isBackendOnline ? (
+                <Button
+                  variant="outline"
+                  onClick={() => void stopBackend()}
+                  disabled={setupAction !== null}
+                >
+                  <Square className="mr-2 h-4 w-4" />
+                  Stop Backend
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => void startBackend()}
+                  disabled={setupAction !== null || !status?.backendAvailable}
+                >
+                  {setupAction === "start" ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Play className="mr-2 h-4 w-4" />
+                  )}
+                  Start Backend
+                </Button>
+              )}
+            </div>
+
+            <Separator />
+
+            <div className="grid gap-3 md:grid-cols-2">
+              {status?.models.map((model) => (
+                <div
+                  key={model.id}
+                  className="flex items-center justify-between gap-3 rounded-lg border p-3"
+                >
+                  <div>
+                    <div className="flex items-center gap-2 font-medium">
+                      {model.downloaded && (
+                        <CheckCircle2 className="h-4 w-4 text-green-600" />
+                      )}
+                      {model.label}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {MODEL_SIZE_HINTS[model.id]}
+                    </div>
+                  </div>
+                  <Button
+                    variant={model.downloaded ? "outline" : "secondary"}
+                    size="sm"
+                    onClick={() => void downloadModels([model.id])}
+                    disabled={setupAction !== null || !status.venvExists}
+                  >
+                    {setupAction === `download:${model.id}` ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="mr-2 h-4 w-4" />
+                    )}
+                    {model.downloaded ? "Update" : "Download"}
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => void downloadModels(["text", "image", "audio"])}
+                disabled={setupAction !== null || !status?.venvExists}
+              >
+                Download Core Models
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  void downloadModels(["text", "image", "audio", "video"])
+                }
+                disabled={setupAction !== null || !status?.venvExists}
+              >
+                Download All Models
+              </Button>
+            </div>
+
+            {status?.lastLog && (
+              <pre className="max-h-40 overflow-auto rounded-lg bg-muted p-3 text-xs">
+                {status.lastLog}
+              </pre>
+            )}
+          </CardContent>
+        </Card>
+
         <Tabs
           value={activeTab}
           onValueChange={(v) => setActiveTab(v as GenerationType)}
@@ -499,230 +534,139 @@ export default function MediaAIPage() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="text" className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Text Generation</CardTitle>
-                <CardDescription>
-                  Generate text using local Phi-3 model
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="text-prompt">Prompt</Label>
-                    <Textarea
-                      id="text-prompt"
-                      placeholder="Enter your text prompt here..."
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      rows={4}
-                    />
-                  </div>
-                  <Button
-                    onClick={handleGenerate}
-                    disabled={isGenerating || !prompt.trim()}
-                    className="w-full"
-                  >
-                    {isGenerating ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <Send className="mr-2 h-4 w-4" />
-                        Generate Text
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="image" className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Image Generation</CardTitle>
-                <CardDescription>
-                  Generate images via Pollinations.ai (Flux model, cloud, free —
-                  no backend setup needed)
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="image-prompt">Image Prompt</Label>
-                    <Textarea
-                      id="image-prompt"
-                      placeholder="Describe the image you want to generate..."
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      rows={4}
-                    />
-                  </div>
-                  <Button
-                    onClick={handleGenerate}
-                    disabled={isGenerating || !prompt.trim()}
-                    className="w-full"
-                  >
-                    {isGenerating ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <Image className="mr-2 h-4 w-4" />
-                        Generate Image
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="audio" className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Audio Generation</CardTitle>
-                <CardDescription>
-                  Generate speech/audio using SpeechT5 (local)
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="audio-prompt">Text to Speak</Label>
-                    <Textarea
-                      id="audio-prompt"
-                      placeholder="Enter the text you want to convert to speech..."
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      rows={4}
-                    />
-                  </div>
-                  <Button
-                    onClick={handleGenerate}
-                    disabled={isGenerating || !prompt.trim()}
-                    className="w-full"
-                  >
-                    {isGenerating ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <Music className="mr-2 h-4 w-4" />
-                        Generate Audio
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="video" className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Video Generation</CardTitle>
-                <CardDescription>
-                  Generate a 6-frame motion sequence from your prompt — runs in
-                  the cloud, no backend setup required
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="rounded-lg bg-sky-50 p-3 text-sm text-sky-800 dark:bg-sky-950/30 dark:text-sky-200">
-                    <strong>Cloud mode:</strong> Generates 6 keyframes at
-                    640×360 via Pollinations.ai and plays them as an animated
-                    slideshow. Free, no auth, ~10 seconds total.
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="video-prompt">Video Description</Label>
-                    <Textarea
-                      id="video-prompt"
-                      placeholder="Describe a simple scene (e.g., 'candle flame flickering', 'water flowing')..."
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      rows={4}
-                    />
-                  </div>
-                  <Button
-                    onClick={handleGenerate}
-                    disabled={isGenerating || !prompt.trim()}
-                    className="w-full"
-                  >
-                    {isGenerating ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Generating (may take 2-5 minutes)...
-                      </>
-                    ) : (
-                      <>
-                        <Video className="mr-2 h-4 w-4" />
-                        Generate Test Video
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+          <GenerationTab
+            value="text"
+            title="Text Generation"
+            description="Generate text with the local Phi-3 GGUF model."
+            prompt={prompt}
+            setPrompt={setPrompt}
+            onGenerate={handleGenerate}
+            disabled={isGenerating || !prompt.trim() || !isBackendOnline}
+            loading={isGenerating && activeTab === "text"}
+            icon={<Send className="mr-2 h-4 w-4" />}
+            placeholder="Enter your text prompt..."
+            buttonText="Generate Text"
+          />
+          <GenerationTab
+            value="image"
+            title="Image Generation"
+            description="Generate images with the local Stable Diffusion ONNX model."
+            prompt={prompt}
+            setPrompt={setPrompt}
+            onGenerate={handleGenerate}
+            disabled={isGenerating || !prompt.trim() || !isBackendOnline}
+            loading={isGenerating && activeTab === "image"}
+            icon={<Image className="mr-2 h-4 w-4" />}
+            placeholder="Describe the image you want..."
+            buttonText="Generate Image"
+          />
+          <GenerationTab
+            value="audio"
+            title="Audio Generation"
+            description="Generate speech with local SpeechT5 and HiFi-GAN models."
+            prompt={prompt}
+            setPrompt={setPrompt}
+            onGenerate={handleGenerate}
+            disabled={isGenerating || !prompt.trim() || !isBackendOnline}
+            loading={isGenerating && activeTab === "audio"}
+            icon={<Music className="mr-2 h-4 w-4" />}
+            placeholder="Enter the text to speak..."
+            buttonText="Generate Audio"
+          />
+          <GenerationTab
+            value="video"
+            title="Video Generation"
+            description="Generate short CPU test videos at constrained resolution."
+            prompt={prompt}
+            setPrompt={setPrompt}
+            onGenerate={handleGenerate}
+            disabled={isGenerating || !prompt.trim() || !isBackendOnline}
+            loading={isGenerating && activeTab === "video"}
+            icon={<Video className="mr-2 h-4 w-4" />}
+            placeholder="Describe a simple short scene..."
+            buttonText="Generate Video"
+          />
         </Tabs>
 
-        {/* Results Section */}
         {renderResult()}
-
-        {/* Instructions */}
-        <Card className="mt-8">
-          <CardHeader>
-            <CardTitle>Getting Started</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4 text-sm text-muted-foreground">
-              <p>
-                <strong>1. Start the Backend Server:</strong>
-              </p>
-              <pre className="w-full max-w-full overflow-x-auto whitespace-pre-wrap rounded bg-muted p-3 text-xs">
-                {BACKEND_SETUP_COMMANDS}
-              </pre>
-              <Separator />
-              <p>
-                <strong>2. Available Models:</strong>
-              </p>
-              <ul className="ml-4 list-disc space-y-1">
-                <li>Text: Phi-3-mini-4k-instruct (GGUF)</li>
-                <li>Image: Stable Diffusion 1.5 (ONNX)</li>
-                <li>Audio: SpeechT5 TTS + HiFi-GAN</li>
-                <li>
-                  Video: Text-to-Video MS-1.7B (8 frames, 256x256, low quality
-                  for testing)
-                </li>
-              </ul>
-              <Separator />
-              <p>
-                <strong>Note:</strong> First generation may take longer as
-                models are downloaded. Video generation requires ~5GB model
-                download and 8GB+ RAM.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );
 }
 
+function StatusRow({ label, value }: { label: string; value?: string }) {
+  return (
+    <div className="min-w-0 rounded-lg border bg-muted/20 p-3">
+      <div className="text-xs font-medium uppercase text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-1 truncate text-sm">{value || "Unavailable"}</div>
+    </div>
+  );
+}
+
+function GenerationTab({
+  value,
+  title,
+  description,
+  prompt,
+  setPrompt,
+  onGenerate,
+  disabled,
+  loading,
+  icon,
+  placeholder,
+  buttonText,
+}: {
+  value: GenerationType;
+  title: string;
+  description: string;
+  prompt: string;
+  setPrompt: (value: string) => void;
+  onGenerate: () => void;
+  disabled: boolean;
+  loading: boolean;
+  icon: React.ReactNode;
+  placeholder: string;
+  buttonText: string;
+}) {
+  return (
+    <TabsContent value={value} className="mt-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor={`${value}-prompt`}>Prompt</Label>
+              <Textarea
+                id={`${value}-prompt`}
+                placeholder={placeholder}
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                rows={4}
+              />
+            </div>
+            <Button onClick={onGenerate} disabled={disabled} className="w-full">
+              {loading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                icon
+              )}
+              {loading ? "Generating..." : buttonText}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </TabsContent>
+  );
+}
+
 // -----------------------------------------------------------------------------
-// VideoSlideshow — renders a list of frame URLs as an auto-cycling slideshow.
-// Used as a stand-in for true text-to-video when running the cloud generator,
-// which only produces still images. Frames cross-fade for a smooth feel and
-// the user can play/pause and scrub.
+// VideoSlideshow — auto-cycling slideshow of cloud-generated keyframes. Used
+// as a stand-in for true text-to-video, which has no good free no-auth API.
 // -----------------------------------------------------------------------------
 
 function VideoSlideshow({ frames }: { frames: string[] }) {
@@ -745,7 +689,6 @@ function VideoSlideshow({ frames }: { frames: string[] }) {
     };
   }, [playing, frames.length]);
 
-  // Pre-load all frames so the cycle is smooth
   useEffect(() => {
     frames.forEach((url, i) => {
       const probe = new window.Image();
@@ -761,12 +704,10 @@ function VideoSlideshow({ frames }: { frames: string[] }) {
     });
   }, [frames]);
 
-  const allLoaded = loaded.size === frames.length;
-
   return (
     <div className="flex flex-col items-center gap-3">
       <div
-        className="relative w-full max-w-2xl overflow-hidden rounded-lg bg-black shadow-lg"
+        className="relative w-full max-w-2xl overflow-hidden rounded-lg border bg-black shadow-sm"
         style={{ aspectRatio: "16 / 9" }}
       >
         {frames.map((url, i) => (
@@ -778,17 +719,16 @@ function VideoSlideshow({ frames }: { frames: string[] }) {
             style={{ opacity: i === index ? 1 : 0 }}
           />
         ))}
-        {/* Loading shimmer until at least 2 frames are ready */}
         {loaded.size < 2 && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-sm text-white">
-            Loading frames… ({loaded.size}/{frames.length})
+            Loading frames... ({loaded.size}/{frames.length})
           </div>
         )}
-        {/* Frame indicator dots */}
         <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1.5">
           {frames.map((_, i) => (
             <button
               key={i}
+              type="button"
               onClick={() => {
                 setIndex(i);
                 setPlaying(false);
@@ -801,18 +741,18 @@ function VideoSlideshow({ frames }: { frames: string[] }) {
           ))}
         </div>
       </div>
-
-      {/* Controls */}
       <div className="flex items-center gap-3 text-xs text-muted-foreground">
         <button
+          type="button"
           onClick={() => setPlaying((p) => !p)}
           className="rounded-full border px-3 py-1 hover:bg-accent"
         >
-          {playing ? "❚❚ Pause" : "▶ Play"}
+          {playing ? "Pause" : "Play"}
         </button>
         <span>
           Frame {index + 1} / {frames.length}
-          {!allLoaded && ` · ${loaded.size}/${frames.length} loaded`}
+          {loaded.size < frames.length &&
+            ` - ${loaded.size}/${frames.length} loaded`}
         </span>
       </div>
     </div>

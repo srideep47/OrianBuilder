@@ -4,7 +4,10 @@ import { app } from "electron";
 import * as crypto from "crypto";
 import log from "electron-log";
 import Database from "better-sqlite3";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("backup_manager");
 
@@ -168,9 +171,9 @@ export class BackupManager {
       } catch (cleanupError) {
         logger.error("Failed to clean up backup directory:", cleanupError);
       }
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Backup creation failed: ${error}`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
   }
@@ -267,9 +270,9 @@ export class BackupManager {
       logger.info(`Deleted backup: ${backupName}`);
     } catch (error) {
       logger.error(`Failed to delete backup ${backupName}:`, error);
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to delete backup: ${error}`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
   }

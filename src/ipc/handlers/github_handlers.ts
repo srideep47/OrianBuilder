@@ -26,7 +26,10 @@ import {
 } from "../utils/git_utils";
 import * as schema from "../../db/schema";
 import fs from "node:fs";
-import { getDyadAppPath, isAppLocationAccessible } from "../../paths/paths";
+import {
+  getOrianBuilderAppPath,
+  isAppLocationAccessible,
+} from "../../paths/paths";
 import { db } from "../../db";
 import { apps } from "../../db/schema";
 import { eq } from "drizzle-orm";
@@ -38,7 +41,10 @@ import { withLock } from "../utils/lock_utils";
 import { createTypedHandler } from "./base";
 import { githubContracts } from "../types/github";
 import type { CloneRepoParams, CloneRepoResult } from "../types/github";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("github_handlers");
 
@@ -137,9 +143,12 @@ export async function prepareLocalBranch({
 }) {
   const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
   if (!app) {
-    throw new DyadError("App not found", DyadErrorKind.NotFound);
+    throw new OrianBuilderError(
+      "App not found",
+      OrianBuilderErrorKind.NotFound,
+    );
   }
-  const appPath = getDyadAppPath(app.path);
+  const appPath = getOrianBuilderAppPath(app.path);
   const targetBranch = branch || "main";
 
   try {
@@ -425,9 +434,9 @@ async function pollForAccessToken(event: IpcMainInvokeEvent) {
           break;
       }
     } else {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Unknown response structure: ${JSON.stringify(data)}`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
   } catch (error) {
@@ -555,7 +564,10 @@ async function handleListGithubRepos(): Promise<
     const settings = readSettings();
     const accessToken = settings.githubAccessToken?.value;
     if (!accessToken) {
-      throw new DyadError("Not authenticated with GitHub.", DyadErrorKind.Auth);
+      throw new OrianBuilderError(
+        "Not authenticated with GitHub.",
+        OrianBuilderErrorKind.Auth,
+      );
     }
 
     // Fetch user's repositories
@@ -583,7 +595,7 @@ async function handleListGithubRepos(): Promise<
       private: repo.private,
     }));
   } catch (err: any) {
-    if (err instanceof DyadError) throw err;
+    if (err instanceof OrianBuilderError) throw err;
     logger.error("[GitHub Handler] Failed to list repos:", err);
     throw new Error(err.message || "Failed to list GitHub repositories.");
   }
@@ -599,7 +611,10 @@ async function handleGetRepoBranches(
     const settings = readSettings();
     const accessToken = settings.githubAccessToken?.value;
     if (!accessToken) {
-      throw new DyadError("Not authenticated with GitHub.", DyadErrorKind.Auth);
+      throw new OrianBuilderError(
+        "Not authenticated with GitHub.",
+        OrianBuilderErrorKind.Auth,
+      );
     }
 
     // Fetch repository branches
@@ -626,7 +641,7 @@ async function handleGetRepoBranches(
       commit: { sha: branch.commit.sha },
     }));
   } catch (err: any) {
-    if (err instanceof DyadError) throw err;
+    if (err instanceof OrianBuilderError) throw err;
     logger.error("[GitHub Handler] Failed to get repo branches:", err);
     throw new Error(err.message || "Failed to get repository branches.");
   }
@@ -691,7 +706,10 @@ async function handleCreateRepo(
   const settings = readSettings();
   const accessToken = settings.githubAccessToken?.value;
   if (!accessToken) {
-    throw new DyadError("Not authenticated with GitHub.", DyadErrorKind.Auth);
+    throw new OrianBuilderError(
+      "Not authenticated with GitHub.",
+      OrianBuilderErrorKind.Auth,
+    );
   }
   // If org is empty, create for the authenticated user
   let owner = org;
@@ -796,7 +814,10 @@ async function handleConnectToExistingRepo(
     const settings = readSettings();
     const accessToken = settings.githubAccessToken?.value;
     if (!accessToken) {
-      throw new DyadError("Not authenticated with GitHub.", DyadErrorKind.Auth);
+      throw new OrianBuilderError(
+        "Not authenticated with GitHub.",
+        OrianBuilderErrorKind.Auth,
+      );
     }
 
     // Verify the repository exists and user has access
@@ -833,7 +854,7 @@ async function handleConnectToExistingRepo(
     // Store org, repo, and branch in the app's DB row
     await updateAppGithubRepo({ appId, org: owner, repo, branch });
   } catch (err: any) {
-    if (err instanceof DyadError) throw err;
+    if (err instanceof OrianBuilderError) throw err;
     logger.error("[GitHub Handler] Failed to connect to existing repo:", err);
     throw new Error(err.message || "Failed to connect to existing repository.");
   }
@@ -856,18 +877,21 @@ async function handlePushToGithub(
   const settings = readSettings();
   const accessToken = settings.githubAccessToken?.value;
   if (!accessToken) {
-    throw new DyadError("Not authenticated with GitHub.", DyadErrorKind.Auth);
+    throw new OrianBuilderError(
+      "Not authenticated with GitHub.",
+      OrianBuilderErrorKind.Auth,
+    );
   }
 
   // Get app info from DB
   const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
   if (!app || !app.githubOrg || !app.githubRepo) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "App is not linked to a GitHub repo.",
-      DyadErrorKind.Precondition,
+      OrianBuilderErrorKind.Precondition,
     );
   }
-  const appPath = getDyadAppPath(app.path);
+  const appPath = getOrianBuilderAppPath(app.path);
   const branch = app.githubBranch || "main";
 
   // Set up remote URL with token
@@ -948,7 +972,7 @@ async function handleAbortRebase(
 ): Promise<void> {
   const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
   if (!app) throw new Error("App not found");
-  const appPath = getDyadAppPath(app.path);
+  const appPath = getOrianBuilderAppPath(app.path);
 
   await gitRebaseAbort({ path: appPath });
 }
@@ -959,7 +983,7 @@ async function handleContinueRebase(
 ): Promise<void> {
   const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
   if (!app) throw new Error("App not found");
-  const appPath = getDyadAppPath(app.path);
+  const appPath = getOrianBuilderAppPath(app.path);
 
   await gitRebaseContinue({ path: appPath });
 }
@@ -971,16 +995,19 @@ async function handleRebaseFromGithub(
   const settings = readSettings();
   const accessToken = settings.githubAccessToken?.value;
   if (!accessToken) {
-    throw new DyadError("Not authenticated with GitHub.", DyadErrorKind.Auth);
+    throw new OrianBuilderError(
+      "Not authenticated with GitHub.",
+      OrianBuilderErrorKind.Auth,
+    );
   }
   const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
   if (!app || !app.githubOrg || !app.githubRepo) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "App is not linked to a GitHub repo.",
-      DyadErrorKind.Precondition,
+      OrianBuilderErrorKind.Precondition,
     );
   }
-  const appPath = getDyadAppPath(app.path);
+  const appPath = getOrianBuilderAppPath(app.path);
   const branch = app.githubBranch || "main";
 
   // Set up remote URL with token
@@ -1032,7 +1059,7 @@ async function handleGetGitState(
 ): Promise<{ mergeInProgress: boolean; rebaseInProgress: boolean }> {
   const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
   if (!app) throw new Error("App not found");
-  const appPath = getDyadAppPath(app.path);
+  const appPath = getOrianBuilderAppPath(app.path);
 
   const mergeInProgress = isGitMergeInProgress({ path: appPath });
   const rebaseInProgress = isGitRebaseInProgress({ path: appPath });
@@ -1048,14 +1075,17 @@ async function handleListCollaborators(
     const settings = readSettings();
     const accessToken = settings.githubAccessToken?.value;
     if (!accessToken) {
-      throw new DyadError("Not authenticated with GitHub.", DyadErrorKind.Auth);
+      throw new OrianBuilderError(
+        "Not authenticated with GitHub.",
+        OrianBuilderErrorKind.Auth,
+      );
     }
 
     const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
     if (!app || !app.githubOrg || !app.githubRepo) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "App is not linked to a GitHub repo.",
-        DyadErrorKind.Precondition,
+        OrianBuilderErrorKind.Precondition,
       );
     }
 
@@ -1082,7 +1112,7 @@ async function handleListCollaborators(
       permissions: c.permissions,
     }));
   } catch (err: any) {
-    if (err instanceof DyadError) throw err;
+    if (err instanceof OrianBuilderError) throw err;
     logger.error("[GitHub Handler] Failed to list collaborators:", err);
     throw new Error(err.message || "Failed to list collaborators.");
   }
@@ -1096,12 +1126,15 @@ async function handleInviteCollaborator(
     // Validate username
     const trimmedUsername = username.trim();
     if (!trimmedUsername) {
-      throw new DyadError("Username cannot be empty.", DyadErrorKind.External);
+      throw new OrianBuilderError(
+        "Username cannot be empty.",
+        OrianBuilderErrorKind.External,
+      );
     }
     if (trimmedUsername.length > 39) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "GitHub username cannot exceed 39 characters.",
-        DyadErrorKind.Validation,
+        OrianBuilderErrorKind.Validation,
       );
     }
     // Single character usernames must be alphanumeric only
@@ -1123,14 +1156,17 @@ async function handleInviteCollaborator(
     const settings = readSettings();
     const accessToken = settings.githubAccessToken?.value;
     if (!accessToken) {
-      throw new DyadError("Not authenticated with GitHub.", DyadErrorKind.Auth);
+      throw new OrianBuilderError(
+        "Not authenticated with GitHub.",
+        OrianBuilderErrorKind.Auth,
+      );
     }
 
     const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
     if (!app || !app.githubOrg || !app.githubRepo) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "App is not linked to a GitHub repo.",
-        DyadErrorKind.Precondition,
+        OrianBuilderErrorKind.Precondition,
       );
     }
 
@@ -1157,7 +1193,7 @@ async function handleInviteCollaborator(
       );
     }
   } catch (err: any) {
-    if (err instanceof DyadError) throw err;
+    if (err instanceof OrianBuilderError) throw err;
     logger.error("[GitHub Handler] Failed to invite collaborator:", err);
     throw new Error(err.message || "Failed to invite collaborator.");
   }
@@ -1171,14 +1207,17 @@ async function handleRemoveCollaborator(
     const settings = readSettings();
     const accessToken = settings.githubAccessToken?.value;
     if (!accessToken) {
-      throw new DyadError("Not authenticated with GitHub.", DyadErrorKind.Auth);
+      throw new OrianBuilderError(
+        "Not authenticated with GitHub.",
+        OrianBuilderErrorKind.Auth,
+      );
     }
 
     const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
     if (!app || !app.githubOrg || !app.githubRepo) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "App is not linked to a GitHub repo.",
-        DyadErrorKind.Precondition,
+        OrianBuilderErrorKind.Precondition,
       );
     }
 
@@ -1201,7 +1240,7 @@ async function handleRemoveCollaborator(
       );
     }
   } catch (err: any) {
-    if (err instanceof DyadError) throw err;
+    if (err instanceof OrianBuilderError) throw err;
     logger.error("[GitHub Handler] Failed to remove collaborator:", err);
     throw new Error(err.message || "Failed to remove collaborator.");
   }
@@ -1213,7 +1252,7 @@ async function handleGetMergeConflicts(
 ): Promise<string[]> {
   const app = await db.query.apps.findFirst({ where: eq(apps.id, appId) });
   if (!app) throw new Error("App not found");
-  const appPath = getDyadAppPath(app.path);
+  const appPath = getOrianBuilderAppPath(app.path);
 
   const conflicts = await gitGetMergeConflicts({ path: appPath });
   return conflicts;
@@ -1231,7 +1270,10 @@ async function handleDisconnectGithubRepo(
   });
 
   if (!app) {
-    throw new DyadError("App not found", DyadErrorKind.NotFound);
+    throw new OrianBuilderError(
+      "App not found",
+      OrianBuilderErrorKind.NotFound,
+    );
   }
 
   // Update app in database to remove GitHub repo, org, and branch
@@ -1287,7 +1329,7 @@ async function handleCloneRepoFromUrl(
       return { error: `An app named "${finalAppName}" already exists.` };
     }
 
-    const appPath = getDyadAppPath(finalAppName);
+    const appPath = getOrianBuilderAppPath(finalAppName);
 
     if (!isAppLocationAccessible(appPath)) {
       throw new Error(

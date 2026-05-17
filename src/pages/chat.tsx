@@ -129,7 +129,7 @@ export default function ChatPage() {
           }
         }}
         className={cn(
-          "relative bg-gray-200 hover:bg-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700 transition-colors cursor-col-resize",
+          "relative bg-border/60 hover:bg-border transition-colors cursor-col-resize",
           isChatPanelHidden ? "w-2" : "w-1",
         )}
       />

@@ -9,7 +9,10 @@ import { executeSupabaseSql } from "../../../../../../supabase_admin/supabase_ma
 import { executeNeonSql } from "../../../../../../neon_admin/neon_context";
 import { writeMigrationFile } from "../../../../../../ipc/utils/file_utils";
 import { readSettings } from "../../../../../../main/settings";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const executeSqlSchema = z.object({
   query: z.string().describe("The SQL query to execute"),
@@ -34,9 +37,9 @@ export const executeSqlTool: ToolDefinition<z.infer<typeof executeSqlSchema>> =
     buildXml: (args, isComplete) => {
       if (args.query == undefined) return undefined;
 
-      let xml = `<dyad-execute-sql description="${escapeXmlAttr(args.description ?? "")}">\n${escapeXmlContent(args.query)}`;
+      let xml = `<orianbuilder-execute-sql description="${escapeXmlAttr(args.description ?? "")}">\n${escapeXmlContent(args.query)}`;
       if (isComplete) {
-        xml += "\n</dyad-execute-sql>";
+        xml += "\n</orianbuilder-execute-sql>";
       }
       return xml;
     },
@@ -52,9 +55,9 @@ export const executeSqlTool: ToolDefinition<z.infer<typeof executeSqlSchema>> =
       }
 
       if (ctx.neonProjectId && !ctx.neonActiveBranchId) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Neon active branch not configured. Please select a branch in the Neon integration settings.",
-          DyadErrorKind.Precondition,
+          OrianBuilderErrorKind.Precondition,
         );
       }
 
@@ -77,9 +80,9 @@ export const executeSqlTool: ToolDefinition<z.infer<typeof executeSqlSchema>> =
         return `Successfully executed SQL query.\n\nSQL result:\n${sqlResult}`;
       }
 
-      throw new DyadError(
+      throw new OrianBuilderError(
         "No database is connected to this app",
-        DyadErrorKind.Precondition,
+        OrianBuilderErrorKind.Precondition,
       );
     },
   };

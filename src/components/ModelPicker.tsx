@@ -1,4 +1,7 @@
-import { isDyadProEnabled, type LargeLanguageModel } from "@/lib/schemas";
+import {
+  isOrianBuilderProEnabled,
+  type LargeLanguageModel,
+} from "@/lib/schemas";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,14 +13,18 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLocalModels } from "@/hooks/useLocalModels";
 import { useLocalLMSModels } from "@/hooks/useLMStudioModels";
-import { useEmbeddedModel } from "@/hooks/useEmbeddedModel";
+import { useEmbeddedModelStatus } from "@/hooks/useEmbeddedModelStatus";
+import {
+  buildEmbeddedModelConfigForPath,
+  useEmbeddedModelSwap,
+} from "@/hooks/useEmbeddedModelSwap";
 import { useLanguageModelsByProviders } from "@/hooks/useLanguageModelsByProviders";
-import { Zap } from "lucide-react";
+import { Loader2, Zap } from "lucide-react";
 
-import { LocalModel } from "@/ipc/types";
+import { ipc, LocalModel, type LocalModelEntry } from "@/ipc/types";
 import { useLanguageModelProviders } from "@/hooks/useLanguageModelProviders";
 import { useSettings } from "@/hooks/useSettings";
 import { PriceBadge } from "@/components/PriceBadge";
@@ -25,12 +32,39 @@ import { TURBO_MODELS } from "@/ipc/shared/language_model_constants";
 import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
+import { showError } from "@/lib/toast";
 
 export function ModelPicker() {
   const { settings, updateSettings } = useSettings();
   const queryClient = useQueryClient();
-  const onModelSelect = (model: LargeLanguageModel) => {
-    updateSettings({ selectedModel: model });
+  const [isModelSwitching, setIsModelSwitching] = useState(false);
+  const onModelSelect = async (model: LargeLanguageModel) => {
+    if (
+      embeddedStatus?.isInferring &&
+      (model.provider === "embedded" || embeddedStatus.modelLoaded)
+    ) {
+      showError("Cannot swap during active inference");
+      return;
+    }
+
+    setIsModelSwitching(true);
+    try {
+      if (model.provider !== "embedded" && embeddedStatus?.modelLoaded) {
+        const result = await unloadModel();
+        if (!result.success) {
+          showError(result.error ?? "Failed to unload embedded model");
+          return;
+        }
+      }
+
+      await updateSettings({ selectedModel: model });
+    } catch (error) {
+      showError(error instanceof Error ? error.message : String(error));
+      return;
+    } finally {
+      setIsModelSwitching(false);
+    }
+
     // Invalidate token count when model changes since different models have different context windows
     // (technically they have different tokenizers, but we don't keep track of that).
     queryClient.invalidateQueries({ queryKey: queryKeys.tokenCount.all });
@@ -64,19 +98,61 @@ export function ModelPicker() {
 
   // Embedded model hook
   const {
-    status: embeddedStatus,
-    loading: embeddedLoading,
-    refresh: refreshEmbedded,
-  } = useEmbeddedModel();
+    data: embeddedStatus,
+    isLoading: embeddedLoading,
+    refetch: refreshEmbedded,
+  } = useEmbeddedModelStatus();
+  const { swapModel, unloadModel, isSwapping } = useEmbeddedModelSwap();
+  const [embeddedLibrary, setEmbeddedLibrary] = useState<LocalModelEntry[]>([]);
+
+  const loadEmbeddedLibrary = useCallback(async () => {
+    try {
+      setEmbeddedLibrary(await ipc.marketplace.listLocalModels(undefined));
+    } catch {
+      setEmbeddedLibrary([]);
+    }
+  }, []);
 
   // Load models when the dropdown opens
   useEffect(() => {
     if (open) {
       loadOllamaModels();
       loadLMStudioModels();
-      refreshEmbedded();
+      void refreshEmbedded();
+      void loadEmbeddedLibrary();
     }
-  }, [open, loadOllamaModels, loadLMStudioModels, refreshEmbedded]);
+  }, [
+    open,
+    loadOllamaModels,
+    loadLMStudioModels,
+    refreshEmbedded,
+    loadEmbeddedLibrary,
+  ]);
+
+  const onEmbeddedModelSelect = async (entry: LocalModelEntry) => {
+    if (embeddedStatus?.isInferring) {
+      showError("Cannot swap during active inference");
+      return;
+    }
+
+    setIsModelSwitching(true);
+    try {
+      const config = await buildEmbeddedModelConfigForPath(entry.filePath);
+      await swapModel(config);
+      await updateSettings({
+        selectedModel: {
+          name: entry.fileName,
+          provider: "embedded",
+        },
+      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tokenCount.all });
+      setOpen(false);
+    } catch (error) {
+      showError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsModelSwitching(false);
+    }
+  };
 
   // Get display name for the selected model
   const getModelDisplayName = () => {
@@ -125,14 +201,14 @@ export function ModelPicker() {
       ? modelsByProviders["auto"].filter((model) => {
           if (
             settings &&
-            !isDyadProEnabled(settings) &&
+            !isOrianBuilderProEnabled(settings) &&
             ["turbo", "value"].includes(model.apiName)
           ) {
             return false;
           }
           if (
             settings &&
-            isDyadProEnabled(settings) &&
+            isOrianBuilderProEnabled(settings) &&
             model.apiName === "free"
           ) {
             return false;
@@ -164,7 +240,7 @@ export function ModelPicker() {
     const provider = providers?.find((p) => p.id === providerId);
     return !(provider && provider.secondary);
   });
-  if (settings && isDyadProEnabled(settings)) {
+  if (settings && isOrianBuilderProEnabled(settings)) {
     primaryProviders.unshift(["auto", TURBO_MODELS]);
   }
   const secondaryProviders = providerEntries.filter(([providerId, models]) => {
@@ -260,7 +336,7 @@ export function ModelPicker() {
                 // we will use the paid models (in OrianBuilder Pro backend) which
                 // don't have the free limitations.
                 if (
-                  isDyadProEnabled(settings) &&
+                  isOrianBuilderProEnabled(settings) &&
                   model.apiName.endsWith(":free")
                 ) {
                   return false;
@@ -428,13 +504,19 @@ export function ModelPicker() {
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="w-56">
               {/* Embedded (Tensor) Model — always shown at top */}
+              {embeddedStatus?.isInferring && (
+                <div className="px-2 py-1.5 text-xs text-amber-600 dark:text-amber-400">
+                  Cannot swap during active inference
+                </div>
+              )}
               {embeddedStatus?.modelLoaded && embeddedStatus.modelName ? (
                 <DropdownMenuItem
                   className={
                     selectedModel.provider === "embedded" ? "bg-secondary" : ""
                   }
+                  disabled={embeddedStatus.isInferring || isModelSwitching}
                   onClick={() => {
-                    onModelSelect({
+                    void onModelSelect({
                       name: embeddedStatus.modelName!,
                       provider: "embedded",
                     });
@@ -474,6 +556,44 @@ export function ModelPicker() {
                   </div>
                 </div>
               )}
+              {embeddedLibrary
+                .filter((entry) => entry.filePath !== embeddedStatus?.modelPath)
+                .map((entry) => (
+                  <DropdownMenuItem
+                    key={`embedded-${entry.filePath}`}
+                    className={
+                      selectedModel.provider === "embedded" &&
+                      selectedModel.name === entry.fileName
+                        ? "bg-secondary"
+                        : ""
+                    }
+                    disabled={
+                      embeddedStatus?.isInferring ||
+                      isModelSwitching ||
+                      isSwapping
+                    }
+                    onClick={() => {
+                      void onEmbeddedModelSelect(entry);
+                    }}
+                    title={entry.filePath}
+                  >
+                    <div className="flex items-center gap-2 w-full min-w-0">
+                      {isModelSwitching || isSwapping ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground shrink-0" />
+                      ) : (
+                        <Zap className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      )}
+                      <div className="flex flex-col min-w-0">
+                        <span className="font-medium truncate">
+                          {entry.fileName}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          Embedded GGUF
+                        </span>
+                      </div>
+                    </div>
+                  </DropdownMenuItem>
+                ))}
               <DropdownMenuSeparator />
 
               {/* Ollama Models SubMenu */}

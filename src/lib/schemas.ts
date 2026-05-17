@@ -229,11 +229,11 @@ export const ExperimentsSchema = z.object({
 });
 export type Experiments = z.infer<typeof ExperimentsSchema>;
 
-export const DyadProBudgetSchema = z.object({
+export const OrianBuilderProBudgetSchema = z.object({
   budgetResetAt: z.string(),
   maxBudget: z.number(),
 });
-export type DyadProBudget = z.infer<typeof DyadProBudgetSchema>;
+export type OrianBuilderProBudget = z.infer<typeof OrianBuilderProBudgetSchema>;
 
 export const GlobPathSchema = z.object({
   globPath: z.string(),
@@ -305,7 +305,7 @@ const BaseUserSettingsFields = {
   // DEPRECATED.
   ////////////////////////////////
   enableProSaverMode: z.boolean().optional(),
-  dyadProBudget: DyadProBudgetSchema.optional(),
+  orianbuilderProBudget: OrianBuilderProBudgetSchema.optional(),
   runtimeMode: RuntimeModeSchema.optional(),
 
   ////////////////////////////////
@@ -323,12 +323,18 @@ const BaseUserSettingsFields = {
   telemetryConsent: z.enum(["opted_in", "opted_out", "unset"]).optional(),
   telemetryUserId: z.string().optional(),
   hasRunBefore: z.boolean().optional(),
-  enableDyadPro: z.boolean().optional(),
+  enableOrianBuilderPro: z.boolean().optional(),
   experiments: ExperimentsSchema.optional(),
   lastShownReleaseNotesVersion: z.string().optional(),
   maxChatTurnsInContext: z.number().optional(),
   maxToolCallSteps: z.number().optional(),
   thinkingBudget: z.enum(["low", "medium", "high"]).optional(),
+  autonomousMode: z.boolean().optional(),
+  defaultMissionAutonomyProfile: z
+    .enum(["supervised", "trusted-workspace", "full-autopilot-sandbox"])
+    .optional(),
+  autoResumeMissionsOnStartup: z.boolean().optional(),
+  maxParallelMissionWorkers: z.number().int().min(1).max(8).optional(),
   enableProLazyEditsMode: z.boolean().optional(),
   proLazyEditsMode: z.enum(["off", "v1", "v2"]).optional(),
   enableProSmartFilesContextMode: z.boolean().optional(),
@@ -344,6 +350,7 @@ const BaseUserSettingsFields = {
   previewDeviceMode: DeviceModeSchema.optional(),
 
   enableAutoFixProblems: z.boolean().optional(),
+  autoPublishAfterChecks: z.boolean().optional(),
   autoExpandPreviewPanel: z.boolean().optional(),
   enableChatEventNotifications: z.boolean().optional(),
   blockUnsafeNpmPackages: z.boolean().optional(),
@@ -445,11 +452,11 @@ export function migrateStoredSettings(
   };
 }
 
-export function isDyadProEnabled(_settings: UserSettings): boolean {
+export function isOrianBuilderProEnabled(_settings: UserSettings): boolean {
   return true;
 }
 
-export function hasDyadProKey(settings: UserSettings): boolean {
+export function hasOrianBuilderProKey(settings: UserSettings): boolean {
   return !!settings.providerSettings?.auto?.apiKey?.value;
 }
 
@@ -469,7 +476,7 @@ export function getEffectiveDefaultChatMode(
   envVars: Record<string, string | undefined>,
   freeAgentQuotaAvailable?: boolean,
 ): ChatMode {
-  const isPro = isDyadProEnabled(settings);
+  const isPro = isOrianBuilderProEnabled(settings);
   // We are checking that OpenAI or Anthropic is setup, which are the first two
   // choices for the Auto model selection.
   //
@@ -502,7 +509,8 @@ export function getEffectiveDefaultChatMode(
  */
 export function isBasicAgentMode(settings: UserSettings): boolean {
   return (
-    !isDyadProEnabled(settings) && settings.selectedChatMode === "local-agent"
+    !isOrianBuilderProEnabled(settings) &&
+    settings.selectedChatMode === "local-agent"
   );
 }
 
@@ -519,7 +527,7 @@ export function isSupabaseConnected(settings: UserSettings | null): boolean {
 
 export function isTurboEditsV2Enabled(settings: UserSettings): boolean {
   return Boolean(
-    isDyadProEnabled(settings) &&
+    isOrianBuilderProEnabled(settings) &&
     settings.enableProLazyEditsMode === true &&
     settings.proLazyEditsMode === "v2",
   );

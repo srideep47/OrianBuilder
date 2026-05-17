@@ -14,6 +14,7 @@ import {
   queuedMessagesByIdAtom,
   streamCompletedSuccessfullyByIdAtom,
   queuePausedByIdAtom,
+  activeMissionByChatIdAtom,
   type QueuedMessageItem,
 } from "@/atoms/chatAtoms";
 import { ipc } from "@/ipc/types";
@@ -46,6 +47,13 @@ export function getRandomNumberId() {
 // This prevents race conditions when clicking rapidly before state updates
 const pendingStreamChatIds = new Set<number>();
 
+function buildMissionTitle(prompt: string): string {
+  const title =
+    prompt.trim().replace(/\s+/g, " ").split(" ").slice(0, 9).join(" ") ||
+    "Autonomous development mission";
+  return title.length > 64 ? `${title.slice(0, 61)}...` : title;
+}
+
 export function useStreamChat({
   hasChatId = true,
 }: { hasChatId?: boolean } = {}) {
@@ -74,6 +82,8 @@ export function useStreamChat({
   );
   const queuePausedById = useAtomValue(queuePausedByIdAtom);
   const setQueuePausedById = useSetAtom(queuePausedByIdAtom);
+  const activeMissionByChatId = useAtomValue(activeMissionByChatIdAtom);
+  const setActiveMissionByChatId = useSetAtom(activeMissionByChatIdAtom);
 
   const posthog = usePostHog();
   const queryClient = useQueryClient();
@@ -94,6 +104,7 @@ export function useStreamChat({
       attachments,
       selectedComponents,
       requestedChatMode,
+      missionId,
       onSettled,
     }: {
       prompt: string;
@@ -103,6 +114,7 @@ export function useStreamChat({
       attachments?: FileAttachment[];
       selectedComponents?: ComponentSelection[];
       requestedChatMode?: Chat["chatMode"] | null;
+      missionId?: number;
       onSettled?: (result: { success: boolean }) => void;
     }) => {
       if (
@@ -194,6 +206,7 @@ export function useStreamChat({
       }
       const targetAppId =
         appId ?? resolvedAppIdFromChat ?? selectedAppId ?? null;
+      let effectiveMissionId = missionId ?? activeMissionByChatId.get(chatId);
       try {
         const cachedChat =
           requestedChatMode === null
@@ -201,6 +214,38 @@ export function useStreamChat({
             : queryClient.getQueryData<Chat>(
                 queryKeys.chats.detail({ chatId }),
               );
+        const effectiveChatMode =
+          requestedChatMode === null
+            ? undefined
+            : (requestedChatMode ?? cachedChat?.chatMode ?? undefined);
+
+        if (
+          effectiveMissionId === undefined &&
+          targetAppId !== null &&
+          effectiveChatMode === "local-agent"
+        ) {
+          const createdMission = await ipc.mission.createMission({
+            appId: targetAppId,
+            chatId,
+            title: buildMissionTitle(prompt),
+            goal: prompt.trim() || buildMissionTitle(prompt),
+            autonomyProfile:
+              settings?.defaultMissionAutonomyProfile ?? "trusted-workspace",
+          });
+          const runningMission = await ipc.mission.updateMissionStatus({
+            missionId: createdMission.id,
+            status: "running",
+          });
+          effectiveMissionId = runningMission.id;
+          setActiveMissionByChatId((prev) => {
+            const next = new Map(prev);
+            next.set(chatId, runningMission.id);
+            return next;
+          });
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.missions.list({ appId: targetAppId }),
+          });
+        }
 
         ipc.chatStream.start(
           {
@@ -209,10 +254,8 @@ export function useStreamChat({
             redo,
             attachments: convertedAttachments,
             selectedComponents: selectedComponents ?? [],
-            requestedChatMode:
-              requestedChatMode === null
-                ? undefined
-                : (requestedChatMode ?? cachedChat?.chatMode ?? undefined),
+            requestedChatMode: effectiveChatMode,
+            missionId: effectiveMissionId,
           },
           {
             onChunk: ({
@@ -321,7 +364,7 @@ export function useStreamChat({
                     queryKeys.chats.list({ appId: targetAppId ?? null }),
                   );
                   const chat = chats?.find((c) => c.id === chatId);
-                  const appName = app?.name ?? "Dyad";
+                  const appName = app?.name ?? "OrianBuilder";
                   const rawTitle = response.chatSummary ?? chat?.title;
                   const body = rawTitle
                     ? rawTitle.length > 80
@@ -334,7 +377,8 @@ export function useStreamChat({
                 }
 
                 if (response.updatedFiles) {
-                  if (settings?.autoExpandPreviewPanel) {
+                  // Always open preview when AI writes files (unless user explicitly disabled it)
+                  if (settings?.autoExpandPreviewPanel !== false) {
                     setIsPreviewOpen(true);
                   }
                   refreshAppIframe();
@@ -370,6 +414,38 @@ export function useStreamChat({
                 queryClient.invalidateQueries({
                   queryKey: queryKeys.freeAgentQuota.status,
                 });
+                if (effectiveMissionId !== undefined) {
+                  queryClient.invalidateQueries({
+                    queryKey: queryKeys.missions.detail({
+                      missionId: effectiveMissionId,
+                    }),
+                  });
+                  queryClient.invalidateQueries({
+                    queryKey: queryKeys.missions.events({
+                      missionId: effectiveMissionId,
+                    }),
+                  });
+                  queryClient.invalidateQueries({
+                    queryKey: queryKeys.missions.tasks({
+                      missionId: effectiveMissionId,
+                    }),
+                  });
+                  queryClient.invalidateQueries({
+                    queryKey: queryKeys.missions.runs({
+                      missionId: effectiveMissionId,
+                    }),
+                  });
+                  queryClient.invalidateQueries({
+                    queryKey: queryKeys.missions.checkpoints({
+                      missionId: effectiveMissionId,
+                    }),
+                  });
+                  queryClient.invalidateQueries({
+                    queryKey: queryKeys.missions.artifacts({
+                      missionId: effectiveMissionId,
+                    }),
+                  });
+                }
 
                 // Keep the same as below
                 setIsStreamingById((prev) => {
@@ -439,6 +515,38 @@ export function useStreamChat({
               queryClient.invalidateQueries({
                 queryKey: queryKeys.freeAgentQuota.status,
               });
+              if (effectiveMissionId !== undefined) {
+                queryClient.invalidateQueries({
+                  queryKey: queryKeys.missions.detail({
+                    missionId: effectiveMissionId,
+                  }),
+                });
+                queryClient.invalidateQueries({
+                  queryKey: queryKeys.missions.events({
+                    missionId: effectiveMissionId,
+                  }),
+                });
+                queryClient.invalidateQueries({
+                  queryKey: queryKeys.missions.tasks({
+                    missionId: effectiveMissionId,
+                  }),
+                });
+                queryClient.invalidateQueries({
+                  queryKey: queryKeys.missions.runs({
+                    missionId: effectiveMissionId,
+                  }),
+                });
+                queryClient.invalidateQueries({
+                  queryKey: queryKeys.missions.checkpoints({
+                    missionId: effectiveMissionId,
+                  }),
+                });
+                queryClient.invalidateQueries({
+                  queryKey: queryKeys.missions.artifacts({
+                    missionId: effectiveMissionId,
+                  }),
+                });
+              }
 
               // Keep the same as above
               setIsStreamingById((prev) => {
@@ -485,6 +593,8 @@ export function useStreamChat({
       refetchUserBudget,
       settings,
       queryClient,
+      activeMissionByChatId,
+      setActiveMissionByChatId,
     ],
   );
 
@@ -512,7 +622,10 @@ export function useStreamChat({
     (
       id: string,
       updates: Partial<
-        Pick<QueuedMessageItem, "prompt" | "attachments" | "selectedComponents">
+        Pick<
+          QueuedMessageItem,
+          "prompt" | "attachments" | "selectedComponents" | "missionId"
+        >
       >,
     ) => {
       if (chatId === undefined) return;

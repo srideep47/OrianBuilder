@@ -6,7 +6,10 @@ import {
   escapeXmlAttr,
   escapeXmlContent,
 } from "./types";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { readSettings } from "@/main/settings";
 
 const logger = log.scope("web_search");
@@ -73,9 +76,9 @@ async function searchBrave(query: string, apiKey: string): Promise<string> {
   });
 
   if (!response.ok) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Brave Search failed: ${response.status} ${response.statusText}`,
-      DyadErrorKind.External,
+      OrianBuilderErrorKind.External,
     );
   }
 
@@ -145,9 +148,9 @@ async function searchDuckDuckGo(query: string): Promise<string> {
   });
 
   if (!response.ok) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Web search failed: ${response.status} ${response.statusText}`,
-      DyadErrorKind.External,
+      OrianBuilderErrorKind.External,
     );
   }
 
@@ -220,19 +223,21 @@ export const webSearchTool: ToolDefinition<z.infer<typeof webSearchSchema>> = {
   execute: async (args, ctx: AgentContext) => {
     logger.log(`Executing web search: ${args.query}`);
 
-    ctx.onXmlStream(`<dyad-web-search query="${escapeXmlAttr(args.query)}">`);
+    ctx.onXmlStream(
+      `<orianbuilder-web-search query="${escapeXmlAttr(args.query)}">`,
+    );
 
     const result = await performSearch(args.query);
 
     if (!result) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Web search returned no results",
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
 
     ctx.onXmlComplete(
-      `<dyad-web-search query="${escapeXmlAttr(args.query)}">${escapeXmlContent(result)}</dyad-web-search>`,
+      `<orianbuilder-web-search query="${escapeXmlAttr(args.query)}">${escapeXmlContent(result)}</orianbuilder-web-search>`,
     );
 
     logger.log(`Web search completed for query: ${args.query}`);

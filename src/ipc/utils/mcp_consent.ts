@@ -1,8 +1,10 @@
 import { db } from "../../db";
-import { mcpToolConsents } from "../../db/schema";
+import { mcpServers, mcpToolConsents } from "../../db/schema";
 import { and, eq } from "drizzle-orm";
 import { IpcMainInvokeEvent } from "electron";
 import crypto from "node:crypto";
+import { buildMcpToolKey, sanitizeMcpName } from "./mcp_tool_utils";
+import type { McpToolTrustOverrideMap } from "./mcp_tool_capabilities";
 
 export type Consent = "ask" | "always" | "denied";
 
@@ -74,6 +76,44 @@ export async function setStoredConsent(
   } else {
     await db.insert(mcpToolConsents).values({ serverId, toolName, consent });
   }
+}
+
+export async function getMcpToolTrustOverridesByToolKey(): Promise<McpToolTrustOverrideMap> {
+  const rows = await db
+    .select({
+      serverName: mcpServers.name,
+      toolName: mcpToolConsents.toolName,
+      riskOverride: mcpToolConsents.riskOverride,
+      stateScopeOverride: mcpToolConsents.stateScopeOverride,
+      requiresExplicitConsentOverride:
+        mcpToolConsents.requiresExplicitConsentOverride,
+    })
+    .from(mcpToolConsents)
+    .innerJoin(mcpServers, eq(mcpToolConsents.serverId, mcpServers.id));
+
+  const overrides: McpToolTrustOverrideMap = {};
+  for (const row of rows) {
+    if (
+      row.riskOverride == null &&
+      row.stateScopeOverride == null &&
+      row.requiresExplicitConsentOverride == null
+    ) {
+      continue;
+    }
+
+    overrides[
+      buildMcpToolKey(
+        sanitizeMcpName(row.serverName),
+        sanitizeMcpName(row.toolName),
+      )
+    ] = {
+      risk: row.riskOverride as McpToolTrustOverrideMap[string]["risk"],
+      stateScope:
+        row.stateScopeOverride as McpToolTrustOverrideMap[string]["stateScope"],
+      requiresExplicitConsent: row.requiresExplicitConsentOverride,
+    };
+  }
+  return overrides;
 }
 
 export async function requireMcpToolConsent(

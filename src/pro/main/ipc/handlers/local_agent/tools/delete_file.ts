@@ -10,7 +10,10 @@ import {
   isServerFunction,
   isSharedServerModule,
 } from "../../../../../../supabase_admin/supabase_utils";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { queueCloudSandboxSnapshotSync } from "@/ipc/utils/cloud_sandbox_provider";
 
 const logger = log.scope("delete_file");
@@ -40,7 +43,7 @@ export const deleteFileTool: ToolDefinition<z.infer<typeof deleteFileSchema>> =
 
     buildXml: (args, _isComplete) => {
       if (!args.path?.trim()) return undefined;
-      return `<dyad-delete path="${escapeXmlAttr(args.path)}"></dyad-delete>`;
+      return `<orianbuilder-delete path="${escapeXmlAttr(args.path)}"></orianbuilder-delete>`;
     },
 
     execute: async (args, ctx: AgentContext) => {
@@ -52,9 +55,9 @@ export const deleteFileTool: ToolDefinition<z.infer<typeof deleteFileSchema>> =
         normalizedPath === "./" ||
         normalizedPath === ""
       ) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `Refusing to delete project root for path: "${args.path}"`,
-          DyadErrorKind.Validation,
+          OrianBuilderErrorKind.Validation,
         );
       }
 

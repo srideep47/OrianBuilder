@@ -1,5 +1,6 @@
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { SidebarPanel } from "@/components/SidebarPanel";
 import { ThemeProvider } from "../contexts/ThemeContext";
 import { DeepLinkProvider } from "../contexts/DeepLinkContext";
 import { Toaster } from "sonner";
@@ -7,6 +8,8 @@ import { TitleBar } from "./TitleBar";
 import { useEffect, type ReactNode } from "react";
 import { useRunApp, useAppOutputSubscription } from "@/hooks/useRunApp";
 import { useAtomValue, useSetAtom } from "jotai";
+import { useRouterState } from "@tanstack/react-router";
+import { GalaxyBackground } from "@/components/GalaxyBackground";
 import {
   appConsoleEntriesAtom,
   previewModeAtom,
@@ -18,6 +21,7 @@ import { selectedComponentsPreviewAtom } from "@/atoms/previewAtoms";
 import { usePlanEvents } from "@/hooks/usePlanEvents";
 import { useZoomShortcuts } from "@/hooks/useZoomShortcuts";
 import { useQueueProcessor } from "@/hooks/useQueueProcessor";
+import { useMissionAutoResume } from "@/hooks/useMissionAutoResume";
 import i18n from "@/i18n";
 import { LanguageSchema } from "@/lib/schemas";
 
@@ -27,6 +31,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   useAppOutputSubscription();
   const previewMode = useAtomValue(previewModeAtom);
   const { settings } = useSettings();
+  const routerState = useRouterState();
+  const currentRoute = routerState.location.pathname.split("/")[1] || "home";
   const setSelectedComponentsPreview = useSetAtom(
     selectedComponentsPreviewAtom,
   );
@@ -41,6 +47,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 
   // Process queued messages globally (even when not on chat page)
   useQueueProcessor();
+
+  // Trigger auto-resume of interrupted missions once after app load.
+  useMissionAutoResume();
 
   useEffect(() => {
     const zoomLevel = settings?.zoomLevel ?? DEFAULT_ZOOM_LEVEL;
@@ -102,16 +111,27 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     setConsoleEntries([]);
   }, [selectedAppId]);
 
+  useEffect(() => {
+    document.body.classList.add("galaxy-mode");
+    document.body.setAttribute("data-route", currentRoute);
+    return () => {
+      document.body.classList.remove("galaxy-mode");
+      document.body.removeAttribute("data-route");
+    };
+  }, [currentRoute]);
+
   return (
     <>
       <ThemeProvider>
         <DeepLinkProvider>
-          <SidebarProvider>
+          <GalaxyBackground />
+          <SidebarProvider defaultOpen={false}>
             <TitleBar />
             <AppSidebar />
+            <SidebarPanel />
             <div
               id="layout-main-content-container"
-              className="flex h-screenish w-full overflow-x-hidden mt-12 mb-4 mr-4 border-t border-l border-border rounded-lg bg-background"
+              className="flex h-screenish flex-1 min-w-0 overflow-hidden mt-11 mb-2 mr-2 sm:mb-4 sm:mr-4 border border-border rounded-r-lg bg-background"
             >
               {children}
             </div>

@@ -68,13 +68,13 @@ export const TemplateCard: React.FC<TemplateCardProps> = ({
       <div
         onClick={handleCardClick}
         className={`
-          bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden 
-          transform transition-all duration-300 ease-in-out 
+          bg-card border border-border/60 rounded-xl shadow-sm overflow-hidden
+          transform transition-all duration-300 ease-in-out
           cursor-pointer group relative
           ${
             isSelected
-              ? "ring-2 ring-blue-500 dark:ring-blue-400 shadow-xl"
-              : "hover:shadow-lg hover:-translate-y-1"
+              ? "ring-2 ring-primary shadow-xl border-primary/50"
+              : "hover:shadow-lg hover:-translate-y-1 hover:border-border"
           }
         `}
       >
@@ -96,9 +96,7 @@ export const TemplateCard: React.FC<TemplateCardProps> = ({
           <div className="flex justify-between items-center mb-1.5">
             <h2
               className={`text-lg font-semibold ${
-                isSelected
-                  ? "text-blue-600 dark:text-blue-400"
-                  : "text-gray-900 dark:text-white"
+                isSelected ? "text-primary" : "text-foreground"
               }`}
             >
               {template.title}
@@ -120,7 +118,7 @@ export const TemplateCard: React.FC<TemplateCardProps> = ({
               </span>
             )}
           </div>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-3 h-10 overflow-y-auto">
+          <p className="text-sm text-muted-foreground mb-3 h-10 overflow-y-auto">
             {template.description}
           </p>
           {template.githubUrl && (

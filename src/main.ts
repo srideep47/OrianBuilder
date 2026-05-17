@@ -8,7 +8,6 @@ import {
   session,
 } from "electron";
 import * as path from "node:path";
-import { spawn, ChildProcess } from "child_process";
 import { registerIpcHandlers } from "./ipc/ipc_host";
 import dotenv from "dotenv";
 // @ts-ignore
@@ -21,7 +20,7 @@ import {
   readEffectiveSettings,
 } from "./main/settings";
 import { handleSupabaseOAuthReturn } from "./supabase_admin/supabase_return_handler";
-import { handleDyadProReturn } from "./main/pro";
+import { handleOrianBuilderProReturn } from "./main/pro";
 import { IS_TEST_BUILD } from "./ipc/utils/test_utils";
 import { BackupManager } from "./backup_manager";
 import { getDatabasePath, initializeDatabase } from "./db";
@@ -38,9 +37,9 @@ import {
   stopPerformanceMonitoring,
 } from "./utils/performance_monitor";
 import {
-  DYAD_INTERNAL_DIR_NAME,
-  DYAD_MEDIA_SUBDIR,
-  DYAD_SCREENSHOT_SUBDIR,
+  ORIANBUILDER_INTERNAL_DIR_NAME,
+  ORIANBUILDER_MEDIA_SUBDIR,
+  ORIANBUILDER_SCREENSHOT_SUBDIR,
 } from "./ipc/utils/media_path_utils";
 import {
   stopAllAppsSync,
@@ -50,11 +49,19 @@ import { cleanupOldAiMessagesJson } from "./pro/main/ipc/handlers/local_agent/ai
 import { cleanupOldMediaFiles } from "./ipc/utils/media_cleanup";
 import fs from "fs";
 import { gitAddSafeDirectory } from "./ipc/utils/git_utils";
-import { getDyadAppsBaseDirectory, getDyadAppPath } from "./paths/paths";
+import {
+  getOrianBuilderAppsBaseDirectory,
+  getOrianBuilderAppPath,
+} from "./paths/paths";
 import {
   startServer as startEmbeddedServer,
   stopServer as stopEmbeddedServer,
 } from "./ipc/utils/embedded_inference_server";
+import { recoverInterruptedMissionsOnStartup } from "./ipc/utils/mission_recovery";
+import {
+  startMediaAiBackend,
+  stopMediaAiBackend,
+} from "./ipc/utils/media_ai_backend";
 
 log.errorHandler.startCatching();
 log.eventLogger.startLogging();
@@ -178,6 +185,17 @@ export async function onReady() {
     logger.error("Error initializing backup manager", e);
   }
   initializeDatabase();
+  recoverInterruptedMissionsOnStartup()
+    .then(({ recoveredRunCount, recoveredWorkerCount }) => {
+      if (recoveredRunCount > 0 || recoveredWorkerCount > 0) {
+        logger.warn(
+          `Recovered ${recoveredRunCount} interrupted mission run(s) and ${recoveredWorkerCount} worker(s) after startup.`,
+        );
+      }
+    })
+    .catch((err) =>
+      logger.warn("Failed to recover interrupted mission runs:", err),
+    );
 
   // Cleanup old ai_messages_json entries to prevent database bloat
   cleanupOldAiMessagesJson();
@@ -187,13 +205,13 @@ export async function onReady() {
 
   const settings = await readEffectiveSettings();
 
-  // Add dyad-apps directory to git safe.directory (required for Windows).
+  // Add orianbuilder-apps directory to git safe.directory (required for Windows).
   // The trailing /* allows access to all repositories under the named directory.
   // See: https://git-scm.com/docs/git-config#Documentation/git-config.txt-safedirectory
   if (settings.enableNativeGit) {
     // Don't need to await because this only needs to run before
-    // the user starts interacting with Dyad app and uses a git-related feature.
-    gitAddSafeDirectory(`${getDyadAppsBaseDirectory()}/*`);
+    // the user starts interacting with OrianBuilder app and uses a git-related feature.
+    gitAddSafeDirectory(`${getOrianBuilderAppsBaseDirectory()}/*`);
   }
 
   // Check if app was force-closed
@@ -216,16 +234,19 @@ export async function onReady() {
   // Handle orian-media:// protocol requests to serve persistent media and screenshot files.
   protocol.handle("orian-media", async (request) => {
     const url = new URL(request.url);
-    // Format: orian-media://media/{app-path}/.dyad/{subdir}/{filename}
-    //   where {subdir} is DYAD_MEDIA_SUBDIR or DYAD_SCREENSHOT_SUBDIR.
+    // Format: orian-media://media/{app-path}/.orianbuilder/{subdir}/{filename}
+    //   where {subdir} is ORIANBUILDER_MEDIA_SUBDIR or ORIANBUILDER_SCREENSHOT_SUBDIR.
     //   Uses a fixed hostname to avoid URL hostname normalization (lowercasing).
     //   The app-path segment is URI-encoded, so split on "/" before decoding
     //   to correctly handle absolute paths (which contain encoded slashes).
     const pathSegments = url.pathname.slice(1).split("/");
-    const allowedSubdirs = [DYAD_MEDIA_SUBDIR, DYAD_SCREENSHOT_SUBDIR];
+    const allowedSubdirs = [
+      ORIANBUILDER_MEDIA_SUBDIR,
+      ORIANBUILDER_SCREENSHOT_SUBDIR,
+    ];
     if (
       pathSegments.length !== 4 ||
-      pathSegments[1] !== DYAD_INTERNAL_DIR_NAME ||
+      pathSegments[1] !== ORIANBUILDER_INTERNAL_DIR_NAME ||
       !allowedSubdirs.includes(pathSegments[2])
     ) {
       return new Response("Forbidden", { status: 403 });
@@ -246,13 +267,13 @@ export async function onReady() {
 
     // Resolve the app directory, handling both relative names and absolute
     // paths from imported apps (skipCopy).
-    const appPath = getDyadAppPath(appPathRaw);
+    const appPath = getOrianBuilderAppPath(appPathRaw);
     const targetDir = path.resolve(
-      path.join(appPath, DYAD_INTERNAL_DIR_NAME, subdir),
+      path.join(appPath, ORIANBUILDER_INTERNAL_DIR_NAME, subdir),
     );
     const resolvedPath = path.resolve(path.join(targetDir, filename));
 
-    // Security: ensure the resolved path stays within the app's .dyad/{subdir} directory
+    // Security: ensure the resolved path stays within the app's .orianbuilder/{subdir} directory
     const relativePath = path.relative(targetDir, resolvedPath);
     if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
       return new Response("Forbidden", { status: 403 });
@@ -272,33 +293,7 @@ export async function onReady() {
     logger.warn("Embedded inference server failed to start:", err),
   );
 
-  // Start the Media AI Python backend
-  const backendPath = path.join(__dirname, "../../mediaai-backend/backend");
-  pythonServer = spawn(
-    "python",
-    ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"],
-    {
-      cwd: backendPath,
-      shell: true,
-      env: {
-        ...process.env,
-        PYTHONPATH: backendPath,
-      },
-    },
-  );
-
-  pythonServer.stdout?.on("data", (data) => {
-    logger.info(`Media AI Backend: ${data}`);
-  });
-  pythonServer.stderr?.on("data", (data) => {
-    logger.error(`Media AI Error: ${data}`);
-  });
-  pythonServer.on("error", (err) => {
-    logger.error("Failed to start Media AI backend:", err);
-  });
-  pythonServer.on("close", (code) => {
-    logger.info(`Media AI backend exited with code ${code}`);
-  });
+  startMediaAiBackend();
 
   await onFirstRunMaybe(settings);
   createWindow();
@@ -372,7 +367,6 @@ declare global {
 
 let mainWindow: BrowserWindow | null = null;
 let pendingForceCloseData: any = null;
-let pythonServer: ChildProcess | null = null;
 
 const createWindow = () => {
   // Create the browser window.
@@ -630,7 +624,7 @@ app.on("open-url", (event, url) => {
 });
 
 async function handleDeepLinkReturn(url: string) {
-  // example url: "dyad://supabase-oauth-return?token=a&refreshToken=b"
+  // example url: "orianbuilder://supabase-oauth-return?token=a&refreshToken=b"
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -646,10 +640,10 @@ async function handleDeepLinkReturn(url: string) {
     "hostname",
     parsed.hostname,
   );
-  if (parsed.protocol !== "dyad:") {
+  if (parsed.protocol !== "orianbuilder:") {
     dialog.showErrorBox(
       "Invalid Protocol",
-      `Expected dyad://, got ${parsed.protocol}. Full URL: ${url}`,
+      `Expected orianbuilder://, got ${parsed.protocol}. Full URL: ${url}`,
     );
     return;
   }
@@ -689,14 +683,14 @@ async function handleDeepLinkReturn(url: string) {
     });
     return;
   }
-  // dyad://dyad-pro-return?key=123&budget_reset_at=2025-05-26T16:31:13.492000Z&max_budget=100
-  if (parsed.hostname === "dyad-pro-return") {
+  // orianbuilder://orianbuilder-pro-return?key=123&budget_reset_at=2025-05-26T16:31:13.492000Z&max_budget=100
+  if (parsed.hostname === "orianbuilder-pro-return") {
     const apiKey = parsed.searchParams.get("key");
     if (!apiKey) {
       dialog.showErrorBox("Invalid URL", "Expected key");
       return;
     }
-    handleDyadProReturn({
+    handleOrianBuilderProReturn({
       apiKey,
     });
     // Send message to renderer to trigger re-render
@@ -705,7 +699,7 @@ async function handleDeepLinkReturn(url: string) {
     });
     return;
   }
-  // dyad://add-mcp-server?name=Chrome%20DevTools&config=eyJjb21tYW5kIjpudWxsLCJ0eXBlIjoic3RkaW8ifQ%3D%3D
+  // orianbuilder://add-mcp-server?name=Chrome%20DevTools&config=eyJjb21tYW5kIjpudWxsLCJ0eXBlIjoic3RkaW8ifQ%3D%3D
   if (parsed.hostname === "add-mcp-server") {
     const name = parsed.searchParams.get("name");
     const config = parsed.searchParams.get("config");
@@ -735,7 +729,7 @@ async function handleDeepLinkReturn(url: string) {
     }
     return;
   }
-  // dyad://add-prompt?data=<base64-encoded-json>
+  // orianbuilder://add-prompt?data=<base64-encoded-json>
   if (parsed.hostname === "add-prompt") {
     const data = parsed.searchParams.get("data");
     if (!data) {
@@ -795,11 +789,7 @@ app.on("will-quit", () => {
   );
 
   // Stop the Media AI Python backend
-  if (pythonServer) {
-    logger.info("Stopping Media AI backend...");
-    pythonServer.kill();
-    pythonServer = null;
-  }
+  stopMediaAiBackend();
 
   writeSettings({ isRunning: false });
 });

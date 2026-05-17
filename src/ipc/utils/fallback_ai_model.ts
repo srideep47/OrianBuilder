@@ -5,7 +5,10 @@ import type {
 } from "@ai-sdk/provider";
 import type { LanguageModel } from "ai";
 import log from "electron-log";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("fallback_model");
 
@@ -129,9 +132,9 @@ class FallbackModel implements LanguageModelV3 {
   constructor(settings: FallbackSettings) {
     // Validate settings
     if (!settings.models || settings.models.length === 0) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "At least one model must be provided in settings.models",
-        DyadErrorKind.Validation,
+        OrianBuilderErrorKind.Validation,
       );
     }
 
@@ -158,21 +161,24 @@ class FallbackModel implements LanguageModelV3 {
   private getUnderlyingModel(): LanguageModelV3 {
     const model = this.settings.models[this.currentModelIndex];
     if (!model) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Model at index ${this.currentModelIndex} not found`,
-        DyadErrorKind.Internal,
+        OrianBuilderErrorKind.Internal,
       );
     }
     // The model is either a string (GatewayModelId) or LanguageModelV2/V3
     // In this fallback context, we only support actual model instances
     if (typeof model === "string") {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "String model IDs are not supported in fallback model",
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
     if (model.specificationVersion !== "v3") {
-      throw new DyadError("Model is not a v3 model", DyadErrorKind.External);
+      throw new OrianBuilderError(
+        "Model is not a v3 model",
+        OrianBuilderErrorKind.External,
+      );
     }
     return model;
   }
@@ -259,9 +265,9 @@ class FallbackModel implements LanguageModelV3 {
   }
 
   async doGenerate(): Promise<any> {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "doGenerate is not supported for fallback model",
-      DyadErrorKind.External,
+      OrianBuilderErrorKind.External,
     );
   }
 

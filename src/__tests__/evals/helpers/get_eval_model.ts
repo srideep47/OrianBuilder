@@ -1,6 +1,6 @@
 import {
-  createDyadEngine,
-  type DyadEngineProvider,
+  createOrianBuilderEngine,
+  type OrianBuilderEngineProvider,
 } from "@/ipc/utils/llm_engine_provider";
 import type { LanguageModel } from "ai";
 import type { UserSettings } from "@/lib/schemas";
@@ -8,14 +8,14 @@ import type { UserSettings } from "@/lib/schemas";
 export type EvalProvider = "anthropic" | "openai" | "google";
 
 // Eval-only model identifier. Lives here (not in production constants)
-// because Dyad's production picker does not currently surface GPT 5.4 —
+// because OrianBuilder's production picker does not currently surface GPT 5.4 —
 // it had refusal/routing issues — but the eval harness still uses it as
 // the judge model.
 export const GPT_5_4 = "gpt-5.4";
 
-// Single source of truth for the Dyad Engine URL across the eval helpers.
-export const DYAD_ENGINE_URL =
-  process.env.DYAD_ENGINE_URL ?? "https://engine.dyad.sh/v1";
+// Single source of truth for the OrianBuilder Engine URL across the eval helpers.
+export const ORIANBUILDER_ENGINE_URL =
+  process.env.ORIANBUILDER_ENGINE_URL ?? "https://engine.orianbuilder.sh/v1";
 
 // Gateway prefixes must match CLOUD_PROVIDERS in language_model_constants.ts.
 const GATEWAY_PREFIXES: Record<EvalProvider, string> = {
@@ -24,17 +24,17 @@ const GATEWAY_PREFIXES: Record<EvalProvider, string> = {
   google: "gemini/",
 };
 
-export function hasDyadProKey(): boolean {
-  return !!process.env.DYAD_PRO_API_KEY;
+export function hasOrianBuilderProKey(): boolean {
+  return !!process.env.ORIANBUILDER_PRO_API_KEY;
 }
 
-let _provider: DyadEngineProvider | null = null;
+let _provider: OrianBuilderEngineProvider | null = null;
 
 /**
  * Reassemble an SSE stream of OpenAI chat-completion chunks into a single
  * non-streaming JSON response that the AI SDK's `doGenerate` path can parse.
  *
- * The Dyad Engine only supports `stream: true`, but the AI SDK sends
+ * The OrianBuilder Engine only supports `stream: true`, but the AI SDK sends
  * non-streaming requests for `generateText`. This adapter bridges the gap.
  */
 async function sseToNonStreamingResponse(
@@ -170,7 +170,7 @@ async function sseToNonStreamingResponse(
 }
 
 /**
- * Fetch wrapper that adapts requests for the Dyad Engine, which only supports
+ * Fetch wrapper that adapts requests for the OrianBuilder Engine, which only supports
  * streaming (`stream: true`). For non-streaming SDK calls (e.g. `generateText`),
  * this forces `stream: true` in the request and then reassembles the SSE
  * response into a single JSON object the SDK expects.
@@ -194,7 +194,7 @@ const evalFetch: typeof fetch = async (input, init) => {
     return fetch(input, init);
   }
 
-  // Force streaming — the Dyad Engine returns 500 for non-streaming requests
+  // Force streaming — the OrianBuilder Engine returns 500 for non-streaming requests
   parsed.stream = true;
   // Ask OpenAI-compatible providers to include a final usage chunk so
   // we can surface token counts in the reassembled non-streaming
@@ -222,12 +222,12 @@ const evalFetch: typeof fetch = async (input, init) => {
   return response;
 };
 
-function getProvider(): DyadEngineProvider {
+function getProvider(): OrianBuilderEngineProvider {
   if (!_provider) {
-    _provider = createDyadEngine({
-      apiKey: process.env.DYAD_PRO_API_KEY,
-      baseURL: DYAD_ENGINE_URL,
-      dyadOptions: {
+    _provider = createOrianBuilderEngine({
+      apiKey: process.env.ORIANBUILDER_PRO_API_KEY,
+      baseURL: ORIANBUILDER_ENGINE_URL,
+      orianbuilderOptions: {
         enableLazyEdits: false,
         enableSmartFilesContext: false,
         enableWebSearch: false,
@@ -243,13 +243,13 @@ export function getEvalModel(
   provider: EvalProvider,
   modelName: string,
 ): LanguageModel {
-  const dyadProvider = getProvider();
+  const orianbuilderProvider = getProvider();
   const modelId = `${GATEWAY_PREFIXES[provider]}${modelName}`;
 
   // Always use the chat completions model (not .responses()) because:
-  // 1. The Dyad Engine only supports streaming for chat completions, and the
+  // 1. The OrianBuilder Engine only supports streaming for chat completions, and the
   //    SSE-to-JSON adapter handles that format. The Responses API uses a
   //    different SSE event format that would need its own adapter.
   // 2. The eval tests model quality (correct tool calls), not transport layer.
-  return dyadProvider(modelId, { providerId: provider });
+  return orianbuilderProvider(modelId, { providerId: provider });
 }

@@ -1,7 +1,10 @@
 import { z } from "zod";
 import log from "electron-log";
 import { ToolDefinition, escapeXmlContent, AgentContext } from "./types";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("web_fetch");
 
@@ -10,7 +13,10 @@ function validateHttpUrl(url: string): void {
   try {
     parsed = new URL(url);
   } catch {
-    throw new DyadError(`Invalid URL: ${url}`, DyadErrorKind.Validation);
+    throw new OrianBuilderError(
+      `Invalid URL: ${url}`,
+      OrianBuilderErrorKind.Validation,
+    );
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error(
@@ -58,9 +64,9 @@ async function fetchPageAsText(url: string): Promise<string> {
   });
 
   if (!response.ok) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Web fetch failed: ${response.status} ${response.statusText}`,
-      DyadErrorKind.External,
+      OrianBuilderErrorKind.External,
     );
   }
 
@@ -109,7 +115,7 @@ export const webFetchTool: ToolDefinition<z.infer<typeof webFetchSchema>> = {
   buildXml: (args, isComplete) => {
     if (!args.url) return undefined;
     if (isComplete) return undefined;
-    return `<dyad-web-fetch>${escapeXmlContent(args.url)}`;
+    return `<orianbuilder-web-fetch>${escapeXmlContent(args.url)}`;
   },
 
   execute: async (args, ctx: AgentContext) => {
@@ -117,28 +123,28 @@ export const webFetchTool: ToolDefinition<z.infer<typeof webFetchSchema>> = {
 
     validateHttpUrl(args.url);
 
-    ctx.onXmlStream(`<dyad-web-fetch>${escapeXmlContent(args.url)}`);
+    ctx.onXmlStream(`<orianbuilder-web-fetch>${escapeXmlContent(args.url)}`);
 
     try {
       const content = await fetchPageAsText(args.url);
 
       if (!content) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Web fetch returned no content",
-          DyadErrorKind.NotFound,
+          OrianBuilderErrorKind.NotFound,
         );
       }
 
       logger.log(`Web fetch completed for URL: ${args.url}`);
 
       ctx.onXmlComplete(
-        `<dyad-web-fetch>${escapeXmlContent(args.url)}</dyad-web-fetch>`,
+        `<orianbuilder-web-fetch>${escapeXmlContent(args.url)}</orianbuilder-web-fetch>`,
       );
 
       return truncateContent(content);
     } catch (error) {
       ctx.onXmlComplete(
-        `<dyad-web-fetch>${escapeXmlContent(args.url)}</dyad-web-fetch>`,
+        `<orianbuilder-web-fetch>${escapeXmlContent(args.url)}</orianbuilder-web-fetch>`,
       );
       throw error;
     }

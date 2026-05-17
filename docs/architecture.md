@@ -19,11 +19,11 @@ The renderer communicates to the main process via [IPC](https://en.wikipedia.org
 
 The core workflow: a user sends a prompt → the AI edits code → changes are previewed.
 
-1. **Construct the LLM request** — the request includes the user prompt, the current codebase (or a smart-filtered subset of it), and a detailed [system prompt](../src/prompts/system_prompt.ts) that instructs the LLM to respond using `<dyad-write>`, `<dyad-delete>`, and other XML-like action tags.
+1. **Construct the LLM request** — the request includes the user prompt, the current codebase (or a smart-filtered subset of it), and a detailed [system prompt](../src/prompts/system_prompt.ts) that instructs the LLM to respond using `<orianbuilder-write>`, `<orianbuilder-delete>`, and other XML-like action tags.
 
-2. **Stream the response to the UI** — we stream the LLM response in real time and parse the `<dyad-*>` tags using a specialized [Markdown parser](../src/components/chat/DyadMarkdownParser.tsx) so the output is displayed as structured UI rather than raw text.
+2. **Stream the response to the UI** — we stream the LLM response in real time and parse the `<orianbuilder-*>` tags using a specialized [Markdown parser](../src/components/chat/OrianBuilderMarkdownParser.tsx) so the output is displayed as structured UI rather than raw text.
 
-3. **Process the response** — once generation completes and the user approves, the [response processor](../src/ipc/processors/response_processor.ts) in the main process applies each `<dyad-*>` action: writing files, deleting files, adding npm packages, running SQL, etc.
+3. **Process the response** — once generation completes and the user approves, the [response processor](../src/ipc/processors/response_processor.ts) in the main process applies each `<orianbuilder-*>` action: writing files, deleting files, adding npm packages, running SQL, etc.
 
 ## Embedded Inference Engine
 

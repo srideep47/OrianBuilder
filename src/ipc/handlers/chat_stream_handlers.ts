@@ -1,6 +1,9 @@
 import { v4 as uuidv4 } from "uuid";
 import { ipcMain, IpcMainInvokeEvent } from "electron";
-import { abortCurrentInference } from "../utils/embedded_inference_server";
+import {
+  abortCurrentInference,
+  getServerStatus,
+} from "../utils/embedded_inference_server";
 import { createTypedHandler } from "./base";
 import { chatContracts } from "../types/chat";
 import {
@@ -29,10 +32,13 @@ import {
   SUPABASE_NOT_AVAILABLE_SYSTEM_PROMPT,
 } from "../../prompts/supabase_prompt";
 import { buildNeonPromptForApp } from "../../neon_admin/neon_prompt_context";
-import { getDyadAppPath } from "../../paths/paths";
-import { buildDyadMediaUrl } from "../../lib/dyadMediaUrl";
+import { getOrianBuilderAppPath } from "../../paths/paths";
+import { buildOrianBuilderMediaUrl } from "../../lib/orianbuilderMediaUrl";
 import type { ChatResponseEnd, ChatStreamParams } from "@/ipc/types";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import {
   CodebaseFile,
   extractCodebase,
@@ -73,11 +79,11 @@ import { createProblemFixPrompt } from "@/shared/problem_prompt";
 import { AsyncVirtualFileSystem } from "../../../shared/VirtualFilesystem";
 import { escapeXmlAttr, escapeXmlContent } from "../../../shared/xmlEscape";
 import {
-  getDyadAddDependencyTags,
-  getDyadWriteTags,
-  getDyadDeleteTags,
-  getDyadRenameTags,
-} from "../utils/dyad_tag_parser";
+  getOrianBuilderAddDependencyTags,
+  getOrianBuilderWriteTags,
+  getOrianBuilderDeleteTags,
+  getOrianBuilderRenameTags,
+} from "../utils/orianbuilder_tag_parser";
 import { fileExists } from "../utils/file_utils";
 import {
   appendCancelledResponseNotice,
@@ -100,22 +106,16 @@ import { replacePromptReference } from "../utils/replacePromptReference";
 import { replaceSlashSkillReference } from "../utils/replaceSlashSkillReference";
 import { resolveMediaMentions } from "../utils/resolve_media_mentions";
 import { parsePlanFile, validatePlanId } from "./planUtils";
-import { ensureDyadGitignored } from "./gitignoreUtils";
-import { DYAD_MEDIA_DIR_NAME } from "../utils/media_path_utils";
+import { ensureOrianBuilderGitignored } from "./gitignoreUtils";
+import { ORIANBUILDER_MEDIA_DIR_NAME } from "../utils/media_path_utils";
 import { mcpManager } from "../utils/mcp_manager";
 import z from "zod";
 import {
-  isBasicAgentMode,
   isLocalAgentBackedMode,
   isSupabaseConnected,
   isTurboEditsV2Enabled,
 } from "@/lib/schemas";
 import { resolveChatModeForTurn } from "./chat_mode_resolution";
-import {
-  getFreeAgentQuotaStatus,
-  markMessageAsUsingFreeAgentQuota,
-  unmarkMessageAsUsingFreeAgentQuota,
-} from "./free_agent_quota_handlers";
 import { AI_STREAMING_ERROR_MESSAGE_PREFIX } from "@/shared/texts";
 import { getCurrentCommitHash } from "../utils/git_utils";
 import {
@@ -209,15 +209,15 @@ async function processStreamChunks({
         inThinkingBlock = true;
       }
 
-      chunk += escapeDyadTags(part.text);
+      chunk += escapeOrianBuilderTags(part.text);
     } else if (part.type === "tool-call") {
       const { serverName, toolName } = parseMcpToolKey(part.toolName);
-      const content = escapeDyadTags(JSON.stringify(part.input));
-      chunk = `<dyad-mcp-tool-call server="${serverName}" tool="${toolName}">\n${content}\n</dyad-mcp-tool-call>\n`;
+      const content = escapeOrianBuilderTags(JSON.stringify(part.input));
+      chunk = `<orianbuilder-mcp-tool-call server="${serverName}" tool="${toolName}">\n${content}\n</orianbuilder-mcp-tool-call>\n`;
     } else if (part.type === "tool-result") {
       const { serverName, toolName } = parseMcpToolKey(part.toolName);
-      const content = escapeDyadTags(part.output);
-      chunk = `<dyad-mcp-tool-result server="${serverName}" tool="${toolName}">\n${content}\n</dyad-mcp-tool-result>\n`;
+      const content = escapeOrianBuilderTags(part.output);
+      chunk = `<orianbuilder-mcp-tool-result server="${serverName}" tool="${toolName}">\n${content}\n</orianbuilder-mcp-tool-result>\n`;
     }
 
     if (!chunk) {
@@ -245,7 +245,7 @@ export function registerChatStreamHandlers() {
   ipcMain.handle("chat:stream", async (event, req: ChatStreamParams) => {
     let attachmentPaths: string[] = [];
     try {
-      let dyadRequestId: string | undefined;
+      let orianbuilderRequestId: string | undefined;
       // Create an AbortController for this stream
       const abortController = new AbortController();
       activeStreams.set(req.chatId, abortController);
@@ -265,9 +265,9 @@ export function registerChatStreamHandlers() {
       });
 
       if (!chat) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `Chat not found: ${req.chatId}`,
-          DyadErrorKind.NotFound,
+          OrianBuilderErrorKind.NotFound,
         );
       }
 
@@ -307,19 +307,19 @@ export function registerChatStreamHandlers() {
 
       // Process attachments if any
       let attachmentInfo = "";
-      // Display-only attachment info uses <dyad-attachment> tags for inline rendering
+      // Display-only attachment info uses <orianbuilder-attachment> tags for inline rendering
       let displayAttachmentInfo = "";
 
       if (req.attachments && req.attachments.length > 0) {
         attachmentInfo = "\n\nAttachments:\n";
 
-        // Create persistent .dyad/media directory for this app
-        const appPath = getDyadAppPath(chat.app.path);
-        const mediaDir = path.join(appPath, DYAD_MEDIA_DIR_NAME);
+        // Create persistent .orianbuilder/media directory for this app
+        const appPath = getOrianBuilderAppPath(chat.app.path);
+        const mediaDir = path.join(appPath, ORIANBUILDER_MEDIA_DIR_NAME);
         if (!fs.existsSync(mediaDir)) {
           fs.mkdirSync(mediaDir, { recursive: true });
         }
-        await ensureDyadGitignored(appPath);
+        await ensureOrianBuilderGitignored(appPath);
 
         for (let i = 0; i < req.attachments.length; i++) {
           const attachment = req.attachments[i];
@@ -336,7 +336,7 @@ export function registerChatStreamHandlers() {
           const base64Data = attachment.data.split(";base64,").pop() || "";
           const fileBuffer = Buffer.from(base64Data, "base64");
 
-          // Save to .dyad/media dir
+          // Save to .orianbuilder/media dir
           const persistentPath = path.join(mediaDir, filename);
           await writeFile(persistentPath, fileBuffer);
           attachmentPaths.push(persistentPath);
@@ -345,22 +345,22 @@ export function registerChatStreamHandlers() {
           // Use a fixed hostname to avoid URL hostname normalization (lowercasing)
           // Encode path segments so special characters (spaces, #, ?, %) don't
           // break URL parsing. The protocol handler already decodeURIComponent's.
-          const mediaUrl = `orian-media://media/${encodeURIComponent(chat.app.path)}/.dyad/media/${encodeURIComponent(filename)}`;
+          const mediaUrl = `orian-media://media/${encodeURIComponent(chat.app.path)}/.orianbuilder/media/${encodeURIComponent(filename)}`;
 
           // Build display tag for inline rendering (escape attribute values)
-          displayAttachmentInfo += `\n<dyad-attachment name="${escapeXmlAttr(attachment.name)}" type="${escapeXmlAttr(attachment.type)}" url="${escapeXmlAttr(mediaUrl)}" path="${escapeXmlAttr(persistentPath)}" attachment-type="${escapeXmlAttr(attachment.attachmentType)}"></dyad-attachment>\n`;
+          displayAttachmentInfo += `\n<orianbuilder-attachment name="${escapeXmlAttr(attachment.name)}" type="${escapeXmlAttr(attachment.type)}" url="${escapeXmlAttr(mediaUrl)}" path="${escapeXmlAttr(persistentPath)}" attachment-type="${escapeXmlAttr(attachment.attachmentType)}"></orianbuilder-attachment>\n`;
 
           if (attachment.attachmentType === "upload-to-codebase") {
-            // Provide the .dyad/media path so the AI can copy it into the codebase
-            attachmentInfo += `\n\nFile to upload to codebase: "${attachment.name}" (path: ${persistentPath})\nUse the copy_file tool (or <dyad-copy> tag) to copy this file into the codebase at the appropriate location.\n`;
+            // Provide the .orianbuilder/media path so the AI can copy it into the codebase
+            attachmentInfo += `\n\nFile to upload to codebase: "${attachment.name}" (path: ${persistentPath})\nUse the copy_file tool (or <orianbuilder-copy> tag) to copy this file into the codebase at the appropriate location.\n`;
           } else {
             // For chat-context, provide file info for reference (no path to avoid auto-copying)
             attachmentInfo += `- ${attachment.name} (${attachment.type})\n`;
             // If it's a text-based file, try to include the content
             if (await isTextFile(persistentPath)) {
               try {
-                attachmentInfo += `<dyad-text-attachment filename="${escapeXmlAttr(attachment.name)}" type="${escapeXmlAttr(attachment.type)}" path="${escapeXmlAttr(persistentPath)}">
-                </dyad-text-attachment>
+                attachmentInfo += `<orianbuilder-text-attachment filename="${escapeXmlAttr(attachment.name)}" type="${escapeXmlAttr(attachment.type)}" path="${escapeXmlAttr(persistentPath)}">
+                </orianbuilder-text-attachment>
                 \n\n`;
               } catch (err) {
                 logger.error(`Error reading file content: ${err}`);
@@ -370,9 +370,9 @@ export function registerChatStreamHandlers() {
         }
       }
 
-      // Build the full AI prompt (with .dyad/media paths and copy_file instructions)
+      // Build the full AI prompt (with .orianbuilder/media paths and copy_file instructions)
       let userPrompt = req.prompt + (attachmentInfo ? attachmentInfo : "");
-      // Build the display prompt (with <dyad-attachment> tags for inline rendering)
+      // Build the display prompt (with <orianbuilder-attachment> tags for inline rendering)
       // This separates what the user sees from what the AI receives.
       let displayUserPrompt: string | undefined;
       if (displayAttachmentInfo) {
@@ -431,8 +431,11 @@ export function registerChatStreamHandlers() {
           let mediaDisplayInfo = "";
           for (const media of resolvedMedia) {
             attachmentPaths.push(media.filePath);
-            const mediaUrl = buildDyadMediaUrl(chat.app.path, media.fileName);
-            mediaDisplayInfo += `\n<dyad-attachment name="${escapeXmlAttr(media.fileName)}" type="${escapeXmlAttr(media.mimeType)}" url="${escapeXmlAttr(mediaUrl)}" path="${escapeXmlAttr(media.filePath)}" attachment-type="chat-context"></dyad-attachment>\n`;
+            const mediaUrl = buildOrianBuilderMediaUrl(
+              chat.app.path,
+              media.fileName,
+            );
+            mediaDisplayInfo += `\n<orianbuilder-attachment name="${escapeXmlAttr(media.fileName)}" type="${escapeXmlAttr(media.mimeType)}" url="${escapeXmlAttr(mediaUrl)}" path="${escapeXmlAttr(media.filePath)}" attachment-type="chat-context"></orianbuilder-attachment>\n`;
           }
           // Strip only resolved @media: tags from the prompt text.
           // This preserves adjacent user text when mentions are directly followed
@@ -464,17 +467,17 @@ export function registerChatStreamHandlers() {
           implementPlanDisplayPrompt = userPrompt;
           const planSlug = implementPlanMatch[1];
           validatePlanId(planSlug);
-          const appPath = getDyadAppPath(chat.app.path);
+          const appPath = getOrianBuilderAppPath(chat.app.path);
           const planFilePath = path.join(
             appPath,
-            ".dyad",
+            ".orianbuilder",
             "plans",
             `${planSlug}.md`,
           );
           const raw = await fs.promises.readFile(planFilePath, "utf-8");
           const { meta, content } = parsePlanFile(raw);
 
-          const planPath = `.dyad/plans/${planSlug}.md`;
+          const planPath = `.orianbuilder/plans/${planSlug}.md`;
 
           userPrompt = `Please implement the following plan:
 
@@ -499,7 +502,10 @@ You may update the plan at \`${planPath}\` to mark your progress.`;
           let componentSnippet = "[component snippet not available]";
           try {
             const componentFileContent = await readFile(
-              path.join(getDyadAppPath(chat.app.path), component.relativePath),
+              path.join(
+                getOrianBuilderAppPath(chat.app.path),
+                component.relativePath,
+              ),
               "utf8",
             );
             const lines = componentFileContent.split(/\r?\n/);
@@ -561,10 +567,10 @@ ${componentSnippet}
         effectiveChatMode: selectedChatMode,
         chatModeFallbackReason,
       });
-      // Only Dyad Pro requests have request ids.
-      if (settings.enableDyadPro) {
+      // Only OrianBuilder Pro requests have request ids.
+      if (settings.enableOrianBuilderPro) {
         // Generate requestId early so it can be saved with the message
-        dyadRequestId = uuidv4();
+        orianbuilderRequestId = uuidv4();
       }
 
       // Add a placeholder assistant message immediately
@@ -574,10 +580,13 @@ ${componentSnippet}
           chatId: req.chatId,
           role: "assistant",
           content: "", // Start with empty content
-          requestId: dyadRequestId,
-          model: settings.selectedModel.name,
+          requestId: orianbuilderRequestId,
+          model:
+            settings.selectedModel.provider === "embedded"
+              ? (getServerStatus().modelName ?? settings.selectedModel.name)
+              : settings.selectedModel.name,
           sourceCommitHash: await getCurrentCommitHash({
-            path: getDyadAppPath(chat.app.path),
+            path: getOrianBuilderAppPath(chat.app.path),
           }),
         })
         .returning();
@@ -594,9 +603,9 @@ ${componentSnippet}
       });
 
       if (!updatedChat) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `Chat not found: ${req.chatId}`,
-          DyadErrorKind.NotFound,
+          OrianBuilderErrorKind.NotFound,
         );
       }
 
@@ -626,7 +635,7 @@ ${componentSnippet}
         const { modelClient, isEngineEnabled, isSmartContextEnabled } =
           await getModelClient(settings.selectedModel, settings);
 
-        const appPath = getDyadAppPath(updatedChat.app.path);
+        const appPath = getOrianBuilderAppPath(updatedChat.app.path);
         // When we don't have smart context enabled, we
         // only include the selected components' files for codebase context.
         //
@@ -652,7 +661,7 @@ ${componentSnippet}
 
         // For smart context and selected components, we will mark the selected components' files as focused.
         // This means that we don't do the regular smart context handling, but we'll allow fetching
-        // additional files through <dyad-read> as needed.
+        // additional files through <orianbuilder-read> as needed.
         if (
           isSmartContextEnabled &&
           req.selectedComponents &&
@@ -748,7 +757,7 @@ ${componentSnippet}
         const messageHistory = filterCancelledMessagePairs(messageHistoryRaw);
 
         // The DB stores display-friendly versions (short /implement-plan= form
-        // or clean <dyad-attachment> tags). Replace the last user message with the
+        // or clean <orianbuilder-attachment> tags). Replace the last user message with the
         // full AI prompt so the model receives expanded plan content or attachment paths.
         if (implementPlanDisplayPrompt || displayUserPrompt) {
           for (let i = messageHistory.length - 1; i >= 0; i--) {
@@ -762,7 +771,7 @@ ${componentSnippet}
           }
         }
 
-        // For Dyad Pro + Deep Context, we set to 200 chat turns (+1)
+        // For OrianBuilder Pro + Deep Context, we set to 200 chat turns (+1)
         // this is to enable more cache hits. Practically, users should
         // rarely go over this limit because they will hit the model's
         // context window limit.
@@ -806,7 +815,9 @@ ${componentSnippet}
           );
         }
 
-        const aiRules = await readAiRules(getDyadAppPath(updatedChat.app.path));
+        const aiRules = await readAiRules(
+          getOrianBuilderAppPath(updatedChat.app.path),
+        );
 
         // Get theme prompt for the app (null themeId means "no theme")
         const themePrompt = await getThemePromptById(updatedChat.app.themeId);
@@ -814,13 +825,22 @@ ${componentSnippet}
           `Theme for app ${updatedChat.app.id}: ${updatedChat.app.themeId ?? "none"}, prompt length: ${themePrompt.length} chars`,
         );
 
+        // Autopilot directive is applied for local-agent runs when the user
+        // has explicitly opted into full-autopilot — either via the legacy
+        // `autonomousMode` toggle or the default mission autonomy profile.
+        const autopilotMode =
+          selectedChatMode === "local-agent" &&
+          (settings.autonomousMode === true ||
+            settings.defaultMissionAutonomyProfile ===
+              "full-autopilot-sandbox");
+
         // Migration on read converts "agent" to "build", so no need to check for it here
         let systemPrompt = constructSystemPrompt({
           aiRules,
           chatMode: selectedChatMode,
           enableTurboEditsV2: isTurboEditsV2Enabled(settings),
           themePrompt,
-          basicAgentMode: isBasicAgentMode(settings),
+          autopilotMode,
         });
 
         // Add information about mentioned apps for build mode only.
@@ -843,7 +863,7 @@ ${componentSnippet}
         if (isSecurityReviewIntent) {
           systemPrompt = SECURITY_REVIEW_SYSTEM_PROMPT;
           try {
-            const appPath = getDyadAppPath(updatedChat.app.path);
+            const appPath = getOrianBuilderAppPath(updatedChat.app.path);
             const rulesPath = path.join(appPath, "SECURITY_RULES.md");
             let securityRules = "";
 
@@ -921,7 +941,7 @@ ${componentSnippet}
           );
         // If there's mixed attachments (e.g. some upload to codebase attachments and some upload images as chat context attachemnts)
         // we will just include the file upload system prompt, otherwise the AI gets confused and doesn't reliably
-        // print out the dyad-write tags.
+        // print out the orianbuilder-write tags.
         // Usually, AI models will want to use the image as reference to generate code (e.g. UI mockups) anyways, so
         // it's not that critical to include the image analysis instructions.
         if (hasUploadedAttachments) {
@@ -932,7 +952,7 @@ When files are attached for upload to the codebase, use the \`copy_file\` tool t
 
 Example:
 \`\`\`
-copy_file(from=".dyad/media/abc123.png", to="src/assets/logo.png", description="Copy uploaded image into project")
+copy_file(from=".orianbuilder/media/abc123.png", to="src/assets/logo.png", description="Copy uploaded image into project")
 \`\`\`
 
 The file paths are provided in the attachment information above.
@@ -942,7 +962,7 @@ The file paths are provided in the attachment information above.
 
 When files are attached for upload to the codebase, copy them into the project using this format:
 
-<dyad-copy from=".dyad/media/abc123.png" to="src/assets/logo.png" description="Copy uploaded file"></dyad-copy>
+<orianbuilder-copy from=".orianbuilder/media/abc123.png" to="src/assets/logo.png" description="Copy uploaded file"></orianbuilder-copy>
 
 The file paths are provided in the attachment information above.
 `;
@@ -997,10 +1017,10 @@ This conversation includes one or more image attachments. When the user uploads 
           // and eats up extra tokens.
           content:
             selectedChatMode === "ask"
-              ? removeDyadTags(removeNonEssentialTags(msg.content))
+              ? removeOrianBuilderTags(removeNonEssentialTags(msg.content))
               : removeNonEssentialTags(msg.content),
           providerOptions: {
-            "dyad-engine": {
+            "orianbuilder-engine": {
               sourceCommitHash: msg.sourceCommitHash,
               commitHash: msg.commitHash,
             },
@@ -1071,7 +1091,7 @@ This conversation includes one or more image attachments. When the user uploads 
           modelClient,
           tools,
           systemPromptOverride = systemPrompt,
-          dyadDisableFiles = false,
+          orianbuilderDisableFiles = false,
           files,
         }: {
           chatMessages: ModelMessage[];
@@ -1079,12 +1099,12 @@ This conversation includes one or more image attachments. When the user uploads 
           files: CodebaseFile[];
           tools?: ToolSet;
           systemPromptOverride?: string;
-          dyadDisableFiles?: boolean;
+          orianbuilderDisableFiles?: boolean;
         }) => {
           if (isEngineEnabled) {
             logger.log(
               "sending AI request to engine with request id:",
-              dyadRequestId,
+              orianbuilderRequestId,
             );
           } else {
             logger.log("sending AI request");
@@ -1101,9 +1121,9 @@ This conversation includes one or more image attachments. When the user uploads 
             ? "deep"
             : "balanced";
           const providerOptions = getProviderOptions({
-            dyadAppId: updatedChat.app.id,
-            dyadRequestId,
-            dyadDisableFiles,
+            orianbuilderAppId: updatedChat.app.id,
+            orianbuilderRequestId,
+            orianbuilderDisableFiles,
             smartContextMode,
             files,
             versionedFiles,
@@ -1117,7 +1137,10 @@ This conversation includes one or more image attachments. When the user uploads 
               builtinProviderId: modelClient.builtinProviderId,
             }),
             maxOutputTokens: await getMaxTokens(settings.selectedModel),
-            temperature: await getTemperature(settings.selectedModel),
+            temperature:
+              settings.selectedModel.provider === "embedded"
+                ? undefined
+                : await getTemperature(settings.selectedModel),
             maxRetries: 2,
             model: modelClient.model,
             stopWhen: [stepCountIs(20), hasToolCall("edit-code")],
@@ -1160,7 +1183,7 @@ This conversation includes one or more image attachments. When the user uploads 
               }
               const message = errorMessage || JSON.stringify(error);
               const requestIdPrefix = isEngineEnabled
-                ? `[Request ID: ${dyadRequestId}] `
+                ? `[Request ID: ${orianbuilderRequestId}] `
                 : "";
               logger.error(
                 `AI stream text error for request: ${requestIdPrefix} errorMessage=${errorMessage} error=`,
@@ -1240,7 +1263,7 @@ This conversation includes one or more image attachments. When the user uploads 
               // This is OK because those intents should always happen in a new chat
               // and new chats will default to non-ask modes.
               systemPrompt: readOnlySystemPrompt,
-              dyadRequestId: dyadRequestId ?? "[no-request-id]",
+              orianbuilderRequestId: orianbuilderRequestId ?? "[no-request-id]",
               readOnly: true,
               messageOverride: isSummarizeIntent ? chatMessages : undefined,
               settingsOverride: settings,
@@ -1269,7 +1292,7 @@ This conversation includes one or more image attachments. When the user uploads 
           await handleLocalAgentStream(event, req, abortController, {
             placeholderMessageId: placeholderAssistantMessage.id,
             systemPrompt: planModeSystemPrompt,
-            dyadRequestId: dyadRequestId ?? "[no-request-id]",
+            orianbuilderRequestId: orianbuilderRequestId ?? "[no-request-id]",
             planModeOnly: true,
             messageOverride: isSummarizeIntent ? chatMessages : undefined,
             settingsOverride: settings,
@@ -1285,50 +1308,14 @@ This conversation includes one or more image attachments. When the user uploads 
         // injects a `<system-reminder>` into the user's latest message telling
         // the agent which `app_name` values are valid.
         if (isLocalAgentMode) {
-          // Check quota for Basic Agent mode (non-Pro users)
-          const isBasicAgentModeRequest = isBasicAgentMode(settings);
-          if (isBasicAgentModeRequest) {
-            const quotaStatus = await getFreeAgentQuotaStatus();
-            if (quotaStatus.isQuotaExceeded) {
-              safeSend(event.sender, "chat:response:error", {
-                chatId: req.chatId,
-                error: JSON.stringify({
-                  type: "FREE_AGENT_QUOTA_EXCEEDED",
-                  hoursUntilReset: quotaStatus.hoursUntilReset,
-                  resetTime: quotaStatus.resetTime,
-                }),
-              });
-              return;
-            }
-          }
-
-          // Mark the user message as using quota BEFORE starting the stream
-          // to prevent race conditions with parallel requests
-          if (isBasicAgentModeRequest && userMessageId) {
-            await markMessageAsUsingFreeAgentQuota(userMessageId);
-          }
-
-          let streamSuccess = false;
-          try {
-            streamSuccess = await handleLocalAgentStream(
-              event,
-              req,
-              abortController,
-              {
-                placeholderMessageId: placeholderAssistantMessage.id,
-                systemPrompt,
-                dyadRequestId: dyadRequestId ?? "[no-request-id]",
-                messageOverride: isSummarizeIntent ? chatMessages : undefined,
-                settingsOverride: settings,
-                referencedApps: referencedAppsForAgent,
-              },
-            );
-          } finally {
-            // If the stream failed, was aborted, or threw, refund the quota
-            if (isBasicAgentModeRequest && userMessageId && !streamSuccess) {
-              await unmarkMessageAsUsingFreeAgentQuota(userMessageId);
-            }
-          }
+          await handleLocalAgentStream(event, req, abortController, {
+            placeholderMessageId: placeholderAssistantMessage.id,
+            systemPrompt,
+            orianbuilderRequestId: orianbuilderRequestId ?? "[no-request-id]",
+            messageOverride: isSummarizeIntent ? chatMessages : undefined,
+            settingsOverride: settings,
+            referencedApps: referencedAppsForAgent,
+          });
 
           return;
         }
@@ -1359,13 +1346,13 @@ This conversation includes one or more image attachments. When the user uploads 
               },
               systemPromptOverride: constructSystemPrompt({
                 aiRules: await readAiRules(
-                  getDyadAppPath(updatedChat.app.path),
+                  getOrianBuilderAppPath(updatedChat.app.path),
                 ),
                 chatMode: "build",
                 enableTurboEditsV2: false,
               }),
               files: files,
-              dyadDisableFiles: true,
+              orianbuilderDisableFiles: true,
             });
 
             const result = await processStreamChunks({
@@ -1408,7 +1395,7 @@ This conversation includes one or more image attachments. When the user uploads 
           if (isTurboEditsV2Enabled(settings)) {
             let issues = await dryRunSearchReplace({
               fullResponse,
-              appPath: getDyadAppPath(updatedChat.app.path),
+              appPath: getOrianBuilderAppPath(updatedChat.app.path),
             });
             sendTelemetryEvent("search_replace:fix", {
               attemptNumber: 0,
@@ -1437,7 +1424,7 @@ This conversation includes one or more image attachments. When the user uploads 
                 })
                 .join("\n\n");
 
-              fullResponse += `<dyad-output type="warning" message="Could not apply Turbo Edits properly for some of the files; re-generating code...">${formattedSearchReplaceIssues}</dyad-output>`;
+              fullResponse += `<orianbuilder-output type="warning" message="Could not apply Turbo Edits properly for some of the files; re-generating code...">${formattedSearchReplaceIssues}</orianbuilder-output>`;
               await processResponseChunkUpdate({
                 fullResponse,
               });
@@ -1448,8 +1435,8 @@ This conversation includes one or more image attachments. When the user uploads 
 
               const fixSearchReplacePrompt =
                 searchReplaceFixAttempts === 0
-                  ? `There was an issue with the following \`dyad-search-replace\` tags. Make sure you use \`dyad-read\` to read the latest version of the file and then trying to do search & replace again.`
-                  : `There was an issue with the following \`dyad-search-replace\` tags. Please fix the errors by generating the code changes using \`dyad-write\` tags instead.`;
+                  ? `There was an issue with the following \`orianbuilder-search-replace\` tags. Make sure you use \`orianbuilder-read\` to read the latest version of the file and then trying to do search & replace again.`
+                  : `There was an issue with the following \`orianbuilder-search-replace\` tags. Please fix the errors by generating the code changes using \`orianbuilder-write\` tags instead.`;
               searchReplaceFixAttempts++;
               const userPrompt = {
                 role: "user",
@@ -1487,7 +1474,7 @@ ${formattedSearchReplaceIssues}`,
               // Re-check for issues after the fix attempt
               issues = await dryRunSearchReplace({
                 fullResponse: result.incrementalResponse,
-                appPath: getDyadAppPath(updatedChat.app.path),
+                appPath: getOrianBuilderAppPath(updatedChat.app.path),
               });
 
               sendTelemetryEvent("search_replace:fix", {
@@ -1504,16 +1491,16 @@ ${formattedSearchReplaceIssues}`,
 
           if (
             !abortController.signal.aborted &&
-            hasUnclosedDyadWrite(fullResponse)
+            hasUnclosedOrianBuilderWrite(fullResponse)
           ) {
             let continuationAttempts = 0;
             while (
-              hasUnclosedDyadWrite(fullResponse) &&
+              hasUnclosedOrianBuilderWrite(fullResponse) &&
               continuationAttempts < 2 &&
               !abortController.signal.aborted
             ) {
               logger.warn(
-                `Received unclosed dyad-write tag, attempting to continue, attempt #${continuationAttempts + 1}`,
+                `Received unclosed orianbuilder-write tag, attempting to continue, attempt #${continuationAttempts + 1}`,
               );
               continuationAttempts++;
 
@@ -1549,7 +1536,8 @@ ${formattedSearchReplaceIssues}`,
               }
             }
           }
-          const addDependencies = getDyadAddDependencyTags(fullResponse);
+          const addDependencies =
+            getOrianBuilderAddDependencyTags(fullResponse);
           if (
             !abortController.signal.aborted &&
             // If there are dependencies, we don't want to auto-fix problems
@@ -1562,7 +1550,7 @@ ${formattedSearchReplaceIssues}`,
               // IF auto-fix is enabled
               let problemReport = await generateProblemReport({
                 fullResponse,
-                appPath: getDyadAppPath(updatedChat.app.path),
+                appPath: getOrianBuilderAppPath(updatedChat.app.path),
               });
 
               let autoFixAttempts = 0;
@@ -1573,14 +1561,14 @@ ${formattedSearchReplaceIssues}`,
                 autoFixAttempts < 2 &&
                 !abortController.signal.aborted
               ) {
-                fullResponse += `<dyad-problem-report summary="${problemReport.problems.length} problems">
+                fullResponse += `<orianbuilder-problem-report summary="${problemReport.problems.length} problems">
 ${problemReport.problems
   .map(
     (problem) =>
       `<problem file="${escapeXmlAttr(problem.file)}" line="${problem.line}" column="${problem.column}" code="${problem.code}">${escapeXmlContent(problem.message)}</problem>`,
   )
   .join("\n")}
-</dyad-problem-report>`;
+</orianbuilder-problem-report>`;
 
                 logger.info(
                   `Attempting to auto-fix problems, attempt #${autoFixAttempts + 1}`,
@@ -1589,15 +1577,15 @@ ${problemReport.problems
                 const problemFixPrompt = createProblemFixPrompt(problemReport);
 
                 const virtualFileSystem = new AsyncVirtualFileSystem(
-                  getDyadAppPath(updatedChat.app.path),
+                  getOrianBuilderAppPath(updatedChat.app.path),
                   {
                     fileExists: (fileName: string) => fileExists(fileName),
                     readFile: (fileName: string) => readFileWithCache(fileName),
                   },
                 );
-                const writeTags = getDyadWriteTags(fullResponse);
-                const renameTags = getDyadRenameTags(fullResponse);
-                const deletePaths = getDyadDeleteTags(fullResponse);
+                const writeTags = getOrianBuilderWriteTags(fullResponse);
+                const renameTags = getOrianBuilderRenameTags(fullResponse);
+                const deletePaths = getOrianBuilderDeleteTags(fullResponse);
                 virtualFileSystem.applyResponseChanges({
                   deletePaths,
                   renameTags,
@@ -1660,7 +1648,7 @@ ${problemReport.problems
 
                 problemReport = await generateProblemReport({
                   fullResponse,
-                  appPath: getDyadAppPath(updatedChat.app.path),
+                  appPath: getOrianBuilderAppPath(updatedChat.app.path),
                 });
               }
             } catch (error) {
@@ -1723,9 +1711,9 @@ ${problemReport.problems
 
       // Only save the response and process it if we weren't aborted
       if (!abortController.signal.aborted && fullResponse) {
-        // Scrape from: <dyad-chat-summary>Renaming profile file</dyad-chat-title>
+        // Scrape from: <orianbuilder-chat-summary>Renaming profile file</orianbuilder-chat-title>
         const chatTitle = fullResponse.match(
-          /<dyad-chat-summary>(.*?)<\/dyad-chat-summary>/,
+          /<orianbuilder-chat-summary>(.*?)<\/orianbuilder-chat-summary>/,
         );
         if (chatTitle) {
           await db
@@ -1888,7 +1876,7 @@ async function replaceTextAttachmentWithContent(
       const xmlEscapedPath = escapeXmlAttr(filePath);
       const escapedPath = xmlEscapedPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const tagPattern = new RegExp(
-        `<dyad-text-attachment filename="[^"]*" type="[^"]*" path="${escapedPath}">\\s*<\\/dyad-text-attachment>`,
+        `<orianbuilder-text-attachment filename="[^"]*" type="[^"]*" path="${escapedPath}">\\s*<\\/orianbuilder-text-attachment>`,
         "g",
       );
 
@@ -1987,18 +1975,19 @@ function removeThinkingTags(text: string): string {
 
 export function removeProblemReportTags(text: string): string {
   const problemReportRegex =
-    /<dyad-problem-report[^>]*>[\s\S]*?<\/dyad-problem-report>/g;
+    /<orianbuilder-problem-report[^>]*>[\s\S]*?<\/orianbuilder-problem-report>/g;
   return text.replace(problemReportRegex, "").trim();
 }
 
-export function removeDyadTags(text: string): string {
-  const dyadRegex = /<dyad-[^>]*>[\s\S]*?<\/dyad-[^>]*>/g;
-  return text.replace(dyadRegex, "").trim();
+export function removeOrianBuilderTags(text: string): string {
+  const orianbuilderRegex =
+    /<orianbuilder-[^>]*>[\s\S]*?<\/orianbuilder-[^>]*>/g;
+  return text.replace(orianbuilderRegex, "").trim();
 }
 
-export function hasUnclosedDyadWrite(text: string): boolean {
-  // Find the last opening dyad-write tag
-  const openRegex = /<dyad-write[^>]*>/g;
+export function hasUnclosedOrianBuilderWrite(text: string): boolean {
+  // Find the last opening orianbuilder-write tag
+  const openRegex = /<orianbuilder-write[^>]*>/g;
   let lastOpenIndex = -1;
   let match;
 
@@ -2013,19 +2002,21 @@ export function hasUnclosedDyadWrite(text: string): boolean {
 
   // Look for a closing tag after the last opening tag
   const textAfterLastOpen = text.substring(lastOpenIndex);
-  const hasClosingTag = /<\/dyad-write>/.test(textAfterLastOpen);
+  const hasClosingTag = /<\/orianbuilder-write>/.test(textAfterLastOpen);
 
   return !hasClosingTag;
 }
 
-function escapeDyadTags(text: string): string {
-  // Escape dyad tags in reasoning content
+function escapeOrianBuilderTags(text: string): string {
+  // Escape orianbuilder tags in reasoning content
   // We are replacing the opening tag with a look-alike character
-  // to avoid issues where thinking content includes dyad tags
+  // to avoid issues where thinking content includes orianbuilder tags
   // and are mishandled by:
   // 1. FE markdown parser
   // 2. Main process response processor
-  return text.replace(/<dyad/g, "＜dyad").replace(/<\/dyad/g, "＜/dyad");
+  return text
+    .replace(/<orianbuilder/g, "＜orianbuilder")
+    .replace(/<\/orianbuilder/g, "＜/orianbuilder");
 }
 
 const CODEBASE_PROMPT_PREFIX = "This is my codebase.";
@@ -2074,9 +2065,9 @@ async function getMcpTools(event: IpcMainInvokeEvent): Promise<ToolSet> {
             });
 
             if (!ok)
-              throw new DyadError(
+              throw new OrianBuilderError(
                 `User declined running tool ${key}`,
-                DyadErrorKind.UserCancelled,
+                OrianBuilderErrorKind.UserCancelled,
               );
             const res = await mcpTool.execute(args, execCtx);
 

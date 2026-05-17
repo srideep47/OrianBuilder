@@ -263,7 +263,7 @@ describe("runCommand", () => {
       });
 
       expect(runPtyCommandMock).toHaveBeenCalledWith(
-        "cmd.exe",
+        process.env.ComSpec ?? "cmd.exe",
         ["/d", "/s", "/c", "npx.cmd --yes sfw@2.0.4"],
         expect.objectContaining({
           displayCommand: "npx --yes sfw@2.0.4",

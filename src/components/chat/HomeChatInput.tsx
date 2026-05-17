@@ -17,9 +17,13 @@ import {
 import { useSettings } from "@/hooks/useSettings";
 import { homeChatInputValueAtom, homeSelectedAppAtom } from "@/atoms/chatAtoms";
 import { useAtom } from "jotai";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useStreamChat } from "@/hooks/useStreamChat";
 import { useAttachments } from "@/hooks/useAttachments";
+import { useVoiceToText } from "@/hooks/useVoiceToText";
+import { isOrianBuilderProEnabled } from "@/lib/schemas";
+import { ipc } from "@/ipc/types";
+import { showError } from "@/lib/toast";
 import { AttachmentsList } from "./AttachmentsList";
 import { DragDropOverlay } from "./DragDropOverlay";
 import { FileAttachmentTypeDialog } from "./FileAttachmentTypeDialog";
@@ -33,11 +37,6 @@ import { AuxiliaryActionsMenu } from "./AuxiliaryActionsMenu";
 import { cn } from "@/lib/utils";
 import { useLoadApps } from "@/hooks/useLoadApps";
 import { AppSearchDialog } from "../AppSearchDialog";
-import { useVoiceToText } from "@/hooks/useVoiceToText";
-import { useUserBudgetInfo } from "@/hooks/useUserBudgetInfo";
-import { ipc } from "@/ipc/types";
-import { useCallback, useEffect } from "react";
-import { showError } from "@/lib/toast";
 
 export function HomeChatInput({
   onSubmit,
@@ -48,12 +47,12 @@ export function HomeChatInput({
   const [inputValue, setInputValue] = useAtom(homeChatInputValueAtom);
   const [selectedApp, setSelectedApp] = useAtom(homeSelectedAppAtom);
   const { settings } = useSettings();
-  const { isStreaming } = useStreamChat({
-    hasChatId: false,
-  }); // eslint-disable-line @typescript-eslint/no-unused-vars
+  const { isStreaming } = useStreamChat({ hasChatId: false });
   useChatModeToggle();
-  const { userBudget } = useUserBudgetInfo();
-  const isProEnabled = !!userBudget && !!settings?.enableDyadPro;
+
+  const [appSearchOpen, setAppSearchOpen] = useState(false);
+  const { apps } = useLoadApps();
+  const isProEnabled = settings ? isOrianBuilderProEnabled(settings) : false;
 
   const handleTranscription = useCallback(
     (text: string) => {
@@ -68,10 +67,6 @@ export function HomeChatInput({
     onError: (message) => showError(message),
   });
 
-  const [appSearchOpen, setAppSearchOpen] = useState(false);
-  const { apps } = useLoadApps();
-
-  // Clear selected app when the experiment flag is disabled
   useEffect(() => {
     if (!settings?.enableSelectAppFromHomeChatInput) {
       setSelectedApp(null);
@@ -87,7 +82,6 @@ export function HomeChatInput({
     ? `Send a message to ${selectedApp.name}...`
     : `Ask OrianBuilder to build ${typingText ?? ""}`;
 
-  // Use the attachments hook
   const {
     attachments,
     isDraggingOver,
@@ -105,13 +99,10 @@ export function HomeChatInput({
 
   const handleSelectApp = (appId: number) => {
     const app = apps.find((a) => a.id === appId);
-    if (app) {
-      setSelectedApp(app);
-    }
+    if (app) setSelectedApp(app);
     setAppSearchOpen(false);
   };
 
-  // Custom submit function that wraps the provided onSubmit
   const handleCustomSubmit = async () => {
     if (
       (!inputValue.trim() && attachments.length === 0) ||
@@ -121,17 +112,7 @@ export function HomeChatInput({
       return;
     }
 
-    if (isRecording) {
-      await toggleRecording();
-    }
-
-    // Call the parent's onSubmit handler with attachments and selected app
-    onSubmit({
-      attachments,
-      selectedApp: selectedApp ?? undefined,
-    });
-
-    // Clear attachments and selected app as part of submission process
+    onSubmit({ attachments, selectedApp: selectedApp ?? undefined });
     clearAttachments();
     setSelectedApp(null);
     posthog.capture("chat:home_submit", {
@@ -140,34 +121,27 @@ export function HomeChatInput({
     });
   };
 
-  if (!settings) {
-    return null; // Or loading state
-  }
+  if (!settings) return null;
 
   return (
     <>
-      <div className="p-4" data-testid="home-chat-input-container">
+      <div className="p-2" data-testid="home-chat-input-container">
         <div
           className={cn(
-            "relative flex flex-col border border-border rounded-2xl bg-(--background-lighter) transition-colors duration-200",
-            "hover:border-primary/30",
-            "focus-within:border-primary/30 focus-within:ring-1 focus-within:ring-primary/20",
+            "relative flex flex-col border border-white/15 rounded-2xl bg-white/[0.04] backdrop-blur-xl shadow-[0_8px_32px_-12px_rgba(0,0,0,0.6)] transition-colors duration-200",
+            "hover:border-primary/40",
+            "focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/25",
             isDraggingOver && "ring-2 ring-blue-500 border-blue-500",
           )}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
-          {/* Attachments list */}
           <AttachmentsList
             attachments={attachments}
             onRemove={removeAttachment}
           />
-
-          {/* Drag and drop overlay */}
           <DragDropOverlay isDraggingOver={isDraggingOver} />
-
-          {/* Dialog for choosing attachment type */}
           <FileAttachmentTypeDialog
             pendingFiles={pendingFiles}
             onConfirm={confirmPendingFiles}
@@ -185,9 +159,10 @@ export function HomeChatInput({
               excludeCurrentApp={false}
               disableSendButton={false}
               messageHistory={[]}
+              inputClassName="text-[18px] min-h-[72px] max-h-[320px]"
             />
 
-            {/* Voice-to-text button */}
+            {/* Voice-to-text mic button (Pro feature) */}
             {isProEnabled ? (
               <Tooltip>
                 <TooltipTrigger
@@ -212,11 +187,11 @@ export function HomeChatInput({
                   }
                 >
                   {isTranscribing ? (
-                    <Loader2 size={20} className="animate-spin" />
+                    <Loader2 size={22} className="animate-spin" />
                   ) : isRecording ? (
-                    <MicOff size={20} />
+                    <MicOff size={22} />
                   ) : (
-                    <Mic size={20} />
+                    <Mic size={22} />
                   )}
                 </TooltipTrigger>
                 <TooltipContent>
@@ -233,14 +208,16 @@ export function HomeChatInput({
                   render={
                     <button
                       onClick={() =>
-                        ipc.system.openExternalUrl("https://dyad.sh/pro")
+                        ipc.system.openExternalUrl(
+                          "https://orianbuilder.sh/pro",
+                        )
                       }
                       aria-label="Voice to text (Pro)"
                       className="px-2 py-2 mb-0.5 text-muted-foreground hover:text-primary rounded-lg transition-colors duration-150 cursor-pointer relative"
                     />
                   }
                 >
-                  <Mic size={20} />
+                  <Mic size={22} />
                   <Lock size={10} className="absolute -top-0.5 -right-0.5" />
                 </TooltipTrigger>
                 <TooltipContent>Voice to text (requires Pro)</TooltipContent>
@@ -257,7 +234,7 @@ export function HomeChatInput({
                     />
                   }
                 >
-                  <StopCircleIcon size={20} />
+                  <StopCircleIcon size={22} />
                 </TooltipTrigger>
                 <TooltipContent>
                   Cancel generation (unavailable here)
@@ -275,15 +252,19 @@ export function HomeChatInput({
                     />
                   }
                 >
-                  <SendHorizontalIcon size={20} />
+                  <SendHorizontalIcon size={22} />
                 </TooltipTrigger>
                 <TooltipContent>Send message</TooltipContent>
               </Tooltip>
             )}
           </div>
-          <div className="px-2 flex items-center justify-between pb-0.5 pt-0.5">
+
+          <div className="px-2 flex items-center justify-between pb-1 pt-0.5">
             <div className="flex items-center">
-              <ChatInputControls showContextFilesPicker={false} />
+              <ChatInputControls
+                showContextFilesPicker={false}
+                showProSelector={false}
+              />
               {settings?.enableSelectAppFromHomeChatInput && (
                 <Tooltip>
                   <TooltipTrigger

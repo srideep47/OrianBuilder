@@ -3,7 +3,7 @@ import path from "node:path";
 import log from "electron-log";
 import { safeJoin } from "./path_utils";
 import { gitAdd } from "./git_utils";
-import { isWithinDyadMediaDir } from "./media_path_utils";
+import { isWithinOrianBuilderMediaDir } from "./media_path_utils";
 import { withLock } from "./lock_utils";
 import { deploySupabaseFunction } from "../../supabase_admin/supabase_management_client";
 import {
@@ -11,7 +11,10 @@ import {
   isSharedServerModule,
   extractFunctionNameFromPath,
 } from "../../supabase_admin/supabase_utils";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("copy_file_utils");
 
@@ -23,10 +26,10 @@ export interface CopyFileResult {
 }
 
 /**
- * Copy a file within a Dyad app, with security validation, git staging,
+ * Copy a file within a OrianBuilder app, with security validation, git staging,
  * and optional Supabase function deployment.
  *
- * @throws Error if an absolute source path is outside the app's .dyad/media directory.
+ * @throws Error if an absolute source path is outside the app's .orianbuilder/media directory.
  *   Relative paths are resolved within the app root (consistent with write_file access).
  * @throws Error if the source file does not exist
  */
@@ -48,13 +51,13 @@ export async function executeCopyFile({
   isSharedModulesChanged?: boolean;
 }): Promise<CopyFileResult> {
   return withLock(appId, async () => {
-    // Resolve the source path: allow both .dyad/media paths and app-relative paths
+    // Resolve the source path: allow both .orianbuilder/media paths and app-relative paths
     let fromFullPath: string;
     if (path.isAbsolute(from)) {
-      // Security: only allow absolute paths within the app's .dyad/media directory
-      if (!isWithinDyadMediaDir(from, appPath)) {
+      // Security: only allow absolute paths within the app's .orianbuilder/media directory
+      if (!isWithinOrianBuilderMediaDir(from, appPath)) {
         throw new Error(
-          `Absolute source paths are only allowed within the .dyad/media directory`,
+          `Absolute source paths are only allowed within the .orianbuilder/media directory`,
         );
       }
       fromFullPath = path.resolve(from);
@@ -65,9 +68,9 @@ export async function executeCopyFile({
     const toFullPath = safeJoin(appPath, to);
 
     if (!fs.existsSync(fromFullPath)) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Source file does not exist: ${from}`,
-        DyadErrorKind.NotFound,
+        OrianBuilderErrorKind.NotFound,
       );
     }
 
@@ -78,10 +81,10 @@ export async function executeCopyFile({
     const resolvedAppPath = fs.realpathSync(appPath);
     if (
       path.isAbsolute(from) &&
-      !isWithinDyadMediaDir(realFromPath, resolvedAppPath)
+      !isWithinOrianBuilderMediaDir(realFromPath, resolvedAppPath)
     ) {
       throw new Error(
-        `Source path resolves to a location outside the .dyad/media directory (possible symlink traversal)`,
+        `Source path resolves to a location outside the .orianbuilder/media directory (possible symlink traversal)`,
       );
     }
     if (

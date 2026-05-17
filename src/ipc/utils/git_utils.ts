@@ -14,7 +14,10 @@ import { readSettings } from "../../main/settings";
 import log from "electron-log";
 import { normalizePath } from "../../../shared/normalizePath";
 import type { UncommittedFile, UncommittedFileStatus } from "@/ipc/types";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 const logger = log.scope("git_utils");
 
 /**
@@ -22,7 +25,7 @@ const logger = log.scope("git_utils");
  * Filters out WSL-related PATH entries that can cause WSL interop issues.
  * On non-Windows platforms, returns undefined (use default environment).
  *
- * Issue: https://github.com/dyad-sh/dyad/issues/2194
+ * Issue: https://github.com/orianbuilder-sh/orianbuilder/issues/2194
  * When WSL is installed on Windows, the PATH can contain entries that cause
  * git commands to be intercepted by WSL's relay system, resulting in errors
  * like "execvpe(/bin/bash) failed: No such file or directory".
@@ -77,7 +80,7 @@ function getWindowsSanitizedEnv():
  * Wrapper around dugite's exec that uses a sanitized environment on Windows
  * to prevent WSL interop issues.
  */
-async function execGit(
+export async function execGit(
   args: string[],
   path: string,
   options?: IGitStringExecutionOptions,
@@ -132,8 +135,8 @@ import type {
 /**
  * Helper function that wraps exec and throws an error if the exit code is non-zero.
  *
- * Defaults to {@link DyadErrorKind.External} so unexpected failures (network, permissions,
- * corrupted repos) surface in telemetry. Use {@link DyadErrorKind.Conflict} only when the
+ * Defaults to {@link OrianBuilderErrorKind.External} so unexpected failures (network, permissions,
+ * corrupted repos) surface in telemetry. Use {@link OrianBuilderErrorKind.Conflict} only when the
  * dominant failure mode is genuinely merge/working-tree conflict (callers that detect
  * conflict state often rethrow {@link GitConflictError} instead).
  */
@@ -141,7 +144,7 @@ async function execOrThrow(
   args: string[],
   path: string,
   errorMessage?: string,
-  kind: DyadErrorKind = DyadErrorKind.External,
+  kind: OrianBuilderErrorKind = OrianBuilderErrorKind.External,
 ): Promise<void> {
   const result = await execGit(args, path);
   if (result.exitCode !== 0) {
@@ -149,7 +152,7 @@ async function execOrThrow(
     const error = errorMessage
       ? `${errorMessage}. ${errorDetails}`
       : `Git command failed: ${args.join(" ")}. ${errorDetails}`;
-    throw new DyadError(error, kind);
+    throw new OrianBuilderError(error, kind);
   }
 }
 
@@ -229,9 +232,9 @@ export async function getCurrentCommitHash({
   if (settings.enableNativeGit) {
     const result = await execGit(["rev-parse", ref], path);
     if (result.exitCode !== 0) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to resolve ref '${ref}': ${result.stderr.trim() || result.stdout.trim()}`,
-        DyadErrorKind.Conflict,
+        OrianBuilderErrorKind.Conflict,
       );
     }
     return result.stdout.trim();
@@ -254,9 +257,9 @@ export async function isGitStatusClean({
     const result = await execGit(["status", "--porcelain"], path);
 
     if (result.exitCode !== 0) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to get status: ${result.stderr}`,
-        DyadErrorKind.Conflict,
+        OrianBuilderErrorKind.Conflict,
       );
     }
 
@@ -281,9 +284,9 @@ export async function hasStagedChanges({
     // git diff --cached --quiet exits with 1 if there are staged changes, 0 if none
     const result = await execGit(["diff", "--cached", "--quiet"], path);
     if (result.exitCode !== 0 && result.exitCode !== 1) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to check staged changes: ${result.stderr.trim() || result.stdout.trim()}`,
-        DyadErrorKind.Conflict,
+        OrianBuilderErrorKind.Conflict,
       );
     }
     return result.exitCode === 1;
@@ -312,9 +315,9 @@ export async function gitCommit({
     // Get the new commit hash
     const result = await execGit(["rev-parse", "HEAD"], path);
     if (result.exitCode !== 0) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to get commit hash: ${result.stderr.trim() || result.stdout.trim()}`,
-        DyadErrorKind.Conflict,
+        OrianBuilderErrorKind.Conflict,
       );
     }
     return result.stdout.trim();
@@ -355,9 +358,9 @@ export async function gitStageToRevert({
     // Get the current HEAD commit hash
     const currentHeadResult = await execGit(["rev-parse", "HEAD"], path);
     if (currentHeadResult.exitCode !== 0) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to get current commit: ${currentHeadResult.stderr.trim() || currentHeadResult.stdout.trim()}`,
-        DyadErrorKind.Conflict,
+        OrianBuilderErrorKind.Conflict,
       );
     }
 
@@ -371,15 +374,15 @@ export async function gitStageToRevert({
     // Safety: refuse to run if the work-tree isn't clean.
     const statusResult = await execGit(["status", "--porcelain"], path);
     if (statusResult.exitCode !== 0) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to get status: ${statusResult.stderr.trim() || statusResult.stdout.trim()}`,
-        DyadErrorKind.Conflict,
+        OrianBuilderErrorKind.Conflict,
       );
     }
     if (statusResult.stdout.trim() !== "") {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Cannot revert: working tree has uncommitted changes.",
-        DyadErrorKind.Conflict,
+        OrianBuilderErrorKind.Conflict,
       );
     }
 
@@ -529,10 +532,10 @@ export async function gitReset({ path }: GitBaseParams): Promise<void> {
     // For isomorphic-git, resetting the index is complex and not directly supported
     // This is a fallback - in practice, this should rarely be needed when native git is disabled
     // If needed, users can manually reset via command line or enable native git
-    throw new DyadError(
+    throw new OrianBuilderError(
       "gitReset: Resetting the staging area is not fully supported when native git is disabled. " +
         "Please enable native git or manually unstage files using 'git reset HEAD'.",
-      DyadErrorKind.Precondition,
+      OrianBuilderErrorKind.Precondition,
     );
   }
 }
@@ -663,9 +666,9 @@ export async function getGitUncommittedFiles({
   if (settings.enableNativeGit) {
     const result = await execGit(["status", "--porcelain"], path);
     if (result.exitCode !== 0) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to get uncommitted files: ${result.stderr.trim() || result.stdout.trim()}`,
-        DyadErrorKind.Conflict,
+        OrianBuilderErrorKind.Conflict,
       );
     }
     return result.stdout
@@ -692,9 +695,9 @@ export async function getGitUncommittedFilesWithStatus({
   if (settings.enableNativeGit) {
     const result = await execGit(["status", "--porcelain"], path);
     if (result.exitCode !== 0) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to get uncommitted files: ${result.stderr.trim() || result.stdout.trim()}`,
-        DyadErrorKind.Conflict,
+        OrianBuilderErrorKind.Conflict,
       );
     }
     return result.stdout
@@ -812,7 +815,10 @@ export async function gitListBranches({
     const result = await execGit(["branch", "--list"], path);
 
     if (result.exitCode !== 0) {
-      throw new DyadError(result.stderr.toString(), DyadErrorKind.Conflict);
+      throw new OrianBuilderError(
+        result.stderr.toString(),
+        OrianBuilderErrorKind.Conflict,
+      );
     }
     // Parse output:
     // e.g. "* main\n  feature/login"
@@ -839,7 +845,10 @@ export async function gitListRemoteBranches({
     const result = await execGit(["branch", "-r", "--list"], path);
 
     if (result.exitCode !== 0) {
-      throw new DyadError(result.stderr.toString(), DyadErrorKind.Conflict);
+      throw new OrianBuilderError(
+        result.stderr.toString(),
+        OrianBuilderErrorKind.Conflict,
+      );
     }
     // Parse output:
     // e.g. "  origin/main\n  origin/feature/login\n  upstream/develop"
@@ -879,7 +888,10 @@ export async function gitRenameBranch({
     // git branch -m oldBranch newBranch
     const result = await execGit(["branch", "-m", oldBranch, newBranch], path);
     if (result.exitCode !== 0) {
-      throw new DyadError(result.stderr.toString(), DyadErrorKind.Conflict);
+      throw new OrianBuilderError(
+        result.stderr.toString(),
+        OrianBuilderErrorKind.Conflict,
+      );
     }
   } else {
     // isomorphic-git does not have a renameBranch function.
@@ -948,7 +960,10 @@ export async function gitClone({
     const result = await execGit(args, ".");
 
     if (result.exitCode !== 0) {
-      throw new DyadError(result.stderr.toString(), DyadErrorKind.Conflict);
+      throw new OrianBuilderError(
+        result.stderr.toString(),
+        OrianBuilderErrorKind.Conflict,
+      );
     }
   } else {
     // isomorphic-git version
@@ -980,7 +995,10 @@ export async function gitSetRemoteUrl({
   // Validate remoteUrl to prevent argument injection attacks
   // URLs starting with "-" could be interpreted as command-line options
   if (remoteUrl.startsWith("-")) {
-    throw new DyadError("Invalid remote URL", DyadErrorKind.Validation);
+    throw new OrianBuilderError(
+      "Invalid remote URL",
+      OrianBuilderErrorKind.Validation,
+    );
   }
 
   if (settings.enableNativeGit) {
@@ -1000,16 +1018,16 @@ export async function gitSetRemoteUrl({
         );
 
         if (updateResult.exitCode !== 0) {
-          throw new DyadError(
+          throw new OrianBuilderError(
             `Failed to update remote: ${updateResult.stderr}`,
-            DyadErrorKind.Conflict,
+            OrianBuilderErrorKind.Conflict,
           );
         }
       } else if (result.exitCode !== 0) {
         // Handle other errors
-        throw new DyadError(
+        throw new OrianBuilderError(
           `Failed to add remote: ${result.stderr}`,
-          DyadErrorKind.Conflict,
+          OrianBuilderErrorKind.Conflict,
         );
       }
     } catch (error: any) {
@@ -1056,17 +1074,17 @@ export async function gitPush({
       const result = await execGit(args, path);
       if (result.exitCode !== 0) {
         const errorMsg = result.stderr.toString() || result.stdout.toString();
-        throw new DyadError(
+        throw new OrianBuilderError(
           `Git push failed: ${errorMsg}`,
-          DyadErrorKind.Conflict,
+          OrianBuilderErrorKind.Conflict,
         );
       }
       return;
     } catch (error: any) {
       logger.error("Error during git push:", error);
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Git push failed: ${error.message}`,
-        DyadErrorKind.Conflict,
+        OrianBuilderErrorKind.Conflict,
       );
     }
   }
@@ -1077,10 +1095,10 @@ export async function gitPush({
       "gitPush: 'forceWithLease' requested but not supported when native git is disabled. " +
         "Rejecting push to prevent unsafe force operation.",
     );
-    throw new DyadError(
+    throw new OrianBuilderError(
       "gitPush: 'forceWithLease' is not supported when native git is disabled. " +
         "Falling back to plain force could overwrite remote commits. Enable native git.",
-      DyadErrorKind.Precondition,
+      OrianBuilderErrorKind.Precondition,
     );
   }
   await git.push({
@@ -1103,9 +1121,9 @@ export async function gitPush({
 export async function gitRebaseAbort({ path }: GitBaseParams): Promise<void> {
   const settings = readSettings();
   if (!settings.enableNativeGit) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "Rebase controls require native Git. Enable native Git in settings.",
-      DyadErrorKind.Precondition,
+      OrianBuilderErrorKind.Precondition,
     );
   }
 
@@ -1117,9 +1135,9 @@ export async function gitRebaseContinue({
 }: GitBaseParams): Promise<void> {
   const settings = readSettings();
   if (!settings.enableNativeGit) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "Rebase controls require native Git. Enable native Git in settings.",
-      DyadErrorKind.Precondition,
+      OrianBuilderErrorKind.Precondition,
     );
   }
 
@@ -1142,9 +1160,9 @@ export async function gitRebase({
 }): Promise<void> {
   const settings = readSettings();
   if (!settings.enableNativeGit) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "Rebase requires native Git. Enable native Git in settings.",
-      DyadErrorKind.Precondition,
+      OrianBuilderErrorKind.Precondition,
     );
   }
 
@@ -1161,9 +1179,9 @@ export async function gitRebase({
 export async function gitMergeAbort({ path }: GitBaseParams): Promise<void> {
   const settings = readSettings();
   if (!settings.enableNativeGit) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "Merge abort requires native Git. Enable native Git in settings.",
-      DyadErrorKind.Precondition,
+      OrianBuilderErrorKind.Precondition,
     );
   }
 
@@ -1178,9 +1196,9 @@ export async function gitCurrentBranch({
     // Dugite version
     const result = await execGit(["branch", "--show-current"], path);
     if (result.exitCode !== 0) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to get current branch: ${result.stderr.trim() || result.stdout.trim()}`,
-        DyadErrorKind.Conflict,
+        OrianBuilderErrorKind.Conflict,
       );
     }
     const branch = result.stdout.trim() || null;
@@ -1232,7 +1250,10 @@ export async function gitIsIgnored({
     if (result.exitCode === 1) return false;
 
     // Other exit codes are actual errors
-    throw new DyadError(result.stderr.toString(), DyadErrorKind.Conflict);
+    throw new OrianBuilderError(
+      result.stderr.toString(),
+      OrianBuilderErrorKind.Conflict,
+    );
   } else {
     // isomorphic-git version
     return await gitIsIgnoredIso({ path, filepath });
@@ -1279,9 +1300,9 @@ export async function gitListFilesNative({
     path,
   );
   if (result.exitCode !== 0) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Failed to list files: ${result.stderr.trim() || result.stdout.trim()}`,
-      DyadErrorKind.Conflict,
+      OrianBuilderErrorKind.Conflict,
     );
   }
   return result.stdout.split("\0").filter(Boolean).map(normalizePath);
@@ -1305,7 +1326,10 @@ export async function gitLogNative(
   const logResult = await execGit(logArgs, path);
 
   if (logResult.exitCode !== 0) {
-    throw new DyadError(logResult.stderr.toString(), DyadErrorKind.Conflict);
+    throw new OrianBuilderError(
+      logResult.stderr.toString(),
+      OrianBuilderErrorKind.Conflict,
+    );
   }
 
   const output = logResult.stdout.toString().trim();
@@ -1366,9 +1390,9 @@ export async function gitFetch({
 }
 
 /** Merge/pull conflicts — `name` kept for UI checks (e.g. GitHubConnector). */
-class GitConflictErrorImpl extends DyadError {
+class GitConflictErrorImpl extends OrianBuilderError {
   constructor(message: string) {
-    super(message, DyadErrorKind.Conflict);
+    super(message, OrianBuilderErrorKind.Conflict);
     this.name = "GitConflictError";
   }
 }
@@ -1378,10 +1402,10 @@ export function GitConflictError(message: string): Error {
 }
 
 /** Blocked git operation due to repo state (merge/rebase in progress, etc.). */
-class GitStateErrorImpl extends DyadError {
+class GitStateErrorImpl extends OrianBuilderError {
   readonly code: string;
   constructor(message: string, code: string) {
-    super(message, DyadErrorKind.Precondition);
+    super(message, OrianBuilderErrorKind.Precondition);
     this.name = "GitStateError";
     this.code = code;
   }
@@ -1531,10 +1555,10 @@ export async function gitCreateBranch({
   // isomorphic-git: branch creation uses the current HEAD; it does not honor "from"
   // in the same way as native `git branch <name> <from>`.
   if (from !== "HEAD") {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `gitCreateBranch: 'from' is not supported when native git is disabled (from=${from}). ` +
         `Branches would be created from HEAD instead.`,
-      DyadErrorKind.Precondition,
+      OrianBuilderErrorKind.Precondition,
     );
   }
   await git.branch({
@@ -1580,9 +1604,9 @@ export async function gitGetMergeConflicts({
       exitCode: number;
     };
     if (result.exitCode !== 0) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to get merge conflicts: ${result.stderr}`,
-        DyadErrorKind.Conflict,
+        OrianBuilderErrorKind.Conflict,
       );
     }
     return result.stdout
@@ -1592,9 +1616,9 @@ export async function gitGetMergeConflicts({
       .filter((s) => s.length > 0);
   }
   //throw error("gitGetMergeConflicts requires native Git. Enable native Git in settings.");
-  throw new DyadError(
+  throw new OrianBuilderError(
     "Git conflict detection requires native Git. Enable native Git in settings.",
-    DyadErrorKind.Precondition,
+    OrianBuilderErrorKind.Precondition,
   );
 }
 

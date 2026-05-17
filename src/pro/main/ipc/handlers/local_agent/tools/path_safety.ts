@@ -1,5 +1,8 @@
 import path from "node:path";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 /**
  * Resolve and validate that `directory` stays within `appPath`.
@@ -18,9 +21,9 @@ export function resolveDirectoryWithinAppPath(params: {
   // Disallow any ".." path segment (even if the resolved path would remain within root).
   // This makes path traversal attempts explicit and avoids surprising "a/../b" style inputs.
   if (/(^|[\\/])\.\.([\\/]|$)/.test(params.directory)) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Invalid directory path: "${params.directory}" contains ".." path traversal segment`,
-      DyadErrorKind.Validation,
+      OrianBuilderErrorKind.Validation,
     );
   }
 
@@ -53,9 +56,9 @@ export function resolveDirectoryWithinAppPath(params: {
       !pathImpl.isAbsolute(relForCheck));
 
   if (!isWithinRoot) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Invalid directory path: "${params.directory}" escapes the project directory`,
-      DyadErrorKind.Validation,
+      OrianBuilderErrorKind.Validation,
     );
   }
 

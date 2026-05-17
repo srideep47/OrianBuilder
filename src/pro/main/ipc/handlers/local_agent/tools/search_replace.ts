@@ -17,7 +17,10 @@ import {
   isSharedServerModule,
 } from "@/supabase_admin/supabase_utils";
 import { sendTelemetryEvent } from "@/ipc/utils/telemetry";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { queueCloudSandboxSnapshotSync } from "@/ipc/utils/cloud_sandbox_provider";
 import { withLock, getFileWriteKey } from "@/ipc/utils/lock_utils";
 
@@ -73,7 +76,7 @@ CRITICAL REQUIREMENTS FOR USING THIS TOOL:
 
     const escapedOld = escapeSearchReplaceMarkers(args.old_string ?? "");
 
-    let xml = `<dyad-search-replace path="${escapeXmlAttr(args.file_path)}" description="">\n<<<<<<< SEARCH\n${escapeXmlContent(escapedOld)}`;
+    let xml = `<orianbuilder-search-replace path="${escapeXmlAttr(args.file_path)}" description="">\n<<<<<<< SEARCH\n${escapeXmlContent(escapedOld)}`;
 
     // Add separator and replace content if new_string has started
     if (args.new_string !== undefined) {
@@ -85,7 +88,7 @@ CRITICAL REQUIREMENTS FOR USING THIS TOOL:
       if (args.new_string === undefined) {
         xml += "\n=======\n";
       }
-      xml += "\n>>>>>>> REPLACE\n</dyad-search-replace>";
+      xml += "\n>>>>>>> REPLACE\n</orianbuilder-search-replace>";
     }
 
     return xml;
@@ -94,9 +97,9 @@ CRITICAL REQUIREMENTS FOR USING THIS TOOL:
   execute: async (args, ctx: AgentContext) => {
     // Validate old_string !== new_string
     if (args.old_string === args.new_string) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "old_string and new_string must be different",
-        DyadErrorKind.Validation,
+        OrianBuilderErrorKind.Validation,
       );
     }
 
@@ -109,16 +112,21 @@ CRITICAL REQUIREMENTS FOR USING THIS TOOL:
 
     await withLock(getFileWriteKey(fullFilePath), async () => {
       if (!fs.existsSync(fullFilePath)) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `File does not exist: ${args.file_path}`,
-          DyadErrorKind.NotFound,
+          OrianBuilderErrorKind.NotFound,
         );
       }
 
       const original = await fs.promises.readFile(fullFilePath, "utf8");
 
       // ── Pre-verification: check that old_string actually exists ──────────
-      if (!original.includes(args.old_string)) {
+      // Also accept old_string with leading/trailing newlines stripped
+      const oldStringTrimmed = args.old_string.replace(/^\n+|\n+$/g, "");
+      if (
+        !original.includes(args.old_string) &&
+        !original.includes(oldStringTrimmed)
+      ) {
         // Fuzzy retry: normalise line-endings + collapse runs of spaces/tabs
         // to handle the common case where the model's whitespace doesn't
         // exactly match the file (e.g. CRLF vs LF, trailing spaces, indent
@@ -193,10 +201,10 @@ CRITICAL REQUIREMENTS FOR USING THIS TOOL:
           error: "old_string_not_found",
         });
 
-        throw new DyadError(
+        throw new OrianBuilderError(
           `search_replace failed: the old_string was not found in ${args.file_path}. ` +
             `Verify the exact text (including whitespace/indentation) with read_file first, then retry.${hint}`,
-          DyadErrorKind.Validation,
+          OrianBuilderErrorKind.Validation,
         );
       }
 

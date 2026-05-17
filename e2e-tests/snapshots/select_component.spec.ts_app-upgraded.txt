@@ -59,7 +59,7 @@ dist-ssr
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>dyad-generated-app</title>
+    <title>orianbuilder-generated-app</title>
   </head>
 
   <body>
@@ -478,14 +478,14 @@ import { defineConfig } from "vite";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
-import dyadComponentTagger from '@dyad-sh/react-vite-component-tagger';
+import orianbuilderComponentTagger from '@dyad-sh/react-vite-component-tagger';
 
 export default defineConfig(() => ({
   server: {
     host: "::",
     port: 8080,
   },
-  plugins: [dyadComponentTagger(), react(), tailwindcss()],
+  plugins: [orianbuilderComponentTagger(), react(), tailwindcss()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

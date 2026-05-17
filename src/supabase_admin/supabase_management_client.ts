@@ -14,7 +14,10 @@ import {
   RateLimitError,
   retryWithRateLimit,
 } from "../ipc/utils/retryWithRateLimit";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { enqueueSupabaseDeploy } from "./supabase_deploy_queue";
 
 const fsPromises = fs.promises;
@@ -116,16 +119,16 @@ export async function refreshSupabaseToken(): Promise<void> {
   }
 
   if (!refreshToken) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "Supabase refresh token not found. Please authenticate first.",
-      DyadErrorKind.Auth,
+      OrianBuilderErrorKind.Auth,
     );
   }
 
   try {
     // Make request to Supabase refresh endpoint
     const response = await fetch(
-      "https://supabase-oauth.dyad.sh/api/connect-supabase/refresh",
+      "https://supabase-oauth.orianbuilder.sh/api/connect-supabase/refresh",
       {
         method: "POST",
         headers: {
@@ -136,9 +139,9 @@ export async function refreshSupabaseToken(): Promise<void> {
     );
 
     if (!response.ok) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Supabase token refresh failed. Try going to Settings to disconnect Supabase and then reconnect to Supabase. Error status: ${response.statusText}`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
 
@@ -187,9 +190,9 @@ export async function getSupabaseClient({
   const expiresIn = settings.supabase?.expiresIn;
 
   if (!supabaseAccessToken) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "Supabase access token not found. Please authenticate first.",
-      DyadErrorKind.Auth,
+      OrianBuilderErrorKind.Auth,
     );
   }
 
@@ -201,9 +204,9 @@ export async function getSupabaseClient({
     const newAccessToken = updatedSettings.supabase?.accessToken?.value;
 
     if (!newAccessToken) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Failed to refresh Supabase access token",
-        DyadErrorKind.Auth,
+        OrianBuilderErrorKind.Auth,
       );
     }
 
@@ -244,9 +247,9 @@ async function refreshSupabaseTokenForOrganization(
   const org = settings.supabase?.organizations?.[organizationSlug];
 
   if (!org) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Supabase organization ${organizationSlug} not found. Please authenticate first.`,
-      DyadErrorKind.Auth,
+      OrianBuilderErrorKind.Auth,
     );
   }
 
@@ -256,15 +259,15 @@ async function refreshSupabaseTokenForOrganization(
 
   const refreshToken = org.refreshToken?.value;
   if (!refreshToken) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "Supabase refresh token not found. Please authenticate first.",
-      DyadErrorKind.Auth,
+      OrianBuilderErrorKind.Auth,
     );
   }
 
   try {
     const response = await fetch(
-      "https://supabase-oauth.dyad.sh/api/connect-supabase/refresh",
+      "https://supabase-oauth.orianbuilder.sh/api/connect-supabase/refresh",
       {
         method: "POST",
         headers: {
@@ -275,9 +278,9 @@ async function refreshSupabaseTokenForOrganization(
     );
 
     if (!response.ok) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Supabase token refresh failed. Try going to Settings to disconnect Supabase and then reconnect. Error status: ${response.statusText}`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
 
@@ -330,17 +333,17 @@ export async function getSupabaseClientForOrganization(
   const org = settings.supabase?.organizations?.[organizationSlug];
 
   if (!org) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Supabase organization ${organizationSlug} not found. Please authenticate first.`,
-      DyadErrorKind.Auth,
+      OrianBuilderErrorKind.Auth,
     );
   }
 
   const accessToken = org.accessToken?.value;
   if (!accessToken) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Supabase access token not found for organization ${organizationSlug}. Please authenticate first.`,
-      DyadErrorKind.Auth,
+      OrianBuilderErrorKind.Auth,
     );
   }
 
@@ -356,9 +359,9 @@ export async function getSupabaseClientForOrganization(
     const newAccessToken = updatedOrg?.accessToken?.value;
 
     if (!newAccessToken) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to refresh Supabase access token for organization ${organizationSlug}`,
-        DyadErrorKind.Auth,
+        OrianBuilderErrorKind.Auth,
       );
     }
 
@@ -729,9 +732,9 @@ export async function listSupabaseBranches({
     logger.info(
       `Branches not available for project ${supabaseProjectId} (403 Forbidden - likely free tier)`,
     );
-    throw new DyadError(
+    throw new OrianBuilderError(
       "Branches are only supported for Supabase paid customers",
-      DyadErrorKind.Precondition,
+      OrianBuilderErrorKind.Precondition,
     );
   }
 
@@ -977,9 +980,9 @@ async function collectFunctionFiles({
   }
 
   if (!functionDirectory) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Unable to locate directory for Supabase function ${functionName}`,
-      DyadErrorKind.NotFound,
+      OrianBuilderErrorKind.NotFound,
     );
   }
 
@@ -988,9 +991,9 @@ async function collectFunctionFiles({
   try {
     await fsPromises.access(indexPath);
   } catch {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Supabase function ${functionName} is missing an index.ts entrypoint`,
-      DyadErrorKind.Validation,
+      OrianBuilderErrorKind.Validation,
     );
   }
 

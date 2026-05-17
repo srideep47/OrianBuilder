@@ -24,8 +24,8 @@ jobs:
         id: base-app-token
         uses: actions/create-github-app-token@v2
         with:
-          app-id: ${{ vars.DYAD_GITHUB_APP_ID }}
-          private-key: ${{ secrets.DYAD_GITHUB_APP_PRIVATE_KEY }}
+          app-id: ${{ vars.ORIANBUILDER_GITHUB_APP_ID }}
+          private-key: ${{ secrets.ORIANBUILDER_GITHUB_APP_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
 
@@ -36,7 +36,7 @@ jobs:
           github-token: ${{ steps.base-app-token.outputs.token }}
           script: |
             const pr = context.payload.pull_request;
-            const allowedUsers = ['wwwillchen', 'keppo-bot', 'keppo-bot[bot]', 'dyad-assistant', 'azizmejri1', 'princeaden1'];
+            const allowedUsers = ['wwwillchen', 'keppo-bot', 'keppo-bot[bot]', 'orianbuilder-assistant', 'azizmejri1', 'princeaden1'];
             if (!allowedUsers.includes(pr.user.login)) {
               console.log(`PR author ${pr.user.login} is not allowed to use this workflow`);
               core.setOutput('should_continue', 'false');
@@ -50,8 +50,8 @@ jobs:
         id: head-app-token
         uses: actions/create-github-app-token@v2
         with:
-          app-id: ${{ vars.DYAD_GITHUB_APP_ID }}
-          private-key: ${{ secrets.DYAD_GITHUB_APP_PRIVATE_KEY }}
+          app-id: ${{ vars.ORIANBUILDER_GITHUB_APP_ID }}
+          private-key: ${{ secrets.ORIANBUILDER_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ github.event.pull_request.head.repo.owner.login }}
           repositories: ${{ github.event.pull_request.head.repo.name }}
           permission-contents: write
@@ -81,7 +81,7 @@ jobs:
       - name: Configure push remote for fork PRs
         if: steps.check-author.outputs.should_continue == 'true'
         run: |
-          # claude-code-action overwrites origin's fetch URL to point to dyad-sh/dyad
+          # claude-code-action overwrites origin's fetch URL to point to orianbuilder-sh/orianbuilder
           # (using GITHUB_REPOSITORY which is always the base repo in pull_request_target events).
           # Setting pushurl separately ensures git push still targets the fork,
           # because git uses pushurl over url when both are configured.
@@ -110,16 +110,16 @@ jobs:
           github_token: ${{ steps.base-app-token.outputs.token }}
           display_report: true
           prompt: |
-            You are orchestrating the /dyad:pr-rebase skill. Your job is to run it end-to-end as a sub-agent with NO shortcuts.
+            You are orchestrating the /orianbuilder:pr-rebase skill. Your job is to run it end-to-end as a sub-agent with NO shortcuts.
 
             Rules:
-            1. Execute every step of /dyad:pr-rebase sequentially. Do not skip, summarize, or stop early.
-            2. The skill includes a "/dyad:pr-push" step. This step MUST be fully executed — not just mentioned or planned, but actually run to completion.
-            3. After "/dyad:pr-push" completes, verify its output to confirm success (e.g., a PR URL or push confirmation).
-            4. Do not consider the task complete until "/dyad:pr-push" has succeeded and you have confirmed its output.
+            1. Execute every step of /orianbuilder:pr-rebase sequentially. Do not skip, summarize, or stop early.
+            2. The skill includes a "/orianbuilder:pr-push" step. This step MUST be fully executed — not just mentioned or planned, but actually run to completion.
+            3. After "/orianbuilder:pr-push" completes, verify its output to confirm success (e.g., a PR URL or push confirmation).
+            4. Do not consider the task complete until "/orianbuilder:pr-push" has succeeded and you have confirmed its output.
 
             Now run the following command:          
-            /dyad:pr-rebase ${{ steps.check-author.outputs.pr_number }}
+            /orianbuilder:pr-rebase ${{ steps.check-author.outputs.pr_number }}
 
       - name: Update labels on success
         if: steps.check-author.outputs.should_continue == 'true' && success()

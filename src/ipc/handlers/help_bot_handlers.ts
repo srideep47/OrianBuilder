@@ -11,7 +11,10 @@ import {
 import { createTypedHandler } from "./base";
 import { helpContracts } from "../types/help";
 import { resolveBuiltinModelAlias } from "../shared/remote_language_model_catalog";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("help-bot");
 
@@ -25,9 +28,9 @@ export function registerHelpBotHandlers() {
     const { sessionId, message } = params;
     try {
       if (!sessionId || !message?.trim()) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Missing sessionId or message",
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
 
@@ -50,19 +53,19 @@ export function registerHelpBotHandlers() {
       const settings = await readSettings();
       const apiKey = settings.providerSettings?.["auto"]?.apiKey?.value;
       const provider = createOpenAI({
-        baseURL: "https://helpchat.dyad.sh/v1",
+        baseURL: "https://helpchat.orianbuilder.sh/v1",
         apiKey,
       });
       const helpBotModel = await resolveBuiltinModelAlias(
-        "dyad/help-bot/default",
+        "orianbuilder/help-bot/default",
       );
 
       if (!helpBotModel || helpBotModel.providerId !== "openai") {
         // Help bot requires OpenAI provider because it uses the OpenAI
-        // responses API via a custom baseURL (helpchat.dyad.sh).
+        // responses API via a custom baseURL (helpchat.orianbuilder.sh).
         throw new Error(
           `Help bot requires an OpenAI model (got provider: ${helpBotModel?.providerId ?? "none"}). ` +
-            `The 'dyad/help-bot/default' alias must resolve to an OpenAI model.`,
+            `The 'orianbuilder/help-bot/default' alias must resolve to an OpenAI model.`,
         );
       }
 

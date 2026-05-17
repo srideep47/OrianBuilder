@@ -13,16 +13,28 @@ import {
   addLogListener,
   getRecentLogs,
   getCurrentStats,
+  startHardwareBroadcast,
 } from "../utils/embedded_inference_server";
 import { detectGpu } from "../utils/gpu_detection";
 import { readSettings, writeSettings } from "../../main/settings";
 import { readGgufMetadata } from "../utils/gguf_metadata";
 import {
+  embeddedModelContracts,
   embeddedModelEvents,
+  type EmbeddedModelConfig,
   type TensorRtEngineBuildRequest,
   type TensorRtEngineBuildStatus,
 } from "../types/embedded_model";
 import { TensorRtNativeBackend } from "../utils/tensorrt_native_backend";
+import { createTypedHandler } from "./base";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
+import {
+  getEffectiveKvContextSize,
+  getRecommendedAgentContextSize,
+} from "@/lib/embedded_model_allocation";
 
 function broadcast(channel: string, payload: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -452,23 +464,23 @@ async function computeModelInfo(filePath: string, vramMb: number) {
               (effectiveKvContextForBudget / (realCtxLength ?? 131072))),
         )
       : 512;
-  // Dyad's system prompt (app codebase + instructions) is typically 30K–60K tokens.
+  // OrianBuilder's system prompt (app codebase + instructions) is typically 30K–60K tokens.
   // Recommend at least 32K so app building works correctly. Accept fewer GPU layers
   // as the trade-off — slower but correct beats fast with a 98-token response.
-  const DYAD_MIN_CTX = 32768;
+  const ORIANBUILDER_MIN_CTX = 32768;
   const ctxCap = realCtxLength ?? 131072;
   const rawCtx = nearestPower2(maxCtxFromVram);
 
   let recommendedContextSize: number;
-  if (rawCtx >= DYAD_MIN_CTX) {
+  if (rawCtx >= ORIANBUILDER_MIN_CTX) {
     recommendedContextSize = Math.min(ctxCap, rawCtx);
   } else {
     // Try nudging up: check if 32K fits with the current GPU layer count.
     const kvFor32K =
-      (DYAD_MIN_CTX * kvBytesPerTokenPerLayer * recommendedGpuLayers) /
+      (ORIANBUILDER_MIN_CTX * kvBytesPerTokenPerLayer * recommendedGpuLayers) /
       (1024 * 1024);
     if (kvFor32K <= vramAfterModelMb) {
-      recommendedContextSize = Math.min(ctxCap, DYAD_MIN_CTX);
+      recommendedContextSize = Math.min(ctxCap, ORIANBUILDER_MIN_CTX);
     } else if (
       (16384 * kvBytesPerTokenPerLayer * recommendedGpuLayers) /
         (1024 * 1024) <=
@@ -478,6 +490,21 @@ async function computeModelInfo(filePath: string, vramMb: number) {
     } else {
       recommendedContextSize = Math.min(ctxCap, Math.max(512, rawCtx));
     }
+  }
+  const agentContextSize = getRecommendedAgentContextSize({
+    fileName,
+    architecture,
+    contextLengthTrained: realCtxLength,
+    gpuBudgetMb: usableVramMb,
+    layerSizeMb,
+    totalLayers: estimatedLayers,
+    kvBytesPerTokenPerLayer,
+    attentionSlidingWindow,
+    attentionSlidingWindowPattern,
+    flashAttention: true,
+  });
+  if (agentContextSize) {
+    recommendedContextSize = Math.max(recommendedContextSize, agentContextSize);
   }
 
   return {
@@ -499,24 +526,6 @@ async function computeModelInfo(filePath: string, vramMb: number) {
   };
 }
 
-function getEffectiveKvContextSize(
-  contextSize: number,
-  attentionSlidingWindow?: number | null,
-  attentionSlidingWindowPattern?: number | null,
-  flashAttention?: boolean,
-): number {
-  const slidingWindow = attentionSlidingWindow ?? 0;
-  if (slidingWindow <= 0 || slidingWindow >= contextSize) {
-    return contextSize;
-  }
-  const pattern = Math.max(1, attentionSlidingWindowPattern ?? 1);
-  const nonSwaPercent =
-    pattern <= 1 ? 1 : 1 / (pattern + (flashAttention ? -0.5 : -1));
-  return Math.ceil(
-    (1 - nonSwaPercent) * slidingWindow + nonSwaPercent * contextSize,
-  );
-}
-
 function nearestPower2(n: number): number {
   if (n <= 0) return 2048;
   const candidates = [512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072];
@@ -527,11 +536,77 @@ function nearestPower2(n: number): number {
 
 // ─── IPC handlers ────────────────────────────────────────────────────────────
 
+async function loadModelFromConfig(config: EmbeddedModelConfig): Promise<void> {
+  let vramMb = 0;
+  let layerSizeMb = 200;
+  let estimatedLayers = 64;
+  let kvBytesPerTokenPerLayer = 4096;
+  let attentionSlidingWindow: number | null = null;
+  let attentionSlidingWindowPattern: number | null = null;
+
+  try {
+    const gpuInfo = await detectGpu();
+    vramMb = gpuInfo.available ? gpuInfo.vramMb : 0;
+  } catch {
+    /* nvidia-smi may not be available */
+  }
+
+  try {
+    if (config.modelPath) {
+      const modelInfo = await computeModelInfo(config.modelPath, vramMb);
+      layerSizeMb = modelInfo.layerSizeMb;
+      estimatedLayers = modelInfo.estimatedLayers;
+      kvBytesPerTokenPerLayer = modelInfo.kvBytesPerTokenPerLayer ?? 4096;
+      attentionSlidingWindow = modelInfo.attentionSlidingWindow ?? null;
+      attentionSlidingWindowPattern =
+        modelInfo.attentionSlidingWindowPattern ?? null;
+    }
+  } catch {
+    /* ignore - will fall back to defaults */
+  }
+
+  await loadModel({
+    modelPath: config.modelPath,
+    inferenceBackend: config.inferenceBackend ?? "llama-cpp",
+    tensorRtEngineDir: config.tensorRtEngineDir ?? null,
+    gpuMemoryUtilization: config.gpuMemoryUtilization ?? 0.8,
+    vramHeadroomMb: config.vramHeadroomMb ?? 512,
+    contextSize: config.contextSize,
+    batchSize: config.batchSize ?? 512,
+    flashAttention: config.flashAttention ?? true,
+    aggressiveMemory: config.aggressiveMemory ?? true,
+    gpuLayersMode: config.gpuLayersMode ?? "auto",
+    manualGpuLayers: config.manualGpuLayers ?? null,
+    _vramMb: vramMb,
+    _layerSizeMb: layerSizeMb,
+    _estimatedLayers: estimatedLayers,
+    _kvBytesPerTokenPerLayer:
+      config._kvBytesPerTokenPerLayer ?? kvBytesPerTokenPerLayer,
+    _attentionSlidingWindow:
+      config._attentionSlidingWindow ?? attentionSlidingWindow,
+    _attentionSlidingWindowPattern:
+      config._attentionSlidingWindowPattern ?? attentionSlidingWindowPattern,
+  });
+
+  setDefaultSampling({
+    temperature: config.temperature ?? 0.7,
+    topP: config.topP ?? 0.95,
+    topK: config.topK ?? 40,
+    repeatPenalty: config.repeatPenalty ?? 1.1,
+    seed: typeof config.seed === "number" ? config.seed : undefined,
+  });
+
+  writeSettings({ embeddedConfig: config } as any);
+}
+
 export function registerEmbeddedModelHandlers(): void {
   // Subscribe to live stats + log events from the inference server and
   // broadcast them to all renderer windows so the Engine page stays live.
   addStatsListener((s) => broadcast(embeddedModelEvents.stats.channel, s));
   addLogListener((e) => broadcast(embeddedModelEvents.log.channel, e));
+
+  // Always-on hardware broadcast so CPU/RAM show even when idle
+  startHardwareBroadcast();
 
   ipcMain.handle("embedded-model:get-recent-logs", () => getRecentLogs());
   ipcMain.handle("embedded-model:get-stats", () => getCurrentStats());
@@ -721,6 +796,30 @@ export function registerEmbeddedModelHandlers(): void {
       return { success: false, error: String(err) };
     }
   });
+
+  createTypedHandler(
+    embeddedModelContracts.swapModel,
+    async (_event, { newConfig }) => {
+      const status = getServerStatus();
+      if (status.isInferring) {
+        throw new OrianBuilderError(
+          "Cannot swap embedded models during active inference. Wait for the current response to finish, then try again.",
+          OrianBuilderErrorKind.Precondition,
+        );
+      }
+      if (status.isLoading) {
+        throw new OrianBuilderError(
+          "Cannot swap embedded models while a model is loading.",
+          OrianBuilderErrorKind.Precondition,
+        );
+      }
+
+      await unloadModel();
+      await loadModelFromConfig(newConfig);
+      logger.info("Embedded model swapped and config saved");
+      return getServerStatus();
+    },
+  );
 
   ipcMain.handle("embedded-model:get-saved-config", () => {
     const settings = readSettings() as any;

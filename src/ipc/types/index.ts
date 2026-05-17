@@ -53,6 +53,7 @@ export { miscContracts, miscEvents } from "./misc";
 export { freeAgentQuotaContracts } from "./free_agent_quota";
 export { audioContracts } from "./audio";
 export { mediaContracts } from "./media";
+export { mediaAiContracts } from "./media_ai";
 export { imageGenerationContracts } from "./image_generation";
 export {
   embeddedModelContracts,
@@ -71,6 +72,7 @@ export type {
   InferenceLogEntry,
   TensorRtEngineBuildStatus,
   TensorRtEngineBuildRequest,
+  SwapEmbeddedModelParams,
 } from "./embedded_model";
 export {
   modelMarketplaceContracts,
@@ -78,6 +80,7 @@ export {
   modelMarketplaceEvents,
   modelMarketplaceEventClient,
 } from "./model_marketplace";
+export { missionContracts, missionClient } from "./mission";
 export type {
   HFSearchModel,
   HFFileSibling,
@@ -86,6 +89,40 @@ export type {
   LocalModelEntry,
   GgufMetadata,
 } from "./model_marketplace";
+export type {
+  Mission,
+  MissionEvent,
+  MissionTask,
+  MissionRun,
+  MissionWorker,
+  MissionWorkerReport,
+  MissionCheckpoint,
+  MissionArtifact,
+  MissionInterrupt,
+  MissionMemory,
+  MissionPermissionRequest,
+  CreateMissionParams,
+  UpdateMissionStatusParams,
+  AddMissionEventParams,
+  CreateMissionWorkerParams,
+  UpdateMissionWorkerStatusParams,
+  DispatchMissionWorkersParams,
+  RetryMissionWorkerParams,
+  MarkStaleMissionWorkersParams,
+  SubmitMissionWorkerReportParams,
+  PrepareMissionWorkerWorkspaceParams,
+  SetMissionWorkerIntegrationStatusParams,
+  RunReadyMissionWorkersParams,
+  ApplyAcceptedMissionWorkerOutputsParams,
+  CleanupAppliedMissionWorkerWorkspacesParams,
+  CreateMissionInterruptParams,
+  MarkMissionInterruptsInjectedParams,
+  CreateMissionMemoryParams,
+  ListMissionMemoriesParams,
+  CreateMissionPermissionRequestParams,
+  ResolveMissionPermissionRequestParams,
+  ExpireMissionPermissionRequestsParams,
+} from "./mission";
 
 // =============================================================================
 // Client Exports
@@ -118,6 +155,7 @@ export { miscClient, miscEventClient } from "./misc";
 export { freeAgentQuotaClient } from "./free_agent_quota";
 export { audioClient } from "./audio";
 export { mediaClient } from "./media";
+export { mediaAiClient } from "./media_ai";
 export { imageGenerationClient } from "./image_generation";
 
 // =============================================================================
@@ -203,6 +241,7 @@ export type {
   McpConsentValue,
   McpConsentDecision,
   SetMcpToolConsentParams,
+  SetMcpToolTrustOverrideParams,
   McpConsentRequestPayload,
   McpConsentResponseParams,
 } from "./mcp";
@@ -285,6 +324,8 @@ export type {
   Theme,
   SetAppThemeParams,
   GetAppThemeParams,
+  SelectTemplateForPromptParams,
+  SelectTemplateForPromptResult,
   CustomTheme,
   CreateCustomThemeParams,
   UpdateCustomThemeParams,
@@ -348,6 +389,15 @@ export type {
   DeleteMediaFileParams,
   MoveMediaFileParams,
 } from "./media";
+
+// Media AI backend types
+export type {
+  MediaAiModelId,
+  MediaAiModelStatus,
+  MediaAiStatus,
+  MediaAiOperationResult,
+  DownloadMediaAiModelsParams,
+} from "./media_ai";
 
 // Image generation types
 export type {
@@ -415,6 +465,7 @@ import { miscClient, miscEventClient } from "./misc";
 import { freeAgentQuotaClient } from "./free_agent_quota";
 import { audioClient } from "./audio";
 import { mediaClient } from "./media";
+import { mediaAiClient } from "./media_ai";
 import { imageGenerationClient } from "./image_generation";
 import {
   embeddedModelClient,
@@ -424,6 +475,7 @@ import {
   modelMarketplaceClient,
   modelMarketplaceEventClient,
 } from "./model_marketplace";
+import { missionClient } from "./mission";
 
 /**
  * Unified IPC client with all domains organized by namespace.
@@ -482,9 +534,11 @@ export const ipc = {
   freeAgentQuota: freeAgentQuotaClient,
   audio: audioClient,
   media: mediaClient,
+  mediaAi: mediaAiClient,
   imageGeneration: imageGenerationClient,
   embeddedModel: embeddedModelClient,
   marketplace: modelMarketplaceClient,
+  mission: missionClient,
 
   // Event clients for main->renderer pub/sub
   events: {

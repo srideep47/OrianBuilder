@@ -15,6 +15,7 @@ import { ChatInput } from "./chat/ChatInput";
 import { VersionPane } from "./chat/VersionPane";
 import { FreeAgentQuotaBanner } from "./chat/FreeAgentQuotaBanner";
 import { NotificationBanner } from "./chat/NotificationBanner";
+import { MissionControl } from "./chat/MissionControl";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -25,7 +26,7 @@ import { ArrowDown } from "lucide-react";
 import { useSettings } from "@/hooks/useSettings";
 import { useFreeAgentQuota } from "@/hooks/useFreeAgentQuota";
 import { useChatMode } from "@/hooks/useChatMode";
-import { isDyadProEnabled } from "@/lib/schemas";
+import { isOrianBuilderProEnabled } from "@/lib/schemas";
 
 interface ChatPanelProps {
   chatId?: number;
@@ -50,7 +51,7 @@ export function ChatPanel({
   const { isQuotaExceeded } = useFreeAgentQuota();
   const showFreeAgentQuotaBanner =
     settings &&
-    !isDyadProEnabled(settings) &&
+    !isOrianBuilderProEnabled(settings) &&
     selectedMode === "local-agent" &&
     isQuotaExceeded;
 
@@ -274,7 +275,12 @@ export function ChatPanel({
                 }
               />
             )}
-            <NotificationBanner />
+            <div className="px-2 mb-3">
+              <div className="max-w-3xl mx-auto w-full">
+                <MissionControl chatId={chatId} />
+                <NotificationBanner />
+              </div>
+            </div>
             <ChatInput chatId={chatId} />
           </div>
         )}

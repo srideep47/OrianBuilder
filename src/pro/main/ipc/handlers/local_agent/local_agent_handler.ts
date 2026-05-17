@@ -4,6 +4,7 @@
  */
 
 import { IpcMainInvokeEvent } from "electron";
+import { createHash } from "node:crypto";
 import {
   streamText,
   ToolSet,
@@ -15,18 +16,23 @@ import {
 import log from "electron-log";
 
 import { db } from "@/db";
-import { chats, messages } from "@/db/schema";
-import { eq } from "drizzle-orm";
-
 import {
-  isDyadProEnabled,
-  isBasicAgentMode,
-  type UserSettings,
-} from "@/lib/schemas";
+  chats,
+  messages,
+  missionInterrupts,
+  missionMemories,
+  missionPermissionRequests,
+  missionWorkers,
+  missions,
+} from "@/db/schema";
+import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
+
+import { isOrianBuilderProEnabled, type UserSettings } from "@/lib/schemas";
 import { readSettings } from "@/main/settings";
-import { getDyadAppPath } from "@/paths/paths";
+import { getOrianBuilderAppPath } from "@/paths/paths";
 import { detectFrameworkType } from "@/ipc/utils/framework_utils";
 import { getModelClient } from "@/ipc/utils/get_model_client";
+import { getServerStatus } from "@/ipc/utils/embedded_inference_server";
 import { safeSend } from "@/ipc/utils/safe_sender";
 import {
   getMaxTokens,
@@ -36,7 +42,7 @@ import {
 import {
   getProviderOptions,
   getAiHeaders,
-  DYAD_INTERNAL_REQUEST_ID_HEADER,
+  ORIANBUILDER_INTERNAL_REQUEST_ID_HEADER,
 } from "@/ipc/utils/provider_options";
 
 import {
@@ -53,7 +59,10 @@ import {
 import { storeDbTimestampAtCurrentVersion } from "@/ipc/utils/neon_timestamp_utils";
 import { mcpManager } from "@/ipc/utils/mcp_manager";
 import { mcpServers } from "@/db/schema";
-import { requireMcpToolConsent } from "@/ipc/utils/mcp_consent";
+import {
+  getMcpToolTrustOverridesByToolKey,
+  requireMcpToolConsent,
+} from "@/ipc/utils/mcp_consent";
 import { getAiMessagesJsonIfWithinLimit } from "@/ipc/utils/ai_messages_utils";
 
 import type { ChatStreamParams, ChatResponseEnd } from "@/ipc/types";
@@ -72,11 +81,16 @@ import {
   hasIncompleteTodos,
   formatTodoSummary,
   ensureToolResultOrdering,
+  markIncompleteTodosCompleted,
   type InjectedMessage,
 } from "./prepare_step_utils";
-import { loadTodos } from "./todo_persistence";
-import { ensureDyadGitignored } from "@/ipc/handlers/gitignoreUtils";
+import { buildMissionInterruptMessage } from "@/ipc/utils/mission_interrupts";
+import { buildMissionMemoryMessage } from "@/ipc/utils/mission_memories";
+import { loadTodos, saveTodos } from "./todo_persistence";
+import { ensureOrianBuilderGitignored } from "@/ipc/handlers/gitignoreUtils";
 import { TOOL_DEFINITIONS } from "./tool_definitions";
+import { hasTextToolCallMarkers } from "./text_tool_call_parser";
+import { runTextToolCallFallback } from "./text_tool_call_executor";
 import {
   parseAiMessagesJson,
   type DbMessageForParsing,
@@ -96,7 +110,10 @@ import {
 } from "@/ipc/handlers/compaction/compaction_handler";
 import { getPostCompactionMessages } from "@/ipc/handlers/compaction/compaction_utils";
 import { DEFAULT_MAX_TOOL_CALL_STEPS } from "@/constants/settings_constants";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import {
   type RetryReplayEvent,
   maybeCaptureRetryReplayEvent,
@@ -104,6 +121,41 @@ import {
   maybeAppendRetryReplayForRetry,
 } from "./retry_replay_utils";
 import { setChatSummaryTool } from "./tools/set_chat_summary";
+import { packageNativeArtifactTool } from "./tools/package_native_artifact";
+import { deployPreviewTool } from "./tools/deploy_preview";
+import { browserQaGateTool } from "./tools/browser_qa_gate";
+import {
+  createMissionArtifact,
+  createMissionCheckpoint,
+  createMissionInterrupt,
+  finishMissionRun,
+  logMissionEvent,
+  startMissionRun,
+} from "@/ipc/utils/mission_utils";
+import {
+  getMissionEventSummaryForXml,
+  getMissionVerificationEventForXml,
+} from "@/ipc/utils/mission_verification";
+import { syncMissionTasksFromTodos } from "@/ipc/utils/mission_tasks";
+import { getMissionStructuredEventsForXml } from "@/ipc/utils/mission_xml_events";
+import { extractMissionVisualEventsForXml } from "@/ipc/utils/mission_visual_events";
+import { getAutonomyPolicyDecision } from "@/ipc/utils/autonomy_policy";
+import type { McpToolTrustOverrideMap } from "@/ipc/utils/mcp_tool_capabilities";
+import type { MissionAutonomyProfile } from "@/ipc/types/mission";
+import {
+  createToolFailureBudgetState,
+  getMissionRuntimeBudgetStatus,
+  MISSION_REPEATED_STEP_LOOP_LIMIT,
+  MISSION_RUNTIME_BUDGET_MS,
+  recordToolFailureForBudget,
+  recordToolSuccessForBudget,
+  type ToolFailureBudgetDecision,
+} from "@/ipc/utils/mission_budgets";
+import {
+  buildNativeTargetReminder,
+  detectNativeTargetIntentWithModel,
+  type NativeTargetIntent,
+} from "./native_target_intent";
 
 const logger = log.scope("local_agent_handler");
 const PLANNING_QUESTIONNAIRE_TOOL_NAME = "planning_questionnaire";
@@ -111,6 +163,13 @@ const MAX_TERMINATED_STREAM_RETRIES = 3;
 const STREAM_RETRY_BASE_DELAY_MS = 400;
 const STREAM_CONTINUE_MESSAGE =
   "[System] Your previous response stream was interrupted by a transient network error. Continue from exactly where you left off and do not repeat text that has already been sent.";
+
+function getMissionRunModelName(settings: UserSettings): string {
+  if (settings.selectedModel.provider !== "embedded") {
+    return settings.selectedModel.name;
+  }
+  return getServerStatus().modelName ?? settings.selectedModel.name;
+}
 
 const RETRYABLE_STREAM_ERROR_STATUS_CODES = new Set([
   408, 429, 500, 502, 503, 504,
@@ -165,6 +224,111 @@ function cleanupStreamingEntry(id: string): void {
 
 function findToolDefinition(toolName: string) {
   return TOOL_DEFINITIONS.find((t) => t.name === toolName);
+}
+
+type PlainTextToolCall = {
+  toolName: string;
+  args: Record<string, unknown>;
+  signature: string;
+};
+
+function decodeXmlText(value: string): string {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+function parsePlainTextToolAttributes(value: string): Record<string, unknown> {
+  const args: Record<string, unknown> = {};
+  const attrPattern = /([a-zA-Z0-9_-]+)="([^"]*)"/g;
+  let match: RegExpExecArray | null;
+  while ((match = attrPattern.exec(value)) !== null) {
+    args[match[1]] = decodeXmlText(match[2]).trim();
+  }
+  return args;
+}
+
+function parsePlainTextToolArgs(
+  attributes: string,
+  body: string,
+): Record<string, unknown> {
+  const args = parsePlainTextToolAttributes(attributes);
+  const childPattern = /<([a-zA-Z0-9_-]+)(?:\s[^>]*)?>([\s\S]*?)<\/\1>/g;
+  let match: RegExpExecArray | null;
+  let childCount = 0;
+  while ((match = childPattern.exec(body)) !== null) {
+    childCount += 1;
+    args[match[1]] = decodeXmlText(match[2]).trim();
+  }
+
+  const trimmedBody = decodeXmlText(body).trim();
+  if (childCount === 0 && trimmedBody.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(trimmedBody) as Record<string, unknown>;
+      return { ...args, ...parsed };
+    } catch {
+      return args;
+    }
+  }
+
+  return args;
+}
+
+function extractPlainTextToolCall(input: {
+  text: string;
+  availableToolNames: Set<string>;
+  alreadyExecuted: Set<string>;
+}): PlainTextToolCall | null {
+  const pattern = /<([a-zA-Z][a-zA-Z0-9_]*)(\s[^>]*)?>([\s\S]*?)<\/\1>/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(input.text)) !== null) {
+    const toolName = match[1];
+    if (
+      !input.availableToolNames.has(toolName) ||
+      toolName === setChatSummaryTool.name
+    ) {
+      continue;
+    }
+
+    const toolDef = findToolDefinition(toolName);
+    if (!toolDef) continue;
+
+    const rawArgs = parsePlainTextToolArgs(match[2] ?? "", match[3] ?? "");
+    const parsedArgs = toolDef.inputSchema.safeParse(rawArgs);
+    if (!parsedArgs.success) {
+      continue;
+    }
+
+    const signature = `${toolName}:${JSON.stringify(parsedArgs.data)}`;
+    if (input.alreadyExecuted.has(signature)) {
+      continue;
+    }
+
+    return {
+      toolName,
+      args: parsedArgs.data as Record<string, unknown>,
+      signature,
+    };
+  }
+
+  return null;
+}
+
+function stringifyManualToolResult(result: unknown): string {
+  if (
+    result &&
+    typeof result === "object" &&
+    "type" in result &&
+    (result as { type?: unknown }).type === "text" &&
+    "value" in result
+  ) {
+    return String((result as { value?: unknown }).value ?? "");
+  }
+  return typeof result === "string" ? result : JSON.stringify(result, null, 2);
 }
 
 function buildChatMessageHistory(
@@ -260,6 +424,43 @@ function injectReferencedAppsReminder(
   }
 }
 
+function injectUserMessageReminder(
+  messageHistory: ModelMessage[],
+  reminder: string,
+): void {
+  for (let i = messageHistory.length - 1; i >= 0; i--) {
+    const msg = messageHistory[i];
+    if (msg.role !== "user") continue;
+    if (typeof msg.content === "string") {
+      messageHistory[i] = { ...msg, content: `${msg.content}\n\n${reminder}` };
+    } else {
+      messageHistory[i] = {
+        ...msg,
+        content: [...msg.content, { type: "text", text: `\n\n${reminder}` }],
+      };
+    }
+    return;
+  }
+}
+
+function hasCompletedNativePackage(response: string): boolean {
+  return /<orianbuilder-native-package\b[^>]*status="passed"/.test(response);
+}
+
+function buildNativeTargetFollowUpMessage(
+  intent: NativeTargetIntent,
+): ModelMessage {
+  return {
+    role: "user",
+    content: [
+      {
+        type: "text",
+        text: `${buildNativeTargetReminder(intent)}\n\nYou have not completed the required native packaging artifact yet. Continue now. Do not stop after web UI work; run project checks and package_native_artifact with target="${intent.target}".`,
+      },
+    ],
+  };
+}
+
 function getMidTurnCompactionSummaryIds(
   chatMessages: Array<{
     id: number;
@@ -299,16 +500,18 @@ export async function handleLocalAgentStream(
   {
     placeholderMessageId,
     systemPrompt,
-    dyadRequestId,
+    orianbuilderRequestId,
     readOnly = false,
     planModeOnly = false,
     messageOverride,
     settingsOverride,
     referencedApps = [],
+    workspacePathOverride,
+    workerId,
   }: {
     placeholderMessageId: number;
     systemPrompt: string;
-    dyadRequestId: string;
+    orianbuilderRequestId: string;
     /**
      * If true, the agent operates in read-only mode (e.g., ask mode).
      * State-modifying tools are disabled, and no commits/deploys are made.
@@ -333,11 +536,30 @@ export async function handleLocalAgentStream(
       appName: string;
       appPath: string;
     }[];
+    /**
+     * Override the filesystem workspace used by local-agent tools. Mission
+     * workers use this to operate inside an isolated git worktree while keeping
+     * the parent app/chat identity for mission logging.
+     */
+    workspacePathOverride?: string;
+    workerId?: number;
   },
 ): Promise<boolean> {
   const settings = settingsOverride ?? readSettings();
+  const missionId = req.missionId;
+  let missionRunId: number | null = null;
+  let totalStepsExecuted = 0;
+  const missionStartedAtMs = Date.now();
   const maxToolCallSteps =
     settings.maxToolCallSteps ?? DEFAULT_MAX_TOOL_CALL_STEPS;
+  let toolFailureBudget = createToolFailureBudgetState();
+  const missionBudgetAbort: {
+    tool: Extract<ToolFailureBudgetDecision, { exceeded: true }> | null;
+    runtime: ReturnType<typeof getMissionRuntimeBudgetStatus> | null;
+  } = {
+    tool: null,
+    runtime: null,
+  };
   let fullResponse = "";
   let streamingPreview = ""; // Temporary preview for current tool, not persisted
   let activeRetryReplayEvents: RetryReplayEvent[] | null = null;
@@ -354,7 +576,7 @@ export async function handleLocalAgentStream(
       summary && summary.trim().length > 0
         ? summary
         : "Conversation compacted.";
-    const inlineCompaction = `<dyad-compaction title="Conversation compacted" state="finished">\n${escapeXmlContent(summaryText)}\n</dyad-compaction>`;
+    const inlineCompaction = `<orianbuilder-compaction title="Conversation compacted" state="finished">\n${escapeXmlContent(summaryText)}\n</orianbuilder-compaction>`;
     const backupPathNote = backupPath
       ? `\nIf you need to retrieve earlier parts of the conversation history, you can read the backup file at: ${backupPath}\nNote: This file may be large. Read only the sections you need or use grep to search for specific content rather than reading the entire file.`
       : "";
@@ -379,9 +601,9 @@ export async function handleLocalAgentStream(
   const initialChat = await loadChat();
 
   if (!initialChat || !initialChat.app) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Chat not found: ${req.chatId}`,
-      DyadErrorKind.NotFound,
+      OrianBuilderErrorKind.NotFound,
     );
   }
 
@@ -391,7 +613,65 @@ export async function handleLocalAgentStream(
     hiddenMessageIdsForStreaming.add(id);
   }
 
-  const appPath = getDyadAppPath(chat.app.path);
+  const appPath =
+    workspacePathOverride ?? getOrianBuilderAppPath(chat.app.path);
+  const activeMission = missionId
+    ? await db.query.missions.findFirst({
+        where: eq(missions.id, missionId),
+      })
+    : null;
+  const autonomyProfile: MissionAutonomyProfile =
+    activeMission?.autonomyProfile ??
+    settings.defaultMissionAutonomyProfile ??
+    (settings.autonomousMode ? "full-autopilot-sandbox" : "supervised");
+  const mcpToolTrustOverrides: McpToolTrustOverrideMap =
+    await getMcpToolTrustOverridesByToolKey().catch((err) => {
+      logger.warn("Failed to load MCP tool trust overrides:", err);
+      return {};
+    });
+  const missionRun = await startMissionRun({
+    missionId,
+    chatId: req.chatId,
+    messageId: placeholderMessageId,
+    model: getMissionRunModelName(settings),
+    requestId: orianbuilderRequestId,
+    metadata: {
+      appId: chat.app.id,
+      provider: settings.selectedModel.provider,
+      readOnly,
+      planModeOnly,
+      autonomyProfile,
+      maxToolCallSteps,
+      runtimeBudgetMs: MISSION_RUNTIME_BUDGET_MS,
+      retryPolicy: {
+        maxRetries: MAX_TERMINATED_STREAM_RETRIES,
+        baseDelayMs: STREAM_RETRY_BASE_DELAY_MS,
+      },
+      workspacePathOverride: workspacePathOverride ?? null,
+      workerId: workerId ?? null,
+    },
+  }).catch((err) => {
+    logger.warn("Failed to start mission run:", err);
+    return null;
+  });
+  missionRunId = missionRun?.id ?? null;
+  const mcpSessionId = missionRunId
+    ? `mission-run:${missionRunId}`
+    : `chat:${req.chatId}:${orianbuilderRequestId}`;
+  await logMissionEvent({
+    missionId,
+    eventType: "agent_stream_started",
+    summary: "Agent stream started",
+    metadata: {
+      chatId: req.chatId,
+      appId: chat.app.id,
+      readOnly,
+      planModeOnly,
+      autonomyProfile,
+      maxToolCallSteps,
+      runtimeBudgetMs: MISSION_RUNTIME_BUDGET_MS,
+    },
+  }).catch((err) => logger.warn("Failed to log mission start event:", err));
 
   const maybePerformPendingCompaction = async (options?: {
     showOnTopOfCurrentResponse?: boolean;
@@ -414,11 +694,11 @@ export async function handleLocalAgentStream(
       event,
       req.chatId,
       appPath,
-      dyadRequestId,
+      orianbuilderRequestId,
       (accumulatedSummary: string) => {
         // Stream compaction summary to the frontend in real-time.
         // During mid-turn compaction, keep already streamed content visible.
-        const compactionPreview = `<dyad-compaction title="Compacting conversation">\n${escapeXmlContent(accumulatedSummary)}\n</dyad-compaction>`;
+        const compactionPreview = `<orianbuilder-compaction title="Compacting conversation">\n${escapeXmlContent(accumulatedSummary)}\n</orianbuilder-compaction>`;
         const previewContent = options?.showOnTopOfCurrentResponse
           ? `${fullResponse}${streamingPreview ? streamingPreview : ""}\n${compactionPreview}`
           : compactionPreview;
@@ -503,6 +783,16 @@ export async function handleLocalAgentStream(
   // Store injected messages with their insertion index to re-inject at the same spot each step
   const allInjectedMessages: InjectedMessage[] = [];
   const warningMessages: string[] = [];
+  let missionStepCheckpointCount = 0;
+  // Counts native + fallback tool executions for this run. Used at stream
+  // completion to detect "dead" runs where the model never produced a usable
+  // tool call (common with local GGUFs lacking function-call support).
+  let totalNativeToolCalls = 0;
+  let totalFallbackToolCalls = 0;
+  let textToolCallFallbackAttempts = 0;
+  const MAX_TEXT_TOOL_CALL_FALLBACK_ATTEMPTS = 6;
+  const recentStepSignatures: string[] = [];
+  const warnedStepLoopSignatures = new Set<string>();
 
   try {
     // Get model client
@@ -510,14 +800,21 @@ export async function handleLocalAgentStream(
       settings.selectedModel,
       settings,
     );
+    const nativeTargetIntent =
+      !readOnly && !planModeOnly && !messageOverride
+        ? await detectNativeTargetIntentWithModel({
+            prompt: req.prompt,
+            model: modelClient.model,
+          })
+        : null;
 
     // Load persisted todos from a previous turn (if any)
     const persistedTodos = await loadTodos(appPath, chat.id);
-    // Ensure .dyad/ is gitignored (idempotent; also done by compaction/plans)
+    // Ensure .orianbuilder/ is gitignored (idempotent; also done by compaction/plans)
     // Skip in read-only/plan-only mode to avoid modifying the workspace
     if (!readOnly && !planModeOnly) {
-      await ensureDyadGitignored(appPath).catch((err: unknown) =>
-        logger.warn("Failed to ensure .dyad gitignored:", err),
+      await ensureOrianBuilderGitignored(appPath).catch((err: unknown) =>
+        logger.warn("Failed to ensure .orianbuilder gitignored:", err),
       );
     }
     if (persistedTodos.length > 0) {
@@ -533,12 +830,20 @@ export async function handleLocalAgentStream(
     const referencedAppsMap = new Map(
       referencedApps.map((ref) => [ref.appName.toLowerCase(), ref.appPath]),
     );
+    let producedNativePackageArtifact = false;
+    let attemptedNativePackageArtifact = false;
+    let producedDeploymentUrl = false;
+    let producedBrowserQaScreenshotArtifact = false;
+    let passedBrowserQaGate = false;
     const ctx: AgentContext = {
       event,
       appId: chat.app.id,
       appPath,
       referencedApps: referencedAppsMap,
       chatId: chat.id,
+      missionId,
+      missionRunId,
+      workerId: workerId ?? null,
       supabaseProjectId: chat.app.supabaseProjectId,
       supabaseOrganizationSlug: chat.app.supabaseOrganizationSlug,
       neonProjectId: chat.app.neonProjectId,
@@ -548,9 +853,10 @@ export async function handleLocalAgentStream(
       messageId: placeholderMessageId,
       isSharedModulesChanged: false,
       todos: persistedTodos,
-      dyadRequestId,
+      orianbuilderRequestId,
       fileEditTracker,
-      isDyadPro: isDyadProEnabled(settings),
+      installEtargetRecoveryCount: 0,
+      isOrianBuilderPro: isOrianBuilderProEnabled(settings),
       onXmlStream: (accumulatedXml: string) => {
         // Stream accumulated XML to UI without persisting
         streamingPreview = accumulatedXml;
@@ -564,10 +870,55 @@ export async function handleLocalAgentStream(
         );
       },
       onXmlComplete: (finalXml: string) => {
+        if (finalXml.startsWith("<orianbuilder-native-package")) {
+          attemptedNativePackageArtifact = true;
+        }
+        if (
+          finalXml.startsWith("<orianbuilder-native-package") &&
+          /\bstatus="passed"/.test(finalXml)
+        ) {
+          producedNativePackageArtifact = true;
+        }
+        const deploymentUrl = finalXml.startsWith(
+          "<orianbuilder-deploy-preview",
+        )
+          ? finalXml.match(/\burl="([^"]+)"/)?.[1]
+          : null;
+        if (deploymentUrl) {
+          producedDeploymentUrl = true;
+        }
+        if (
+          (finalXml.startsWith("<orianbuilder-screenshot") ||
+            finalXml.startsWith("<orianbuilder-browser-action")) &&
+          /\bpath="[^"]+"/.test(finalXml)
+        ) {
+          producedBrowserQaScreenshotArtifact = true;
+        }
+        if (finalXml.startsWith("<orianbuilder-browser-qa")) {
+          const hasDesktopScreenshot = /\bdesktop-path="[^"]+"/.test(finalXml);
+          const hasMobileScreenshot = /\bmobile-path="[^"]+"/.test(finalXml);
+          const screenshotGatePassed =
+            /\bscreenshot-status="passed"/.test(finalXml) &&
+            hasDesktopScreenshot &&
+            hasMobileScreenshot;
+          producedBrowserQaScreenshotArtifact =
+            producedBrowserQaScreenshotArtifact || screenshotGatePassed;
+          passedBrowserQaGate =
+            /\bstatus="passed"/.test(finalXml) && screenshotGatePassed;
+        }
         // Write final XML to DB and UI
         const xmlChunk = `${finalXml}\n`;
         fullResponse += xmlChunk;
         streamingPreview = ""; // Clear preview
+        logMissionEventsForXml({
+          missionId,
+          missionRunId,
+          workerId,
+          chatId: req.chatId,
+          xml: finalXml,
+        }).catch((err) =>
+          logger.warn("Failed to log mission agent output event:", err),
+        );
         updateResponseInDb(placeholderMessageId, fullResponse);
         sendResponseChunk(
           event,
@@ -583,12 +934,75 @@ export async function handleLocalAgentStream(
         toolDescription?: string | null;
         inputPreview?: string | null;
       }) => {
-        return requireAgentToolConsent(event, {
+        const policy = getAutonomyPolicyDecision({
+          profile: autonomyProfile,
+          runtimeMode: settings.runtimeMode2 ?? "host",
+          toolName: params.toolName,
+          inputPreview: params.inputPreview,
+          mcpToolTrustOverrides,
+        });
+        logMissionEvent({
+          missionId,
+          eventType: "agent_tool_policy_decision",
+          summary: `${policy.decision.replace("_", " ")}: ${params.toolName}`,
+          metadata: {
+            chatId: chat.id,
+            toolName: params.toolName,
+            decision: policy.decision,
+            risk: policy.risk,
+            reason: policy.reason,
+            autonomyProfile,
+            runtimeMode: settings.runtimeMode2 ?? "host",
+            mcpTrustOverrideApplied: mcpToolTrustOverrides[params.toolName]
+              ? true
+              : undefined,
+          },
+        }).catch((err) =>
+          logger.warn("Failed to log autonomy policy decision:", err),
+        );
+
+        if (policy.decision === "deny") {
+          throw new OrianBuilderError(
+            policy.reason,
+            OrianBuilderErrorKind.Precondition,
+          );
+        }
+
+        if (policy.decision === "auto_approve") {
+          logger.info(
+            `Autonomy policy auto-approved local-agent tool ${params.toolName} for chat ${chat.id}`,
+          );
+          return true;
+        }
+
+        const permissionRequest = missionId
+          ? await createMissionPermissionRequestForTool({
+              missionId,
+              runId: missionRunId,
+              toolName: params.toolName,
+              inputPreview: params.inputPreview,
+              risk: policy.risk === "critical" ? "high" : policy.risk,
+              reason: policy.reason,
+            }).catch((err) => {
+              logger.warn("Failed to persist permission request:", err);
+              return null;
+            })
+          : null;
+        const allowed = await requireAgentToolConsent(event, {
           chatId: chat.id,
           toolName: params.toolName as AgentToolName,
           toolDescription: params.toolDescription,
           inputPreview: params.inputPreview,
         });
+        if (permissionRequest) {
+          await resolveMissionPermissionRequestForTool({
+            requestId: permissionRequest.id,
+            status: allowed ? "approved" : "denied",
+          }).catch((err) =>
+            logger.warn("Failed to resolve permission request:", err),
+          );
+        }
+        return allowed;
       },
       appendUserMessage: (content: UserMessageContentPart[]) => {
         pendingUserMessages.push(content);
@@ -598,9 +1012,82 @@ export async function handleLocalAgentStream(
           chatId: chat.id,
           todos,
         });
+        syncMissionTasksFromTodos({ missionId, todos }).catch((err) =>
+          logger.warn("Failed to sync mission tasks:", err),
+        );
       },
       onWarningMessage: (message) => {
         warningMessages.push(message);
+      },
+      onToolExecutionStart: (params) => {
+        if (params.toolName === packageNativeArtifactTool.name) {
+          attemptedNativePackageArtifact = true;
+        }
+        logMissionEvent({
+          missionId,
+          eventType: "agent_tool_execution_started",
+          summary: `Tool started: ${params.toolName}`,
+          metadata: {
+            chatId: chat.id,
+            runId: missionRunId,
+            workerId: workerId ?? null,
+            toolName: params.toolName,
+            inputPreview: params.inputPreview ?? null,
+            modifiesState: params.modifiesState,
+          },
+        }).catch((err) =>
+          logger.warn("Failed to log tool execution start:", err),
+        );
+      },
+      onToolExecutionComplete: (params) => {
+        if (params.status === "failed") {
+          const decision = recordToolFailureForBudget({
+            state: toolFailureBudget,
+            toolName: params.toolName,
+          });
+          toolFailureBudget = decision.state;
+          if (decision.exceeded && !missionBudgetAbort.tool) {
+            missionBudgetAbort.tool = decision;
+            abortController.abort();
+          }
+        } else {
+          toolFailureBudget = recordToolSuccessForBudget({
+            state: toolFailureBudget,
+            toolName: params.toolName,
+          });
+        }
+        const metadata = {
+          chatId: chat.id,
+          runId: missionRunId,
+          workerId: workerId ?? null,
+          toolName: params.toolName,
+          status: params.status,
+          durationMs: params.durationMs,
+          outputPreview: params.outputPreview ?? null,
+          error: params.error ?? null,
+          modifiesState: params.modifiesState,
+          failureBudget: {
+            totalFailures: toolFailureBudget.totalFailures,
+            consecutiveFailures:
+              toolFailureBudget.consecutiveFailuresByTool[params.toolName] ?? 0,
+          },
+        };
+        logMissionEvent({
+          missionId,
+          eventType: "agent_tool_execution_completed",
+          summary: `Tool ${params.status}: ${params.toolName}`,
+          metadata,
+        }).catch((err) =>
+          logger.warn("Failed to log tool execution completion:", err),
+        );
+        createMissionCheckpoint({
+          missionId,
+          runId: missionRunId,
+          summary: `Tool ${params.status}: ${params.toolName}`,
+          metadata,
+        }).catch((err) =>
+          logger.warn("Failed to checkpoint tool execution:", err),
+        );
       },
     };
 
@@ -611,10 +1098,12 @@ export async function handleLocalAgentStream(
     const agentTools = buildAgentToolSet(ctx, {
       readOnly,
       planModeOnly,
-      basicAgentMode: !readOnly && !planModeOnly && isBasicAgentMode(settings),
+      autopilotMode: autonomyProfile === "full-autopilot-sandbox",
     });
     const mcpTools =
-      readOnly || planModeOnly ? {} : await getMcpTools(event, ctx);
+      readOnly || planModeOnly
+        ? {}
+        : await getMcpTools(event, ctx, mcpSessionId);
     const allTools: ToolSet = { ...agentTools, ...mcpTools };
 
     // Prepare message history with graceful fallback
@@ -631,6 +1120,12 @@ export async function handleLocalAgentStream(
     if (referencedApps.length > 0) {
       injectReferencedAppsReminder(messageHistory, referencedApps);
     }
+    if (nativeTargetIntent) {
+      injectUserMessageReminder(
+        messageHistory,
+        `<system-reminder>\n${buildNativeTargetReminder(nativeTargetIntent)}\n</system-reminder>`,
+      );
+    }
 
     // Used to swap out pre-compaction history while preserving in-flight turn steps.
     let baseMessageHistoryCount = messageHistory.length;
@@ -644,17 +1139,25 @@ export async function handleLocalAgentStream(
     let compactionIndexDelta = 0;
 
     const maxOutputTokens = await getMaxTokens(settings.selectedModel);
-    const temperature = await getTemperature(settings.selectedModel);
+    const temperature =
+      settings.selectedModel.provider === "embedded"
+        ? undefined
+        : await getTemperature(settings.selectedModel);
 
     // Run one or more generation passes. If the model emits a chat message while
     // there are still incomplete todos, we append a reminder and do another pass.
     const maxTodoFollowUpLoops = 1;
     let todoFollowUpLoops = 0;
+    const maxNativeTargetFollowUpLoops = 0;
+    let nativeTargetFollowUpLoops = 0;
+    const maxPlainTextToolFollowUpLoops = 6;
+    let plainTextToolFollowUpLoops = 0;
+    const executedPlainTextToolSignatures = new Set<string>();
     let hasInjectedPlanningQuestionnaireReflection = false;
+    let hasInjectedMissionMemories = false;
     let currentMessageHistory = messageHistory;
     const accumulatedAiMessages: ModelMessage[] = [];
     // Track total steps across all passes to detect step limit
-    let totalStepsExecuted = 0;
 
     // If there are persisted todos from a previous turn, inject a synthetic
     // user message so the LLM is aware of them. Inserted BEFORE the user's
@@ -736,12 +1239,12 @@ export async function handleLocalAgentStream(
               ...getAiHeaders({
                 builtinProviderId: modelClient.builtinProviderId,
               }),
-              [DYAD_INTERNAL_REQUEST_ID_HEADER]: dyadRequestId,
+              [ORIANBUILDER_INTERNAL_REQUEST_ID_HEADER]: orianbuilderRequestId,
             },
             providerOptions: getProviderOptions({
-              dyadAppId: chat.app.id,
-              dyadRequestId,
-              dyadDisableFiles: true, // Local agent uses tools, not file injection
+              orianbuilderAppId: chat.app.id,
+              orianbuilderRequestId,
+              orianbuilderDisableFiles: true, // Local agent uses tools, not file injection
               files: [],
               mentionedAppsCodebases: [],
               builtinProviderId: modelClient.builtinProviderId,
@@ -757,6 +1260,17 @@ export async function handleLocalAgentStream(
               stepCountIs(maxToolCallSteps),
               // User needs to explicitly set up integration before AI can continue.
               hasToolCall(addIntegrationTool.name),
+              ...(nativeTargetIntent
+                ? [
+                    hasRepeatedToolSignature(
+                      "run_project_check",
+                      MISSION_REPEATED_STEP_LOOP_LIMIT - 1,
+                    ),
+                    hasToolCall(browserQaGateTool.name),
+                    hasToolCall(packageNativeArtifactTool.name),
+                    hasToolCall(deployPreviewTool.name),
+                  ]
+                : []),
               // In plan mode, also stop after writing a plan or exiting plan mode.
               ...(planModeOnly
                 ? [
@@ -816,6 +1330,12 @@ export async function handleLocalAgentStream(
                       referencedApps,
                     );
                   }
+                  if (nativeTargetIntent) {
+                    injectUserMessageReminder(
+                      compactedMessageHistory,
+                      `<system-reminder>\n${buildNativeTargetReminder(nativeTargetIntent)}\n</system-reminder>`,
+                    );
+                  }
                   baseMessageHistoryCount = compactedMessageHistory.length;
                   // The compacted history includes the compaction summary, but the
                   // AI SDK's initialMessages does not. Track the delta so we can
@@ -834,6 +1354,73 @@ export async function handleLocalAgentStream(
                 } else {
                   // Prevent repeated compaction attempts if the first one fails.
                   compactionFailedMidTurn = true;
+                }
+              }
+
+              if (
+                !messageOverride &&
+                missionId &&
+                activeMission &&
+                !hasInjectedMissionMemories
+              ) {
+                const missionMemoryMessage = buildMissionMemoryMessage(
+                  await loadMissionMemoriesForInjection({
+                    appId: activeMission.appId,
+                    missionId,
+                  }),
+                );
+                if (missionMemoryMessage) {
+                  stepOptions = {
+                    ...stepOptions,
+                    messages: [...stepOptions.messages, missionMemoryMessage],
+                  };
+                  await logMissionEvent({
+                    missionId,
+                    eventType: "mission_memories_injected",
+                    summary: "Mission memories injected into agent loop",
+                    metadata: {
+                      runId: missionRunId,
+                      chatId: req.chatId,
+                    },
+                  }).catch((err) =>
+                    logger.warn("Failed to log memory injection:", err),
+                  );
+                }
+                hasInjectedMissionMemories = true;
+              }
+
+              if (!messageOverride && missionId) {
+                const pendingInterrupts =
+                  await loadPendingMissionInterrupts(missionId);
+                const interruptMessage =
+                  buildMissionInterruptMessage(pendingInterrupts);
+                if (interruptMessage) {
+                  stepOptions = {
+                    ...stepOptions,
+                    messages: [...stepOptions.messages, interruptMessage],
+                  };
+                  await markMissionInterruptsInjected({
+                    missionId,
+                    interruptIds: pendingInterrupts.map(
+                      (interrupt) => interrupt.id,
+                    ),
+                  });
+                  await logMissionEvent({
+                    missionId,
+                    eventType: "mission_interrupts_injected",
+                    summary: `${pendingInterrupts.length} interrupt${pendingInterrupts.length === 1 ? "" : "s"} injected into agent loop`,
+                    metadata: {
+                      runId: missionRunId,
+                      interruptIds: pendingInterrupts.map(
+                        (interrupt) => interrupt.id,
+                      ),
+                      sources: pendingInterrupts.map(
+                        (interrupt) => interrupt.source,
+                      ),
+                    },
+                  }).catch((err) =>
+                    logger.warn("Failed to log interrupt injection:", err),
+                  );
                 }
               }
 
@@ -903,6 +1490,176 @@ export async function handleLocalAgentStream(
                     `Injected synthetic planning_questionnaire reflection message for chat ${req.chatId}`,
                   );
                 }
+              }
+
+              missionStepCheckpointCount += 1;
+              const stepToolNames = getStepToolNames(step);
+              const stepSignature = getStepSignature(step.toolCalls);
+              const stepMetadata = {
+                chatId: req.chatId,
+                runId: missionRunId,
+                stepNumber: missionStepCheckpointCount,
+                totalStepsObserved:
+                  totalStepsExecuted + missionStepCheckpointCount,
+                toolNames: stepToolNames,
+                toolCallCount: step.toolCalls.length,
+                textLength: step.text?.length ?? 0,
+                usage: step.usage,
+              };
+
+              totalNativeToolCalls += step.toolCalls.length;
+
+              // Text-tool-call fallback: triggered when the model emits a tool
+              // call as prose instead of through the AI SDK's structured slot
+              // (common with local GGUFs like Qwen, DeepSeek, plain Llama 3.x).
+              // We parse the text, execute what we safely can, and inject a
+              // synthetic user message containing the results so the model can
+              // continue. After MAX_TEXT_TOOL_CALL_FALLBACK_ATTEMPTS unsuccessful
+              // recoveries, we abort the run so the user can switch models.
+              if (
+                step.toolCalls.length === 0 &&
+                typeof step.text === "string" &&
+                hasTextToolCallMarkers(step.text) &&
+                textToolCallFallbackAttempts <
+                  MAX_TEXT_TOOL_CALL_FALLBACK_ATTEMPTS
+              ) {
+                textToolCallFallbackAttempts += 1;
+                try {
+                  const outcome = await runTextToolCallFallback({
+                    assistantText: step.text,
+                    ctx,
+                    autopilot:
+                      autonomyProfile === "full-autopilot-sandbox" ||
+                      autonomyProfile === "trusted-workspace",
+                  });
+                  if (outcome) {
+                    totalFallbackToolCalls += outcome.executed.length;
+                    if (outcome.reminder) {
+                      pendingUserMessages.push(outcome.reminder);
+                    }
+                    await logMissionEvent({
+                      missionId,
+                      eventType: "model_emitted_tool_call_as_text",
+                      summary: `Model emitted ${outcome.parsed.length} tool call(s) as text on step ${missionStepCheckpointCount}; recovered ${outcome.executed.length}, skipped ${outcome.failed.length}`,
+                      metadata: {
+                        ...stepMetadata,
+                        attempt: textToolCallFallbackAttempts,
+                        parsedToolNames: outcome.parsed.map(
+                          (entry) => entry.toolName,
+                        ),
+                        executedToolNames: outcome.executed.map(
+                          (entry) => entry.toolName,
+                        ),
+                        failedToolNames: outcome.failed.map(
+                          (entry) => entry.toolName,
+                        ),
+                      },
+                    }).catch((err) =>
+                      logger.warn(
+                        "Failed to log text-tool-call fallback event:",
+                        err,
+                      ),
+                    );
+                  }
+                } catch (err) {
+                  logger.warn(
+                    "Text-tool-call fallback threw unexpectedly:",
+                    err,
+                  );
+                }
+
+                if (
+                  textToolCallFallbackAttempts >=
+                  MAX_TEXT_TOOL_CALL_FALLBACK_ATTEMPTS
+                ) {
+                  warningMessages.push(
+                    "Model emitted tool calls as plain text repeatedly. Switch to a provider that supports function calling (OpenAI, Anthropic, Gemini, or a GGUF with a tool-call template) to continue.",
+                  );
+                  await logMissionEvent({
+                    missionId,
+                    eventType:
+                      "model_emitted_tool_call_as_text_abort_threshold",
+                    summary:
+                      "Aborting stream: model repeatedly emitted tool calls as text",
+                    metadata: {
+                      ...stepMetadata,
+                      attempts: textToolCallFallbackAttempts,
+                    },
+                  }).catch(() => {});
+                  abortController.abort();
+                }
+              }
+
+              await createMissionCheckpoint({
+                missionId,
+                runId: missionRunId,
+                summary: `Agent step ${missionStepCheckpointCount} completed`,
+                metadata: stepMetadata,
+              }).catch((err) =>
+                logger.warn("Failed to create mission step checkpoint:", err),
+              );
+              await logMissionEvent({
+                missionId,
+                eventType: "agent_step_checkpointed",
+                summary: `Agent step ${missionStepCheckpointCount} checkpointed`,
+                metadata: stepMetadata,
+              }).catch((err) =>
+                logger.warn("Failed to log mission step checkpoint:", err),
+              );
+
+              if (stepSignature) {
+                recentStepSignatures.push(stepSignature);
+                if (
+                  recentStepSignatures.length > MISSION_REPEATED_STEP_LOOP_LIMIT
+                ) {
+                  recentStepSignatures.shift();
+                }
+                const isRepeatedLoop =
+                  recentStepSignatures.length ===
+                    MISSION_REPEATED_STEP_LOOP_LIMIT &&
+                  recentStepSignatures.every(
+                    (signature) => signature === stepSignature,
+                  );
+                if (
+                  isRepeatedLoop &&
+                  !warnedStepLoopSignatures.has(stepSignature)
+                ) {
+                  warnedStepLoopSignatures.add(stepSignature);
+                  const loopMetadata = {
+                    ...stepMetadata,
+                    signature: stepSignature,
+                    repeatedCount: recentStepSignatures.length,
+                    repeatedStepLoopLimit: MISSION_REPEATED_STEP_LOOP_LIMIT,
+                  };
+                  await logMissionEvent({
+                    missionId,
+                    eventType: "mission_stuck_loop_warning",
+                    summary: `Possible stuck loop: ${stepSignature}`,
+                    metadata: loopMetadata,
+                  }).catch((err) =>
+                    logger.warn("Failed to log stuck-loop warning:", err),
+                  );
+                  await createMissionCheckpoint({
+                    missionId,
+                    runId: missionRunId,
+                    summary: `Possible stuck loop: ${stepSignature}`,
+                    metadata: loopMetadata,
+                  }).catch((err) =>
+                    logger.warn(
+                      "Failed to checkpoint stuck-loop warning:",
+                      err,
+                    ),
+                  );
+                }
+              }
+
+              const runtimeBudgetStatus = getMissionRuntimeBudgetStatus({
+                startedAtMs: missionStartedAtMs,
+                nowMs: Date.now(),
+              });
+              if (runtimeBudgetStatus.exceeded) {
+                missionBudgetAbort.runtime = runtimeBudgetStatus;
+                abortController.abort();
               }
 
               if (
@@ -1141,10 +1898,19 @@ export async function handleLocalAgentStream(
                 STREAM_RETRY_BASE_DELAY_MS * terminatedRetryCount;
               sendTelemetryEvent("local_agent:terminated_stream_retry", {
                 chatId: req.chatId,
-                dyadRequestId,
+                orianbuilderRequestId,
                 retryCount: terminatedRetryCount,
                 error: String(streamError),
                 phase: "stream_iteration",
+              });
+              await logMissionRetryScheduled({
+                missionId,
+                missionRunId,
+                chatId: req.chatId,
+                retryCount: terminatedRetryCount,
+                retryDelayMs,
+                phase: "stream_iteration",
+                error: streamError,
               });
               logger.warn(
                 `Transient stream termination for chat ${req.chatId}; retrying pass (${terminatedRetryCount}/${MAX_TERMINATED_STREAM_RETRIES}) after ${retryDelayMs}ms`,
@@ -1156,7 +1922,7 @@ export async function handleLocalAgentStream(
               "local_agent:terminated_stream_retries_exhausted",
               {
                 chatId: req.chatId,
-                dyadRequestId,
+                orianbuilderRequestId,
                 retryCount: terminatedRetryCount,
                 error: String(streamError),
                 phase: "stream_iteration",
@@ -1190,10 +1956,19 @@ export async function handleLocalAgentStream(
                 STREAM_RETRY_BASE_DELAY_MS * terminatedRetryCount;
               sendTelemetryEvent("local_agent:terminated_stream_retry", {
                 chatId: req.chatId,
-                dyadRequestId,
+                orianbuilderRequestId,
                 retryCount: terminatedRetryCount,
                 error: String(err),
                 phase: "response_finalization",
+              });
+              await logMissionRetryScheduled({
+                missionId,
+                missionRunId,
+                chatId: req.chatId,
+                retryCount: terminatedRetryCount,
+                retryDelayMs,
+                phase: "response_finalization",
+                error: err,
               });
               logger.warn(
                 `Transient stream termination while finalizing response for chat ${req.chatId}; retrying pass (${terminatedRetryCount}/${MAX_TERMINATED_STREAM_RETRIES}) after ${retryDelayMs}ms`,
@@ -1206,7 +1981,7 @@ export async function handleLocalAgentStream(
                 "local_agent:terminated_stream_retries_exhausted",
                 {
                   chatId: req.chatId,
-                  dyadRequestId,
+                  orianbuilderRequestId,
                   retryCount: terminatedRetryCount,
                   error: String(err),
                   phase: "response_finalization",
@@ -1269,6 +2044,80 @@ export async function handleLocalAgentStream(
           stepOnlyCalledTool(lastStep, setChatSummaryTool.name));
 
       if (
+        passEndedWithText &&
+        plainTextToolFollowUpLoops < maxPlainTextToolFollowUpLoops
+      ) {
+        const plainTextToolCall = extractPlainTextToolCall({
+          text: fullResponse,
+          availableToolNames: new Set(Object.keys(allTools)),
+          alreadyExecuted: executedPlainTextToolSignatures,
+        });
+
+        if (plainTextToolCall) {
+          executedPlainTextToolSignatures.add(plainTextToolCall.signature);
+          plainTextToolFollowUpLoops += 1;
+
+          await logMissionEvent({
+            missionId,
+            eventType: "agent_plain_text_tool_recovered",
+            summary: `Recovered plain-text tool call: ${plainTextToolCall.toolName}`,
+            metadata: {
+              chatId: req.chatId,
+              runId: missionRunId,
+              toolName: plainTextToolCall.toolName,
+              args: plainTextToolCall.args,
+              loop: plainTextToolFollowUpLoops,
+            },
+          }).catch((err) =>
+            logger.warn("Failed to log plain-text tool recovery:", err),
+          );
+
+          const tool = (allTools as Record<string, any>)[
+            plainTextToolCall.toolName
+          ];
+          let toolResultText = "";
+          try {
+            const result = await tool.execute(plainTextToolCall.args);
+            toolResultText = stringifyManualToolResult(result);
+          } catch (error) {
+            toolResultText =
+              error instanceof Error ? error.message : String(error);
+          }
+
+          currentMessageHistory = [
+            ...currentMessageHistory,
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: `[System] You emitted <${plainTextToolCall.toolName}> as plain XML text instead of making a real tool call. The backend executed that tool for you.\n\nTool result:\n${toolResultText.slice(0, 8000)}\n\nContinue the user's request from this result. Use real tool calls for future actions; do not print tool XML as prose.`,
+                },
+              ],
+            },
+          ];
+          continue;
+        }
+      }
+
+      if (
+        nativeTargetIntent &&
+        passEndedWithText &&
+        !hasCompletedNativePackage(fullResponse) &&
+        nativeTargetFollowUpLoops < maxNativeTargetFollowUpLoops
+      ) {
+        nativeTargetFollowUpLoops += 1;
+        currentMessageHistory = [
+          ...currentMessageHistory,
+          buildNativeTargetFollowUpMessage(nativeTargetIntent),
+        ];
+        logger.info(
+          `Starting native target follow-up pass ${nativeTargetFollowUpLoops}/${maxNativeTargetFollowUpLoops} for chat ${req.chatId}`,
+        );
+        continue;
+      }
+
+      if (
         !shouldRunTodoFollowUpPass({
           readOnly,
           planModeOnly,
@@ -1298,12 +2147,99 @@ export async function handleLocalAgentStream(
 
     // Handle cancellation paths where stream processing exits cleanly after abort.
     if (abortController.signal.aborted) {
+      const toolBudgetAbortReason = missionBudgetAbort.tool;
+      const runtimeBudgetAbortReason = missionBudgetAbort.runtime;
+      if (toolBudgetAbortReason) {
+        const budgetXml = `<orianbuilder-step-limit steps="${totalStepsExecuted}" limit="${maxToolCallSteps}">Automatically paused because ${escapeXmlContent(toolBudgetAbortReason.reason)}</orianbuilder-step-limit>`;
+        fullResponse += `\n\n${budgetXml}`;
+        const metadata = {
+          chatId: req.chatId,
+          runId: missionRunId,
+          workerId: workerId ?? null,
+          budgetType: toolBudgetAbortReason.budgetType,
+          toolName: toolBudgetAbortReason.toolName,
+          count: toolBudgetAbortReason.count,
+          limit: toolBudgetAbortReason.limit,
+          reason: toolBudgetAbortReason.reason,
+          totalStepsExecuted,
+        };
+        await logMissionEvent({
+          missionId,
+          eventType: "mission_budget_limit_reached",
+          summary: `Tool failure budget reached: ${toolBudgetAbortReason.reason}`,
+          metadata,
+        }).catch((err) =>
+          logger.warn("Failed to log mission tool-failure budget:", err),
+        );
+        await createMissionCheckpoint({
+          missionId,
+          runId: missionRunId,
+          summary: `Tool failure budget reached: ${toolBudgetAbortReason.reason}`,
+          metadata,
+        }).catch((err) =>
+          logger.warn("Failed to checkpoint mission tool-failure budget:", err),
+        );
+      } else if (runtimeBudgetAbortReason) {
+        const budgetXml = `<orianbuilder-step-limit steps="${totalStepsExecuted}" limit="${maxToolCallSteps}">Automatically paused after exceeding the mission runtime budget.</orianbuilder-step-limit>`;
+        fullResponse += `\n\n${budgetXml}`;
+        const metadata = {
+          chatId: req.chatId,
+          runId: missionRunId,
+          workerId: workerId ?? null,
+          budgetType: "runtime",
+          elapsedMs: runtimeBudgetAbortReason.elapsedMs,
+          limitMs: runtimeBudgetAbortReason.limit,
+          totalStepsExecuted,
+        };
+        await logMissionEvent({
+          missionId,
+          eventType: "mission_budget_limit_reached",
+          summary: `Runtime budget reached after ${runtimeBudgetAbortReason.elapsedMs}ms`,
+          metadata,
+        }).catch((err) =>
+          logger.warn("Failed to log mission runtime budget:", err),
+        );
+        await createMissionCheckpoint({
+          missionId,
+          runId: missionRunId,
+          summary: "Runtime budget reached",
+          metadata,
+        }).catch((err) =>
+          logger.warn("Failed to checkpoint mission runtime budget:", err),
+        );
+      }
       await db
         .update(messages)
         .set({
           content: appendCancelledResponseNotice(fullResponse ?? ""),
         })
         .where(eq(messages.id, placeholderMessageId));
+      await logMissionEvent({
+        missionId,
+        eventType: "agent_stream_cancelled",
+        summary: "Agent stream was cancelled",
+        metadata: { chatId: req.chatId },
+      }).catch((err) =>
+        logger.warn("Failed to log mission cancellation event:", err),
+      );
+      await finishMissionRun({
+        runId: missionRunId,
+        status: "cancelled",
+        totalStepsExecuted,
+      }).catch((err) => logger.warn("Failed to finish mission run:", err));
+      await createMissionCheckpoint({
+        missionId,
+        runId: missionRunId,
+        summary: "Mission run cancelled",
+        metadata: {
+          chatId: req.chatId,
+          totalStepsExecuted,
+          responseLength: fullResponse.length,
+        },
+      }).catch((err) =>
+        logger.warn("Failed to create mission checkpoint:", err),
+      );
+      releaseMcpSession(mcpSessionId);
       return false; // Cancelled - don't consume quota
     }
 
@@ -1312,9 +2248,142 @@ export async function handleLocalAgentStream(
       accumulatedAiMessages.length === 0 &&
       totalStepsExecuted === 0
     ) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "The model stream ended without producing any text or tool calls. This is usually a local model/provider issue; try again or switch to a larger tool-capable model.",
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
+      );
+    }
+
+    const executeNativeAutofinishTool = async (
+      tool:
+        | typeof browserQaGateTool
+        | typeof packageNativeArtifactTool
+        | typeof deployPreviewTool,
+      args: Record<string, unknown>,
+      inputPreview: string,
+    ) => {
+      const allowed = await ctx.requireConsent({
+        toolName: tool.name,
+        toolDescription: tool.description,
+        inputPreview,
+      });
+      if (!allowed) {
+        return false;
+      }
+
+      const modifiesState = tool.modifiesState === true;
+      ctx.onToolExecutionStart?.({
+        toolName: tool.name,
+        inputPreview,
+        modifiesState,
+      });
+      try {
+        const output = await tool.execute(args as never, ctx);
+        ctx.onToolExecutionComplete?.({
+          toolName: tool.name,
+          status: "completed",
+          durationMs: 0,
+          outputPreview: String(output).slice(0, 4000),
+          error: null,
+          modifiesState,
+        });
+        return true;
+      } catch (error) {
+        const errorMessage = getErrorMessage(error);
+        ctx.onToolExecutionComplete?.({
+          toolName: tool.name,
+          status: "failed",
+          durationMs: 0,
+          outputPreview: null,
+          error: errorMessage,
+          modifiesState,
+        });
+        warningMessages.push(`${tool.name} failed: ${errorMessage}`);
+        return false;
+      }
+    };
+
+    if (
+      nativeTargetIntent &&
+      !producedNativePackageArtifact &&
+      !attemptedNativePackageArtifact
+    ) {
+      await logMissionEvent({
+        missionId,
+        eventType: "native_autofinish_triggered",
+        summary: `Auto-finishing native package: ${nativeTargetIntent.label}`,
+        metadata: {
+          chatId: req.chatId,
+          runId: missionRunId,
+          target: nativeTargetIntent.target,
+          reason: "agent_stream_ended_without_native_package",
+        },
+      }).catch((err) =>
+        logger.warn("Failed to log native autofinish package event:", err),
+      );
+      await executeNativeAutofinishTool(
+        packageNativeArtifactTool,
+        {
+          target: nativeTargetIntent.target,
+          variant: "debug",
+          create_download_site: true,
+          initialize_capacitor_if_missing: true,
+        },
+        `Package native artifact: ${nativeTargetIntent.target} and create download site`,
+      );
+    }
+
+    if (nativeTargetIntent && !passedBrowserQaGate) {
+      await logMissionEvent({
+        missionId,
+        eventType: "native_autofinish_triggered",
+        summary: "Auto-finishing browser QA gate",
+        metadata: {
+          chatId: req.chatId,
+          runId: missionRunId,
+          target: nativeTargetIntent.target,
+          reason: "native_target_without_browser_qa_pass",
+        },
+      }).catch((err) =>
+        logger.warn("Failed to log native autofinish browser QA event:", err),
+      );
+      await executeNativeAutofinishTool(
+        browserQaGateTool,
+        {
+          start_runtime: true,
+          full_page: false,
+          runtime_timeout_seconds: 60,
+        },
+        "Run browser QA gate after native package build",
+      );
+    }
+
+    if (
+      nativeTargetIntent &&
+      producedNativePackageArtifact &&
+      !producedDeploymentUrl
+    ) {
+      await logMissionEvent({
+        missionId,
+        eventType: "native_autofinish_triggered",
+        summary: "Auto-finishing native download page deployment",
+        metadata: {
+          chatId: req.chatId,
+          runId: missionRunId,
+          target: nativeTargetIntent.target,
+          reason: "native_package_created_without_download_page_url",
+        },
+      }).catch((err) =>
+        logger.warn("Failed to log native autofinish deploy event:", err),
+      );
+      await executeNativeAutofinishTool(
+        deployPreviewTool,
+        {
+          provider: "custom_command",
+          target: "production",
+          deploy_directory: "native-download-site",
+        },
+        "Deploy native-download-site as a managed local static download page",
       );
     }
 
@@ -1330,9 +2399,32 @@ export async function handleLocalAgentStream(
       logger.info(
         `Chat ${req.chatId} hit step limit of ${maxToolCallSteps} steps`,
       );
-      const stepLimitXml = `<dyad-step-limit steps="${totalStepsExecuted}" limit="${maxToolCallSteps}">Automatically paused after ${totalStepsExecuted} tool calls.</dyad-step-limit>`;
+      const stepLimitXml = `<orianbuilder-step-limit steps="${totalStepsExecuted}" limit="${maxToolCallSteps}">Automatically paused after ${totalStepsExecuted} tool calls.</orianbuilder-step-limit>`;
       postTurnXmlParts.push(stepLimitXml);
       fullResponse += `\n\n${stepLimitXml}`;
+      const stepLimitMetadata = {
+        chatId: req.chatId,
+        runId: missionRunId,
+        totalStepsExecuted,
+        maxToolCallSteps,
+        budgetType: "tool_steps",
+      };
+      await logMissionEvent({
+        missionId,
+        eventType: "mission_budget_limit_reached",
+        summary: `Step budget reached: ${totalStepsExecuted}/${maxToolCallSteps}`,
+        metadata: stepLimitMetadata,
+      }).catch((err) =>
+        logger.warn("Failed to log mission step budget event:", err),
+      );
+      await createMissionCheckpoint({
+        missionId,
+        runId: missionRunId,
+        summary: `Step budget reached: ${totalStepsExecuted}/${maxToolCallSteps}`,
+        metadata: stepLimitMetadata,
+      }).catch((err) =>
+        logger.warn("Failed to checkpoint mission step budget:", err),
+      );
       await updateResponseInDb(placeholderMessageId, fullResponse);
       sendResponseChunk(
         event,
@@ -1355,12 +2447,12 @@ export async function handleLocalAgentStream(
         },
       });
       if (deployResult.warning) {
-        const warningXml = `<dyad-output type="warning" message="${escapeXmlAttr("Supabase function deploy warning")}">${escapeXmlContent(deployResult.warning)}</dyad-output>`;
+        const warningXml = `<orianbuilder-output type="warning" message="${escapeXmlAttr("Supabase function deploy warning")}">${escapeXmlContent(deployResult.warning)}</orianbuilder-output>`;
         postTurnXmlParts.push(warningXml);
         ctx.onXmlComplete(warningXml);
       }
       if (!deployResult.success) {
-        const errorXml = `<dyad-output type="error" message="${escapeXmlAttr("Failed to deploy Supabase functions")}">${escapeXmlContent(deployResult.error ?? "Unknown deploy error")}</dyad-output>`;
+        const errorXml = `<orianbuilder-output type="error" message="${escapeXmlAttr("Failed to deploy Supabase functions")}">${escapeXmlContent(deployResult.error ?? "Unknown deploy error")}</orianbuilder-output>`;
         postTurnXmlParts.push(errorXml);
         ctx.onXmlComplete(errorXml);
       }
@@ -1443,6 +2535,148 @@ export async function handleLocalAgentStream(
         warningMessages.length > 0 ? [...new Set(warningMessages)] : undefined,
     } satisfies ChatResponseEnd);
 
+    // Detect "dead" runs: the stream completed cleanly but the model never
+    // produced a real tool call (and the fallback parser also didn't recover
+    // one). Without this guard, the mission would stay in `running` forever
+    // and the user would see no obvious failure signal.
+    const isDeadRun =
+      !readOnly &&
+      totalNativeToolCalls === 0 &&
+      totalFallbackToolCalls === 0 &&
+      textToolCallFallbackAttempts === 0;
+
+    await logMissionEvent({
+      missionId,
+      eventType: "agent_stream_completed",
+      summary: isDeadRun
+        ? "Agent stream completed with zero tool calls (model_did_not_tool_call)"
+        : "Agent stream completed",
+      metadata: {
+        chatId: req.chatId,
+        updatedFiles: !readOnly,
+        totalStepsExecuted,
+        totalNativeToolCalls,
+        totalFallbackToolCalls,
+        textToolCallFallbackAttempts,
+        deadRun: isDeadRun,
+      },
+    }).catch((err) =>
+      logger.warn("Failed to log mission completion event:", err),
+    );
+    await finishMissionRun({
+      runId: missionRunId,
+      status: isDeadRun ? "failed" : "completed",
+      totalStepsExecuted,
+      error: isDeadRun
+        ? "model_did_not_tool_call: stream completed without any structured tool calls. The selected model likely does not support function calling through this provider."
+        : null,
+      metadata: {
+        updatedFiles: !readOnly,
+        chatSummary: ctx.chatSummary,
+        totalNativeToolCalls,
+        totalFallbackToolCalls,
+        textToolCallFallbackAttempts,
+      },
+    }).catch((err) => logger.warn("Failed to finish mission run:", err));
+
+    const nativeMissionReadyToComplete =
+      !nativeTargetIntent ||
+      (producedBrowserQaScreenshotArtifact &&
+        passedBrowserQaGate &&
+        producedNativePackageArtifact &&
+        producedDeploymentUrl);
+    if (
+      missionId &&
+      !workerId &&
+      !isDeadRun &&
+      totalStepsExecuted < maxToolCallSteps &&
+      nativeMissionReadyToComplete
+    ) {
+      const existingWorker = await db.query.missionWorkers.findFirst({
+        where: eq(missionWorkers.missionId, missionId),
+        columns: { id: true },
+      });
+      if (!existingWorker) {
+        await db
+          .update(missions)
+          .set({
+            status: "completed",
+            updatedAt: new Date(),
+            completedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(missions.id, missionId),
+              inArray(missions.status, ["queued", "running"]),
+            ),
+          )
+          .catch((err) =>
+            logger.warn("Failed to mark standalone mission completed:", err),
+          );
+
+        // Auto-complete any todos that the agent left as pending/in_progress.
+        // When the mission is being marked completed, lingering todos would
+        // otherwise show as "still running" tasks in the UI even though all
+        // verification gates and the native build have succeeded.
+        if (hasIncompleteTodos(ctx.todos)) {
+          const completedTodos = markIncompleteTodosCompleted(ctx.todos);
+          ctx.todos = completedTodos;
+          await saveTodos(appPath, chat.id, completedTodos).catch((err) =>
+            logger.warn("Failed to save auto-completed todos:", err),
+          );
+          ctx.onUpdateTodos(completedTodos);
+        }
+
+        await logMissionEvent({
+          missionId,
+          eventType: "mission_status_changed",
+          summary: "Mission marked completed",
+          metadata: {
+            status: "completed",
+            source: "local_agent_stream",
+            chatId: req.chatId,
+            nativeTarget: nativeTargetIntent?.target ?? null,
+            browserQaPassed: nativeTargetIntent ? passedBrowserQaGate : null,
+          },
+        }).catch((err) =>
+          logger.warn("Failed to log mission completion status:", err),
+        );
+      }
+    }
+
+    if (isDeadRun) {
+      warningMessages.push(
+        "Model did not produce any structured tool calls. The agent loop ended without making changes. Try a model with native function-calling support (Claude, GPT-4o/5, Gemini 2.x, or a GGUF with a tool-call template like Hermes/Functionary).",
+      );
+      if (missionId) {
+        await db
+          .update(missions)
+          .set({
+            status: "failed",
+            updatedAt: new Date(),
+            completedAt: new Date(),
+          })
+          .where(eq(missions.id, missionId))
+          .catch((err) =>
+            logger.warn("Failed to mark mission failed after dead run:", err),
+          );
+      }
+    }
+    await createMissionCheckpoint({
+      missionId,
+      runId: missionRunId,
+      summary: ctx.chatSummary ?? "Agent stream completed",
+      metadata: {
+        chatId: req.chatId,
+        totalStepsExecuted,
+        todos: ctx.todos,
+        fileEditTracker,
+        warningMessages:
+          warningMessages.length > 0 ? [...new Set(warningMessages)] : [],
+      },
+    }).catch((err) => logger.warn("Failed to create mission checkpoint:", err));
+
+    releaseMcpSession(mcpSessionId);
     return true; // Success
   } catch (error) {
     // Clean up any pending consent/questionnaire requests for this chat to prevent
@@ -1458,6 +2692,32 @@ export async function handleLocalAgentStream(
           content: appendCancelledResponseNotice(fullResponse ?? ""),
         })
         .where(eq(messages.id, placeholderMessageId));
+      await logMissionEvent({
+        missionId,
+        eventType: "agent_stream_cancelled",
+        summary: "Agent stream was cancelled",
+        metadata: { chatId: req.chatId },
+      }).catch((err) =>
+        logger.warn("Failed to log mission cancellation event:", err),
+      );
+      await finishMissionRun({
+        runId: missionRunId,
+        status: "cancelled",
+        totalStepsExecuted,
+      }).catch((err) => logger.warn("Failed to finish mission run:", err));
+      await createMissionCheckpoint({
+        missionId,
+        runId: missionRunId,
+        summary: "Mission run cancelled",
+        metadata: {
+          chatId: req.chatId,
+          totalStepsExecuted,
+          responseLength: fullResponse.length,
+        },
+      }).catch((err) =>
+        logger.warn("Failed to create mission checkpoint:", err),
+      );
+      releaseMcpSession(mcpSessionId);
       return false; // Cancelled - don't consume quota
     }
 
@@ -1468,7 +2728,311 @@ export async function handleLocalAgentStream(
       warningMessages:
         warningMessages.length > 0 ? [...new Set(warningMessages)] : undefined,
     });
+    await logMissionEvent({
+      missionId,
+      eventType: "agent_stream_failed",
+      summary: "Agent stream failed",
+      body: getErrorMessage(error),
+      metadata: { chatId: req.chatId },
+    }).catch((err) => logger.warn("Failed to log mission failure event:", err));
+    await finishMissionRun({
+      runId: missionRunId,
+      status: "failed",
+      totalStepsExecuted,
+      error: getErrorMessage(error),
+    }).catch((err) => logger.warn("Failed to finish mission run:", err));
+    await createMissionCheckpoint({
+      missionId,
+      runId: missionRunId,
+      summary: "Mission run failed",
+      metadata: {
+        chatId: req.chatId,
+        totalStepsExecuted,
+        error: getErrorMessage(error),
+        responseLength: fullResponse.length,
+      },
+    }).catch((err) => logger.warn("Failed to create mission checkpoint:", err));
+    releaseMcpSession(mcpSessionId);
     return false; // Error - don't consume quota
+  }
+}
+
+async function logMissionEventsForXml(input: {
+  missionId: number | undefined;
+  missionRunId?: number | null;
+  workerId?: number | null;
+  chatId: number;
+  xml: string;
+}) {
+  const { missionId, missionRunId, workerId, chatId, xml } = input;
+  if (!missionId) {
+    return;
+  }
+
+  await logMissionEvent({
+    missionId,
+    eventType: "agent_output",
+    summary: getMissionEventSummaryForXml(xml),
+    body: xml,
+    metadata: {
+      chatId,
+      runId: missionRunId ?? null,
+      workerId: workerId ?? null,
+    },
+  });
+
+  for (const event of getMissionStructuredEventsForXml(xml)) {
+    await logMissionEvent({
+      missionId,
+      eventType: event.eventType,
+      summary: event.summary,
+      body: xml,
+      metadata: {
+        chatId,
+        workerId: workerId ?? null,
+        ...event.metadata,
+      },
+    });
+  }
+
+  const visual = extractMissionVisualEventsForXml(xml);
+  for (const event of visual.events) {
+    await logMissionEvent({
+      missionId,
+      eventType: event.eventType,
+      summary: event.summary,
+      body: xml,
+      metadata: {
+        chatId,
+        workerId: workerId ?? null,
+        gate: event.gate,
+        status: event.status,
+        ...event.metadata,
+      },
+    });
+    if (event.status === "failed") {
+      await createMissionInterrupt({
+        missionId,
+        source: "runtime",
+        title: `${getMissionVisualGateLabel(event.gate)} failed`,
+        body: event.summary,
+        metadata: {
+          producer: event.eventType,
+          runId: missionRunId ?? null,
+          workerId: workerId ?? null,
+          chatId,
+          gate: event.gate,
+          status: event.status,
+          ...event.metadata,
+        },
+      });
+    }
+  }
+  for (const artifact of visual.artifacts) {
+    await createMissionArtifact({
+      missionId,
+      runId: missionRunId ?? null,
+      artifactType: artifact.artifactType,
+      title: artifact.title,
+      uri: artifact.uri ?? null,
+      body: artifact.body ?? null,
+      mimeType: artifact.mimeType ?? null,
+      metadata: {
+        chatId,
+        workerId: workerId ?? null,
+        ...artifact.metadata,
+      },
+    });
+  }
+
+  const verification = getMissionVerificationEventForXml(xml);
+  if (!verification) {
+    return;
+  }
+
+  await logMissionEvent({
+    missionId,
+    eventType: verification.eventType,
+    summary: verification.summary,
+    body: xml,
+    metadata: {
+      chatId,
+      workerId: workerId ?? null,
+      status: verification.status,
+      check: verification.check,
+      command: verification.command,
+      problemCount: verification.problemCount,
+      exitCode: verification.exitCode,
+    },
+  });
+  if (verification.status === "failed") {
+    await createMissionInterrupt({
+      missionId,
+      source: verification.check === "test" ? "test" : "runtime",
+      title: `${getMissionVerificationCheckLabel(verification.check)} failed`,
+      body: verification.summary,
+      metadata: {
+        producer: verification.eventType,
+        runId: missionRunId ?? null,
+        workerId: workerId ?? null,
+        chatId,
+        status: verification.status,
+        check: verification.check,
+        command: verification.command,
+        problemCount: verification.problemCount,
+        exitCode: verification.exitCode,
+      },
+    });
+  }
+}
+
+function getMissionVisualGateLabel(gate: string) {
+  switch (gate) {
+    case "screenshot":
+      return "Screenshot gate";
+    case "accessibility":
+      return "Accessibility gate";
+    case "console":
+      return "Console gate";
+    case "runtime":
+      return "Runtime gate";
+    default:
+      return "Visual gate";
+  }
+}
+
+function getMissionVerificationCheckLabel(check: string) {
+  switch (check) {
+    case "install":
+      return "Install";
+    case "typecheck":
+      return "Type check";
+    case "build":
+      return "Build";
+    case "test":
+      return "Tests";
+    case "start_app":
+      return "App start";
+    default:
+      return "Verification";
+  }
+}
+
+async function logMissionRetryScheduled(input: {
+  missionId: number | undefined;
+  missionRunId: number | null;
+  chatId: number;
+  retryCount: number;
+  retryDelayMs: number;
+  phase: string;
+  error: unknown;
+}) {
+  const metadata = {
+    chatId: input.chatId,
+    runId: input.missionRunId,
+    retryCount: input.retryCount,
+    retryDelayMs: input.retryDelayMs,
+    phase: input.phase,
+    error: getErrorMessage(input.error),
+    retryPolicy: {
+      maxRetries: MAX_TERMINATED_STREAM_RETRIES,
+      baseDelayMs: STREAM_RETRY_BASE_DELAY_MS,
+    },
+  };
+
+  await logMissionEvent({
+    missionId: input.missionId,
+    eventType: "agent_stream_retry_scheduled",
+    summary: `Retry ${input.retryCount} scheduled after ${input.retryDelayMs}ms`,
+    metadata,
+  }).catch((err) => logger.warn("Failed to log mission retry:", err));
+
+  await createMissionCheckpoint({
+    missionId: input.missionId,
+    runId: input.missionRunId,
+    summary: `Retry ${input.retryCount} scheduled`,
+    metadata,
+  }).catch((err) => logger.warn("Failed to checkpoint mission retry:", err));
+}
+
+function getStepToolNames(step: { toolCalls: Array<unknown> }) {
+  return step.toolCalls
+    .map((toolCall) => {
+      if (!toolCall || typeof toolCall !== "object") {
+        return null;
+      }
+      const maybeToolCall = toolCall as Record<string, unknown>;
+      return typeof maybeToolCall.toolName === "string"
+        ? maybeToolCall.toolName
+        : null;
+    })
+    .filter((toolName): toolName is string => !!toolName);
+}
+
+function hasRepeatedToolSignature(toolName: string, repeatedCount: number) {
+  return ({ steps }: { steps: Array<{ toolCalls: Array<unknown> }> }) => {
+    const signatures = steps
+      .map((step) => getStepSignature(step.toolCalls))
+      .filter((signature): signature is string => !!signature);
+    const latestSignature = signatures.at(-1);
+    if (!latestSignature?.startsWith(`${toolName}:`)) {
+      return false;
+    }
+    if (signatures.length < repeatedCount) {
+      return false;
+    }
+    return signatures
+      .slice(-repeatedCount)
+      .every((signature) => signature === latestSignature);
+  };
+}
+
+function getStepSignature(toolCalls: Array<unknown>) {
+  if (toolCalls.length === 0) {
+    return null;
+  }
+  return toolCalls
+    .map((toolCall) => {
+      if (!toolCall || typeof toolCall !== "object") {
+        return "unknown:null";
+      }
+      const maybeToolCall = toolCall as Record<string, unknown>;
+      const toolName =
+        typeof maybeToolCall.toolName === "string"
+          ? maybeToolCall.toolName
+          : "unknown";
+      const input =
+        maybeToolCall.input ??
+        maybeToolCall.args ??
+        maybeToolCall.arguments ??
+        null;
+      const inputSignature = createHash("sha1")
+        .update(stableSignatureJson(input))
+        .digest("hex")
+        .slice(0, 10);
+      return `${toolName}:${inputSignature}`;
+    })
+    .join(",");
+}
+
+function stableSignatureJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, (_key, nestedValue) => {
+      if (
+        nestedValue &&
+        typeof nestedValue === "object" &&
+        !Array.isArray(nestedValue)
+      ) {
+        return Object.fromEntries(
+          Object.entries(nestedValue as Record<string, unknown>).sort(
+            ([a], [b]) => a.localeCompare(b),
+          ),
+        );
+      }
+      return nestedValue;
+    });
+  } catch {
+    return String(value);
   }
 }
 
@@ -1704,9 +3268,148 @@ function shouldRunTodoFollowUpPass(params: {
   );
 }
 
+async function loadPendingMissionInterrupts(missionId: number) {
+  return db
+    .select()
+    .from(missionInterrupts)
+    .where(
+      and(
+        eq(missionInterrupts.missionId, missionId),
+        eq(missionInterrupts.status, "pending"),
+      ),
+    )
+    .orderBy(asc(missionInterrupts.createdAt))
+    .limit(8);
+}
+
+function releaseMcpSession(sessionId: string) {
+  try {
+    mcpManager.releaseSession(sessionId);
+  } catch (err) {
+    logger.warn("Failed to release MCP session:", err);
+  }
+}
+
+async function markMissionInterruptsInjected(input: {
+  missionId: number;
+  interruptIds: number[];
+}) {
+  if (input.interruptIds.length === 0) {
+    return [];
+  }
+
+  return db
+    .update(missionInterrupts)
+    .set({
+      status: "injected",
+      injectedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(missionInterrupts.missionId, input.missionId),
+        inArray(missionInterrupts.id, input.interruptIds),
+      ),
+    )
+    .returning();
+}
+
+async function loadMissionMemoriesForInjection(input: {
+  appId: number;
+  missionId: number;
+}) {
+  return db
+    .select()
+    .from(missionMemories)
+    .where(
+      and(
+        eq(missionMemories.appId, input.appId),
+        or(
+          eq(missionMemories.missionId, input.missionId),
+          isNull(missionMemories.missionId),
+        ),
+      ),
+    )
+    .orderBy(desc(missionMemories.updatedAt))
+    .limit(8);
+}
+
+async function createMissionPermissionRequestForTool(input: {
+  missionId: number;
+  runId: number | null;
+  toolName: string;
+  inputPreview?: string | null;
+  risk: "low" | "medium" | "high";
+  reason: string;
+}) {
+  const [request] = await db
+    .insert(missionPermissionRequests)
+    .values({
+      missionId: input.missionId,
+      runId: input.runId,
+      action: input.toolName,
+      risk: input.risk,
+      reason: input.reason,
+      metadata: {
+        inputPreview: input.inputPreview ?? null,
+      },
+      createdAt: new Date(),
+    })
+    .returning();
+
+  await logMissionEvent({
+    missionId: input.missionId,
+    eventType: "mission_permission_requested",
+    summary: `Permission requested: ${input.toolName}`,
+    body: input.reason,
+    metadata: {
+      requestId: request.id,
+      runId: input.runId,
+      risk: input.risk,
+      status: request.status,
+      inputPreview: input.inputPreview ?? null,
+    },
+  }).catch((err) => logger.warn("Failed to log permission request:", err));
+
+  return request;
+}
+
+async function resolveMissionPermissionRequestForTool(input: {
+  requestId: number;
+  status: "approved" | "denied";
+}) {
+  const [request] = await db
+    .update(missionPermissionRequests)
+    .set({
+      status: input.status,
+      resolvedAt: new Date(),
+    })
+    .where(eq(missionPermissionRequests.id, input.requestId))
+    .returning();
+
+  if (!request) {
+    return null;
+  }
+
+  await logMissionEvent({
+    missionId: request.missionId,
+    eventType: "mission_permission_resolved",
+    summary: `Permission ${input.status}: ${request.action}`,
+    body: request.reason,
+    metadata: {
+      requestId: request.id,
+      runId: request.runId,
+      risk: request.risk,
+      status: request.status,
+    },
+  }).catch((err) => logger.warn("Failed to log permission resolution:", err));
+
+  return request;
+}
+
 async function getMcpTools(
   event: IpcMainInvokeEvent,
   ctx: AgentContext,
+  mcpSessionId: string,
 ): Promise<ToolSet> {
   const mcpToolSet: ToolSet = {};
 
@@ -1717,7 +3420,7 @@ async function getMcpTools(
       .where(eq(mcpServers.enabled, true as any));
 
     for (const s of servers) {
-      const client = await mcpManager.getClient(s.id);
+      const client = await mcpManager.acquireClient(s.id, mcpSessionId);
       const toolSet = await client.tools();
 
       for (const [name, mcpTool] of Object.entries(toolSet)) {
@@ -1749,7 +3452,7 @@ async function getMcpTools(
               const { serverName, toolName } = parseMcpToolKey(key);
               const content = JSON.stringify(args, null, 2);
               ctx.onXmlComplete(
-                `<dyad-mcp-tool-call server="${serverName}" tool="${toolName}">\n${content}\n</dyad-mcp-tool-call>`,
+                `<orianbuilder-mcp-tool-call server="${serverName}" tool="${toolName}">\n${content}\n</orianbuilder-mcp-tool-call>`,
               );
 
               const res = await mcpTool.execute(args, execCtx);
@@ -1757,7 +3460,7 @@ async function getMcpTools(
                 typeof res === "string" ? res : JSON.stringify(res);
 
               ctx.onXmlComplete(
-                `<dyad-mcp-tool-result server="${serverName}" tool="${toolName}">\n${resultStr}\n</dyad-mcp-tool-result>`,
+                `<orianbuilder-mcp-tool-result server="${serverName}" tool="${toolName}">\n${resultStr}\n</orianbuilder-mcp-tool-result>`,
               );
 
               return resultStr;
@@ -1767,7 +3470,7 @@ async function getMcpTools(
               const errorStack =
                 error instanceof Error && error.stack ? error.stack : "";
               ctx.onXmlComplete(
-                `<dyad-output type="error" message="MCP tool '${key}' failed: ${escapeXmlAttr(errorMessage)}">${escapeXmlContent(errorStack || errorMessage)}</dyad-output>`,
+                `<orianbuilder-output type="error" message="MCP tool '${key}' failed: ${escapeXmlAttr(errorMessage)}">${escapeXmlContent(errorStack || errorMessage)}</orianbuilder-output>`,
               );
               throw error;
             }

@@ -3,7 +3,10 @@ import { messages } from "../../db/schema";
 import { eq } from "drizzle-orm";
 import { Message } from "@/ipc/types";
 import { readEffectiveSettings } from "@/main/settings";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import {
   ADD_DEPENDENCY_INSTALL_TIMEOUT_MS,
   buildAddDependencyCommand,
@@ -169,9 +172,9 @@ export async function executeAddDependency({
   );
   if (invalidPackage) {
     throw new ExecuteAddDependencyError({
-      error: new DyadError(
+      error: new OrianBuilderError(
         `Invalid npm package name: ${invalidPackage}`,
-        DyadErrorKind.Validation,
+        OrianBuilderErrorKind.Validation,
       ),
       warningMessages: [],
     });
@@ -208,10 +211,10 @@ export async function executeAddDependency({
   const escapedPackages = escapeXmlAttr(packages.join(" "));
   const updatedContent = message.content.replace(
     new RegExp(
-      `<dyad-add-dependency packages="(?:${buildPackagesAttrPattern(packages)})">[\\s\\S]*?</dyad-add-dependency>`,
+      `<orianbuilder-add-dependency packages="(?:${buildPackagesAttrPattern(packages)})">[\\s\\S]*?</orianbuilder-add-dependency>`,
       "g",
     ),
-    `<dyad-add-dependency packages="${escapedPackages}">${escapeXmlContent(installResults)}</dyad-add-dependency>`,
+    `<orianbuilder-add-dependency packages="${escapedPackages}">${escapeXmlContent(installResults)}</orianbuilder-add-dependency>`,
   );
 
   // Save the updated message back to the database

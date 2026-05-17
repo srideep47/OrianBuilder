@@ -16,7 +16,10 @@ import { createTestOnlyLoggedHandler } from "./safe_handle";
 import { safeSend } from "../utils/safe_sender";
 import { readSettings, writeSettings } from "../../main/settings";
 import { supabaseContracts } from "../types/supabase";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { assertNoNeonProject } from "../utils/neon_utils";
 
 const logger = log.scope("supabase_handlers");
@@ -72,9 +75,9 @@ export function registerSupabaseHandlers() {
       const organizations = { ...settings.supabase?.organizations };
 
       if (!organizations[organizationSlug]) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `Supabase organization ${organizationSlug} not found`,
-          DyadErrorKind.NotFound,
+          OrianBuilderErrorKind.NotFound,
         );
       }
 
@@ -164,9 +167,9 @@ export function registerSupabaseHandlers() {
         typeof response.error === "string"
           ? response.error
           : JSON.stringify(response.error);
-      throw new DyadError(
+      throw new OrianBuilderError(
         `Failed to fetch logs: ${errorMsg}`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
     }
 
@@ -194,7 +197,7 @@ export function registerSupabaseHandlers() {
     });
   });
 
-  // Set app project - links a Dyad app to a Supabase project
+  // Set app project - links a OrianBuilder app to a Supabase project
   createTypedHandler(supabaseContracts.setAppProject, async (_, params) => {
     const { projectId, appId, parentProjectId, organizationSlug } = params;
     await assertNoNeonProject(appId);
@@ -212,7 +215,7 @@ export function registerSupabaseHandlers() {
     );
   });
 
-  // Unset app project - removes the link between a Dyad app and a Supabase project
+  // Unset app project - removes the link between a OrianBuilder app and a Supabase project
   createTypedHandler(supabaseContracts.unsetAppProject, async (_, params) => {
     const { app } = params;
     await db
@@ -277,7 +280,7 @@ export function registerSupabaseHandlers() {
       // Simulate the deep link event
       safeSend(event.sender, "deep-link-received", {
         type: "supabase-oauth-return",
-        url: "https://supabase-oauth.dyad.sh/api/connect-supabase/login",
+        url: "https://supabase-oauth.orianbuilder.sh/api/connect-supabase/login",
       });
       logger.info(
         `Sent fake deep-link-received event for app ${appId} during testing.`,

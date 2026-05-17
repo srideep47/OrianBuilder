@@ -4,7 +4,7 @@ import { testSkipIfWindows, Timeout } from "./helpers/test_helper";
 testSkipIfWindows(
   "local-agent - shows Supabase deploy queue progress",
   async ({ po }) => {
-    await po.setUpDyadPro({ localAgent: true });
+    await po.setUpOrianBuilderPro({ localAgent: true });
     await po.importApp("minimal");
 
     await po.appManagement.getTitleBarAppNameButton().click();

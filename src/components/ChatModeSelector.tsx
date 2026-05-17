@@ -68,7 +68,6 @@ export function ChatModeSelector() {
     showChatModeFallbackToast({
       reason: fallbackReason,
       effectiveMode,
-      isPro: true,
       toastId: toastKey,
     });
   }, [chatId, effectiveMode, fallbackReason, storedChatMode]);
@@ -106,7 +105,7 @@ export function ChatModeSelector() {
   };
 
   const getModeDisplayName = (mode: ChatMode) => {
-    return getChatModeDisplayName(mode, true);
+    return getChatModeDisplayName(mode);
   };
 
   const getModeIcon = (mode: ChatMode) => {

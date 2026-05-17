@@ -77,7 +77,7 @@ const response = await fetch(
       Accept: "application/vnd.github+json",
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
-      "User-Agent": "dyad-pr-review",
+      "User-Agent": "orianbuilder-pr-review",
       "X-GitHub-Api-Version": "2022-11-28",
     },
     body: JSON.stringify({

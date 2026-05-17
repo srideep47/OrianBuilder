@@ -3,7 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 import log from "electron-log";
 import { ToolDefinition, AgentContext, escapeXmlContent } from "./types";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("get_repo_map");
 
@@ -307,7 +310,7 @@ Use this at the start of a task to understand the codebase structure WITHOUT rea
 
   buildXml: (_args, isComplete) => {
     if (isComplete) return undefined;
-    return `<dyad-repo-map>Building map…`;
+    return `<orianbuilder-repo-map>Building map…`;
   },
 
   execute: async (args, ctx: AgentContext) => {
@@ -316,13 +319,13 @@ Use this at the start of a task to understand the codebase structure WITHOUT rea
     );
 
     if (!fs.existsSync(ctx.appPath)) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         `App directory not found: ${ctx.appPath}`,
-        DyadErrorKind.NotFound,
+        OrianBuilderErrorKind.NotFound,
       );
     }
 
-    ctx.onXmlStream(`<dyad-repo-map>Building map…`);
+    ctx.onXmlStream(`<orianbuilder-repo-map>Building map…`);
 
     const allFiles: FileEntry[] = [];
     walkDir(ctx.appPath, ctx.appPath, allFiles, 600);
@@ -354,7 +357,7 @@ Use this at the start of a task to understand the codebase structure WITHOUT rea
     }
 
     ctx.onXmlComplete(
-      `<dyad-repo-map files="${topFiles.length}">${escapeXmlContent(mapText)}</dyad-repo-map>`,
+      `<orianbuilder-repo-map files="${topFiles.length}">${escapeXmlContent(mapText)}</orianbuilder-repo-map>`,
     );
 
     logger.log(`get_repo_map: returned ${topFiles.length} files`);

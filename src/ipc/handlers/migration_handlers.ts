@@ -8,12 +8,15 @@ import {
   getConnectionUri,
   executeNeonSql,
 } from "../../neon_admin/neon_context";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { getAppWithNeonBranch } from "../utils/neon_utils";
 import { IS_TEST_BUILD } from "../utils/test_utils";
 import { db } from "../../db";
 import { apps } from "../../db/schema";
-import { getDyadAppPath } from "../../paths/paths";
+import { getOrianBuilderAppPath } from "../../paths/paths";
 import { gitAdd, gitCommit } from "../utils/git_utils";
 import {
   logger,
@@ -45,12 +48,12 @@ export function registerMigrationHandlers() {
         .where(eq(apps.id, appId))
         .limit(1);
       if (rows.length === 0) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `App with ID ${appId} not found`,
-          DyadErrorKind.NotFound,
+          OrianBuilderErrorKind.NotFound,
         );
       }
-      const appPath = getDyadAppPath(rows[0].path);
+      const appPath = getOrianBuilderAppPath(rows[0].path);
       return { installed: await areMigrationDepsInstalled(appPath) };
     },
   );
@@ -74,9 +77,9 @@ export function registerMigrationHandlers() {
 
     // 2. Guard: dev and prod must be different branches
     if (devBranchId === prodBranchId) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Active branch is the production branch. Create a development branch first.",
-        DyadErrorKind.Precondition,
+        OrianBuilderErrorKind.Precondition,
       );
     }
 
@@ -110,22 +113,22 @@ export function registerMigrationHandlers() {
           }),
         );
       } catch {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "Unable to verify development table count",
-          DyadErrorKind.Precondition,
+          OrianBuilderErrorKind.Precondition,
         );
       }
       tableCount = parseInt(parsed?.[0]?.cnt ?? "0", 10);
     }
     if (!tableCount || tableCount === 0) {
-      throw new DyadError(
+      throw new OrianBuilderError(
         "Development database has no tables. Create at least one table before migrating.",
-        DyadErrorKind.Precondition,
+        OrianBuilderErrorKind.Precondition,
       );
     }
 
     // 5. Ensure drizzle-kit + drizzle-orm are installed in the user's app
-    const appPath = getDyadAppPath(appData.path);
+    const appPath = getOrianBuilderAppPath(appData.path);
     if (!(await areMigrationDepsInstalled(appPath))) {
       logger.info(
         `Migration dependencies not installed in ${appPath}; installing now.`,
@@ -145,7 +148,8 @@ export function registerMigrationHandlers() {
         }
         await gitCommit({
           path: appPath,
-          message: "[dyad] install drizzle-kit and drizzle-orm for migrations",
+          message:
+            "[orianbuilder] install drizzle-kit and drizzle-orm for migrations",
         });
         logger.info(`Committed migration dependency install in ${appPath}`);
       } catch (err) {
@@ -157,7 +161,9 @@ export function registerMigrationHandlers() {
     }
 
     // 6. Create temp directory with restricted permissions
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "dyad-migration-"));
+    const tmpDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "orianbuilder-migration-"),
+    );
 
     try {
       if (process.platform !== "win32") {
@@ -179,9 +185,9 @@ export function registerMigrationHandlers() {
       });
 
       if (introspectResult.exitCode !== 0) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `Schema introspection failed: ${introspectResult.stderr || introspectResult.stdout}`,
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
 
@@ -191,9 +197,9 @@ export function registerMigrationHandlers() {
       try {
         schemaFiles = await fs.readdir(schemaOutDir);
       } catch {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "drizzle-kit introspect did not generate output. Your development database may have an unsupported schema.",
-          DyadErrorKind.Internal,
+          OrianBuilderErrorKind.Internal,
         );
       }
 
@@ -201,9 +207,9 @@ export function registerMigrationHandlers() {
         schemaFiles.find((f) => f === "schema.ts") ??
         schemaFiles.find((f) => f.endsWith(".ts") && f !== "relations.ts");
       if (!tsSchemaFile) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "drizzle-kit introspect did not generate any schema files.",
-          DyadErrorKind.Internal,
+          OrianBuilderErrorKind.Internal,
         );
       }
 
@@ -227,9 +233,9 @@ export function registerMigrationHandlers() {
       });
 
       if (pushResult.exitCode !== 0) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `Migration push failed: ${pushResult.stderr || pushResult.stdout}`,
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
 

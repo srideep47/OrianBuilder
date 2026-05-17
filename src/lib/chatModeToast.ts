@@ -2,14 +2,14 @@ import { toast } from "sonner";
 import type { ChatMode } from "./schemas";
 import type { ChatModeFallbackReason } from "./chatMode";
 
-export function getChatModeDisplayName(mode: ChatMode, isPro: boolean): string {
+export function getChatModeDisplayName(mode: ChatMode): string {
   switch (mode) {
     case "build":
       return "Build";
     case "ask":
       return "Ask";
     case "local-agent":
-      return isPro ? "Agent" : "Basic Agent";
+      return "Agent";
     case "plan":
       return "Plan";
   }
@@ -32,21 +32,15 @@ export function getChatModeFallbackToastId({
 export function showChatModeFallbackToast({
   reason,
   effectiveMode,
-  isPro,
   toastId,
 }: {
   reason: ChatModeFallbackReason;
   effectiveMode: ChatMode;
-  isPro: boolean;
   toastId?: string;
 }) {
-  const modeName = getChatModeDisplayName(effectiveMode, isPro);
-  const message =
-    reason === "pro-required"
-      ? `Agent v2 unavailable (Pro required). Using ${modeName} mode.`
-      : reason === "quota-exhausted"
-        ? `Quota exhausted. Using ${modeName} mode.`
-        : `No provider configured. Using ${modeName} mode.`;
+  const modeName = getChatModeDisplayName(effectiveMode);
+  const message = `No provider configured. Using ${modeName} mode.`;
+  void reason;
 
   toast.warning(message, {
     id: toastId,

@@ -10,8 +10,7 @@ import { providerSettingsRoute } from "@/routes/settings/providers/$provider";
 import { cn } from "@/lib/utils";
 import { useDeepLink } from "@/contexts/DeepLinkContext";
 import { useCallback, useEffect, useState } from "react";
-import { DyadProSuccessDialog } from "@/components/DyadProSuccessDialog";
-import { useTheme } from "@/contexts/ThemeContext";
+import { OrianBuilderProSuccessDialog } from "@/components/OrianBuilderProSuccessDialog";
 import { ipc } from "@/ipc/types";
 import { useSystemPlatform } from "@/hooks/useSystemPlatform";
 import { useUserBudgetInfo } from "@/hooks/useUserBudgetInfo";
@@ -23,7 +22,7 @@ import {
 } from "@/components/ui/tooltip";
 import { ChatTabs } from "@/components/chat/ChatTabs";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
-import { Wrench, Cog, Trash2 } from "lucide-react";
+import { Wrench, Cog, Trash2, Minus, Square, X as XIcon } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,18 +46,18 @@ export const TitleBar = () => {
   const platform = useSystemPlatform();
   const showWindowControls = platform !== null && platform !== "darwin";
 
-  const showDyadProSuccessDialog = () => {
+  const showOrianBuilderProSuccessDialog = () => {
     setIsSuccessDialogOpen(true);
   };
 
   const { lastDeepLink, clearLastDeepLink } = useDeepLink();
   useEffect(() => {
     const handleDeepLink = async () => {
-      if (lastDeepLink?.type === "dyad-pro-return") {
+      if (lastDeepLink?.type === "orianbuilder-pro-return") {
         await refreshSettings();
         // Refetch user budget when OrianBuilder Pro key is set via deep link
         queryClient.invalidateQueries({ queryKey: queryKeys.userBudget.info });
-        showDyadProSuccessDialog();
+        showOrianBuilderProSuccessDialog();
         clearLastDeepLink();
       }
     };
@@ -117,7 +116,7 @@ export const TitleBar = () => {
         {showWindowControls && <WindowsControls />}
       </div>
 
-      <DyadProSuccessDialog
+      <OrianBuilderProSuccessDialog
         isOpen={isSuccessDialogOpen}
         onClose={() => setIsSuccessDialogOpen(false)}
       />
@@ -126,8 +125,6 @@ export const TitleBar = () => {
 };
 
 function WindowsControls() {
-  const { isDarkMode } = useTheme();
-
   const minimizeWindow = () => {
     ipc.system.minimizeWindow();
   };
@@ -143,63 +140,25 @@ function WindowsControls() {
   return (
     <div className="ml-auto flex no-app-region-drag">
       <button
-        className="w-10 h-10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+        className="w-11 h-11 flex items-center justify-center hover:bg-white/[0.08] transition-colors text-foreground/80 hover:text-foreground"
         onClick={minimizeWindow}
         aria-label="Minimize"
       >
-        <svg
-          width="12"
-          height="1"
-          viewBox="0 0 12 1"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <rect
-            width="12"
-            height="1"
-            fill={isDarkMode ? "#ffffff" : "#000000"}
-          />
-        </svg>
+        <Minus size={14} strokeWidth={2} />
       </button>
       <button
-        className="w-10 h-10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+        className="w-11 h-11 flex items-center justify-center hover:bg-white/[0.08] transition-colors text-foreground/80 hover:text-foreground"
         onClick={maximizeWindow}
         aria-label="Maximize"
       >
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <rect
-            x="0.5"
-            y="0.5"
-            width="11"
-            height="11"
-            stroke={isDarkMode ? "#ffffff" : "#000000"}
-          />
-        </svg>
+        <Square size={11} strokeWidth={1.6} />
       </button>
       <button
-        className="w-10 h-10 flex items-center justify-center hover:bg-red-500 transition-colors"
+        className="w-11 h-11 flex items-center justify-center hover:bg-red-500/90 hover:text-white transition-colors text-foreground/80"
         onClick={closeWindow}
         aria-label="Close"
       >
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            d="M1 1L11 11M1 11L11 1"
-            stroke={isDarkMode ? "#ffffff" : "#000000"}
-            strokeWidth="1.5"
-          />
-        </svg>
+        <XIcon size={14} strokeWidth={2} />
       </button>
     </div>
   );
@@ -289,16 +248,16 @@ function TitleBarActions() {
   );
 }
 
-export function DyadProButton({
-  isDyadProEnabled,
+export function OrianBuilderProButton({
+  isOrianBuilderProEnabled,
 }: {
-  isDyadProEnabled: boolean;
+  isOrianBuilderProEnabled: boolean;
 }) {
   const { navigate } = useRouter();
   const { userBudget } = useUserBudgetInfo();
   return (
     <Button
-      data-testid="title-bar-dyad-pro-button"
+      data-testid="title-bar-orianbuilder-pro-button"
       onClick={() => {
         navigate({
           to: providerSettingsRoute.id,
@@ -308,16 +267,16 @@ export function DyadProButton({
       variant="outline"
       className={cn(
         "hidden @2xl:block ml-1 no-app-region-drag h-7 bg-indigo-600 text-white dark:bg-indigo-600 dark:text-white text-xs px-2 pt-1 pb-1",
-        !isDyadProEnabled && "bg-zinc-600 dark:bg-zinc-600",
+        !isOrianBuilderProEnabled && "bg-zinc-600 dark:bg-zinc-600",
       )}
       size="sm"
     >
-      {isDyadProEnabled
+      {isOrianBuilderProEnabled
         ? userBudget?.isTrial
           ? "Pro Trial"
           : "Pro"
         : "Pro (off)"}
-      {userBudget && isDyadProEnabled && (
+      {userBudget && isOrianBuilderProEnabled && (
         <AICreditStatus userBudget={userBudget} />
       )}
     </Button>

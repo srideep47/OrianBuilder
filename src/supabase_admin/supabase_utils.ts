@@ -9,7 +9,10 @@ import {
   type DeployedFunctionResponse,
 } from "./supabase_management_client";
 import { SUPABASE_BUNDLE_ONLY_DEPLOY_CONCURRENCY } from "./supabase_deploy_queue";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("supabase_utils");
 
@@ -103,9 +106,9 @@ export function extractFunctionNameFromPath(filePath: string): string {
   const match = normalized.match(/^supabase\/functions\/([^/]+)/);
 
   if (!match) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Invalid Supabase function path: ${filePath}. Expected format: supabase/functions/{functionName}/...`,
-      DyadErrorKind.Validation,
+      OrianBuilderErrorKind.Validation,
     );
   }
 
@@ -113,9 +116,9 @@ export function extractFunctionNameFromPath(filePath: string): string {
 
   // Exclude _shared and other special directories
   if (functionName.startsWith("_")) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Invalid Supabase function path: ${filePath}. Function names starting with "_" are reserved for special directories.`,
-      DyadErrorKind.Validation,
+      OrianBuilderErrorKind.Validation,
     );
   }
 

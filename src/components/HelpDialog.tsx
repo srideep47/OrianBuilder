@@ -69,7 +69,7 @@ const screenTransition = {
 // =============================================================================
 
 const GITHUB_ISSUES_BASE =
-  "https://github.com/dyad-sh/dyad/issues/new" as const;
+  "https://github.com/orianbuilder-sh/orianbuilder/issues/new" as const;
 
 function formatSettingsLines(settings: UserSettings | null): string {
   if (!settings) return "Settings not available";
@@ -77,7 +77,7 @@ function formatSettingsLines(settings: UserSettings | null): string {
     `- Selected Model: ${settings.selectedModel?.provider}:${settings.selectedModel?.name}`,
     `- Chat Mode: ${settings.selectedChatMode ?? "default"}`,
     `- Auto Approve Changes: ${settings.autoApproveChanges ?? "n/a"}`,
-    `- OrianBuilder Pro Enabled: ${settings.enableDyadPro ?? "n/a"}`,
+    `- OrianBuilder Pro Enabled: ${settings.enableOrianBuilderPro ?? "n/a"}`,
     `- Thinking Budget: ${settings.thinkingBudget ?? "n/a"}`,
     `- Runtime Mode: ${settings.runtimeMode2 ?? "n/a"}`,
     `- Release Channel: ${settings.releaseChannel ?? "n/a"}`,
@@ -91,7 +91,7 @@ function formatSystemInfoSection(
   userBudget: UserBudgetInfo | undefined,
 ): string {
   return `## System Information
-- OrianBuilder Version: ${debugInfo.dyadVersion}
+- OrianBuilder Version: ${debugInfo.orianbuilderVersion}
 - Platform: ${debugInfo.platform}
 - Architecture: ${debugInfo.architecture}
 - Node Version: ${debugInfo.nodeVersion || "n/a"}
@@ -113,10 +113,10 @@ function openGitHubIssue(params: {
   title: string;
   labels: string[];
   body: string;
-  isDyadProUser: unknown;
+  isOrianBuilderProUser: unknown;
 }) {
   const labels = [...params.labels];
-  if (params.isDyadProUser) labels.push("pro");
+  if (params.isOrianBuilderProUser) labels.push("pro");
   const qs = new URLSearchParams({
     title: params.title,
     labels: labels.join(","),
@@ -259,7 +259,8 @@ export function HelpDialog({ isOpen, onClose }: HelpDialogProps) {
   const selectedChatId = useAtomValue(selectedChatIdAtom);
   const { settings } = useSettings();
   const { userBudget } = useUserBudgetInfo();
-  const isDyadProUser = settings?.providerSettings?.["auto"]?.apiKey?.value;
+  const isOrianBuilderProUser =
+    settings?.providerSettings?.["auto"]?.apiKey?.value;
 
   // ---------------------------------------------------------------------------
   // Navigation
@@ -317,7 +318,7 @@ ${formatLogsSection(debugInfo)}
         title: "[bug] <WRITE TITLE HERE>",
         labels: ["bug"],
         body,
-        isDyadProUser,
+        isOrianBuilderProUser,
       });
     } catch (error) {
       console.error("Failed to prepare bug report:", error);
@@ -352,7 +353,7 @@ ${formatLogsSection(debugInfo)}
     setIsUploading(true);
     try {
       const response = await fetch(
-        "https://upload-logs.dyad.sh/generate-upload-url",
+        "https://upload-logs.orianbuilder.sh/generate-upload-url",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -417,7 +418,7 @@ ${formatLogsSection(debugInfo)}
         title: "[session report] <add title>",
         labels: ["support"],
         body,
-        isDyadProUser,
+        isOrianBuilderProUser,
       });
     } catch (error) {
       console.error("Failed to prepare session report:", error);
@@ -425,7 +426,7 @@ ${formatLogsSection(debugInfo)}
         title: "[session report] <add title>",
         labels: ["support"],
         body: `Session ID: ${sessionId}\nSession Schema: v2.0\nPro User ID: ${userBudget?.redactedUserId || "n/a"}`,
-        isDyadProUser,
+        isOrianBuilderProUser,
       });
     }
     handleClose();
@@ -442,14 +443,14 @@ ${formatLogsSection(debugInfo)}
       skipInitial={!hasNavigated.current}
     >
       <DialogHeader>
-        <DialogTitle>Need help with Dyad?</DialogTitle>
+        <DialogTitle>Need help with OrianBuilder?</DialogTitle>
       </DialogHeader>
       <DialogDescription>
         If you need help or want to report an issue, here are some options:
       </DialogDescription>
       <div className="flex flex-col w-full mt-4 space-y-5">
         {/* Self-service help */}
-        {isDyadProUser ? (
+        {isOrianBuilderProUser ? (
           <Button
             variant="default"
             onClick={() => setIsHelpBotOpen(true)}
@@ -462,7 +463,7 @@ ${formatLogsSection(debugInfo)}
           <Button
             variant="outline"
             onClick={() =>
-              ipc.system.openExternalUrl("https://www.dyad.sh/docs")
+              ipc.system.openExternalUrl("https://www.orianbuilder.sh/docs")
             }
             className="w-full py-6 bg-(--background-lightest)"
           >
@@ -584,7 +585,9 @@ ${formatLogsSection(debugInfo)}
           </ReviewDetailsSection>
 
           <ReviewDetailsSection title="System Information" mono={false}>
-            <p>OrianBuilder Version: {debugBundle.system.dyadVersion}</p>
+            <p>
+              OrianBuilder Version: {debugBundle.system.orianbuilderVersion}
+            </p>
             <p>Platform: {debugBundle.system.platform}</p>
             <p>Architecture: {debugBundle.system.architecture}</p>
             <p>

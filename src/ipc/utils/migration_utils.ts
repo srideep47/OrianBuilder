@@ -3,7 +3,10 @@ import { utilityProcess } from "electron";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { getNeonClient } from "../../neon_admin/neon_management_client";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { IS_TEST_BUILD } from "../utils/test_utils";
 import { readEffectiveSettings } from "@/main/settings";
 import {
@@ -29,17 +32,17 @@ export async function getProductionBranchId(
   const response = await neonClient.listProjectBranches({ projectId });
 
   if (!response.data.branches) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "Failed to list branches: No branch data returned.",
-      DyadErrorKind.External,
+      OrianBuilderErrorKind.External,
     );
   }
 
   const prodBranch = response.data.branches.find((b) => b.default);
   if (!prodBranch) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "No production (default) branch found for this Neon project.",
-      DyadErrorKind.Precondition,
+      OrianBuilderErrorKind.Precondition,
     );
   }
 
@@ -105,9 +108,9 @@ export async function installMigrationDeps(appPath: string): Promise<void> {
         : error instanceof Error
           ? error.message
           : String(error);
-    throw new DyadError(
+    throw new OrianBuilderError(
       `Failed to install migration dependencies: ${detail}`,
-      DyadErrorKind.External,
+      OrianBuilderErrorKind.External,
     );
   }
 }
@@ -234,9 +237,9 @@ export async function spawnDrizzleKit({
       });
     } catch (error) {
       reject(
-        new DyadError(
+        new OrianBuilderError(
           `Failed to spawn drizzle-kit: ${error instanceof Error ? error.message : String(error)}`,
-          DyadErrorKind.Internal,
+          OrianBuilderErrorKind.Internal,
         ),
       );
       return;
@@ -245,13 +248,13 @@ export async function spawnDrizzleKit({
     let stdout = "";
     let stderr = "";
     let timedOut = false;
-    let timeoutError: DyadError | null = null;
+    let timeoutError: OrianBuilderError | null = null;
 
     const timer = setTimeout(() => {
       timedOut = true;
-      timeoutError = new DyadError(
+      timeoutError = new OrianBuilderError(
         `drizzle-kit timed out after ${timeoutMs}ms. The database endpoint may be suspended or unreachable.`,
-        DyadErrorKind.External,
+        OrianBuilderErrorKind.External,
       );
       proc.kill();
     }, timeoutMs);
@@ -281,9 +284,9 @@ export async function spawnDrizzleKit({
       if (timedOut) return;
       clearTimeout(timer);
       reject(
-        new DyadError(
+        new OrianBuilderError(
           `drizzle-kit utility process failed (${type}) at ${location}. ${report}`,
-          DyadErrorKind.Internal,
+          OrianBuilderErrorKind.Internal,
         ),
       );
     });

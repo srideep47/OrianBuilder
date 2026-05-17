@@ -8,7 +8,7 @@ import React, {
 import { useAtomValue, useSetAtom } from "jotai";
 import { Button } from "@/components/ui/button";
 import { Check, FileText } from "lucide-react";
-import { VanillaMarkdownParser } from "@/components/chat/DyadMarkdownParser";
+import { VanillaMarkdownParser } from "@/components/chat/OrianBuilderMarkdownParser";
 import {
   clearPlanAnnotations,
   planAnnotationsAtom,

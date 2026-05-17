@@ -70,11 +70,27 @@ export type McpServerUpdate = z.infer<typeof McpServerUpdateSchema>;
 
 export const McpConsentEnum = z.enum(["ask", "always", "denied"]);
 export type McpConsentValue = z.infer<typeof McpConsentEnum>;
+export const McpToolRiskOverrideEnum = z.enum([
+  "low",
+  "medium",
+  "high",
+  "critical",
+]);
+export const McpToolStateScopeOverrideEnum = z.enum([
+  "read_only",
+  "workspace",
+  "runtime",
+  "external",
+  "host",
+]);
 
 export const McpToolSchema = z.object({
   name: z.string(),
   description: z.string().nullable().optional(),
   consent: McpConsentEnum.optional(),
+  riskOverride: McpToolRiskOverrideEnum.nullable().optional(),
+  stateScopeOverride: McpToolStateScopeOverrideEnum.nullable().optional(),
+  requiresExplicitConsentOverride: z.boolean().nullable().optional(),
 });
 
 export type McpTool = z.infer<typeof McpToolSchema>;
@@ -84,6 +100,9 @@ export const McpToolConsentRecordSchema = z.object({
   serverId: z.number(),
   toolName: z.string(),
   consent: McpConsentEnum,
+  riskOverride: McpToolRiskOverrideEnum.nullable().optional(),
+  stateScopeOverride: McpToolStateScopeOverrideEnum.nullable().optional(),
+  requiresExplicitConsentOverride: z.boolean().nullable().optional(),
   updatedAt: z.date(),
 });
 
@@ -97,6 +116,18 @@ export const SetMcpToolConsentParamsSchema = z.object({
 
 export type SetMcpToolConsentParams = z.infer<
   typeof SetMcpToolConsentParamsSchema
+>;
+
+export const SetMcpToolTrustOverrideParamsSchema = z.object({
+  serverId: z.number(),
+  toolName: z.string(),
+  riskOverride: McpToolRiskOverrideEnum.nullable().optional(),
+  stateScopeOverride: McpToolStateScopeOverrideEnum.nullable().optional(),
+  requiresExplicitConsentOverride: z.boolean().nullable().optional(),
+});
+
+export type SetMcpToolTrustOverrideParams = z.infer<
+  typeof SetMcpToolTrustOverrideParamsSchema
 >;
 
 export const McpConsentRequestSchema = z.object({
@@ -168,6 +199,12 @@ export const mcpContracts = {
   setToolConsent: defineContract({
     channel: "mcp:set-tool-consent",
     input: SetMcpToolConsentParamsSchema,
+    output: McpToolConsentRecordSchema,
+  }),
+
+  setToolTrustOverride: defineContract({
+    channel: "mcp:set-tool-trust-override",
+    input: SetMcpToolTrustOverrideParamsSchema,
     output: McpToolConsentRecordSchema,
   }),
 

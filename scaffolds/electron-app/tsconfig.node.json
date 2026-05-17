@@ -1,8 +1,16 @@
 {
-  "extends": "@electron-toolkit/eslint-config-ts/tsconfig.node.json",
   "include": ["electron.vite.config.*", "src/main/**/*", "src/preload/**/*"],
   "compilerOptions": {
     "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolvePackageJsonExports": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "target": "ES2022",
+    "sourceMap": true,
+    "outDir": "dist/main",
     "types": ["electron-vite/node"]
   }
 }

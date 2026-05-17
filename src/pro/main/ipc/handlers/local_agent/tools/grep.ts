@@ -12,7 +12,7 @@ import {
   RIPGREP_EXCLUDED_GLOBS,
 } from "@/ipc/utils/ripgrep_utils";
 import {
-  DYAD_INTERNAL_RIPGREP_EXCLUDE,
+  ORIANBUILDER_INTERNAL_RIPGREP_EXCLUDE,
   resolveTargetAppPath,
 } from "./resolve_app_context";
 import log from "electron-log";
@@ -116,7 +116,7 @@ async function runRipgrep({
   includeIgnored,
   caseSensitive,
   maxMatches,
-  excludeDyadFolder,
+  excludeOrianBuilderFolder,
 }: {
   appPath: string;
   query: string;
@@ -125,7 +125,7 @@ async function runRipgrep({
   includeIgnored?: boolean;
   caseSensitive?: boolean;
   maxMatches?: number;
-  excludeDyadFolder?: boolean;
+  excludeOrianBuilderFolder?: boolean;
 }): Promise<{ matches: RipgrepMatch[]; stoppedEarly: boolean }> {
   return new Promise((resolve, reject) => {
     const results: RipgrepMatch[] = [];
@@ -164,8 +164,8 @@ async function runRipgrep({
       : RIPGREP_EXCLUDED_GLOBS;
     args.push(...exclusionGlobs.flatMap((glob) => ["--glob", glob]));
 
-    if (excludeDyadFolder) {
-      args.push("--glob", DYAD_INTERNAL_RIPGREP_EXCLUDE);
+    if (excludeOrianBuilderFolder) {
+      args.push("--glob", ORIANBUILDER_INTERNAL_RIPGREP_EXCLUDE);
     }
 
     args.push("--", query, ".");
@@ -200,8 +200,10 @@ async function runRipgrep({
             continue;
           }
 
-          // Normalize path (remove leading ./)
-          const normalizedPath = matchPath.replace(/^\.\//, "");
+          // Normalize path (remove leading ./ or .\) and convert backslashes to forward slashes
+          const normalizedPath = matchPath
+            .replace(/^\.[\\/]/, "")
+            .replace(/\\/g, "/");
 
           if (maxMatches !== undefined && results.length >= maxMatches) {
             stoppedEarly = true;
@@ -285,7 +287,7 @@ export const grepTool: ToolDefinition<z.infer<typeof grepSchema>> = {
 
     if (!args.query) return undefined;
     const attrs = buildGrepAttributes(args);
-    return `<dyad-grep ${attrs}>Searching...</dyad-grep>`;
+    return `<orianbuilder-grep ${attrs}>Searching...</orianbuilder-grep>`;
   },
 
   execute: async (args, ctx: AgentContext) => {
@@ -301,7 +303,7 @@ export const grepTool: ToolDefinition<z.infer<typeof grepSchema>> = {
       includeIgnored: args.include_ignored,
       caseSensitive: args.case_sensitive,
       maxMatches: args.include_ignored ? limit + 1 : undefined,
-      excludeDyadFolder: Boolean(args.app_name),
+      excludeOrianBuilderFolder: Boolean(args.app_name),
     });
 
     const totalCount = allMatches.length;
@@ -315,7 +317,9 @@ export const grepTool: ToolDefinition<z.infer<typeof grepSchema>> = {
     const attrs = buildGrepAttributes(args, matches.length, totalCount);
 
     if (matches.length === 0) {
-      ctx.onXmlComplete(`<dyad-grep ${attrs}>No matches found.</dyad-grep>`);
+      ctx.onXmlComplete(
+        `<orianbuilder-grep ${attrs}>No matches found.</orianbuilder-grep>`,
+      );
       return "No matches found.";
     }
 
@@ -337,7 +341,7 @@ export const grepTool: ToolDefinition<z.infer<typeof grepSchema>> = {
     }
 
     ctx.onXmlComplete(
-      `<dyad-grep ${attrs}>\n${escapeXmlContent(resultText)}\n</dyad-grep>`,
+      `<orianbuilder-grep ${attrs}>\n${escapeXmlContent(resultText)}\n</orianbuilder-grep>`,
     );
 
     return resultText;

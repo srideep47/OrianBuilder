@@ -69,9 +69,9 @@ export function createStreamChunk(
 }
 
 export const CANNED_MESSAGE = `
-  <dyad-write path="file1.txt">
+  <orianbuilder-write path="file1.txt">
   A file (2)
-  </dyad-write>
+  </orianbuilder-write>
   More
   EOM`;
 
@@ -312,7 +312,7 @@ app.get("/api/language-model-catalog", (req, res) => {
     },
     aliases: [
       {
-        id: "dyad/theme-generator/google",
+        id: "orianbuilder/theme-generator/google",
         resolvedModel: {
           providerId: "google",
           apiName: "gemini-3.1-pro-preview",
@@ -321,7 +321,7 @@ app.get("/api/language-model-catalog", (req, res) => {
         purpose: "theme-generation",
       },
       {
-        id: "dyad/theme-generator/anthropic",
+        id: "orianbuilder/theme-generator/anthropic",
         resolvedModel: {
           providerId: "anthropic",
           apiName: "claude-sonnet-4-6",
@@ -330,7 +330,7 @@ app.get("/api/language-model-catalog", (req, res) => {
         purpose: "theme-generation",
       },
       {
-        id: "dyad/theme-generator/openai",
+        id: "orianbuilder/theme-generator/openai",
         resolvedModel: {
           providerId: "openai",
           apiName: "gpt-5.2",
@@ -339,7 +339,7 @@ app.get("/api/language-model-catalog", (req, res) => {
         purpose: "theme-generation",
       },
       {
-        id: "dyad/auto/openai",
+        id: "orianbuilder/auto/openai",
         resolvedModel: {
           providerId: "openai",
           apiName: "gpt-5.2",
@@ -347,7 +347,7 @@ app.get("/api/language-model-catalog", (req, res) => {
         purpose: "auto-mode",
       },
       {
-        id: "dyad/auto/anthropic",
+        id: "orianbuilder/auto/anthropic",
         resolvedModel: {
           providerId: "anthropic",
           apiName: "claude-sonnet-4-6",
@@ -355,7 +355,7 @@ app.get("/api/language-model-catalog", (req, res) => {
         purpose: "auto-mode",
       },
       {
-        id: "dyad/auto/google",
+        id: "orianbuilder/auto/google",
         resolvedModel: {
           providerId: "google",
           apiName: "gemini-3.1-pro-preview",
@@ -363,7 +363,7 @@ app.get("/api/language-model-catalog", (req, res) => {
         purpose: "auto-mode",
       },
       {
-        id: "dyad/help-bot/default",
+        id: "orianbuilder/help-bot/default",
         resolvedModel: {
           providerId: "openai",
           apiName: "gpt-5.2",
@@ -374,15 +374,15 @@ app.get("/api/language-model-catalog", (req, res) => {
     curatedSelections: {
       themeGenerationOptions: [
         {
-          id: "dyad/theme-generator/google",
+          id: "orianbuilder/theme-generator/google",
           label: "Google Remote",
         },
         {
-          id: "dyad/theme-generator/anthropic",
+          id: "orianbuilder/theme-generator/anthropic",
           label: "Anthropic Remote",
         },
         {
-          id: "dyad/theme-generator/openai",
+          id: "orianbuilder/theme-generator/openai",
           label: "OpenAI Remote",
         },
       ],
@@ -524,7 +524,7 @@ app.post("/github/api/test/clear-push-events", handleClearPushEvents);
 // GitHub Git endpoints - intercept all paths with /github/git prefix
 app.all("/github/git/*", handleGitPush);
 
-// Dyad Engine code-search endpoint for code_search tool
+// OrianBuilder Engine code-search endpoint for code_search tool
 app.post("/engine/v1/tools/code-search", (req, res) => {
   const { query, filesContext } = req.body;
   console.log(
@@ -545,7 +545,7 @@ app.post("/engine/v1/tools/code-search", (req, res) => {
   }
 });
 
-// Dyad Engine image generation endpoint for generate_image tool
+// OrianBuilder Engine image generation endpoint for generate_image tool
 app.post("/engine/v1/images/generations", (req, res) => {
   const { prompt, model } = req.body;
   console.log(
@@ -571,7 +571,7 @@ app.post("/engine/v1/images/generations", (req, res) => {
   }
 });
 
-// Dyad Engine web-crawl endpoint for web_fetch tool
+// OrianBuilder Engine web-crawl endpoint for web_fetch tool
 app.post("/engine/v1/tools/web-crawl", (req, res) => {
   const { url, markdownOnly } = req.body;
   console.log(`* web-crawl: url="${url}", markdownOnly=${markdownOnly}`);

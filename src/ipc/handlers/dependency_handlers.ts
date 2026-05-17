@@ -1,11 +1,14 @@
 import { db } from "../../db";
 import { messages, apps, chats } from "../../db/schema";
 import { eq } from "drizzle-orm";
-import { getDyadAppPath } from "../../paths/paths";
+import { getOrianBuilderAppPath } from "../../paths/paths";
 import { executeAddDependency } from "../processors/executeAddDependency";
 import { createLoggedHandler } from "./safe_handle";
 import log from "electron-log";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("dependency_handlers");
 const handle = createLoggedHandler(logger);
@@ -28,7 +31,10 @@ export function registerDependencyHandlers() {
       });
 
       if (!chat) {
-        throw new DyadError(`Chat ${chatId} not found`, DyadErrorKind.NotFound);
+        throw new OrianBuilderError(
+          `Chat ${chatId} not found`,
+          OrianBuilderErrorKind.NotFound,
+        );
       }
 
       // Get the app using the appId from the chat
@@ -37,9 +43,9 @@ export function registerDependencyHandlers() {
       });
 
       if (!app) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           `App for chat ${chatId} not found`,
-          DyadErrorKind.NotFound,
+          OrianBuilderErrorKind.NotFound,
         );
       }
 
@@ -47,7 +53,7 @@ export function registerDependencyHandlers() {
         .reverse()
         .find((m) =>
           m.content.includes(
-            `<dyad-add-dependency packages="${packages.join(" ")}">`,
+            `<orianbuilder-add-dependency packages="${packages.join(" ")}">`,
           ),
         );
 
@@ -60,7 +66,7 @@ export function registerDependencyHandlers() {
       await executeAddDependency({
         packages,
         message,
-        appPath: getDyadAppPath(app.path),
+        appPath: getOrianBuilderAppPath(app.path),
       });
     },
   );

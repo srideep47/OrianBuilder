@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "preview": "electron-vite preview",
-    "start": "electron-vite dev"
+    "dist": "electron-vite build && electron-builder --win portable",
+    "preview": "electron-vite build && serve dist/renderer --single --listen 4173",
+    "start": "electron-vite dev",
+    "typecheck": "electron-vite build"
   },
   "dependencies": {
     "electron-updater": "^6.3.9",
@@ -23,10 +25,28 @@
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "electron": "^34.0.0",
+    "electron-builder": "^25.1.8",
     "electron-vite": "^3.0.0",
     "postcss": "^8.5.1",
+    "serve": "^14.2.4",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3",
     "vite": "^6.2.6"
+  },
+  "build": {
+    "appId": "com.orianbuilder.electronapp",
+    "productName": "OrianBuilder Electron App",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ]
+    }
   }
 }

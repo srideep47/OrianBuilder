@@ -6,7 +6,10 @@ import {
   escapeXmlAttr,
   escapeXmlContent,
 } from "./types";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { runningApps } from "@/ipc/utils/process_manager";
 import { getAppPort } from "../../../../../../../shared/ports";
 import { db } from "@/db";
@@ -71,7 +74,7 @@ The accessibility tree describes every visible, interactive element: buttons, li
 
     buildXml: (_args, isComplete) => {
       if (isComplete) return undefined;
-      return `<dyad-accessibility-tree>Reading…`;
+      return `<orianbuilder-accessibility-tree>Reading…`;
     },
 
     execute: async (args, ctx: AgentContext) => {
@@ -83,9 +86,9 @@ The accessibility tree describes every visible, interactive element: buttons, li
       });
 
       if (!chat?.app) {
-        throw new DyadError(
+        throw new OrianBuilderError(
           "App not found for this chat.",
-          DyadErrorKind.NotFound,
+          OrianBuilderErrorKind.NotFound,
         );
       }
 
@@ -93,7 +96,7 @@ The accessibility tree describes every visible, interactive element: buttons, li
       const previewUrl = getPreviewUrl(appId);
 
       ctx.onXmlStream(
-        `<dyad-accessibility-tree url="${escapeXmlAttr(previewUrl)}">Reading…`,
+        `<orianbuilder-accessibility-tree url="${escapeXmlAttr(previewUrl)}">Reading…`,
       );
 
       let treeText: string;
@@ -122,11 +125,11 @@ The accessibility tree describes every visible, interactive element: buttons, li
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         ctx.onXmlComplete(
-          `<dyad-accessibility-tree url="${escapeXmlAttr(previewUrl)}" error="${escapeXmlAttr(msg)}"></dyad-accessibility-tree>`,
+          `<orianbuilder-accessibility-tree url="${escapeXmlAttr(previewUrl)}" error="${escapeXmlAttr(msg)}"></orianbuilder-accessibility-tree>`,
         );
-        throw new DyadError(
+        throw new OrianBuilderError(
           `Accessibility tree failed: ${msg}. Ensure the app is running at ${previewUrl}.`,
-          DyadErrorKind.External,
+          OrianBuilderErrorKind.External,
         );
       }
 
@@ -141,7 +144,7 @@ The accessibility tree describes every visible, interactive element: buttons, li
       const output = header + treeText;
 
       ctx.onXmlComplete(
-        `<dyad-accessibility-tree url="${escapeXmlAttr(previewUrl)}">${escapeXmlContent(output)}</dyad-accessibility-tree>`,
+        `<orianbuilder-accessibility-tree url="${escapeXmlAttr(previewUrl)}">${escapeXmlContent(output)}</orianbuilder-accessibility-tree>`,
       );
 
       logger.log(`get_accessibility_tree: done (${treeText.length} chars)`);

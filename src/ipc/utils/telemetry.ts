@@ -1,9 +1,9 @@
 import { BrowserWindow } from "electron";
 import log from "electron-log";
 import {
-  DyadError,
-  isDyadErrorKindFilteredFromTelemetry,
-} from "@/errors/dyad_error";
+  OrianBuilderError,
+  isOrianBuilderErrorKindFilteredFromTelemetry,
+} from "@/errors/orianbuilder_error";
 import { TelemetryEventPayload } from "@/ipc/types";
 
 const logger = log.scope("telemetry");
@@ -57,8 +57,8 @@ export function sendTelemetryException(
 }
 
 export function shouldFilterTelemetryException(error: unknown): boolean {
-  if (error instanceof DyadError) {
-    return isDyadErrorKindFilteredFromTelemetry(error.kind);
+  if (error instanceof OrianBuilderError) {
+    return isOrianBuilderErrorKindFilteredFromTelemetry(error.kind);
   }
 
   if (

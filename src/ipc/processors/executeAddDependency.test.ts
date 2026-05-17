@@ -81,7 +81,7 @@ describe("executeAddDependency", () => {
         message: {
           id: 1,
           content:
-            '<dyad-add-dependency packages="react"></dyad-add-dependency>',
+            '<orianbuilder-add-dependency packages="react"></orianbuilder-add-dependency>',
         } as any,
         appPath: "/tmp/app",
       });
@@ -116,7 +116,7 @@ describe("executeAddDependency", () => {
         message: {
           id: 1,
           content:
-            '<dyad-add-dependency packages="react"></dyad-add-dependency>',
+            '<orianbuilder-add-dependency packages="react"></orianbuilder-add-dependency>',
         } as any,
         appPath: "/tmp/app",
       });
@@ -158,7 +158,7 @@ describe("executeAddDependency", () => {
         message: {
           id: 1,
           content:
-            '<dyad-add-dependency packages="react"></dyad-add-dependency>',
+            '<orianbuilder-add-dependency packages="react"></orianbuilder-add-dependency>',
         } as any,
         appPath: "/tmp/app",
       }),
@@ -191,7 +191,7 @@ describe("executeAddDependency", () => {
         message: {
           id: 1,
           content:
-            '<dyad-add-dependency packages="react"></dyad-add-dependency>',
+            '<orianbuilder-add-dependency packages="react"></orianbuilder-add-dependency>',
         } as any,
         appPath: "/tmp/app",
       }),
@@ -226,7 +226,7 @@ describe("executeAddDependency", () => {
         message: {
           id: 1,
           content:
-            '<dyad-add-dependency packages="react"></dyad-add-dependency>',
+            '<orianbuilder-add-dependency packages="react"></orianbuilder-add-dependency>',
         } as any,
         appPath: "/tmp/app",
       }),
@@ -258,7 +258,7 @@ describe("executeAddDependency", () => {
         message: {
           id: 1,
           content:
-            '<dyad-add-dependency packages="react"></dyad-add-dependency>',
+            '<orianbuilder-add-dependency packages="react"></orianbuilder-add-dependency>',
         } as any,
         appPath: "/tmp/app",
       }),
@@ -288,7 +288,7 @@ describe("executeAddDependency", () => {
         message: {
           id: 1,
           content:
-            '<dyad-add-dependency packages="axois"></dyad-add-dependency>',
+            '<orianbuilder-add-dependency packages="axois"></orianbuilder-add-dependency>',
         } as any,
         appPath: "/tmp/app",
       }),
@@ -319,7 +319,7 @@ describe("executeAddDependency", () => {
         message: {
           id: 1,
           content:
-            '<dyad-add-dependency packages="react"></dyad-add-dependency>',
+            '<orianbuilder-add-dependency packages="react"></orianbuilder-add-dependency>',
         } as any,
         appPath: "/tmp/app",
       }),
@@ -345,7 +345,8 @@ describe("executeAddDependency", () => {
       packages: ["react"],
       message: {
         id: 1,
-        content: '<dyad-add-dependency packages="react"></dyad-add-dependency>',
+        content:
+          '<orianbuilder-add-dependency packages="react"></orianbuilder-add-dependency>',
       } as any,
       appPath: "/tmp/app",
     });
@@ -372,7 +373,7 @@ describe("executeAddDependency", () => {
         message: {
           id: 1,
           content:
-            '<dyad-add-dependency packages="react@^18.0.0"></dyad-add-dependency>',
+            '<orianbuilder-add-dependency packages="react@^18.0.0"></orianbuilder-add-dependency>',
         } as any,
         appPath: "/tmp/app",
       }),
@@ -399,14 +400,14 @@ describe("executeAddDependency", () => {
       message: {
         id: 1,
         content:
-          '<dyad-add-dependency packages="react-safe"></dyad-add-dependency>',
+          '<orianbuilder-add-dependency packages="react-safe"></orianbuilder-add-dependency>',
       } as any,
       appPath: "/tmp/app",
     });
 
     expect(dbUpdateSetMock).toHaveBeenCalledWith({
       content:
-        '<dyad-add-dependency packages="react-safe">installed &lt;react&gt;</dyad-add-dependency>',
+        '<orianbuilder-add-dependency packages="react-safe">installed &lt;react&gt;</orianbuilder-add-dependency>',
     });
   });
 });

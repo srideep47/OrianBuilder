@@ -19,7 +19,7 @@ jobs:
     if: >-
       github.event.action != 'closed' &&
       contains(
-        fromJSON('["wwwillchen","keppo-bot","keppo-bot[bot]","dyad-assistant","azizmejri1","princeaden1","nourzakhama2003","ryangroch"]'),
+        fromJSON('["wwwillchen","keppo-bot","keppo-bot[bot]","orianbuilder-assistant","azizmejri1","princeaden1","nourzakhama2003","ryangroch"]'),
         github.event.pull_request.user.login
       )
     runs-on: ubuntu-latest
@@ -38,8 +38,8 @@ jobs:
         id: agent-token
         uses: actions/create-github-app-token@v2
         with:
-          app-id: ${{ vars.DYAD_GITHUB_APP_ID }}
-          private-key: ${{ secrets.DYAD_GITHUB_APP_PRIVATE_KEY }}
+          app-id: ${{ vars.ORIANBUILDER_GITHUB_APP_ID }}
+          private-key: ${{ secrets.ORIANBUILDER_GITHUB_APP_PRIVATE_KEY }}
           permission-contents: read
           permission-pull-requests: read
 
@@ -125,8 +125,8 @@ jobs:
         id: post-token
         uses: actions/create-github-app-token@v2
         with:
-          app-id: ${{ vars.DYAD_GITHUB_APP_ID }}
-          private-key: ${{ secrets.DYAD_GITHUB_APP_PRIVATE_KEY }}
+          app-id: ${{ vars.ORIANBUILDER_GITHUB_APP_ID }}
+          private-key: ${{ secrets.ORIANBUILDER_GITHUB_APP_PRIVATE_KEY }}
           permission-pull-requests: write
           permission-issues: write
 

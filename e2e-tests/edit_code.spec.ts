@@ -41,7 +41,11 @@ async function replaceEditorContent(page: Page, content: string) {
 
 test("edit code", async ({ po }) => {
   await po.setUp({ autoApprove: true });
-  const editedFilePath = path.join("src", "components", "made-with-dyad.tsx");
+  const editedFilePath = path.join(
+    "src",
+    "components",
+    "made-with-orianbuilder.tsx",
+  );
   await po.sendPrompt("foo");
   const appPath = await po.appManagement.getCurrentAppPath();
 
@@ -54,8 +58,8 @@ test("edit code", async ({ po }) => {
     timeout: Timeout.LONG,
   });
 
-  await selectFileAndWaitForEditor(po.page, "made-with-dyad.tsx");
-  await replaceEditorContent(po.page, "export const MadeWithDyad = ;");
+  await selectFileAndWaitForEditor(po.page, "made-with-orianbuilder.tsx");
+  await replaceEditorContent(po.page, "export const MadeWithOrianBuilder = ;");
 
   // Save the file
   await po.page.getByTestId("save-file-button").click();
@@ -69,7 +73,7 @@ test("edit code", async ({ po }) => {
     path.join(appPath, editedFilePath),
     "utf8",
   );
-  expect(editedFile).toContain("export const MadeWithDyad = ;");
+  expect(editedFile).toContain("export const MadeWithOrianBuilder = ;");
 });
 
 test("edit code edits the right file during rapid switches", async ({ po }) => {
@@ -77,7 +81,7 @@ test("edit code edits the right file during rapid switches", async ({ po }) => {
   const firstOpenedFilePath = path.join(
     "src",
     "components",
-    "made-with-dyad.tsx",
+    "made-with-orianbuilder.tsx",
   );
   const robotsFilePath = path.join("public", "robots.txt");
   await po.sendPrompt("foo");
@@ -94,15 +98,15 @@ test("edit code edits the right file during rapid switches", async ({ po }) => {
     timeout: Timeout.LONG,
   });
 
-  await selectFileAndWaitForEditor(po.page, "made-with-dyad.tsx");
+  await selectFileAndWaitForEditor(po.page, "made-with-orianbuilder.tsx");
   for (const round of [1, 2, 3]) {
-    firstFileEdit = `export const MadeWithDyad = "round-${round}";\n`;
+    firstFileEdit = `export const MadeWithOrianBuilder = "round-${round}";\n`;
     updatedRobotsFile = `User-agent: *\nDisallow: /round-${round}\n`;
 
     await replaceEditorContent(po.page, firstFileEdit);
     await selectFileAndWaitForEditor(po.page, "robots.txt");
     await replaceEditorContent(po.page, updatedRobotsFile);
-    await selectFileAndWaitForEditor(po.page, "made-with-dyad.tsx");
+    await selectFileAndWaitForEditor(po.page, "made-with-orianbuilder.tsx");
   }
 
   await expect

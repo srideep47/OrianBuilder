@@ -3,13 +3,17 @@
  * Environment variables are sensitive and should not be logged.
  */
 
-import { getDyadAppPath } from "@/paths/paths";
+import { getOrianBuilderAppPath } from "@/paths/paths";
 import { EnvVar } from "@/ipc/types";
 import path from "path";
 import fs from "fs";
+import { normalizePath } from "@/ipc/utils/path_utils";
 import crypto from "crypto";
 import log from "electron-log";
-import { DyadError, DyadErrorKind } from "@/errors/dyad_error";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 import { queueCloudSandboxSnapshotSync } from "./cloud_sandbox_provider";
 
 const logger = log.scope("app_env_var_utils");
@@ -17,7 +21,9 @@ const logger = log.scope("app_env_var_utils");
 export const ENV_FILE_NAME = ".env.local";
 
 export function getEnvFilePath({ appPath }: { appPath: string }): string {
-  return path.join(getDyadAppPath(appPath), ENV_FILE_NAME);
+  return normalizePath(
+    path.join(getOrianBuilderAppPath(appPath), ENV_FILE_NAME),
+  );
 }
 
 export async function updatePostgresUrlEnvVar({
@@ -46,7 +52,7 @@ export async function updatePostgresUrlEnvVar({
   const envFileContents = serializeEnvFile(envVars);
   await fs.promises.writeFile(getEnvFilePath({ appPath }), envFileContents);
   queueCloudSandboxSnapshotSync({
-    appPath: getDyadAppPath(appPath),
+    appPath: getOrianBuilderAppPath(appPath),
     changedPaths: [ENV_FILE_NAME],
   });
 }
@@ -61,15 +67,15 @@ export async function updateDbPushEnvVar({
   try {
     const envVars = await readEnvVarsOrEmpty({ appPath });
 
-    // Update or add DYAD_DISABLE_DB_PUSH
+    // Update or add ORIANBUILDER_DISABLE_DB_PUSH
     const existingVar = envVars.find(
-      (envVar) => envVar.key === "DYAD_DISABLE_DB_PUSH",
+      (envVar) => envVar.key === "ORIANBUILDER_DISABLE_DB_PUSH",
     );
     if (existingVar) {
       existingVar.value = disabled ? "true" : "false";
     } else {
       envVars.push({
-        key: "DYAD_DISABLE_DB_PUSH",
+        key: "ORIANBUILDER_DISABLE_DB_PUSH",
         value: disabled ? "true" : "false",
       });
     }
@@ -77,7 +83,7 @@ export async function updateDbPushEnvVar({
     const envFileContents = serializeEnvFile(envVars);
     await fs.promises.writeFile(getEnvFilePath({ appPath }), envFileContents);
     queueCloudSandboxSnapshotSync({
-      appPath: getDyadAppPath(appPath),
+      appPath: getOrianBuilderAppPath(appPath),
       changedPaths: [ENV_FILE_NAME],
     });
   } catch (error) {
@@ -99,9 +105,9 @@ export async function readPostgresUrlFromEnvFile({
     (envVar) => envVar.key === "POSTGRES_URL",
   )?.value;
   if (!postgresUrl) {
-    throw new DyadError(
+    throw new OrianBuilderError(
       "POSTGRES_URL not found in .env.local",
-      DyadErrorKind.NotFound,
+      OrianBuilderErrorKind.NotFound,
     );
   }
   return postgresUrl;
@@ -251,7 +257,7 @@ export async function updateNeonEnvVars({
   const envFileContents = serializeEnvFile(envVars);
   await fs.promises.writeFile(getEnvFilePath({ appPath }), envFileContents);
   queueCloudSandboxSnapshotSync({
-    appPath: getDyadAppPath(appPath),
+    appPath: getOrianBuilderAppPath(appPath),
     changedPaths: [ENV_FILE_NAME],
   });
 }
@@ -291,7 +297,7 @@ export async function removeNeonEnvVars({
   const envFileContents = serializeEnvFile(filtered);
   await fs.promises.writeFile(getEnvFilePath({ appPath }), envFileContents);
   queueCloudSandboxSnapshotSync({
-    appPath: getDyadAppPath(appPath),
+    appPath: getOrianBuilderAppPath(appPath),
     changedPaths: [ENV_FILE_NAME],
   });
 }

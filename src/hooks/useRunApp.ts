@@ -35,12 +35,12 @@ export function useAppOutputSubscription() {
   const processProxyServerOutput = useCallback(
     (output: AppOutput) => {
       const matchesProxyServerStart = output.message.includes(
-        "[dyad-proxy-server]started=[",
+        "[orianbuilder-proxy-server]started=[",
       );
       if (matchesProxyServerStart) {
         // Extract both proxy URL and original URL using regex
         const proxyUrlMatch = output.message.match(
-          /\[dyad-proxy-server\]started=\[(.*?)\]/,
+          /\[orianbuilder-proxy-server\]started=\[(.*?)\]/,
         );
         const originalUrlMatch = output.message.match(/original=\[(.*?)\]/);
         const modeMatch = output.message.match(/mode=\[(.*?)\]/);
@@ -99,11 +99,11 @@ export function useAppOutputSubscription() {
         }
 
         setPreviewErrorMessage((current) =>
-          current && current.source !== "dyad-sync"
+          current && current.source !== "orianbuilder-sync"
             ? current
             : {
                 message: output.message,
-                source: "dyad-sync",
+                source: "orianbuilder-sync",
               },
         );
       }
@@ -111,7 +111,7 @@ export function useAppOutputSubscription() {
       if (output.type === "sync-recovered") {
         syncErrorToastRef.current.delete(output.appId);
         setPreviewErrorMessage((current) =>
-          current?.source === "dyad-sync" ? undefined : current,
+          current?.source === "orianbuilder-sync" ? undefined : current,
         );
       }
 
@@ -233,10 +233,10 @@ export function useRunApp() {
       console.error(`Error running app ${appId}:`, error);
       setPreviewErrorMessage(
         error instanceof Error
-          ? { message: error.message, source: "dyad-app" }
+          ? { message: error.message, source: "orianbuilder-app" }
           : {
               message: error?.toString() || "Unknown error",
-              source: "dyad-app",
+              source: "orianbuilder-app",
             },
       );
     } finally {
@@ -258,10 +258,10 @@ export function useRunApp() {
       console.error(`Error stopping app ${appId}:`, error);
       setPreviewErrorMessage(
         error instanceof Error
-          ? { message: error.message, source: "dyad-app" }
+          ? { message: error.message, source: "orianbuilder-app" }
           : {
               message: error?.toString() || "Unknown error",
-              source: "dyad-app",
+              source: "orianbuilder-app",
             },
       );
     } finally {
@@ -326,10 +326,10 @@ export function useRunApp() {
         console.error(`Error restarting app ${appId}:`, error);
         setPreviewErrorMessage(
           error instanceof Error
-            ? { message: error.message, source: "dyad-app" }
+            ? { message: error.message, source: "orianbuilder-app" }
             : {
                 message: error?.toString() || "Unknown error",
-                source: "dyad-app",
+                source: "orianbuilder-app",
               },
         );
       } finally {
