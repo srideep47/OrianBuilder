@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Sparkles,
   Image,
@@ -28,7 +28,15 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 
 // Media AI Backend Configuration
-const MEDIA_AI_BACKEND_URL = "http://localhost:8000";
+// Use 127.0.0.1 instead of localhost to force IPv4 — on Windows, `localhost`
+// often resolves to IPv6 (::1) first, and if a different process is bound to
+// the IPv6 loopback on :8000 the health check hits the wrong server and the
+// backend appears "offline" even when it's running.
+const MEDIA_AI_BACKEND_URL = "http://127.0.0.1:8000";
+const BACKEND_SETUP_COMMANDS = `cd mediaai-backend/backend
+pip install -r requirements.txt
+$env:PYTHONPATH = "c:\\own_ai\\OrianBuilder\\mediaai-backend\\backend"
+python -m uvicorn app.main:app --reload --port 8000`;
 
 type GenerationType = "text" | "image" | "audio" | "video";
 
@@ -36,7 +44,34 @@ interface GenerationResult {
   type: GenerationType;
   content?: string;
   url?: string;
+  // When set, the renderer uses this URL directly (no server prefix). Used by
+  // cloud image/video sources like Pollinations.ai.
+  absoluteUrl?: string;
+  // Video-as-slideshow frames (cloud video). Renderer cycles these to simulate
+  // motion when a true text-to-video model isn't available.
+  frames?: string[];
   filename?: string;
+  source?: "cloud" | "local";
+}
+
+// Pollinations.ai — free public text-to-image service. No auth, no key, no
+// rate limit, returns image/jpeg directly. We pass nologo=true so the output
+// isn't watermarked, and add a random seed for variety.
+const POLLINATIONS_BASE = "https://image.pollinations.ai/prompt";
+
+function pollinationsUrl(
+  prompt: string,
+  opts: { width?: number; height?: number; seed?: number; model?: string } = {},
+): string {
+  const seed = opts.seed ?? Math.floor(Math.random() * 1_000_000);
+  const params = new URLSearchParams({
+    width: String(opts.width ?? 768),
+    height: String(opts.height ?? 768),
+    seed: String(seed),
+    nologo: "true",
+    model: opts.model ?? "flux",
+  });
+  return `${POLLINATIONS_BASE}/${encodeURIComponent(prompt)}?${params}`;
 }
 
 export default function MediaAIPage() {
@@ -80,15 +115,95 @@ export default function MediaAIPage() {
       return;
     }
 
+    setIsGenerating(true);
+    setResult(null);
+
+    // Image & Video: bypass the broken Python pipeline and use Pollinations.ai
+    // directly. Works without any backend, no auth, free.
+    if (activeTab === "image") {
+      try {
+        const url = pollinationsUrl(prompt.trim(), {
+          width: 768,
+          height: 768,
+        });
+        // Pre-load to confirm Pollinations is reachable and the image renders
+        await new Promise<void>((resolve, reject) => {
+          const probe = new window.Image();
+          probe.onload = () => resolve();
+          probe.onerror = () =>
+            reject(new Error("Pollinations.ai unreachable"));
+          probe.src = url;
+        });
+        setResult({
+          type: "image",
+          absoluteUrl: url,
+          filename: `image-${Date.now()}.jpg`,
+          source: "cloud",
+        });
+        toast.success("Image generated!");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast.error(`Image generation failed: ${msg}`);
+      } finally {
+        setIsGenerating(false);
+      }
+      return;
+    }
+
+    if (activeTab === "video") {
+      try {
+        // Generate 6 keyframes with sequential seeds so the same subject
+        // appears across frames with small variation. Rendered as a cycling
+        // slideshow for a motion-sequence effect.
+        const baseSeed = Math.floor(Math.random() * 1_000_000);
+        const frameCount = 6;
+        const frames: string[] = [];
+        for (let i = 0; i < frameCount; i++) {
+          frames.push(
+            pollinationsUrl(prompt.trim(), {
+              width: 640,
+              height: 360,
+              seed: baseSeed + i,
+            }),
+          );
+        }
+        // Pre-load the first 2 frames so playback starts smoothly
+        await Promise.all(
+          frames.slice(0, 2).map(
+            (u) =>
+              new Promise<void>((resolve, reject) => {
+                const probe = new window.Image();
+                probe.onload = () => resolve();
+                probe.onerror = () =>
+                  reject(new Error("Pollinations.ai unreachable"));
+                probe.src = u;
+              }),
+          ),
+        );
+        setResult({
+          type: "video",
+          frames,
+          filename: `video-${Date.now()}.gif`,
+          source: "cloud",
+        });
+        toast.success("Motion sequence generated! Remaining frames loading…");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast.error(`Video generation failed: ${msg}`);
+      } finally {
+        setIsGenerating(false);
+      }
+      return;
+    }
+
+    // Text & Audio still use the local backend
     if (backendStatus !== "online") {
       toast.error(
         "Media AI backend is offline. Please start the backend server.",
       );
+      setIsGenerating(false);
       return;
     }
-
-    setIsGenerating(true);
-    setResult(null);
 
     try {
       const endpoint = `/generate/${activeTab}`;
@@ -114,6 +229,7 @@ export default function MediaAIPage() {
         content: data.text || data.response,
         url: data.image_url || data.audio_url || data.video_url,
         filename: data.filename,
+        source: "local",
       });
 
       toast.success(
@@ -122,39 +238,116 @@ export default function MediaAIPage() {
     } catch (error) {
       console.error("Generation error:", error);
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
-      toast.error(`Failed to generate ${activeTab}: ${errorMsg}`);
+
+      const isOnnxError =
+        /OMNIGEN_IMAGE_EXPORT_ONNX|Python 3\.14|Optimum ONNX export|onnx.*Invalid argument|nmkd\/stable-diffusion-1\.5-onnx|stable-diffusion-1\.5-onnx/i.test(
+          errorMsg,
+        );
+      const isErrno22 = /\[Errno 22\]|Invalid argument/i.test(errorMsg);
+      const isMemory = /out of memory|MemoryError/i.test(errorMsg);
+
+      if (isOnnxError || isErrno22) {
+        toast.error(
+          `${activeTab} model can't load. See the help panel below for fix steps.`,
+          { duration: 10000 },
+        );
+        setResult({
+          type: activeTab,
+          content:
+            `Couldn't load the ${activeTab} model on this backend setup.\n\n` +
+            `WHY: Either the ONNX runtime can't load on Python 3.14, or the\n` +
+            `HuggingFace cache path is too long / has Windows symlink issues.\n\n` +
+            `FIX OPTIONS — try in order:\n\n` +
+            `1) Use a short HuggingFace cache dir (one-line fix):\n` +
+            `   [Environment]::SetEnvironmentVariable("HF_HOME","C:\\hf",[EnvironmentVariableTarget]::User)\n` +
+            `   # then restart the backend\n\n` +
+            `2) Enable Windows Developer Mode (allows symlinks):\n` +
+            `   Settings → Privacy & Security → For developers → Developer Mode = On\n\n` +
+            `3) Re-create the backend venv on Python 3.12:\n` +
+            `   py -3.12 -m venv mediaai-backend\\backend\\.venv\n` +
+            `   .\\mediaai-backend\\backend\\.venv\\Scripts\\Activate.ps1\n` +
+            `   pip install -r mediaai-backend\\backend\\requirements.txt\n\n` +
+            `4) Disable ONNX export (if set):\n` +
+            `   Remove-Item Env:OMNIGEN_IMAGE_EXPORT_ONNX\n\n` +
+            `After any fix, restart the backend and try again.\n\n` +
+            `Original error: ${errorMsg}`,
+        });
+      } else if (isMemory) {
+        toast.error(
+          `${activeTab} generation ran out of memory. Try a smaller model or close other apps.`,
+          { duration: 8000 },
+        );
+        setResult({
+          type: activeTab,
+          content:
+            `Out of memory while generating ${activeTab}.\n\n` +
+            `Try: close other apps, use a smaller prompt, or switch to a quantised model.\n\n` +
+            `Original error: ${errorMsg}`,
+        });
+      } else {
+        toast.error(`Failed to generate ${activeTab}: ${errorMsg}`);
+      }
     } finally {
       setIsGenerating(false);
     }
   };
 
   const handleDownload = () => {
-    if (result?.url) {
-      const link = document.createElement("a");
-      link.href = `${serverUrl}${result.url}`;
-      link.download = result.filename || `generated-${activeTab}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+    if (!result) return;
+    let href: string | undefined;
+    if (result.absoluteUrl) {
+      href = result.absoluteUrl;
+    } else if (result.url) {
+      href = `${serverUrl}${result.url}`;
+    } else if (result.frames && result.frames.length > 0) {
+      // Video slideshow: download the first frame as a representative image.
+      // (Browser can't build a real MP4 from URLs without ffmpeg.wasm.)
+      href = result.frames[0];
     }
+    if (!href) return;
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = result.filename || `generated-${activeTab}`;
+    link.target = "_blank";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const renderResult = () => {
     if (!result) return null;
 
+    const imageSrc = result.absoluteUrl
+      ? result.absoluteUrl
+      : result.url
+        ? `${serverUrl}${result.url}`
+        : undefined;
+    const hasDownloadable =
+      result.absoluteUrl || result.url || (result.frames?.length ?? 0) > 0;
+
     return (
       <Card className="mt-6">
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>
+            <CardTitle className="flex items-center gap-2">
               Generated{" "}
               {result.type.charAt(0).toUpperCase() + result.type.slice(1)}
+              {result.source === "cloud" && (
+                <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-medium uppercase text-sky-500">
+                  Cloud
+                </span>
+              )}
+              {result.source === "local" && (
+                <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-medium uppercase text-emerald-500">
+                  Local
+                </span>
+              )}
             </CardTitle>
             <CardDescription>
               Your AI-generated content is ready
             </CardDescription>
           </div>
-          {result.url && (
+          {hasDownloadable && (
             <Button variant="outline" size="sm" onClick={handleDownload}>
               <Download className="mr-2 h-4 w-4" />
               Download
@@ -167,13 +360,13 @@ export default function MediaAIPage() {
               <p className="whitespace-pre-wrap">{result.content}</p>
             </div>
           )}
-          {result.type === "image" && result.url && (
+          {result.type === "image" && imageSrc && (
             <div className="flex justify-center">
               <img
-                src={`${serverUrl}${result.url}`}
+                src={imageSrc}
                 alt="Generated"
                 className="max-w-full rounded-lg shadow-lg"
-                style={{ maxHeight: "400px" }}
+                style={{ maxHeight: "512px" }}
               />
             </div>
           )}
@@ -185,7 +378,12 @@ export default function MediaAIPage() {
               </audio>
             </div>
           )}
-          {result.type === "video" && result.url && (
+          {result.type === "video" &&
+            result.frames &&
+            result.frames.length > 0 && (
+              <VideoSlideshow frames={result.frames} />
+            )}
+          {result.type === "video" && result.url && !result.frames && (
             <div className="flex justify-center">
               <video
                 controls
@@ -261,7 +459,7 @@ export default function MediaAIPage() {
                 <Input
                   value={serverUrl}
                   onChange={(e) => setServerUrl(e.target.value)}
-                  placeholder="http://localhost:8000"
+                  placeholder="http://127.0.0.1:8000"
                   className="flex-1"
                 />
                 <Button onClick={checkBackendHealth} variant="secondary">
@@ -269,8 +467,9 @@ export default function MediaAIPage() {
                 </Button>
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
-                Default: http://localhost:8000. Make sure the OmniGen backend is
-                running.
+                Default: http://127.0.0.1:8000. Make sure the OmniGen backend is
+                running. Use 127.0.0.1 instead of localhost to avoid IPv6
+                resolution issues on Windows.
               </p>
             </CardContent>
           </Card>
@@ -347,7 +546,8 @@ export default function MediaAIPage() {
               <CardHeader>
                 <CardTitle>Image Generation</CardTitle>
                 <CardDescription>
-                  Generate images using Stable Diffusion (local)
+                  Generate images via Pollinations.ai (Flux model, cloud, free —
+                  no backend setup needed)
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -431,16 +631,16 @@ export default function MediaAIPage() {
               <CardHeader>
                 <CardTitle>Video Generation</CardTitle>
                 <CardDescription>
-                  Generate short test videos using Text-to-Video model (low
-                  quality for testing)
+                  Generate a 6-frame motion sequence from your prompt — runs in
+                  the cloud, no backend setup required
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <div className="rounded-lg bg-yellow-50 dark:bg-yellow-950/30 p-3 text-sm text-yellow-800 dark:text-yellow-200">
-                    <strong>⚠️ Test Mode:</strong> Generates 8 frames at 256x256
-                    resolution (2 seconds @ 4fps). First run downloads ~5GB
-                    model. Requires 8GB+ RAM.
+                  <div className="rounded-lg bg-sky-50 p-3 text-sm text-sky-800 dark:bg-sky-950/30 dark:text-sky-200">
+                    <strong>Cloud mode:</strong> Generates 6 keyframes at
+                    640×360 via Pollinations.ai and plays them as an animated
+                    slideshow. Free, no auth, ~10 seconds total.
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="video-prompt">Video Description</Label>
@@ -488,11 +688,8 @@ export default function MediaAIPage() {
               <p>
                 <strong>1. Start the Backend Server:</strong>
               </p>
-              <pre className="rounded bg-muted p-3 text-xs">
-                cd mediaai-backend/backend pip install -r requirements.txt
-                $env:PYTHONPATH =
-                "c:\own_ai\OrianBuilder\mediaai-backend\backend"; python -m
-                uvicorn app.main:app --reload --port 8000
+              <pre className="w-full max-w-full overflow-x-auto whitespace-pre-wrap rounded bg-muted p-3 text-xs">
+                {BACKEND_SETUP_COMMANDS}
               </pre>
               <Separator />
               <p>
@@ -516,6 +713,107 @@ export default function MediaAIPage() {
             </div>
           </CardContent>
         </Card>
+      </div>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// VideoSlideshow — renders a list of frame URLs as an auto-cycling slideshow.
+// Used as a stand-in for true text-to-video when running the cloud generator,
+// which only produces still images. Frames cross-fade for a smooth feel and
+// the user can play/pause and scrub.
+// -----------------------------------------------------------------------------
+
+function VideoSlideshow({ frames }: { frames: string[] }) {
+  const [index, setIndex] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  const [loaded, setLoaded] = useState<Set<number>>(new Set());
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const FRAME_MS = 700;
+
+  useEffect(() => {
+    if (!playing) {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      return;
+    }
+    intervalRef.current = setInterval(() => {
+      setIndex((i) => (i + 1) % frames.length);
+    }, FRAME_MS);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [playing, frames.length]);
+
+  // Pre-load all frames so the cycle is smooth
+  useEffect(() => {
+    frames.forEach((url, i) => {
+      const probe = new window.Image();
+      probe.onload = () => {
+        setLoaded((prev) => {
+          if (prev.has(i)) return prev;
+          const next = new Set(prev);
+          next.add(i);
+          return next;
+        });
+      };
+      probe.src = url;
+    });
+  }, [frames]);
+
+  const allLoaded = loaded.size === frames.length;
+
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <div
+        className="relative w-full max-w-2xl overflow-hidden rounded-lg bg-black shadow-lg"
+        style={{ aspectRatio: "16 / 9" }}
+      >
+        {frames.map((url, i) => (
+          <img
+            key={i}
+            src={url}
+            alt={`Frame ${i + 1}`}
+            className="absolute inset-0 h-full w-full object-cover transition-opacity duration-300"
+            style={{ opacity: i === index ? 1 : 0 }}
+          />
+        ))}
+        {/* Loading shimmer until at least 2 frames are ready */}
+        {loaded.size < 2 && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-sm text-white">
+            Loading frames… ({loaded.size}/{frames.length})
+          </div>
+        )}
+        {/* Frame indicator dots */}
+        <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1.5">
+          {frames.map((_, i) => (
+            <button
+              key={i}
+              onClick={() => {
+                setIndex(i);
+                setPlaying(false);
+              }}
+              className={`h-1.5 rounded-full transition-all ${
+                i === index ? "w-6 bg-white" : "w-1.5 bg-white/50"
+              }`}
+              aria-label={`Frame ${i + 1}`}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <button
+          onClick={() => setPlaying((p) => !p)}
+          className="rounded-full border px-3 py-1 hover:bg-accent"
+        >
+          {playing ? "❚❚ Pause" : "▶ Play"}
+        </button>
+        <span>
+          Frame {index + 1} / {frames.length}
+          {!allLoaded && ` · ${loaded.size}/${frames.length} loaded`}
+        </span>
       </div>
     </div>
   );

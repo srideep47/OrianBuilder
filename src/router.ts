@@ -12,6 +12,7 @@ import { themesRoute } from "./routes/themes";
 import { promptsRoute } from "./routes/prompts";
 import { mediaRoute } from "./routes/media";
 import { mediaAiRoute } from "./routes/mediaai";
+import { dailyAiDigestRoute } from "./routes/dailyaidigest";
 import { inferenceRoute } from "./routes/inference";
 import { marketplaceRoute, modelsLibraryRoute } from "./routes/marketplace";
 
@@ -24,6 +25,7 @@ const routeTree = rootRoute.addChildren([
   promptsRoute,
   mediaRoute,
   mediaAiRoute,
+  dailyAiDigestRoute,
   chatRoute,
   appDetailsRoute,
   settingsRoute.addChildren([providerSettingsRoute]),
