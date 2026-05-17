@@ -59,7 +59,12 @@ const MODEL_SIZE_HINTS: Record<MediaAiModelId, string> = {
 // Pollinations.ai — free public text-to-image service. No auth, no key. Used as
 // a cloud fallback for image/video so users don't have to set up the broken
 // Python ONNX pipeline (Python 3.14 + Windows path issues).
+//
+// IMPORTANT: Pollinations now requires a `referrer` query param to identify
+// the calling app. Without it the API returns HTTP 403 for fetch() callers
+// (this is their app-identifier system, not auth — any string works).
 const POLLINATIONS_BASE = "https://image.pollinations.ai/prompt";
+const POLLINATIONS_REFERRER = "orianbuilder";
 
 function pollinationsUrl(
   prompt: string,
@@ -72,6 +77,7 @@ function pollinationsUrl(
     seed: String(seed),
     nologo: "true",
     model: opts.model ?? "flux",
+    referrer: POLLINATIONS_REFERRER,
   });
   return `${POLLINATIONS_BASE}/${encodeURIComponent(prompt)}?${params}`;
 }
