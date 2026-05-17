@@ -2,7 +2,22 @@
 --extra-index-url https://download.pytorch.org/whl/cu128
 torch>=2.3.0
 torchvision>=0.18.0
-diffusers>=0.28.0
-transformers>=4.41.0
+# diffusers 0.32+ ships LTXPipeline, CogVideoXPipeline, WanPipeline, FluxPipeline,
+# AnimateDiffPipeline and the model-CPU-offload helpers used by tts/video loaders.
+diffusers>=0.32.0
+transformers>=4.45.0
 accelerate>=0.30.0
 xformers>=0.0.26
+sentencepiece>=0.2.0
+# Image: Z Image Turbo / FLUX use bfloat16 + custom schedulers shipped with diffusers.
+# Video: imageio for export_to_video, decord for some pipelines.
+imageio>=2.34.0
+imageio-ffmpeg>=0.5.0
+av>=12.0.0
+# Audio: TTS lineup
+TTS>=0.22.0           # Coqui XTTS-v2
+kokoro>=0.7.0         # Kokoro 82M
+# f5-tts is optional — pulling at runtime keeps the base install lean.
+# Install with `pip install f5-tts` if you want the F5-TTS tier.
+# STT
+librosa>=0.10.0

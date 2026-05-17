@@ -85,10 +85,10 @@
 
 /* ── Glass primitives ────────────────────────────────────── */
 .glass {
-  background: rgba(8, 4, 22, 0.42);
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(18px) saturate(150%) brightness(1.12);
+  -webkit-backdrop-filter: blur(18px) saturate(150%) brightness(1.12);
+  border: 1px solid rgba(255, 255, 255, 0.14);
 }
 .glass-deep {
   background: rgba(4, 2, 16, 0.6);
@@ -1580,22 +1580,11 @@ body.galaxy-mode .sidebar-brand-name {
 
 /* ── Sidebar shell ───────────────────────────────────────── */
 body.galaxy-mode [data-sidebar="sidebar"] {
-  width: 60px !important;
-  min-width: 60px !important;
   background: rgba(2, 1, 10, 0.55) !important;
   backdrop-filter: blur(28px) !important;
   -webkit-backdrop-filter: blur(28px) !important;
   border-right: 1px solid rgba(255, 255, 255, 0.07) !important;
-  transition:
-    width 0.28s cubic-bezier(0.4, 0, 0.2, 1),
-    min-width 0.28s cubic-bezier(0.4, 0, 0.2, 1) !important;
   overflow: hidden !important;
-}
-/* Expanded: wide enough for nav labels (180px) + context panel (180px) */
-/* data-state lives on the outer wrapper, not on [data-sidebar="sidebar"] — use descendant selector */
-body.galaxy-mode [data-state="expanded"] [data-sidebar="sidebar"] {
-  width: 360px !important;
-  min-width: 360px !important;
 }
 body.galaxy-mode [data-sidebar="rail"] {
   display: none !important;

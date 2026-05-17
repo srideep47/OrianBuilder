@@ -690,14 +690,37 @@ async function handleIsRepoAvailable(
 
 // --- GitHub Create Repo Handler ---
 async function handleCreateRepo(
-  event: IpcMainInvokeEvent,
-  {
-    org,
-    repo,
-    appId,
-    branch,
-  }: { org: string; repo: string; appId: number; branch?: string },
+  _event: IpcMainInvokeEvent,
+  params: {
+    org: string;
+    repo: string;
+    appId: number;
+    branch?: string;
+    isPrivate?: boolean;
+  },
 ): Promise<void> {
+  await createAndConnectGithubRepo(params);
+}
+
+/**
+ * Creates a GitHub repository, wires the local git remote, and writes the
+ * owner/repo/branch back to the apps row. Exposed (not just bound to the IPC
+ * handler) so the local-agent's connect_github_repo tool can call it directly
+ * without faking an IpcMainInvokeEvent.
+ */
+export async function createAndConnectGithubRepo({
+  org,
+  repo,
+  appId,
+  branch,
+  isPrivate,
+}: {
+  org: string;
+  repo: string;
+  appId: number;
+  branch?: string;
+  isPrivate?: boolean;
+}): Promise<{ owner: string; repo: string; branch: string }> {
   // Normalize the repo name to match GitHub's automatic normalization
   // GitHub converts spaces to hyphens when creating repositories
   const normalizedRepo = normalizeGitHubRepoName(repo);
@@ -733,7 +756,7 @@ async function handleCreateRepo(
     },
     body: JSON.stringify({
       name: normalizedRepo,
-      private: true,
+      private: isPrivate ?? true,
     }),
   });
   if (!res.ok) {
@@ -797,6 +820,8 @@ async function handleCreateRepo(
     repo: normalizedRepo,
     branch,
   });
+
+  return { owner, repo: normalizedRepo, branch: branch ?? "main" };
 }
 
 // --- GitHub Connect to Existing Repo Handler ---

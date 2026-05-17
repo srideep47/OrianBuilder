@@ -27,6 +27,12 @@ type RemoteDesktopConfigCacheEntry = {
 let remoteDesktopConfigCache: RemoteDesktopConfigCacheEntry | null = null;
 let remoteDesktopConfigFetchPromise: Promise<RemoteDesktopConfig | null> | null =
   null;
+// Tracks how many consecutive fetches have failed. The first failure logs at
+// `warn`; subsequent ones drop to `debug` so the log isn't spammed with the
+// same "fetch failed" message every cache-miss interval when the user is
+// offline. Reset to 0 on success — the next failure after a recovery will
+// warn again.
+let remoteDesktopConfigConsecutiveFailures = 0;
 
 function getRemoteDesktopConfigUrl() {
   if (process.env.ORIANBUILDER_DESKTOP_CONFIG_URL) {
@@ -63,6 +69,12 @@ export async function getRemoteDesktopConfig(): Promise<RemoteDesktopConfig | nu
     remoteDesktopConfigFetchPromise = (async () => {
       try {
         const config = await fetchRemoteDesktopConfig();
+        if (remoteDesktopConfigConsecutiveFailures > 0) {
+          logger.info(
+            `Remote desktop config fetch recovered after ${remoteDesktopConfigConsecutiveFailures} consecutive failure(s)`,
+          );
+          remoteDesktopConfigConsecutiveFailures = 0;
+        }
         remoteDesktopConfigCache = {
           config,
           expiresAt: config?.expiresAt
@@ -71,7 +83,15 @@ export async function getRemoteDesktopConfig(): Promise<RemoteDesktopConfig | nu
         };
         return config;
       } catch (error) {
-        logger.warn("Failed to fetch remote desktop config", error);
+        remoteDesktopConfigConsecutiveFailures += 1;
+        if (remoteDesktopConfigConsecutiveFailures === 1) {
+          logger.warn("Failed to fetch remote desktop config", error);
+        } else {
+          logger.debug(
+            `Failed to fetch remote desktop config (${remoteDesktopConfigConsecutiveFailures} consecutive failures; further failures suppressed)`,
+            error,
+          );
+        }
         remoteDesktopConfigCache = {
           config: null,
           expiresAt: Date.now() + FAILURE_CACHE_TTL_MS,

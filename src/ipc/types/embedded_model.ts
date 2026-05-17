@@ -79,6 +79,15 @@ export const EmbeddedModelConfigSchema = z.object({
   aggressiveMemory: z.boolean().optional(),
   gpuLayersMode: z.enum(["auto", "manual"]).optional(),
   manualGpuLayers: z.number().nullable().optional(),
+  // KV-cache quantization. Cuts KV memory ~50% at minimal quality cost and
+  // requires --flash-attn=on (already the default). Set to "f16" to disable.
+  // See: https://github.com/ggml-org/llama.cpp/discussions/9821
+  cacheTypeK: z
+    .enum(["f32", "f16", "bf16", "q8_0", "q5_0", "q5_1", "q4_0", "q4_1"])
+    .optional(),
+  cacheTypeV: z
+    .enum(["f32", "f16", "bf16", "q8_0", "q5_0", "q5_1", "q4_0", "q4_1"])
+    .optional(),
   // Internal: populated by model-info scan, used by the loader
   _estimatedLayers: z.number().optional(),
   _layerSizeMb: z.number().optional(),

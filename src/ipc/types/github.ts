@@ -155,6 +155,9 @@ export const githubContracts = {
       repo: z.string(),
       appId: z.number(),
       branch: z.string().optional(),
+      // Defaults to private to preserve historical UI behavior; the agent
+      // publish path overrides this to public so deploy URLs are shareable.
+      isPrivate: z.boolean().optional(),
     }),
     output: z.void(),
   }),

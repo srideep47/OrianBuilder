@@ -314,9 +314,22 @@ async function handleIsProjectAvailable(
 
 // --- Vercel Create Project Handler ---
 async function handleCreateProject(
-  event: IpcMainInvokeEvent,
-  { name, appId }: CreateVercelProjectParams,
+  _event: IpcMainInvokeEvent,
+  params: CreateVercelProjectParams,
 ): Promise<void> {
+  await createAndLinkVercelProject(params);
+}
+
+/**
+ * Same body as the IPC `handleCreateProject` but callable from the local-agent
+ * `connect_vercel_project` tool without faking an IpcMainInvokeEvent. Creates
+ * the Vercel project, links it to the app's existing GitHub repo, persists
+ * the IDs on the apps row, and triggers a first production deployment.
+ */
+export async function createAndLinkVercelProject({
+  name,
+  appId,
+}: CreateVercelProjectParams): Promise<void> {
   const settings = readSettings();
   const accessToken = settings.vercelAccessToken?.value;
   if (!accessToken) {

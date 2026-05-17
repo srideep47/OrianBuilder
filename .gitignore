@@ -110,6 +110,24 @@ userData/
 
 # Python
 __pycache__/
+**/.venv/
+.venv/
+venv/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+
+# Vite ESM config cache (regenerated on every config reload)
+vite.*.config.*.timestamp-*.mjs
+
+# Electron / packaging build output (in addition to `out/` above)
+package/build/
+
+# Native build artifacts (APK/AAB/installers) — should never enter git
+*.apk
+*.aab
+*.ipa
 
 # Storybook
 storybook-static/

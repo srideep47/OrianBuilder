@@ -28,7 +28,7 @@ export default function MediaPage() {
     <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="flex items-center text-2xl font-bold sm:text-3xl">
+          <h1 className="flex items-center text-2xl font-bold sm:text-3xl page-title">
             <Image className="mr-2 h-7 w-7 sm:h-8 sm:w-8" />
             Media
           </h1>

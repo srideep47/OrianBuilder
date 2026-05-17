@@ -85,8 +85,24 @@ body[data-scroll-locked] .app-region-drag {
 }
 
 .h-screenish {
-  height: calc(100vh - 64px);
+  height: calc(100vh - 60px);
 }
+
+/* Design reference (Project Orion): page-level h1 headings get uppercase + wide tracking */
+.page-title {
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+/* Page-level sticky header — used on inference / marketplace / models / settings.
+   Adds a small inner top spacing so the heading doesn't kiss the rounded card edge,
+   and keeps the glassy background readable when scrolled. */
+.page-sticky-header {
+  border-top-left-radius: var(--radius);
+  border-top-right-radius: var(--radius);
+}
+
 :root {
   --docs-bg: #f5f5f5;
   --default-font-family: "Geist", sans-serif;
@@ -149,36 +165,52 @@ body[data-scroll-locked] .app-region-drag {
   --background-darker: oklch(0.125 0 0);
   --background-darkest: oklch(0.105 0 0);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
+  --card: oklch(0.2 0.018 265 / 0.45);
+  --card-foreground: oklch(0.97 0 0);
+  --popover: oklch(0.18 0.02 265 / 0.92);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
+  --primary: oklch(0.72 0.18 270);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(1 0 0 / 0.06);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
+  --muted: oklch(1 0 0 / 0.06);
+  --muted-foreground: oklch(0.72 0 0);
+  --accent: oklch(1 0 0 / 0.08);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.396 0.141 25.723);
   --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
-  --ring: oklch(0.439 0 0);
+  --border: oklch(1 0 0 / 0.1);
+  --input: oklch(1 0 0 / 0.09);
+  --ring: oklch(0.72 0.18 270 / 0.6);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar: oklch(0.16 0.02 265 / 0.88);
+  --sidebar-foreground: oklch(0.95 0 0);
+  --sidebar-primary: oklch(0.72 0.18 270);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.35 0 0);
+  --sidebar-accent: oklch(1 0 0 / 0.08);
   --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.269 0 0);
-  --sidebar-ring: oklch(0.439 0 0);
+  --sidebar-border: oklch(1 0 0 / 0.1);
+  --sidebar-ring: oklch(0.72 0.18 270 / 0.5);
+}
+
+/* Allow the galaxy background to bleed through card surfaces in dark mode.
+   Scoped to semantic card slots only — avoids compositing every button/badge. */
+.dark [data-slot="card"],
+.dark .bg-card {
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+}
+
+/* Dark glass for the main content container */
+.dark #layout-main-content-container {
+  background: oklch(0.13 0.015 265 / 0.75);
+  backdrop-filter: blur(4px) saturate(140%);
+  -webkit-backdrop-filter: blur(4px) saturate(140%);
+  border-color: oklch(1 0 0 / 0.1);
 }
 
 @theme inline {
@@ -753,44 +785,44 @@ body.galaxy-mode {
   --card-foreground: rgba(220, 212, 255, 0.9);
   --popover: rgba(12, 8, 30, 0.85);
   --popover-foreground: rgba(220, 212, 255, 0.9);
-  --sidebar: rgba(0, 0, 0, 0.25);
-  --sidebar-border: rgba(255, 255, 255, 0.1);
+  /* Opaque sidebar so it visually merges with the titlebar + panel without seams */
+  --sidebar: oklch(0.11 0.018 292);
+  --sidebar-border: rgba(255, 255, 255, 0.06);
   --sidebar-foreground: rgba(243, 236, 223, 0.8);
   --sidebar-accent: rgba(139, 127, 255, 0.18);
   --sidebar-accent-foreground: rgba(243, 236, 223, 1);
 }
 
-/* Sidebar glass blur */
+/* Sidebar is fully opaque so the GalaxyBackground does not bleed through */
 body.galaxy-mode [data-sidebar="sidebar"] {
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: oklch(0.11 0.018 292) !important;
 }
 
-/* Title bar glass */
+/* Title bar — solid dark surface, no backdrop blur (user feedback) */
 body.galaxy-mode .app-region-drag {
-  background: rgba(0, 0, 0, 0.2) !important;
-  backdrop-filter: blur(16px) !important;
-  -webkit-backdrop-filter: blur(16px) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: oklch(0.11 0.018 292) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
 }
 
-/* Window control icons (minimize / maximize / close) — force
-   white on the dark galaxy title bar regardless of theme mode.
-   CSS fill/stroke override SVG presentation attributes.         */
-body.galaxy-mode .no-app-region-drag button svg rect,
-body.galaxy-mode .no-app-region-drag button svg path {
-  fill: rgba(228, 220, 255, 0.88) !important;
-  stroke: rgba(228, 220, 255, 0.88) !important;
-}
+/* Window control icons now use lucide with currentColor — no override needed.
+   Tailwind utilities (text-foreground/80) handle their color. */
 
-/* Main layout container — flat, no border, transparent.
-   Keep margin-top so content stays below the fixed title bar. */
+/* Main layout container — frosted glass over the galaxy background.
+   Subtle white tint + backdrop blur creates a "lighter glass" feel while
+   still letting the nebula/starfield bleed through.
+   Scoped --background variables make child containers (message bubbles, cards)
+   semi-transparent so the blurred galaxy shows through them too. */
 body.galaxy-mode #layout-main-content-container {
-  background: transparent !important;
-  border: none !important;
-  margin-bottom: 0 !important;
-  margin-right: 0 !important;
-  border-radius: 0 !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  backdrop-filter: blur(14px) brightness(1.1) !important;
+  -webkit-backdrop-filter: blur(14px) brightness(1.1) !important;
+  --background: oklch(0.08 0.018 292 / 0.72);
+  --background-lighter: oklch(0.1 0.018 292 / 0.72);
+  --background-lightest: oklch(0.12 0.018 292 / 0.72);
+  --card: rgba(10, 6, 25, 0.5);
+  --muted: rgba(255, 255, 255, 0.04);
 }
 
 /* ── Glass setup step cards ────────────────────────────────────

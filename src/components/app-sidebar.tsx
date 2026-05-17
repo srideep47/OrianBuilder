@@ -11,10 +11,9 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { useSidebar } from "@/components/ui/sidebar";
-import { useEffect, useState, useRef } from "react";
+import { useState, useCallback } from "react";
 import { useAtom } from "jotai";
-import { dropdownOpenAtom } from "@/atoms/uiAtoms";
+import { sidebarPanelAtom, type SidebarPanelItem } from "@/atoms/uiAtoms";
 
 import {
   Sidebar,
@@ -25,111 +24,90 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarRail,
-  SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { ChatList } from "./ChatList";
-import { AppList } from "./AppList";
 import { HelpDialog } from "./HelpDialog";
-import { SettingsList } from "./SettingsList";
-import { LibraryList } from "./LibraryList";
 
 const items = [
-  { title: "Apps", to: "/", icon: Home },
-  { title: "Chat", to: "/chat", icon: Inbox },
-  { title: "Engine", to: "/inference", icon: Cpu },
-  { title: "Models", to: "/models", icon: Database },
-  { title: "Marketplace", to: "/marketplace", icon: HardDrive },
-  { title: "Media AI", to: "/mediaai", icon: Sparkles },
-  { title: "Settings", to: "/settings", icon: Settings },
-  { title: "Library", to: "/library", icon: BookOpen },
-  { title: "Hub", to: "/hub", icon: Store },
-];
+  { title: "Apps", to: "/", icon: Home, hasPanel: true },
+  { title: "Chat", to: "/chat", icon: Inbox, hasPanel: true },
+  { title: "Engine", to: "/inference", icon: Cpu, hasPanel: false },
+  { title: "Models", to: "/models", icon: Database, hasPanel: false },
+  {
+    title: "Marketplace",
+    to: "/marketplace",
+    icon: HardDrive,
+    hasPanel: false,
+  },
+  { title: "Media AI", to: "/mediaai", icon: Sparkles, hasPanel: false },
+  { title: "Settings", to: "/settings", icon: Settings, hasPanel: true },
+  { title: "Library", to: "/library", icon: BookOpen, hasPanel: true },
+  { title: "Hub", to: "/hub", icon: Store, hasPanel: false },
+] as const;
 
-type HoverState =
-  | "start-hover:app"
-  | "start-hover:chat"
-  | "start-hover:settings"
-  | "start-hover:library"
-  | "clear-hover"
-  | "no-hover";
+// Renders a nav label, splitting two-word titles onto two lines for a compact look
+function IconLabel({ title }: { title: string }) {
+  const words = title.split(" ");
+  if (words.length > 1) {
+    return (
+      <span className="flex flex-col items-center leading-[1.1] text-[10px] text-center">
+        {words.map((w) => (
+          <span key={w}>{w}</span>
+        ))}
+      </span>
+    );
+  }
+  return (
+    <span className="text-[10px] leading-tight text-center w-full">
+      {title}
+    </span>
+  );
+}
 
 export function AppSidebar() {
-  const { state, toggleSidebar } = useSidebar();
-  const [hoverState, setHoverState] = useState<HoverState>("no-hover");
-  const expandedByHover = useRef(false);
+  const [panelItem, setPanelItem] = useAtom(sidebarPanelAtom);
   const [isHelpDialogOpen, setIsHelpDialogOpen] = useState(false);
-  const [isDropdownOpen] = useAtom(dropdownOpenAtom);
 
-  useEffect(() => {
-    if (hoverState.startsWith("start-hover") && state === "collapsed") {
-      expandedByHover.current = true;
-      toggleSidebar();
-    }
-    if (
-      hoverState === "clear-hover" &&
-      state === "expanded" &&
-      expandedByHover.current &&
-      !isDropdownOpen
-    ) {
-      toggleSidebar();
-      expandedByHover.current = false;
-      setHoverState("no-hover");
-    }
-  }, [hoverState, toggleSidebar, state, setHoverState, isDropdownOpen]);
+  const { location } = useRouterState();
+  const pathname = location.pathname;
 
-  const routerState = useRouterState();
-  const isAppRoute =
-    routerState.location.pathname === "/" ||
-    routerState.location.pathname.startsWith("/app-details");
-  const isChatRoute = routerState.location.pathname === "/chat";
-  const isSettingsRoute = routerState.location.pathname.startsWith("/settings");
-  const isLibraryRoute = routerState.location.pathname.startsWith("/library");
-
-  let selectedItem: string | null = null;
-  if (hoverState === "start-hover:app") selectedItem = "Apps";
-  else if (hoverState === "start-hover:chat") selectedItem = "Chat";
-  else if (hoverState === "start-hover:settings") selectedItem = "Settings";
-  else if (hoverState === "start-hover:library") selectedItem = "Library";
-  else if (state === "expanded") {
-    if (isAppRoute) selectedItem = "Apps";
-    else if (isChatRoute) selectedItem = "Chat";
-    else if (isSettingsRoute) selectedItem = "Settings";
-    else if (isLibraryRoute) selectedItem = "Library";
-  }
+  const handleIconClick = useCallback(
+    (title: string, hasPanel: boolean) => {
+      if (!hasPanel) {
+        setPanelItem(null);
+      } else {
+        setPanelItem((prev) =>
+          prev === title ? null : (title as SidebarPanelItem),
+        );
+      }
+    },
+    [setPanelItem],
+  );
 
   return (
-    <Sidebar
-      collapsible="icon"
-      onMouseLeave={() => {
-        if (!isDropdownOpen) setHoverState("clear-hover");
-      }}
-    >
+    <Sidebar collapsible="icon">
       <SidebarContent className="overflow-hidden">
-        <div className="flex mt-8">
-          <div className="">
-            <SidebarTrigger onMouseEnter={() => setHoverState("clear-hover")} />
-            <AppIcons onHoverChange={setHoverState} />
-          </div>
-          <div className="w-[272px]">
-            <AppList show={selectedItem === "Apps"} />
-            <ChatList show={selectedItem === "Chat"} />
-            <SettingsList show={selectedItem === "Settings"} />
-            <LibraryList show={selectedItem === "Library"} />
-          </div>
+        <div className="mt-11">
+          <AppIcons
+            onIconClick={handleIconClick}
+            pathname={pathname}
+            activePanel={panelItem}
+          />
         </div>
       </SidebarContent>
 
-      <SidebarFooter>
+      <SidebarFooter className="pb-4">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               size="sm"
-              className="font-medium w-14 flex flex-col items-center gap-1 h-14 mb-2 rounded-2xl"
+              tooltip="Help"
+              className="flex flex-col items-center justify-center gap-0.5 w-full h-[62px] mb-1 rounded-xl font-medium"
               onClick={() => setIsHelpDialogOpen(true)}
             >
-              <HelpCircle className="h-5 w-5" />
-              <span className="text-xs">Help</span>
+              <HelpCircle className="h-[18px] w-[18px] shrink-0" />
+              <span className="text-[10px] leading-tight text-center">
+                Help
+              </span>
             </SidebarMenuButton>
             <HelpDialog
               isOpen={isHelpDialogOpen}
@@ -138,28 +116,29 @@ export function AppSidebar() {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
-
-      <SidebarRail />
     </Sidebar>
   );
 }
 
 function AppIcons({
-  onHoverChange,
+  onIconClick,
+  pathname,
+  activePanel,
 }: {
-  onHoverChange: (state: HoverState) => void;
+  onIconClick: (title: string, hasPanel: boolean) => void;
+  pathname: string;
+  activePanel: SidebarPanelItem;
 }) {
-  const routerState = useRouterState();
-  const pathname = routerState.location.pathname;
-
   return (
-    <SidebarGroup className="pr-0">
+    <SidebarGroup className="px-1 py-0">
       <SidebarGroupContent>
-        <SidebarMenu>
+        <SidebarMenu className="gap-0">
           {items.map((item) => {
             const isActive =
               (item.to === "/" && pathname === "/") ||
               (item.to !== "/" && pathname.startsWith(item.to));
+
+            const isPanelActive = activePanel === item.title;
 
             return (
               <SidebarMenuItem key={item.title}>
@@ -167,23 +146,13 @@ function AppIcons({
                   as={Link}
                   to={item.to}
                   size="sm"
-                  className={`font-medium w-14 flex flex-col items-center gap-1 h-14 mb-2 rounded-2xl ${
-                    isActive ? "bg-sidebar-accent" : ""
-                  }`}
-                  onMouseEnter={() => {
-                    if (item.title === "Apps") onHoverChange("start-hover:app");
-                    else if (item.title === "Chat")
-                      onHoverChange("start-hover:chat");
-                    else if (item.title === "Settings")
-                      onHoverChange("start-hover:settings");
-                    else if (item.title === "Library")
-                      onHoverChange("start-hover:library");
-                  }}
+                  tooltip={item.title}
+                  isActive={isActive || isPanelActive}
+                  className="flex flex-col items-center justify-center gap-0.5 w-full h-[62px] mb-0.5 rounded-xl font-medium"
+                  onClick={() => onIconClick(item.title, item.hasPanel)}
                 >
-                  <div className="flex flex-col items-center gap-1">
-                    <item.icon className="h-5 w-5" />
-                    <span className="text-xs">{item.title}</span>
-                  </div>
+                  <item.icon className="h-[18px] w-[18px] shrink-0" />
+                  <IconLabel title={item.title} />
                 </SidebarMenuButton>
               </SidebarMenuItem>
             );

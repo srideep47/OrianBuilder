@@ -10,7 +10,7 @@ hf_xet==1.4.3
 huggingface_hub>=0.36.0
 llama-cpp-python==0.3.21
 transformers==4.57.6
-scipy==1.16.3
+scipy>=1.11.0
 soundfile==0.13.1
 sentencepiece>=0.2.0
 imageio>=2.37.0

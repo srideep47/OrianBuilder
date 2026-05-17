@@ -5,6 +5,7 @@ import {
   getOrchestrator,
   pickBestImageTier,
   pickBestAudioTtsTier,
+  pickBestVideoTier,
   type MediaGenerationRequest,
   type MediaGenerationResult,
   type MediaTier,
@@ -51,7 +52,10 @@ async function pickTierForRequest(
       case "image":
         return pickBestImageTier(projected, request.preferredQuality);
       case "audio":
+      case "music":
         return pickBestAudioTtsTier(projected, request.preferredQuality);
+      case "video":
+        return pickBestVideoTier(projected, request.preferredQuality);
       default:
         return null;
     }
@@ -122,9 +126,10 @@ async function dispatch(
       const video = await generateVideoViaLocalBackend(
         request.prompt,
         request.outputPath,
+        { tier: tier?.id ?? null },
       );
       if (video.success) {
-        logger.info("local video gen succeeded");
+        logger.info(`local video gen succeeded (tier=${video.tier ?? "?"})`);
         return video;
       }
       return {
@@ -132,6 +137,18 @@ async function dispatch(
         outputPath: request.outputPath,
         durationMs: video.durationMs,
         error: video.error ?? "video generation failed",
+      };
+    }
+    case "transcribe": {
+      // Transcription is request/response (no media generation), surfaced via
+      // its own IPC path. The orchestrator's runMedia channel is for content
+      // creation only; if a caller routes a transcribe request here it's a bug.
+      return {
+        success: false,
+        outputPath: request.outputPath,
+        durationMs: 0,
+        error:
+          "transcribe is not handled by media dispatcher; use the dedicated transcribe IPC route",
       };
     }
   }

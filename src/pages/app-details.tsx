@@ -360,7 +360,7 @@ export default function AppDetailsPage() {
         Back
       </Button>
 
-      <div className="w-full max-w-2xl mx-auto mt-10 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm relative">
+      <div className="w-full max-w-2xl mx-auto mt-10 p-4 bg-card rounded-lg border border-border/60 shadow-sm relative">
         <div className="flex items-center mb-3">
           <h2 className="text-2xl font-bold">{selectedApp.name}</h2>
           <Tooltip>
@@ -473,19 +473,19 @@ export default function AppDetailsPage() {
 
         <div className="grid grid-cols-2 gap-3 text-sm mb-4">
           <div>
-            <span className="block text-gray-500 dark:text-gray-400 mb-0.5 text-xs">
+            <span className="block text-muted-foreground mb-0.5 text-xs">
               Created
             </span>
             <span>{selectedApp.createdAt.toString()}</span>
           </div>
           <div>
-            <span className="block text-gray-500 dark:text-gray-400 mb-0.5 text-xs">
+            <span className="block text-muted-foreground mb-0.5 text-xs">
               Last Updated
             </span>
             <span>{selectedApp.updatedAt.toString()}</span>
           </div>
           <div className="col-span-2">
-            <span className="block text-gray-500 dark:text-gray-400 mb-0.5 text-xs">
+            <span className="block text-muted-foreground mb-0.5 text-xs">
               Path
             </span>
             <div className="flex items-center gap-1">
@@ -708,7 +708,7 @@ export default function AppDetailsPage() {
                 </div>
                 <div className="text-left">
                   <p className="font-medium text-xs">Rename app and folder</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                  <p className="text-xs text-muted-foreground">
                     Renames the folder to match the new app name.
                   </p>
                 </div>
@@ -722,7 +722,7 @@ export default function AppDetailsPage() {
               >
                 <div className="text-left">
                   <p className="font-medium text-xs">Rename app only</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                  <p className="text-xs text-muted-foreground">
                     The folder name will remain the same.
                   </p>
                 </div>
@@ -809,7 +809,7 @@ export default function AppDetailsPage() {
                       <p className="font-medium text-xs">
                         Copy app with history
                       </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                      <p className="text-xs text-muted-foreground">
                         Copies the entire app, including the Git version
                         history.
                       </p>
@@ -837,7 +837,7 @@ export default function AppDetailsPage() {
                       <p className="font-medium text-xs">
                         Copy app without history
                       </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                      <p className="text-xs text-muted-foreground">
                         Useful if the current app has a Git-related issue.
                       </p>
                     </div>

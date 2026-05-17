@@ -30,32 +30,52 @@ export async function generateProblemReport({
     // Create the worker
     const worker = new Worker(workerPath);
 
+    // Track whether the promise has already been resolved/rejected so the
+    // `exit` handler doesn't double-fire. worker.terminate() emits an exit
+    // with code 1 by design — without this flag we'd log a misleading
+    // "TSC worker exited with code 1" error after a successful run.
+    let settled = false;
+    const settleResolve = (data: ProblemReport) => {
+      if (settled) return;
+      settled = true;
+      resolve(data);
+    };
+    const settleReject = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
+
     // Handle worker messages
     worker.on("message", (output: WorkerOutput) => {
-      worker.terminate();
-
       if (output.success && output.data) {
         logger.info(`TSC worker completed successfully for app ${appPath}`);
-        resolve(output.data);
+        settleResolve(output.data);
       } else {
         logger.error(`TSC worker failed for app ${appPath}: ${output.error}`);
-        reject(new Error(output.error || "Unknown worker error"));
+        settleReject(new Error(output.error || "Unknown worker error"));
       }
+      worker.terminate();
     });
 
     // Handle worker errors
     worker.on("error", (error) => {
       logger.error(`TSC worker error for app ${appPath}:`, error);
+      settleReject(error);
       worker.terminate();
-      reject(error);
     });
 
-    // Handle worker exit
+    // Handle worker exit. After we've already settled (which is the normal
+    // path — we terminate the worker once we have its message), a non-zero
+    // exit is just the SIGTERM signature, not a failure. Only log when we
+    // didn't get a message at all.
     worker.on("exit", (code) => {
-      if (code !== 0) {
-        logger.error(`TSC worker exited with code ${code} for app ${appPath}`);
-        reject(new Error(`Worker exited with code ${code}`));
-      }
+      if (settled) return;
+      if (code === 0) return;
+      logger.error(
+        `TSC worker exited with code ${code} before sending a result for app ${appPath}`,
+      );
+      settleReject(new Error(`Worker exited with code ${code}`));
     });
 
     const writeTags = getOrianBuilderWriteTags(fullResponse);

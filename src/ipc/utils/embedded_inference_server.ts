@@ -1,7 +1,34 @@
+/**
+ * Embedded local inference server.
+ *
+ * Two backend variants live behind a single port (EMBEDDED_PORT = 11435) so
+ * LocalLlamaProvider can hit one base URL regardless of which engine is active:
+ *
+ *   1. "llama-cpp"     → spawns `llama-server` (llama.cpp's native HTTP server)
+ *                        as a child process. That process itself binds 11435
+ *                        and serves the OpenAI-compatible /v1/* surface — no
+ *                        in-process inference happens here anymore.
+ *
+ *   2. "tensorrt-native" → runs inside our process via TensorRtNativeBackend.
+ *                        Since TensorRT has no built-in HTTP API, we expose
+ *                        it through a small http.Server that listens on
+ *                        EMBEDDED_PORT and forwards requests into the backend.
+ *
+ * Exactly one of the two owns EMBEDDED_PORT at any time; switching backends
+ * goes through _fullReset() which tears both down before starting the new one.
+ *
+ * The previous implementation used node-llama-cpp bindings in-process via a
+ * 1000-line custom /v1/chat/completions handler. Moving inference into the
+ * native llama-server binary removes the JS hot path and gives us llama.cpp's
+ * full performance directly.
+ */
+
 import http from "node:http";
-import os from "node:os";
+import fs from "node:fs";
+import path from "node:path";
 import { BrowserWindow } from "electron";
 import log from "electron-log";
+
 import {
   findDefaultTensorRtEngineDir,
   TensorRtNativeBackend,
@@ -13,38 +40,60 @@ import {
   resolveLlmBackendOptions,
   getLlmBackendName,
 } from "@/main/llm/backend_resolver";
+import {
+  openAiToPlainPrompt,
+  createThinkingStripper,
+  stripThinkingBlocks,
+  estimateOpenAIRequestTokens,
+  sseChunk,
+  type OpenAIMessage,
+} from "./inference/message_converter";
+import {
+  statsTracker,
+  type InferenceState,
+  type InferenceStats,
+  type InferenceLogEntry,
+} from "./inference/stats_tracker";
+import { LlamaServerBackend } from "@/main/llm/llama_server_backend";
+
+export type { InferenceState, InferenceStats, InferenceLogEntry };
 
 const logger = log.scope("embedded-inference");
 
 export const EMBEDDED_PORT = 11435;
 export const EMBEDDED_BASE_URL = `http://127.0.0.1:${EMBEDDED_PORT}`;
 
-// ─── State ───────────────────────────────────────────────────────────────────
+// ─── Module state ────────────────────────────────────────────────────────────
+// All mutations go through the helpers below (setIsInferring, _fullReset, etc.)
+// so backend transitions stay observable. Reads/writes happen on the Node.js
+// event loop (single-threaded), but async await points can interleave callers.
 
-let server: http.Server | null = null;
-let llamaInstance: unknown = null;
-let currentModel: unknown = null;
-let currentContext: unknown = null;
-let currentModelPath: string | null = null;
-let currentChatWrapper: unknown = null;
-let currentChatWrapperLabel: string | null = null;
-let currentGpuLayers = 0;
-let currentTotalLayers = 0;
-let currentActualContextSize = 0;
-let currentBackend: "none" | "llama-cpp" | "tensorrt-native" = "none";
+const llamaServerBackend = new LlamaServerBackend();
 let tensorRtBackend: TensorRtNativeBackend | null = null;
+let server: http.Server | null = null;
+let currentBackend: "none" | "llama-cpp" | "tensorrt-native" = "none";
+let currentModelPath: string | null = null;
+let currentTotalLayers = 0;
+let currentGpuLayers = 0;
+let currentActualContextSize = 0;
 let isLoading = false;
 let isInferring = false;
 /**
- * Wall-clock timestamp at which `isInferring` was most recently set to
- * `true`. Used by `forceReleaseIfStuck` to detect a stuck flag — if the
- * flag has been "true" for far longer than any reasonable generation
- * could take AND no abort controller is active, the cleanup path was
- * skipped (most often because the SSE stream's HTTP connection lingered
- * in keep-alive and the server-side finally fired late).
+ * Wall-clock timestamp at which `isInferring` was most recently set to `true`.
+ * Used by `forceReleaseIfStuck` to detect a stuck flag.
  */
 let isInferringSetAtMs: number | null = null;
 let currentAbort: AbortController | null = null;
+
+type KvCacheType =
+  | "f32"
+  | "f16"
+  | "bf16"
+  | "q8_0"
+  | "q5_0"
+  | "q5_1"
+  | "q4_0"
+  | "q4_1";
 
 export interface EmbeddedModelConfig {
   modelPath: string;
@@ -58,6 +107,8 @@ export interface EmbeddedModelConfig {
   aggressiveMemory?: boolean;
   gpuLayersMode?: "auto" | "manual";
   manualGpuLayers?: number | null;
+  cacheTypeK?: KvCacheType;
+  cacheTypeV?: KvCacheType;
   _estimatedLayers?: number;
   _layerSizeMb?: number;
   _vramMb?: number;
@@ -83,6 +134,10 @@ export interface EmbeddedServerStatus {
   modelLoaded: boolean;
   modelPath: string | null;
   modelName: string | null;
+  /** True when the loaded model can accept image inputs (mmproj loaded for
+   *  llama-server, or a multimodal TensorRT engine). Drives the agent's
+   *  decision to forward screenshot content vs degrade to a text placeholder. */
+  multimodal: boolean;
   isLoading: boolean;
   isInferring: boolean;
   backend: "none" | "llama-cpp" | "tensorrt-native";
@@ -98,40 +153,22 @@ export interface EmbeddedServerStatus {
   chatWrapperLabel: string | null;
 }
 
-/**
- * Set `isInferring` while keeping the matching `isInferringSetAtMs`
- * timestamp in sync. Used everywhere the flag changes so `forceReleaseIfStuck`
- * can reliably tell whether the flag is genuinely active or stale.
- */
+// ─── isInferring helpers ──────────────────────────────────────────────────────
+
 function setIsInferring(value: boolean): void {
   isInferring = value;
   isInferringSetAtMs = value ? Date.now() : null;
 }
 
 /**
- * Detect a stuck `isInferring` flag and force-clear it.
- *
- * This is a safety hatch for the case where a previous request's cleanup
- * path didn't fire (e.g. the SSE response's HTTP connection lingered in
- * keep-alive and the server-side `finally` was delayed past anything we'd
- * call "normal"). It's safe to clear only when:
- *
- *   1. The flag has been `true` for longer than `staleAfterMs`, AND
- *   2. No abort controller is active — meaning no real generation is
- *      currently running. If `currentAbort` is non-null and not aborted,
- *      a real inference IS in progress and clearing the flag would risk
- *      a concurrent request hitting llama.cpp at the same time.
- *
- * Returns `true` if the flag was force-cleared, `false` otherwise.
+ * Detect a stuck `isInferring` flag and force-clear it. Safe to clear only
+ * when the flag has been `true` for longer than `staleAfterMs` AND no abort
+ * controller is active — meaning no real generation is running.
  */
 function forceReleaseIfStuck(staleAfterMs: number = 2_000): boolean {
   if (!isInferring || isInferringSetAtMs === null) return false;
   const elapsed = Date.now() - isInferringSetAtMs;
   if (elapsed < staleAfterMs) return false;
-  // The presence of `currentAbort` (un-aborted) is the authoritative
-  // "real inference is currently running" signal. disposeSeq() clears
-  // currentAbort, so if it's null, no generation is active even when
-  // isInferring is somehow still true.
   const realInferenceActive =
     currentAbort !== null && !(currentAbort as AbortController).signal.aborted;
   if (realInferenceActive) return false;
@@ -142,24 +179,6 @@ function forceReleaseIfStuck(staleAfterMs: number = 2_000): boolean {
   return true;
 }
 
-/**
- * Wait until the embedded inference server is no longer serving a request.
- *
- * The server enforces "one request at a time" — concurrent /v1/chat/completions
- * calls return HTTP 429. After a streaming response completes, the in-memory
- * `isInferring` flag may stay true for a short window while resources are
- * released. Code paths that need to fire a follow-up generation (e.g. the
- * one-shot `autoImplementAppIndex` after the agent stream ends) must wait
- * for this flag to clear first; otherwise the 429 propagates and the call
- * fails despite the server being effectively idle.
- *
- * After 30s of waiting, we also try `forceReleaseIfStuck` to recover from
- * the case where the previous cleanup path never fired but no real
- * generation is actually running.
- *
- * Returns `true` if the server became free within `timeoutMs`, `false` on
- * timeout.
- */
 export async function waitForInferenceFree(
   timeoutMs: number = 15_000,
 ): Promise<boolean> {
@@ -171,22 +190,33 @@ export async function waitForInferenceFree(
     if (!isInferring) return true;
     await new Promise<void>((resolve) => setTimeout(resolve, 50));
   }
-  // One last shot before giving up.
   forceReleaseIfStuck(0);
   return !isInferring;
 }
 
+// ─── Status ──────────────────────────────────────────────────────────────────
+
 export function getServerStatus(): EmbeddedServerStatus {
   const tensorRtStatus = getTensorRtBackend().getStatus();
+  const llamaServerStatus = llamaServerBackend.getStatus();
   const tensorRtLoaded =
     currentBackend === "tensorrt-native" && tensorRtStatus.loaded;
+  const llamaLoaded =
+    currentBackend === "llama-cpp" && llamaServerStatus.running;
+  const gpuLayers =
+    currentBackend === "llama-cpp"
+      ? llamaServerStatus.resolvedGpuLayers
+      : currentGpuLayers;
+  const multimodal =
+    currentBackend === "llama-cpp" && llamaServerStatus.mmprojPath !== null;
   return {
-    running: server !== null,
-    modelLoaded: currentModel !== null || tensorRtLoaded,
+    running: server !== null || llamaServerStatus.running,
+    modelLoaded: llamaLoaded || tensorRtLoaded,
     modelPath: currentModelPath,
     modelName: currentModelPath
       ? (currentModelPath.split(/[/\\]/).pop() ?? null)
       : null,
+    multimodal,
     isLoading,
     isInferring,
     backend: currentBackend,
@@ -195,11 +225,14 @@ export function getServerStatus(): EmbeddedServerStatus {
     tensorRtRuntimePath: tensorRtStatus.runtimePath,
     tensorRtEngineDir: tensorRtStatus.engineDir,
     tensorRtEngineFormat: tensorRtStatus.engineFormat,
-    gpuLayers: currentGpuLayers,
+    gpuLayers,
     totalLayers: currentTotalLayers,
-    cpuLayers: Math.max(0, currentTotalLayers - currentGpuLayers),
+    cpuLayers: Math.max(0, currentTotalLayers - gpuLayers),
     actualContextSize: currentActualContextSize,
-    chatWrapperLabel: currentChatWrapperLabel,
+    // The chat template is now resolved by llama-server from the GGUF's
+    // embedded template (or --chat-template override). We no longer carry one
+    // in-process, so this field stays null for the llama-cpp backend.
+    chatWrapperLabel: null,
   };
 }
 
@@ -217,300 +250,28 @@ function emitStatusChanged(): EmbeddedServerStatus {
   return status;
 }
 
-// ─── Live inference stats ─────────────────────────────────────────────────────
+// ─── Public stats API (delegates to StatsTracker singleton) ──────────────────
 
-export type InferenceState =
-  | "idle"
-  | "loading"
-  | "prefilling"
-  | "generating"
-  | "thinking"
-  | "tool_calling";
+export const addStatsListener =
+  statsTracker.addStatsListener.bind(statsTracker);
+export const addLogListener = statsTracker.addLogListener.bind(statsTracker);
+export const getRecentLogs = statsTracker.getRecentLogs.bind(statsTracker);
+export const getCurrentStats = statsTracker.getCurrentStats.bind(statsTracker);
+export const startHardwareBroadcast =
+  statsTracker.startHardwareBroadcast.bind(statsTracker);
+export const stopHardwareBroadcast =
+  statsTracker.stopHardwareBroadcast.bind(statsTracker);
 
-export interface InferenceStats {
-  state: InferenceState;
-  operation: string;
-  backend: "none" | "llama-cpp" | "tensorrt-native";
-  liveTps: number;
-  avgTps: number;
-  prefillTps: number;
-  prefillComplete: boolean;
-  promptTokens: number;
-  prefillDurationMs: number;
-  decodeTps: number;
-  recentDecodeTps: number;
-  peakTps: number;
-  lowestTps: number;
-  tokensGenerated: number;
-  sessionDurationMs: number;
-  totalSessions: number;
-  totalTokensAllTime: number;
-  processCpuPercent: number;
-  systemRamUsedMb: number;
-  systemRamTotalMb: number;
-}
+// ─── Private stats shorthands (used inside the TensorRT handler below) ───────
 
-export interface InferenceLogEntry {
-  ts: number;
-  level: "info" | "warn" | "error";
-  msg: string;
-}
+const setState = statsTracker.setState.bind(statsTracker);
+const beginSession = statsTracker.beginSession.bind(statsTracker);
+const stopStatsBroadcast = statsTracker.stopStatsBroadcast.bind(statsTracker);
+const recordToken = statsTracker.recordToken.bind(statsTracker);
+const recordTokenCount = statsTracker.recordTokenCount.bind(statsTracker);
 
-type StatsListener = (s: InferenceStats) => void;
-type LogListener = (e: InferenceLogEntry) => void;
+// ─── electron-log hook: mirror inference-scope logs into the ring buffer ──────
 
-const statsListeners = new Set<StatsListener>();
-const logListeners = new Set<LogListener>();
-const logRingBuffer: InferenceLogEntry[] = [];
-const LOG_RING_SIZE = 200;
-
-// Sliding window for live TPS (1 s buckets, keep 3)
-const TPS_WINDOW_SECONDS = 3;
-interface TpsBucket {
-  ts: number;
-  count: number;
-}
-let tpsBuckets: TpsBucket[] = [];
-let sessionStart = 0;
-let prefillStart = 0;
-let firstTokenAt = 0;
-let currentPromptTokens = 0;
-let currentPrefillDurationMs = 0;
-let sessionTokens = 0;
-let sessionPeakTps = 0;
-let sessionLowestTps = Infinity;
-let allTimeTotalTokens = 0;
-let allTimeTotalSessions = 0;
-
-// EMA decode speed tracking
-const EMA_ALPHA = 0.3;
-const MIN_DECODE_SAMPLES = 3;
-let lastDecodeTokenAt = 0;
-let emaInterTokenMs = 0;
-let decodeTokenCount = 0;
-
-// System stats for hardware panel (CPU + RAM)
-let sysCpuLastUsage: NodeJS.CpuUsage | null = null;
-let sysCpuLastTs: number | null = null;
-let sysCpuPercent = 0;
-const NUM_CORES = os.cpus().length || 1;
-
-function sampleProcessCpu(): number {
-  const now = Date.now();
-  const cur = process.cpuUsage();
-  if (sysCpuLastUsage && sysCpuLastTs) {
-    const elapsedUs = (now - sysCpuLastTs) * 1000;
-    if (elapsedUs > 0) {
-      const cpuUs =
-        cur.user - sysCpuLastUsage.user + (cur.system - sysCpuLastUsage.system);
-      // Normalize by core count so result is always 0-100%
-      const rawPercent = (cpuUs / elapsedUs) * 100;
-      sysCpuPercent = Math.round(Math.min(100, rawPercent / NUM_CORES));
-    }
-  }
-  sysCpuLastUsage = cur;
-  sysCpuLastTs = now;
-  return sysCpuPercent;
-}
-
-// Always-on hardware broadcast (2 s interval) so CPU/RAM show even when idle
-let hardwareBroadcastTimer: NodeJS.Timeout | null = null;
-export function startHardwareBroadcast(): void {
-  if (hardwareBroadcastTimer) return;
-  // Prime the CPU baseline so the first real reading is accurate
-  sampleProcessCpu();
-  hardwareBroadcastTimer = setInterval(broadcastStats, 2000);
-}
-export function stopHardwareBroadcast(): void {
-  if (hardwareBroadcastTimer) {
-    clearInterval(hardwareBroadcastTimer);
-    hardwareBroadcastTimer = null;
-  }
-}
-
-let currentInferenceState: InferenceState = "idle";
-let currentOperation = "";
-
-export function addStatsListener(fn: StatsListener): () => void {
-  statsListeners.add(fn);
-  return () => statsListeners.delete(fn);
-}
-
-export function addLogListener(fn: LogListener): () => void {
-  logListeners.add(fn);
-  return () => logListeners.delete(fn);
-}
-
-export function getRecentLogs(): InferenceLogEntry[] {
-  return [...logRingBuffer];
-}
-
-export function getCurrentStats(): InferenceStats {
-  const liveTps = computeLiveTps();
-  const sessionDurationMs = sessionStart > 0 ? Date.now() - sessionStart : 0;
-  const avgTps =
-    sessionDurationMs > 0 ? (sessionTokens / sessionDurationMs) * 1000 : 0;
-
-  // Prefill TPS: only stable after prefill completes (firstTokenAt set).
-  // During active prefill the elapsed time is tiny → division gives huge fake numbers.
-  const prefillComplete = firstTokenAt > 0;
-  const activePrefillMs = prefillComplete
-    ? currentPrefillDurationMs
-    : prefillStart > 0
-      ? Date.now() - prefillStart
-      : 0;
-  const prefillTps =
-    prefillComplete && currentPromptTokens > 0 && currentPrefillDurationMs > 0
-      ? (currentPromptTokens / currentPrefillDurationMs) * 1000
-      : 0;
-
-  // Cumulative decode avg (stable over whole session)
-  const decodeMs =
-    firstTokenAt > 0 ? Math.max(1, Date.now() - firstTokenAt) : 0;
-  const decodeTps =
-    sessionTokens > 0 && decodeMs > 0 ? (sessionTokens / decodeMs) * 1000 : 0;
-
-  // EMA-smoothed recent decode speed (responsive, not distorted by early burst)
-  const recentDecodeTps =
-    decodeTokenCount >= MIN_DECODE_SAMPLES && emaInterTokenMs > 0
-      ? 1000 / emaInterTokenMs
-      : 0;
-
-  // System stats
-  const processCpuPercent = sampleProcessCpu();
-  const systemRamTotalMb = Math.round(os.totalmem() / (1024 * 1024));
-  const systemRamUsedMb = Math.round(
-    (os.totalmem() - os.freemem()) / (1024 * 1024),
-  );
-
-  return {
-    state: currentInferenceState,
-    operation: currentOperation,
-    backend: currentBackend,
-    liveTps,
-    avgTps,
-    prefillTps,
-    prefillComplete,
-    promptTokens: currentPromptTokens,
-    prefillDurationMs: activePrefillMs,
-    decodeTps,
-    recentDecodeTps,
-    peakTps: sessionPeakTps,
-    lowestTps: sessionLowestTps === Infinity ? 0 : sessionLowestTps,
-    tokensGenerated: sessionTokens,
-    sessionDurationMs,
-    totalSessions: allTimeTotalSessions,
-    totalTokensAllTime: allTimeTotalTokens,
-    processCpuPercent,
-    systemRamUsedMb,
-    systemRamTotalMb,
-  };
-}
-
-function computeLiveTps(): number {
-  const cutoff = Date.now() - TPS_WINDOW_SECONDS * 1000;
-  tpsBuckets = tpsBuckets.filter((b) => b.ts >= cutoff);
-  const total = tpsBuckets.reduce((s, b) => s + b.count, 0);
-  const windowMs =
-    tpsBuckets.length > 0
-      ? Math.max(1, Date.now() - tpsBuckets[0].ts)
-      : TPS_WINDOW_SECONDS * 1000;
-  return total > 0 ? (total / windowMs) * 1000 : 0;
-}
-
-function recordToken(): void {
-  const now = Date.now();
-  if (firstTokenAt === 0 && prefillStart > 0) {
-    firstTokenAt = now;
-    currentPrefillDurationMs = Math.max(1, firstTokenAt - prefillStart);
-    lastDecodeTokenAt = now;
-    decodeTokenCount = 0;
-    emaInterTokenMs = 0;
-  } else if (lastDecodeTokenAt > 0) {
-    const delta = now - lastDecodeTokenAt;
-    if (delta > 0) {
-      emaInterTokenMs =
-        decodeTokenCount < MIN_DECODE_SAMPLES
-          ? emaInterTokenMs === 0
-            ? delta
-            : (emaInterTokenMs * decodeTokenCount + delta) /
-              (decodeTokenCount + 1)
-          : EMA_ALPHA * delta + (1 - EMA_ALPHA) * emaInterTokenMs;
-    }
-    lastDecodeTokenAt = now;
-    decodeTokenCount++;
-  }
-  sessionTokens++;
-  allTimeTotalTokens++;
-  if (
-    tpsBuckets.length === 0 ||
-    now - tpsBuckets[tpsBuckets.length - 1].ts > 500
-  ) {
-    tpsBuckets.push({ ts: now, count: 1 });
-  } else {
-    tpsBuckets[tpsBuckets.length - 1].count++;
-  }
-  const live = computeLiveTps();
-  if (live > sessionPeakTps) sessionPeakTps = live;
-  if (live > 0 && live < sessionLowestTps) sessionLowestTps = live;
-}
-
-function recordTokenCount(count: number): void {
-  for (let i = 0; i < Math.max(0, count); i++) recordToken();
-}
-
-function setState(s: InferenceState, op = ""): void {
-  currentInferenceState = s;
-  currentOperation = op;
-  broadcastStats();
-}
-
-function broadcastStats(): void {
-  if (statsListeners.size === 0) return;
-  const snap = getCurrentStats();
-  for (const fn of statsListeners) fn(snap);
-}
-
-let statsBroadcastTimer: NodeJS.Timeout | null = null;
-function startStatsBroadcast(): void {
-  if (statsBroadcastTimer) return;
-  statsBroadcastTimer = setInterval(broadcastStats, 250);
-}
-function stopStatsBroadcast(): void {
-  if (statsBroadcastTimer) {
-    clearInterval(statsBroadcastTimer);
-    statsBroadcastTimer = null;
-  }
-  setState("idle", "");
-  broadcastStats();
-}
-
-function beginSession(promptTokens: number): void {
-  sessionStart = Date.now();
-  prefillStart = sessionStart;
-  firstTokenAt = 0;
-  currentPromptTokens = promptTokens;
-  currentPrefillDurationMs = 0;
-  sessionTokens = 0;
-  sessionPeakTps = 0;
-  sessionLowestTps = Infinity;
-  tpsBuckets = [];
-  lastDecodeTokenAt = 0;
-  emaInterTokenMs = 0;
-  decodeTokenCount = 0;
-  allTimeTotalSessions++;
-  startStatsBroadcast();
-}
-
-// Emit log entries to the ring buffer + listeners
-function emitLog(level: InferenceLogEntry["level"], msg: string): void {
-  const entry: InferenceLogEntry = { ts: Date.now(), level, msg };
-  logRingBuffer.push(entry);
-  if (logRingBuffer.length > LOG_RING_SIZE) logRingBuffer.shift();
-  for (const fn of logListeners) fn(entry);
-}
-
-// Hook electron-log for the inference scope
 (logger as any).hooks = [
   ...((logger as any).hooks ?? []),
   (message: any) => {
@@ -521,847 +282,23 @@ function emitLog(level: InferenceLogEntry["level"], msg: string): void {
           ? "error"
           : "info";
     const text = message.data?.map(String).join(" ") ?? "";
-    emitLog(level as InferenceLogEntry["level"], text);
+    statsTracker.emitLog(level as InferenceLogEntry["level"], text);
     return message;
   },
 ];
 
-// ─── ESM import shim ─────────────────────────────────────────────────────────
-const _esmImport = new Function("s", "return import(s)") as (
-  s: string,
-) => Promise<unknown>;
-let llamaModule: typeof import("node-llama-cpp") | null = null;
-
-async function getLlamaModule(): Promise<typeof import("node-llama-cpp")> {
-  if (!llamaModule) {
-    llamaModule = (await _esmImport(
-      "node-llama-cpp",
-    )) as typeof import("node-llama-cpp");
-    logger.info("node-llama-cpp ESM module loaded");
-  }
-  return llamaModule;
-}
-
-// ─── Llama instance management ───────────────────────────────────────────────
-
-async function getOrCreateLlamaInstance(): Promise<unknown> {
-  if (llamaInstance) return llamaInstance;
-  const { getLlama } = await getLlamaModule();
-  llamaInstance = await getLlama({ gpu: "auto" });
-  logger.info("Llama instance created");
-  return llamaInstance;
-}
-
-async function destroyLlamaInstance(): Promise<void> {
-  if (!llamaInstance) return;
-  try {
-    await (llamaInstance as any).dispose();
-  } catch {
-    /* ignore */
-  }
-  llamaInstance = null;
-  llamaModule = null;
-  logger.info("Llama instance destroyed");
-}
+// ─── TensorRT helpers ────────────────────────────────────────────────────────
 
 function getTensorRtBackend(): TensorRtNativeBackend {
   tensorRtBackend ??= new TensorRtNativeBackend();
   return tensorRtBackend;
 }
 
-function getModelLoaded(): boolean {
-  return (
-    currentModel !== null ||
-    (currentBackend === "tensorrt-native" &&
-      getTensorRtBackend().getStatus().loaded)
-  );
-}
-
-// ─── GPU layer calculation ────────────────────────────────────────────────────
-
-function calculateGpuLayers(
-  vramMb: number,
-  utilization: number,
-  vramHeadroomMb: number | undefined,
-  layerSizeMb: number,
-  totalLayers: number,
-  contextSize: number,
-  kvBytesPerTokenPerLayer: number,
-  attentionSlidingWindow?: number | null,
-  attentionSlidingWindowPattern?: number | null,
-  flashAttention?: boolean,
-): number {
-  if (vramMb <= 0 || layerSizeMb <= 0) return 0;
-  const explicitHeadroomMb =
-    typeof vramHeadroomMb === "number"
-      ? Math.max(256, Math.min(4096, vramHeadroomMb))
-      : null;
-  const utilBudget = vramMb * Math.min(0.98, Math.max(0.3, utilization));
-  const budget = Math.max(
-    0,
-    explicitHeadroomMb == null ? utilBudget : vramMb - explicitHeadroomMb,
-  );
-  const effectiveContextSize = getEffectiveKvContextSize(
-    contextSize,
-    attentionSlidingWindow,
-    attentionSlidingWindowPattern,
-    flashAttention,
-  );
-  const kvPerLayerMb =
-    (Math.max(512, effectiveContextSize) * kvBytesPerTokenPerLayer) /
-    (1024 * 1024);
-  const perLayerMb = layerSizeMb + kvPerLayerMb;
-  return Math.min(totalLayers, Math.floor(budget / perLayerMb));
-}
-
-function clampGpuLayers(layers: number, totalLayers: number): number {
-  return Math.max(0, Math.min(totalLayers, Math.floor(layers)));
-}
-
-function getEffectiveKvContextSize(
-  contextSize: number,
-  attentionSlidingWindow?: number | null,
-  attentionSlidingWindowPattern?: number | null,
-  flashAttention?: boolean,
-): number {
-  const slidingWindow = attentionSlidingWindow ?? 0;
-  if (slidingWindow <= 0 || slidingWindow >= contextSize) {
-    return contextSize;
-  }
-  const pattern = Math.max(1, attentionSlidingWindowPattern ?? 1);
-  const nonSwaPercent =
-    pattern <= 1 ? 1 : 1 / (pattern + (flashAttention ? -0.5 : -1));
-  return Math.ceil(
-    (1 - nonSwaPercent) * slidingWindow + nonSwaPercent * contextSize,
-  );
-}
-
-const OOM_KEYWORDS = [
-  "VRAM",
-  "vram",
-  "memory",
-  "Memory",
-  "OOM",
-  "OutOfMemory",
-  "out of memory",
-  "context size",
-  "Context size",
-  "too large",
-  "CUDA",
-  "cuda",
-  "cuLaunchKernel",
-  "allocation failed",
-];
-
-function isOomError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return OOM_KEYWORDS.some((kw) => msg.includes(kw));
-}
-
-// ─── Model loading with progressive GPU-layer fallback ───────────────────────
-
-export async function loadModel(config: EmbeddedModelConfig): Promise<void> {
-  if (isLoading) throw new Error("A model is already loading");
-  isLoading = true;
-  emitStatusChanged();
-
-  if (config.inferenceBackend === "tensorrt-native") {
-    await loadTensorRtModel(config);
-    return;
-  }
-
-  setState("loading", `Loading ${config.modelPath.split(/[/\\]/).pop()}…`);
-
-  const vramMb = config._vramMb ?? 0;
-  const layerSizeMb = config._layerSizeMb ?? 200;
-  const totalLayers = config._estimatedLayers ?? 64;
-  const kvBytesPerTokenPerLayer = config._kvBytesPerTokenPerLayer ?? 4096;
-  const flashAttention = config.flashAttention ?? true;
-  const autoGpuLayers = calculateGpuLayers(
-    vramMb,
-    config.gpuMemoryUtilization,
-    config.vramHeadroomMb,
-    layerSizeMb,
-    totalLayers,
-    config.contextSize,
-    kvBytesPerTokenPerLayer,
-    config._attentionSlidingWindow,
-    config._attentionSlidingWindowPattern,
-    flashAttention,
-  );
-  let baseGpuLayers =
-    config.gpuLayersMode === "manual" &&
-    typeof config.manualGpuLayers === "number"
-      ? clampGpuLayers(config.manualGpuLayers, totalLayers)
-      : autoGpuLayers;
-
-  // Phase 4: honor the hardware profile's bestLlmBackend. When the resolver
-  // says CPU-only (no GPU detected, or detected GPU isn't usable for LLM),
-  // force gpuLayers=0 regardless of what the GGUF-math came up with.
-  // The CUDA/Vulkan/Metal layer math is intentionally NOT replaced here —
-  // it's better than the resolver's all-or-nothing sentinel. We only veto.
-  let resolvedBackendLabel: string | null = null;
-  try {
-    const profile = await getCachedHardwareProfile();
-    const opts = resolveLlmBackendOptions(profile);
-    resolvedBackendLabel = getLlmBackendName(profile);
-    if (opts.gpuLayers === 0 && baseGpuLayers > 0) {
-      logger.info(
-        `Hardware profile resolved to CPU-only (${resolvedBackendLabel}); ` +
-          `overriding baseGpuLayers ${baseGpuLayers} -> 0`,
-      );
-      baseGpuLayers = 0;
-    }
-  } catch (err) {
-    logger.warn(
-      "resolveLlmBackendOptions failed; falling back to GGUF-math layer count:",
-      err,
-    );
-  }
-
-  const aggressiveMemory = config.aggressiveMemory ?? true;
-  const batchSize = config.batchSize ?? 512;
-
-  const attempts: Array<{
-    gpuLayers: number;
-    ctxMax: number;
-    ctxMin: number;
-    label: string;
-  }> = [
-    {
-      gpuLayers: baseGpuLayers,
-      ctxMax: config.contextSize,
-      ctxMin: aggressiveMemory ? config.contextSize : 256,
-      label: "initial",
-    },
-    {
-      gpuLayers: Math.floor(baseGpuLayers * 0.75),
-      ctxMax: config.contextSize,
-      ctxMin: aggressiveMemory ? config.contextSize : 256,
-      label: "75% layers",
-    },
-    {
-      gpuLayers: Math.floor(baseGpuLayers * 0.5),
-      ctxMax: config.contextSize,
-      ctxMin: aggressiveMemory ? config.contextSize : 256,
-      label: "50% layers",
-    },
-    {
-      gpuLayers: Math.floor(baseGpuLayers * 0.25),
-      ctxMax: config.contextSize,
-      ctxMin: 128,
-      label: "25% layers",
-    },
-    {
-      gpuLayers: 0,
-      ctxMax: config.contextSize,
-      ctxMin: 64,
-      label: "CPU-only",
-    },
-    {
-      gpuLayers: 0,
-      ctxMax: Math.min(config.contextSize, 32768),
-      ctxMin: 64,
-      label: "CPU-only reduced context",
-    },
-  ];
-
-  logger.info(
-    `Loading: ${config.modelPath} | util=${(config.gpuMemoryUtilization * 100).toFixed(0)}% | ` +
-      `headroom=${config.vramHeadroomMb ?? "legacy"}MB | aggressive=${aggressiveMemory} | ` +
-      `gpuLayers=${baseGpuLayers}/${totalLayers} (${config.gpuLayersMode ?? "auto"}) | ` +
-      `ctx≤${config.contextSize} | kv=${(kvBytesPerTokenPerLayer / 1024).toFixed(1)}KB/token/layer | ` +
-      `vram=${(vramMb / 1024).toFixed(1)}GB` +
-      (resolvedBackendLabel ? ` | backend=${resolvedBackendLabel}` : ""),
-  );
-
-  await _fullReset();
-  currentBackend = "llama-cpp";
-  let lastError: unknown = new Error("No load attempt made");
-
-  for (const attempt of attempts) {
-    if (attempt.gpuLayers < 0) continue;
-    if (
-      attempt.gpuLayers === 0 &&
-      attempt.label !== "CPU-only" &&
-      baseGpuLayers === 0
-    )
-      continue;
-
-    logger.info(
-      `[${attempt.label}] gpuLayers=${attempt.gpuLayers}, ctx=${attempt.ctxMin}–${attempt.ctxMax}`,
-    );
-
-    try {
-      const llama = await getOrCreateLlamaInstance();
-      const model = await (llama as any).loadModel({
-        modelPath: config.modelPath,
-        gpuLayers:
-          attempt.gpuLayers > 0 ? { min: 0, max: attempt.gpuLayers } : 0,
-        defaultContextFlashAttention: flashAttention,
-      });
-      const actualGpu: number = (model as any).gpuLayers ?? attempt.gpuLayers;
-      logger.info(
-        `[${attempt.label}] Weights loaded — GPU ${actualGpu} / CPU ${totalLayers - actualGpu}`,
-      );
-
-      const ctx = await (model as any).createContext({
-        contextSize:
-          aggressiveMemory && attempt.ctxMin === attempt.ctxMax
-            ? attempt.ctxMax
-            : { min: attempt.ctxMin, max: attempt.ctxMax },
-        flashAttention,
-        batchSize: Math.min(batchSize, attempt.ctxMax),
-        ignoreMemorySafetyChecks: aggressiveMemory,
-        failedCreationRemedy: aggressiveMemory ? false : undefined,
-      });
-      const actualCtx: number = (ctx as any).contextSize ?? attempt.ctxMax;
-      const allocatedCtx: number =
-        typeof (ctx as any).getAllocatedContextSize === "function"
-          ? (ctx as any).getAllocatedContextSize()
-          : actualCtx;
-      logger.info(
-        `[${attempt.label}] Context created — ${actualCtx} tokens (${allocatedCtx} allocated)`,
-      );
-
-      currentModel = model;
-      currentContext = ctx;
-      currentModelPath = config.modelPath;
-      currentBackend = "llama-cpp";
-      currentGpuLayers = actualGpu;
-      currentTotalLayers = totalLayers;
-      currentActualContextSize = actualCtx;
-
-      // Resolve a specialized chat wrapper based on the model filename. This
-      // is required for reliable tool calling with models whose GGUF templates
-      // are stripped or incorrect. Qwen 3.5/3.6 deliberately falls back to its
-      // embedded Jinja template because it is more reliable for those GGUFs.
-      try {
-        const { resolveChatWrapperForModel } =
-          await import("./chat_wrapper_resolver");
-        const llamaModule = await getLlamaModule();
-        const resolved = await resolveChatWrapperForModel({
-          modelIdOrFilename: config.modelPath,
-          llamaModule,
-        });
-        currentChatWrapper = resolved.wrapper;
-        currentChatWrapperLabel = resolved.match.label;
-        if (resolved.wrapper) {
-          logger.info(
-            `[chat_wrapper] Locked in ${resolved.match.label} for "${config.modelPath}".`,
-          );
-        } else {
-          logger.info(
-            `[chat_wrapper] No specialized wrapper for "${config.modelPath}"; relying on auto-detect + text-tool-call fallback.`,
-          );
-        }
-      } catch (err) {
-        currentChatWrapper = null;
-        currentChatWrapperLabel = null;
-        logger.warn(
-          `[chat_wrapper] Failed to resolve chat wrapper for "${config.modelPath}":`,
-          err,
-        );
-      }
-
-      isLoading = false;
-      setState("idle", "Model ready");
-      emitStatusChanged();
-      return;
-    } catch (err) {
-      lastError = err;
-      logger.warn(
-        `[${attempt.label}] Failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      try {
-        await (currentContext as any)?.dispose();
-      } catch {
-        /* ignore */
-      }
-      try {
-        await (currentModel as any)?.dispose();
-      } catch {
-        /* ignore */
-      }
-      currentContext = null;
-      currentModel = null;
-      await destroyLlamaInstance();
-
-      if (!isOomError(err)) {
-        currentModelPath = null;
-        currentBackend = "none";
-        currentGpuLayers = 0;
-        currentActualContextSize = 0;
-        isLoading = false;
-        emitStatusChanged();
-        throw err;
-      }
-    }
-  }
-
-  currentModelPath = null;
-  currentBackend = "none";
-  currentGpuLayers = 0;
-  currentTotalLayers = 0;
-  currentActualContextSize = 0;
-  isLoading = false;
-  emitStatusChanged();
-  const msg =
-    lastError instanceof Error ? lastError.message : String(lastError);
-  throw new Error(
-    `Model failed to load on all ${attempts.length} attempts (including CPU-only).\n\n` +
-      `Last error: ${msg}\n\n` +
-      `Try: (1) Close GPU-heavy apps. (2) Lower "GPU Memory Utilization". (3) Use a smaller quantized model.`,
-  );
-}
-
-async function loadTensorRtModel(config: EmbeddedModelConfig): Promise<void> {
-  const engineDir = config.tensorRtEngineDir ?? findDefaultTensorRtEngineDir();
-  if (!engineDir) {
-    isLoading = false;
-    currentBackend = "none";
-    emitStatusChanged();
-    throw new Error(
-      "TensorRT engine directory not found. Select a compiled engine directory containing engine_meta.json.",
-    );
-  }
-
-  setState("loading", `Loading TensorRT engine ${engineDir}...`);
-  await _fullReset();
-  currentBackend = "tensorrt-native";
-  try {
-    await getTensorRtBackend().load(engineDir);
-    currentModelPath = engineDir;
-    currentGpuLayers = config._estimatedLayers ?? 0;
-    currentTotalLayers = config._estimatedLayers ?? 0;
-    currentActualContextSize = config.contextSize;
-    isLoading = false;
-    setState("idle", "TensorRT engine ready");
-    emitStatusChanged();
-  } catch (err) {
-    currentBackend = "none";
-    currentModelPath = null;
-    currentGpuLayers = 0;
-    currentTotalLayers = 0;
-    currentActualContextSize = 0;
-    isLoading = false;
-    emitStatusChanged();
-    throw err;
-  }
-}
-
-async function _fullReset(): Promise<void> {
-  if (currentAbort) {
-    currentAbort.abort();
-    currentAbort = null;
-  }
-  setIsInferring(false);
-  if (currentContext) {
-    try {
-      await (currentContext as any).dispose();
-    } catch {
-      /* ignore */
-    }
-    currentContext = null;
-  }
-  if (currentModel) {
-    try {
-      await (currentModel as any).dispose();
-    } catch {
-      /* ignore */
-    }
-    currentModel = null;
-  }
-  currentModelPath = null;
-  currentBackend = "none";
-  currentGpuLayers = 0;
-  currentTotalLayers = 0;
-  currentActualContextSize = 0;
-  currentChatWrapper = null;
-  currentChatWrapperLabel = null;
-  await destroyLlamaInstance();
-  await tensorRtBackend?.unload();
-  emitStatusChanged();
-}
-
-export async function unloadModel(): Promise<void> {
-  await _fullReset();
-  logger.info("Model unloaded");
-  emitStatusChanged();
-}
-
-// Abort any in-progress inference and clear the busy flag.
-// Safe to call even when nothing is running.
-export function abortCurrentInference(): void {
-  if (currentAbort && !currentAbort.signal.aborted) {
-    currentAbort.abort();
-  }
-  currentAbort = null;
-  setIsInferring(false);
-  emitStatusChanged();
-  logger.info("Inference aborted by caller");
-}
-
-// ─── OpenAI → node-llama-cpp message conversion ──────────────────────────────
-//
-// The agent passes a full conversation that includes:
-//   • system message (huge OrianBuilder system prompt with codebase)
-//   • user messages
-//   • assistant messages (may include tool_calls)
-//   • tool messages (results of previous tool calls)
-//
-// We convert the entire array to LlamaChatHistory so the model gets full context
-// and the chat template (ChatML, Llama3, etc.) is applied correctly.
-
-interface OpenAIToolCall {
-  id: string;
-  type: "function";
-  function: { name: string; arguments: string };
-}
-
-interface OpenAIMessage {
-  role: string;
-  content?: unknown;
-  tool_calls?: OpenAIToolCall[];
-  tool_call_id?: string;
-}
-
-interface NlcSystemMessage {
-  type: "system";
-  text: string;
-}
-interface NlcUserMessage {
-  type: "user";
-  text: string;
-}
-interface NlcModelMessage {
-  type: "model";
-  response: Array<
-    | string
-    | { type: "functionCall"; name: string; params: unknown; result: unknown }
-  >;
-}
-type NlcHistoryItem = NlcSystemMessage | NlcUserMessage | NlcModelMessage;
-
-function safeJsonStringify(value: unknown): string {
-  try {
-    return JSON.stringify(value) ?? String(value);
-  } catch {
-    return String(value);
-  }
-}
-
-function stringifyOpenAIContent(content: unknown): string {
-  if (content == null) return "";
-  if (typeof content === "string") return content;
-  if (typeof content === "number" || typeof content === "boolean") {
-    return String(content);
-  }
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (part == null) return "";
-        if (typeof part === "string") return part;
-        if (typeof part === "number" || typeof part === "boolean") {
-          return String(part);
-        }
-        if (typeof part === "object") {
-          const typedPart = part as Record<string, unknown>;
-          if (typeof typedPart.text === "string") return typedPart.text;
-          if (typeof typedPart.value === "string") return typedPart.value;
-          if (typedPart.type === "image" || typedPart.type === "image_url") {
-            return "[image]";
-          }
-          return safeJsonStringify(typedPart);
-        }
-        return String(part);
-      })
-      .filter(Boolean)
-      .join("\n");
-  }
-  if (typeof content === "object") return safeJsonStringify(content);
-  return String(content);
-}
-
-function stripThinkingBlocks(text: string): {
-  visibleText: string;
-  removedThinking: boolean;
-} {
-  if (!text.includes("<think>")) {
-    return { visibleText: text, removedThinking: false };
-  }
-
-  let visibleText = "";
-  let cursor = 0;
-  let removedThinking = false;
-  while (cursor < text.length) {
-    const openIndex = text.indexOf("<think>", cursor);
-    if (openIndex === -1) {
-      visibleText += text.slice(cursor);
-      break;
-    }
-    visibleText += text.slice(cursor, openIndex);
-    removedThinking = true;
-    const closeIndex = text.indexOf("</think>", openIndex + 7);
-    if (closeIndex === -1) {
-      break;
-    }
-    cursor = closeIndex + 8;
-  }
-
-  return { visibleText, removedThinking };
-}
-
-function createThinkingStripper() {
-  let inThink = false;
-  let pending = "";
-
-  const longestTagSuffix = (text: string, tag: string) => {
-    for (let len = Math.min(tag.length - 1, text.length); len > 0; len -= 1) {
-      const suffix = text.slice(-len);
-      if (tag.startsWith(suffix)) return suffix;
-    }
-    return "";
-  };
-
-  return {
-    push(chunk: string): {
-      visibleText: string;
-      enteredThinking: boolean;
-      exitedThinking: boolean;
-    } {
-      const openTag = "<think>";
-      const closeTag = "</think>";
-      const input = pending + chunk;
-      pending = "";
-      let visibleText = "";
-      let enteredThinking = false;
-      let exitedThinking = false;
-      let cursor = 0;
-
-      while (cursor < input.length) {
-        if (inThink) {
-          const closeIndex = input.indexOf(closeTag, cursor);
-          if (closeIndex === -1) {
-            pending = longestTagSuffix(input.slice(cursor), closeTag);
-            break;
-          }
-          cursor = closeIndex + closeTag.length;
-          inThink = false;
-          exitedThinking = true;
-          continue;
-        }
-
-        const openIndex = input.indexOf(openTag, cursor);
-        if (openIndex === -1) {
-          const tail = input.slice(cursor);
-          pending = longestTagSuffix(tail, openTag);
-          visibleText += tail.slice(0, tail.length - pending.length);
-          break;
-        }
-
-        visibleText += input.slice(cursor, openIndex);
-        cursor = openIndex + openTag.length;
-        inThink = true;
-        enteredThinking = true;
-      }
-
-      return { visibleText, enteredThinking, exitedThinking };
-    },
-    flush(): string {
-      if (inThink) {
-        pending = "";
-        return "";
-      }
-      const visibleText = pending;
-      pending = "";
-      return visibleText;
-    },
-  };
-}
-
-function applyThinkingState(input: {
-  enteredThinking: boolean;
-  exitedThinking: boolean;
-  generatingOperation: string;
-}) {
-  if (input.enteredThinking) {
-    setState("thinking", "Thinking...");
-    return;
-  }
-  if (input.exitedThinking || currentInferenceState === "prefilling") {
-    setState("generating", input.generatingOperation);
-  }
-}
-
-function estimateOpenAIRequestTokens(
-  rawMessages: OpenAIMessage[],
-  payload?: { tools?: unknown },
-): number {
-  const messageChars = rawMessages.reduce((sum, message) => {
-    const content = stringifyOpenAIContent(message.content);
-    let chars =
-      (message.role === "assistant"
-        ? stripThinkingBlocks(content).visibleText.length
-        : content.length) +
-      message.role.length +
-      8;
-    if (message.tool_calls)
-      chars += safeJsonStringify(message.tool_calls).length;
-    if (message.tool_call_id) chars += message.tool_call_id.length;
-    return sum + chars;
-  }, 0);
-  const toolChars = payload?.tools
-    ? safeJsonStringify(payload.tools).length
-    : 0;
-  return Math.ceil((messageChars + toolChars) / 4);
-}
-
-function openAiToLlamaChatInput(rawMessages: OpenAIMessage[]): {
-  history: NlcHistoryItem[];
-  userPrompt: string;
-} {
-  const history: NlcHistoryItem[] = [];
-
-  // Collect system messages first (OrianBuilder puts the codebase here)
-  const systemParts = rawMessages
-    .filter((m) => m.role === "system")
-    .map((m) => stringifyOpenAIContent(m.content));
-  if (systemParts.length > 0) {
-    history.push({ type: "system", text: systemParts.join("\n\n") });
-  }
-
-  const conv = rawMessages.filter((m) => m.role !== "system");
-
-  // Walk through conversation, grouping assistant+tool pairs
-  let i = 0;
-  while (i < conv.length) {
-    const msg = conv[i];
-
-    if (msg.role === "user") {
-      const content = stringifyOpenAIContent(msg.content);
-      // The LAST user message becomes the prompt arg to session.prompt()
-      if (i === conv.length - 1) {
-        return { history, userPrompt: content };
-      }
-      history.push({ type: "user", text: content });
-      i++;
-      continue;
-    }
-
-    if (msg.role === "assistant") {
-      if (msg.tool_calls && msg.tool_calls.length > 0) {
-        // Build a model turn containing all function calls with their results
-        const response: NlcModelMessage["response"] = [];
-
-        for (const tc of msg.tool_calls) {
-          let params: unknown;
-          try {
-            params = JSON.parse(tc.function.arguments || "{}");
-          } catch {
-            params = {};
-          }
-
-          // Find the matching tool result that follows
-          const resultMsg = conv.find(
-            (m, idx) =>
-              idx > i && m.role === "tool" && m.tool_call_id === tc.id,
-          );
-          response.push({
-            type: "functionCall" as const,
-            name: tc.function.name,
-            params,
-            result: stringifyOpenAIContent(resultMsg?.content),
-          });
-        }
-
-        // If the assistant also emitted text alongside the tool calls, prepend it
-        const content = stripThinkingBlocks(
-          stringifyOpenAIContent(msg.content),
-        ).visibleText.trim();
-        if (content) response.unshift(content);
-        history.push({ type: "model", response });
-
-        // Skip past all the tool result messages that were consumed above
-        i++;
-        while (i < conv.length && conv[i].role === "tool") i++;
-        continue;
-      }
-
-      // Plain text assistant turn
-      const content = stripThinkingBlocks(
-        stringifyOpenAIContent(msg.content),
-      ).visibleText.trim();
-      if (content) {
-        history.push({ type: "model", response: [content] });
-      }
-      i++;
-      continue;
-    }
-
-    if (msg.role === "tool") {
-      // Orphaned tool message (already consumed above) — skip
-      i++;
-      continue;
-    }
-
-    i++;
-  }
-
-  // If we reach here, the last message was NOT a user message (likely tool results).
-  // Inject a synthetic continuation trigger so the model generates the next action.
-  return { history, userPrompt: "[System] Continue with the next step." };
-}
-
-function openAiToPlainPrompt(rawMessages: OpenAIMessage[]): {
-  system: string;
-  prompt: string;
-} {
-  const system = rawMessages
-    .filter((m) => m.role === "system")
-    .map((m) => stringifyOpenAIContent(m.content))
-    .join("\n\n");
-  const turns = rawMessages
-    .filter((m) => m.role !== "system")
-    .map((m) => {
-      const rawContent = stringifyOpenAIContent(m.content);
-      const content =
-        m.role === "assistant"
-          ? stripThinkingBlocks(rawContent).visibleText.trim()
-          : rawContent;
-      if (m.role === "assistant") return `Assistant: ${content}`;
-      if (m.role === "tool") return `Tool: ${content}`;
-      return `User: ${content}`;
-    });
-  return {
-    system,
-    prompt: `${turns.join("\n\n")}\n\nAssistant:`,
-  };
-}
-
-// ─── Sampling options helper ──────────────────────────────────────────────────
-
-function buildSamplingOpts(
-  payload: any,
-  maxTokens: number,
-): Record<string, unknown> {
-  const samplingDefaults = getModelFamilySamplingDefaults();
-  const opts: Record<string, unknown> = {
-    maxTokens,
-    temperature: payload.temperature ?? samplingDefaults.temperature,
-    topP: payload.top_p ?? samplingDefaults.topP,
-    topK: payload.top_k ?? samplingDefaults.topK,
-    repeatPenalty: {
-      penalty:
-        payload.repeat_penalty ??
-        payload.frequency_penalty ??
-        samplingDefaults.repeatPenalty,
-      penalizeNewLine: false,
-    },
-  };
-  const seed = payload.seed ?? defaultSampling.seed;
-  if (typeof seed === "number") opts.seed = seed;
-  return opts;
+// ─── Sampling helpers (used by the TensorRT path only) ───────────────────────
+
+function isQwen3Model(modelPath: string | null) {
+  const filename = modelPath?.split(/[/\\]/).pop()?.toLowerCase() ?? "";
+  return /qwen[._-]?3/.test(filename) || filename.includes("qwen3");
 }
 
 function getModelFamilySamplingDefaults() {
@@ -1377,570 +314,244 @@ function getModelFamilySamplingDefaults() {
   return defaultSampling;
 }
 
-function isQwen3Model(modelPath: string | null) {
-  const filename = modelPath?.split(/[/\\]/).pop()?.toLowerCase() ?? "";
-  return /qwen[._-]?3/.test(filename) || filename.includes("qwen3");
-}
-
-function stringifyToolCallArguments(params: unknown): string {
-  if (typeof params === "string") {
-    try {
-      JSON.parse(params);
-      return params;
-    } catch {
-      return JSON.stringify({ value: params });
-    }
-  }
-  try {
-    return JSON.stringify(params ?? {});
-  } catch {
-    return "{}";
-  }
-}
-
-// ─── Tool call streaming helpers ─────────────────────────────────────────────
-
-const QWEN_TOOL_TURN_MAX_TOKENS = 2048;
-const TOOL_CALL_COLLECTION_WINDOW_MS = 150;
-
-function getToolTurnMaxTokens(requestedMaxTokens: number): number {
-  if (isQwen3Model(currentModelPath)) {
-    return Math.min(requestedMaxTokens, QWEN_TOOL_TURN_MAX_TOKENS);
-  }
-  return requestedMaxTokens;
-}
-
-function sseChunk(obj: unknown): string {
-  return `data: ${JSON.stringify(obj)}\n\n`;
-}
-
-// ─── Inference: WITH tools (agent / app-building mode) ───────────────────────
-//
-// Uses node-llama-cpp's native function-calling (promptWithMeta + functions).
-// Strategy:
-//   1. Register every OpenAI tool as a node-llama-cpp function.
-//   2. Each function handler records the call and returns an empty result.
-//   3. Wait briefly for batched calls, then abort before empty tool results
-//      let the model continue to the max-token limit.
-//   4. Stream visible text as text deltas, then tool-call deltas, then finish.
-//
-// On the AI SDK side, the agent then executes the tool and sends the NEXT request
-// with the tool result already in the messages array. Our openAiToLlamaChatInput
-// converts those tool results into ChatModelFunctionCall history items so the
-// model gets full context for the continuation.
-
-async function handleWithTools(
-  session: any,
-  userPrompt: string,
-  payload: any,
-  outerAbort: AbortController,
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-  reqId: string,
-  created: number,
-  modelName: string,
-): Promise<void> {
-  const stream: boolean = payload.stream ?? false;
-  const requestedMaxTokens: number = payload.max_tokens ?? 8192;
-  const maxTokens = getToolTurnMaxTokens(requestedMaxTokens);
-  const samplingOpts = buildSamplingOpts(payload, maxTokens);
-
-  // ── Build node-llama-cpp functions from OpenAI tools ──────────────────────
-  const tools: Array<{
-    type: "function";
-    function: { name: string; description?: string; parameters?: unknown };
-  }> = payload.tools ?? [];
-
-  const recordedCalls: Array<{ id: string; name: string; arguments: string }> =
-    [];
-  const nlcFunctions: Record<string, unknown> = {};
-  let abortedAfterToolCall = false;
-  let toolCallAbortTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const clearToolCallAbortTimer = () => {
-    if (!toolCallAbortTimer) {
-      return;
-    }
-    clearTimeout(toolCallAbortTimer);
-    toolCallAbortTimer = null;
-  };
-
-  const scheduleToolCallAbort = () => {
-    clearToolCallAbortTimer();
-    toolCallAbortTimer = setTimeout(() => {
-      if (recordedCalls.length === 0 || outerAbort.signal.aborted) {
-        return;
-      }
-      abortedAfterToolCall = true;
-      logger.info(
-        `[inference/tools] returning ${recordedCalls.length} recorded tool call(s) after collection window`,
-      );
-      outerAbort.abort();
-    }, TOOL_CALL_COLLECTION_WINDOW_MS);
-  };
-
-  for (const tool of tools) {
-    const name = tool.function.name;
-    nlcFunctions[name] = {
-      description: tool.function.description ?? "",
-      params: tool.function.parameters ?? { type: "object", properties: {} },
-      handler: (params: unknown) => {
-        const id = `call_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-        const argumentsStr = stringifyToolCallArguments(params);
-        recordedCalls.push({ id, name, arguments: argumentsStr });
-        scheduleToolCallAbort();
-        setState("tool_calling", `Calling ${name}…`);
-        return "";
-      },
-    };
-  }
-
-  // ── Buffer text generated BEFORE the first tool call ─────────────────────
-  let assistantText = "";
-  const thinkingStripper = createThinkingStripper();
-
-  logger.info(
-    `[inference/tools] turns=${payload.messages?.length ?? 0} ` +
-      `userPromptLen=${userPrompt.length} tools=${tools.length} stream=${stream} maxTokens=${maxTokens}`,
-  );
-
-  beginSession(
-    payload._orianbuilderEstimatedInputTokens ??
-      Math.ceil(userPrompt.length / 4),
-  );
-  setState("prefilling", "Processing context…");
-
-  // ── Run generation ────────────────────────────────────────────────────────
-  let promptResult: any;
-  try {
-    promptResult = await session.promptWithMeta(userPrompt, {
-      ...samplingOpts,
-      functions: nlcFunctions,
-      signal: outerAbort.signal,
-      stopOnAbortSignal: true,
-      onTextChunk: (text: string) => {
-        recordToken();
-        // Detect <think>...</think> blocks for thinking state
-        if (text.includes("<think>")) {
-          setState("thinking", "Thinking…");
-        } else if (text.includes("</think>")) {
-          setState("generating", "Generating…");
-        } else if (currentInferenceState === "prefilling") {
-          setState("generating", "Generating…");
-        }
-        const stripped = thinkingStripper.push(text);
-        applyThinkingState({
-          enteredThinking: stripped.enteredThinking,
-          exitedThinking: stripped.exitedThinking,
-          generatingOperation: "Generating...",
-        });
-        assistantText += stripped.visibleText;
-      },
-    } as any);
-  } catch (err: any) {
-    // Abort from inner signal or HTTP disconnect is expected
-    if (!outerAbort.signal.aborted) {
-      logger.error("[inference/tools] promptWithMeta error:", err);
-    }
-    promptResult = null;
-  } finally {
-    clearToolCallAbortTimer();
-  }
-
-  stopStatsBroadcast();
-  assistantText += thinkingStripper.flush();
-
-  // Also extract any tool calls visible in the response array
-  if (promptResult?.response) {
-    for (const item of promptResult.response as unknown[]) {
-      if (
-        item &&
-        typeof item === "object" &&
-        (item as any).type === "functionCall"
-      ) {
-        const fc = item as any;
-        const argumentsStr = stringifyToolCallArguments(fc.params ?? {});
-        const alreadyRecorded = recordedCalls.some(
-          (c) => c.name === fc.name && c.arguments === argumentsStr,
-        );
-        if (!alreadyRecorded) {
-          recordedCalls.push({
-            id: `call_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-            name: fc.name,
-            arguments: argumentsStr,
-          });
-        }
-      }
-    }
-  }
-
-  if (outerAbort.signal.aborted && !abortedAfterToolCall) {
-    if (!res.writableEnded) {
-      if (stream && !res.headersSent) {
-        res.writeHead(200, {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-          Connection: "keep-alive",
-        });
-      }
-      if (stream)
-        res.write(
-          sseChunk({
-            id: reqId,
-            object: "chat.completion.chunk",
-            created,
-            model: modelName,
-            choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-          }),
-        );
-      if (stream) res.write("data: [DONE]\n\n");
-      res.end();
-    }
+function applyThinkingState(input: {
+  enteredThinking: boolean;
+  exitedThinking: boolean;
+  generatingOperation: string;
+}) {
+  if (input.enteredThinking) {
+    setState("thinking", "Thinking...");
     return;
   }
-
-  // ── Emit response ─────────────────────────────────────────────────────────
-  const hasToolCalls = recordedCalls.length > 0;
-  const finishReason = hasToolCalls ? "tool_calls" : "stop";
-
-  if (stream) {
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    });
-
-    // Initial role delta
-    res.write(
-      sseChunk({
-        id: reqId,
-        object: "chat.completion.chunk",
-        created,
-        model: modelName,
-        choices: [
-          {
-            index: 0,
-            delta: { role: "assistant", content: "" },
-            finish_reason: null,
-          },
-        ],
-      }),
-    );
-
-    // Pre-tool text
-    if (assistantText) {
-      res.write(
-        sseChunk({
-          id: reqId,
-          object: "chat.completion.chunk",
-          created,
-          model: modelName,
-          choices: [
-            {
-              index: 0,
-              delta: { content: assistantText },
-              finish_reason: null,
-            },
-          ],
-        }),
-      );
-    }
-
-    // Tool call deltas — send each tool call as its own chunk
-    if (hasToolCalls) {
-      for (let idx = 0; idx < recordedCalls.length; idx++) {
-        const tc = recordedCalls[idx];
-        // Start chunk: includes id, name, type
-        res.write(
-          sseChunk({
-            id: reqId,
-            object: "chat.completion.chunk",
-            created,
-            model: modelName,
-            choices: [
-              {
-                index: 0,
-                delta: {
-                  tool_calls: [
-                    {
-                      index: idx,
-                      id: tc.id,
-                      type: "function",
-                      function: { name: tc.name, arguments: "" },
-                    },
-                  ],
-                },
-                finish_reason: null,
-              },
-            ],
-          }),
-        );
-        // Arguments chunk
-        res.write(
-          sseChunk({
-            id: reqId,
-            object: "chat.completion.chunk",
-            created,
-            model: modelName,
-            choices: [
-              {
-                index: 0,
-                delta: {
-                  tool_calls: [
-                    {
-                      index: idx,
-                      function: { arguments: tc.arguments },
-                    },
-                  ],
-                },
-                finish_reason: null,
-              },
-            ],
-          }),
-        );
-      }
-    }
-
-    // Finish
-    res.write(
-      sseChunk({
-        id: reqId,
-        object: "chat.completion.chunk",
-        created,
-        model: modelName,
-        choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
-        usage: {
-          completion_tokens:
-            recordedCalls.length + Math.ceil(assistantText.length / 4),
-          prompt_tokens: 0,
-          total_tokens: 0,
-        },
-      }),
-    );
-    res.write("data: [DONE]\n\n");
-    res.end();
-  } else {
-    // Non-streaming
-    const message: any = {
-      role: "assistant",
-      content: assistantText || null,
-    };
-    if (hasToolCalls) {
-      message.tool_calls = recordedCalls.map((tc) => ({
-        id: tc.id,
-        type: "function",
-        function: { name: tc.name, arguments: tc.arguments },
-      }));
-    }
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(
-      JSON.stringify({
-        id: reqId,
-        object: "chat.completion",
-        created,
-        model: modelName,
-        choices: [{ index: 0, message, finish_reason: finishReason }],
-        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-      }),
-    );
+  if (
+    input.exitedThinking ||
+    statsTracker.getInferenceState() === "prefilling"
+  ) {
+    setState("generating", input.generatingOperation);
   }
 }
 
-// ─── Inference: WITHOUT tools (plain chat mode) ───────────────────────────────
+// ─── Model loading ───────────────────────────────────────────────────────────
 
-async function handleWithoutTools(
-  session: any,
-  userPrompt: string,
-  payload: any,
-  outerAbort: AbortController,
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-  reqId: string,
-  created: number,
-  modelName: string,
+export async function loadModel(config: EmbeddedModelConfig): Promise<void> {
+  if (isLoading) throw new Error("A model is already loading");
+  isLoading = true;
+  emitStatusChanged();
+
+  try {
+    if (config.inferenceBackend === "tensorrt-native") {
+      await loadTensorRtModel(config);
+    } else {
+      await loadLlamaServerModel(config);
+    }
+  } finally {
+    isLoading = false;
+    emitStatusChanged();
+  }
+}
+
+/**
+ * Look for a multimodal projector (`mmproj-*.gguf`) sitting next to the main
+ * model file. LM Studio and the lmstudio-community releases ship this as a
+ * sibling of the GGUF weights, so a directory scan covers the common case.
+ *
+ * Returns the projector's absolute path, or null when no companion is found.
+ */
+function findCompanionMmproj(modelPath: string): string | null {
+  try {
+    const modelDir = path.dirname(modelPath);
+    const modelName = path.basename(modelPath, ".gguf").toLowerCase();
+    const candidates = fs
+      .readdirSync(modelDir)
+      .filter((name) => {
+        const lower = name.toLowerCase();
+        return (
+          lower.endsWith(".gguf") &&
+          (lower.startsWith("mmproj") || lower.includes("mmproj"))
+        );
+      })
+      .map((name) => path.join(modelDir, name));
+    if (candidates.length === 0) return null;
+    if (candidates.length === 1) return candidates[0];
+    // When multiple mmproj variants share a directory (e.g. F16 + BF16 next
+    // to the same weights), prefer the one whose filename mentions the
+    // model name; otherwise fall back to the first.
+    const matched = candidates.find((p) =>
+      path.basename(p).toLowerCase().includes(modelName.split(/[.-]/)[0]),
+    );
+    return matched ?? candidates[0];
+  } catch (err) {
+    logger.warn("findCompanionMmproj failed:", err);
+    return null;
+  }
+}
+
+async function loadLlamaServerModel(
+  config: EmbeddedModelConfig,
 ): Promise<void> {
-  const stream: boolean = payload.stream ?? false;
-  const maxTokens: number = payload.max_tokens ?? 8192;
-  const samplingOpts = buildSamplingOpts(payload, maxTokens);
+  setState("loading", `Loading ${config.modelPath.split(/[/\\]/).pop()}…`);
+
+  // Tear down anything currently bound to EMBEDDED_PORT before starting
+  // llama-server, otherwise its bind() will EADDRINUSE.
+  await _fullReset();
+
+  const totalLayers = config._estimatedLayers ?? 64;
+
+  // Honor the hardware profile's bestLlmBackend. CPU-only systems get
+  // gpuLayers=0 regardless of GGUF math.
+  let cpuOnly = false;
+  let resolvedBackendLabel: string | null = null;
+  try {
+    const profile = await getCachedHardwareProfile();
+    const opts = resolveLlmBackendOptions(profile);
+    resolvedBackendLabel = getLlmBackendName(profile);
+    if (opts.gpuLayers === 0) {
+      cpuOnly = true;
+    }
+  } catch (err) {
+    logger.warn(
+      "resolveLlmBackendOptions failed; letting llama-server pick a backend:",
+      err,
+    );
+  }
+
+  const mmprojPath = findCompanionMmproj(config.modelPath);
 
   logger.info(
-    `[inference/chat] turns=${payload.messages?.length ?? 0} ` +
-      `userPromptLen=${userPrompt.length} stream=${stream} maxTokens=${maxTokens}`,
+    `Loading: ${config.modelPath} | ctx=${config.contextSize} | ` +
+      `gpuLayersMode=${config.gpuLayersMode ?? "auto"}` +
+      (cpuOnly ? " (forced CPU)" : "") +
+      (mmprojPath ? ` | mmproj=${path.basename(mmprojPath)}` : "") +
+      (resolvedBackendLabel ? ` | backend=${resolvedBackendLabel}` : ""),
   );
 
-  req.on("close", () => {
-    if (!res.writableEnded && !outerAbort.signal.aborted) outerAbort.abort();
-  });
-
-  beginSession(
-    payload._orianbuilderEstimatedInputTokens ??
-      Math.ceil(userPrompt.length / 4),
-  );
-  setState("prefilling", "Processing context…");
-
-  if (stream) {
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
+  try {
+    await llamaServerBackend.start({
+      modelPath: config.modelPath,
+      mmprojPath,
+      port: EMBEDDED_PORT,
+      contextSize: config.contextSize,
+      batchSize: config.batchSize ?? 512,
+      flashAttention: config.flashAttention ?? true,
+      gpuLayersMode: cpuOnly ? "manual" : (config.gpuLayersMode ?? "auto"),
+      manualGpuLayers: cpuOnly ? 0 : (config.manualGpuLayers ?? null),
+      autoCompute: {
+        vramMb: config._vramMb ?? 0,
+        gpuMemoryUtilization: config.gpuMemoryUtilization,
+        vramHeadroomMb: config.vramHeadroomMb,
+        layerSizeMb: config._layerSizeMb ?? 200,
+        totalLayers,
+        kvBytesPerTokenPerLayer: config._kvBytesPerTokenPerLayer ?? 4096,
+        attentionSlidingWindow: config._attentionSlidingWindow,
+        attentionSlidingWindowPattern: config._attentionSlidingWindowPattern,
+      },
+      // --jinja enables OpenAI-format tool calling against the model's
+      // GGUF-embedded chat template. Models that don't support tool roles
+      // still fall back to the agent's text-tool-call extraction path.
+      enableJinjaTools: true,
+      // KV-cache quantization halves KV memory at ~negligible quality cost.
+      // Requires --flash-attn=on, which is already our default above. Anyone
+      // who needs unquantized cache can pass cacheTypeK/V="f16" in the config.
+      cacheTypeK: config.cacheTypeK ?? "q8_0",
+      cacheTypeV: config.cacheTypeV ?? "q8_0",
     });
-    res.write(
-      sseChunk({
-        id: reqId,
-        object: "chat.completion.chunk",
-        created,
-        model: modelName,
-        choices: [
-          {
-            index: 0,
-            delta: { role: "assistant", content: "" },
-            finish_reason: null,
-          },
-        ],
-      }),
-    );
 
-    let tokenCount = 0;
-    let aborted = false;
-    const thinkingStripper = createThinkingStripper();
-    try {
-      await session.prompt(userPrompt, {
-        ...samplingOpts,
-        signal: outerAbort.signal,
-        stopOnAbortSignal: true,
-        onTextChunk: (text: string) => {
-          if (outerAbort.signal.aborted) return;
-          recordToken();
-          tokenCount++;
-          if (text.includes("<think>")) {
-            setState("thinking", "Thinking…");
-          } else if (text.includes("</think>")) {
-            setState("generating", "Generating response…");
-          } else if (currentInferenceState === "prefilling") {
-            setState("generating", "Generating response…");
-          }
-          const stripped = thinkingStripper.push(text);
-          applyThinkingState({
-            enteredThinking: stripped.enteredThinking,
-            exitedThinking: stripped.exitedThinking,
-            generatingOperation: "Generating response...",
-          });
-          if (stripped.visibleText) {
-            res.write(
-              sseChunk({
-                id: reqId,
-                object: "chat.completion.chunk",
-                created,
-                model: modelName,
-                choices: [
-                  {
-                    index: 0,
-                    delta: { content: stripped.visibleText },
-                    finish_reason: null,
-                  },
-                ],
-              }),
-            );
-          }
-        },
-      } as any);
-    } catch (err: any) {
-      if (outerAbort.signal.aborted) {
-        aborted = true;
-      } else {
-        logger.error("[inference/chat] streaming error:", err);
-        if (!res.writableEnded)
-          res.write(sseChunk({ error: { message: String(err) } }));
-      }
-    } finally {
-      stopStatsBroadcast();
-      if (!res.writableEnded) {
-        if (!aborted) {
-          const pendingText = thinkingStripper.flush();
-          if (pendingText) {
-            res.write(
-              sseChunk({
-                id: reqId,
-                object: "chat.completion.chunk",
-                created,
-                model: modelName,
-                choices: [
-                  {
-                    index: 0,
-                    delta: { content: pendingText },
-                    finish_reason: null,
-                  },
-                ],
-              }),
-            );
-          }
-          res.write(
-            sseChunk({
-              id: reqId,
-              object: "chat.completion.chunk",
-              created,
-              model: modelName,
-              choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-              usage: {
-                completion_tokens: tokenCount,
-                prompt_tokens: 0,
-                total_tokens: tokenCount,
-              },
-            }),
-          );
-          res.write("data: [DONE]\n\n");
-        }
-        res.end();
-      }
-    }
-  } else {
-    try {
-      const output: string = await session.prompt(userPrompt, {
-        ...samplingOpts,
-        signal: outerAbort.signal,
-        stopOnAbortSignal: true,
-        onTextChunk: (text: string) => {
-          recordToken();
-          if (text.includes("<think>")) {
-            setState("thinking", "Thinking…");
-          } else if (text.includes("</think>")) {
-            setState("generating", "Generating response…");
-          } else if (currentInferenceState === "prefilling") {
-            setState("generating", "Generating response…");
-          }
-        },
-      } as any);
-      const visibleOutput = stripThinkingBlocks(output).visibleText.trim();
-      stopStatsBroadcast();
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          id: reqId,
-          object: "chat.completion",
-          created,
-          model: modelName,
-          choices: [
-            {
-              index: 0,
-              message: { role: "assistant", content: visibleOutput },
-              finish_reason: "stop",
-            },
-          ],
-          usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-        }),
-      );
-    } catch (err) {
-      stopStatsBroadcast();
-      if (!res.headersSent)
-        res.writeHead(500, { "Content-Type": "application/json" });
-      if (!res.writableEnded)
-        res.end(JSON.stringify({ error: { message: String(err) } }));
-      logger.error("[inference/chat] non-streaming error:", err);
-    }
+    currentBackend = "llama-cpp";
+    statsTracker.setBackend("llama-cpp");
+    currentModelPath = config.modelPath;
+    currentTotalLayers = totalLayers;
+    currentGpuLayers = llamaServerBackend.getStatus().resolvedGpuLayers;
+    currentActualContextSize = config.contextSize;
+    setState("idle", "Model ready");
+    emitStatusChanged();
+  } catch (err) {
+    currentBackend = "none";
+    statsTracker.setBackend("none");
+    currentModelPath = null;
+    currentTotalLayers = 0;
+    currentGpuLayers = 0;
+    currentActualContextSize = 0;
+    setState("idle", "");
+    emitStatusChanged();
+    throw err;
   }
 }
+
+async function loadTensorRtModel(config: EmbeddedModelConfig): Promise<void> {
+  const engineDir = config.tensorRtEngineDir ?? findDefaultTensorRtEngineDir();
+  if (!engineDir) {
+    currentBackend = "none";
+    statsTracker.setBackend("none");
+    emitStatusChanged();
+    throw new Error(
+      "TensorRT engine directory not found. Select a compiled engine directory containing engine_meta.json.",
+    );
+  }
+
+  setState("loading", `Loading TensorRT engine ${engineDir}...`);
+  await _fullReset();
+  currentBackend = "tensorrt-native";
+  statsTracker.setBackend("tensorrt-native");
+  try {
+    await getTensorRtBackend().load(engineDir);
+    currentModelPath = engineDir;
+    currentGpuLayers = config._estimatedLayers ?? 0;
+    currentTotalLayers = config._estimatedLayers ?? 0;
+    currentActualContextSize = config.contextSize;
+    // Bind our TensorRT-only HTTP server. Has to happen AFTER llama-server is
+    // stopped (in _fullReset) so EMBEDDED_PORT is free.
+    await ensureTensorRtServerListening();
+    setState("idle", "TensorRT engine ready");
+    emitStatusChanged();
+  } catch (err) {
+    currentBackend = "none";
+    statsTracker.setBackend("none");
+    currentModelPath = null;
+    currentGpuLayers = 0;
+    currentTotalLayers = 0;
+    currentActualContextSize = 0;
+    emitStatusChanged();
+    throw err;
+  }
+}
+
+async function _fullReset(): Promise<void> {
+  if (currentAbort) {
+    currentAbort.abort();
+    currentAbort = null;
+  }
+  setIsInferring(false);
+  await llamaServerBackend.stop();
+  await stopTensorRtServer();
+  await tensorRtBackend?.unload();
+  currentModelPath = null;
+  currentBackend = "none";
+  statsTracker.setBackend("none");
+  currentGpuLayers = 0;
+  currentTotalLayers = 0;
+  currentActualContextSize = 0;
+  emitStatusChanged();
+}
+
+export async function unloadModel(): Promise<void> {
+  await _fullReset();
+  logger.info("Model unloaded");
+  emitStatusChanged();
+}
+
+export function abortCurrentInference(): void {
+  if (currentAbort && !currentAbort.signal.aborted) {
+    currentAbort.abort();
+  }
+  currentAbort = null;
+  setIsInferring(false);
+  emitStatusChanged();
+  logger.info("Inference aborted by caller");
+}
+
+// ─── TensorRT inference handler ──────────────────────────────────────────────
+// Only reached when the TensorRT-native backend is loaded. The llama-cpp
+// backend never enters our HTTP server — llama-server handles requests itself.
 
 async function handleTensorRtChatCompletions(
   rawMessages: OpenAIMessage[],
@@ -1965,7 +576,6 @@ async function handleTensorRtChatCompletions(
     return;
   }
 
-  // Guard: one request at a time (same as llama.cpp path)
   if (isInferring) {
     res.writeHead(429, { "Content-Type": "application/json" });
     res.end(
@@ -2002,7 +612,6 @@ async function handleTensorRtChatCompletions(
       Connection: "keep-alive",
       "X-Accel-Buffering": "no",
     });
-    // Initial role delta
     res.write(
       sseChunk({
         id: reqId,
@@ -2039,7 +648,7 @@ async function handleTensorRtChatCompletions(
             if (text.includes("<think>")) setState("thinking", "Thinking…");
             else if (text.includes("</think>"))
               setState("generating", "Generating…");
-            else if (currentInferenceState === "prefilling")
+            else if (statsTracker.getInferenceState() === "prefilling")
               setState("generating", "Generating…");
             const stripped = thinkingStripper.push(text);
             applyThinkingState({
@@ -2069,7 +678,6 @@ async function handleTensorRtChatCompletions(
     });
 
     if (!stream) {
-      // Non-streaming: record tokens in bulk
       const tokenCount =
         result.tokenCount > 0
           ? result.tokenCount
@@ -2188,32 +796,17 @@ async function handleTensorRtChatCompletions(
   }
 }
 
-// ─── HTTP /v1/chat/completions handler ───────────────────────────────────────
-
-async function handleChatCompletions(
+async function handleTensorRtRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
 ): Promise<void> {
-  if (!getModelLoaded()) {
+  if (currentBackend !== "tensorrt-native") {
     res.writeHead(503, { "Content-Type": "application/json" });
     res.end(
       JSON.stringify({
         error: {
           message: "No model loaded. Load a model in the Engine screen first.",
           type: "model_not_loaded",
-        },
-      }),
-    );
-    return;
-  }
-
-  if (isInferring) {
-    res.writeHead(429, { "Content-Type": "application/json" });
-    res.end(
-      JSON.stringify({
-        error: {
-          message: "Inference busy — one request at a time",
-          type: "busy",
         },
       }),
     );
@@ -2247,176 +840,19 @@ async function handleChatCompletions(
     return;
   }
 
-  const { history, userPrompt } = openAiToLlamaChatInput(rawMessages);
-
-  // ── Context overflow pre-check ────────────────────────────────────────────
-  // Estimate prompt token count. If it clearly exceeds the loaded context,
-  // return an actionable error rather than silently truncating.
-  const estimatedInputTokens = estimateOpenAIRequestTokens(
-    rawMessages,
-    payload,
-  );
-  payload._orianbuilderEstimatedInputTokens = estimatedInputTokens;
-  const requestHasTools =
-    Array.isArray(payload.tools) && payload.tools.length > 0;
-  const requestedOutputTokens: number = payload.max_tokens ?? 8192;
-  const effectiveOutputTokens = requestHasTools
-    ? getToolTurnMaxTokens(requestedOutputTokens)
-    : requestedOutputTokens;
-  const outputReserve = Math.max(
-    4096,
-    Math.min(8192, effectiveOutputTokens + 1024),
-  );
-  const safeLimit = Math.min(
-    Math.floor(currentActualContextSize * 0.92),
-    Math.max(
-      Math.floor(currentActualContextSize * 0.85),
-      currentActualContextSize - outputReserve,
-    ),
-  );
-  if (estimatedInputTokens > safeLimit) {
-    const msg =
-      `Prompt is ~${estimatedInputTokens} tokens but the loaded model only has ` +
-      `${currentActualContextSize} tokens of context (safe input limit = ${safeLimit} tokens). ` +
-      `Open the Engine screen and reload the model with a larger Context Size ` +
-      `(recommended ≥ ${Math.ceil(estimatedInputTokens / 1024) * 1024 * 2} tokens for this app).`;
-    logger.warn(
-      `[inference] Context overflow: ~${estimatedInputTokens} estimated tokens > ${safeLimit} safe input limit`,
-    );
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(
-      JSON.stringify({ error: { message: msg, type: "context_overflow" } }),
-    );
-    return;
-  }
-
   const modelName = currentModelPath?.split(/[/\\]/).pop() ?? "embedded";
   const reqId = `chatcmpl-${Date.now().toString(36)}`;
   const created = Math.floor(Date.now() / 1000);
 
-  if (currentBackend === "tensorrt-native") {
-    await handleTensorRtChatCompletions(
-      rawMessages,
-      payload,
-      req,
-      res,
-      reqId,
-      created,
-      modelName,
-    );
-    return;
-  }
-
-  const { LlamaChatSession } = await getLlamaModule();
-
-  setIsInferring(true);
-  emitStatusChanged();
-  const abort = new AbortController();
-  currentAbort = abort;
-  req.on("close", () => {
-    if (!abort.signal.aborted) abort.abort();
-  });
-
-  let sequence: unknown = null;
-  try {
-    sequence = (currentContext as any).getSequence();
-  } catch (err) {
-    setIsInferring(false);
-    currentAbort = null;
-    emitStatusChanged();
-    logger.error("Failed to acquire context sequence:", err);
-    res.writeHead(503, { "Content-Type": "application/json" });
-    res.end(
-      JSON.stringify({
-        error: {
-          message: `Could not acquire inference context: ${String(err)}`,
-        },
-      }),
-    );
-    return;
-  }
-
-  let session: any;
-  const disposeSeq = () => {
-    try {
-      if (session) {
-        session.dispose({ disposeSequence: true });
-      } else {
-        (sequence as any).dispose();
-      }
-    } catch {
-      try {
-        (sequence as any).dispose();
-      } catch {
-        /* ignore */
-      }
-    }
-    setIsInferring(false);
-    currentAbort = null;
-    emitStatusChanged();
-  };
-
-  try {
-    const sessionOpts: any = {
-      contextSequence: sequence as any,
-      // Keep system prompt when context fills — critical for OrianBuilder since the
-      // system prompt carries the full app codebase and instructions.
-      contextShift: { strategy: "eraseFirstResponseAndKeepFirstSystem" },
-      autoDisposeSequence: true,
-    };
-    if (currentChatWrapper) {
-      sessionOpts.chatWrapper = currentChatWrapper;
-    }
-    session = new LlamaChatSession(sessionOpts);
-    // Load full conversation history including any previous tool calls + results.
-    if (history.length > 0) {
-      session.setChatHistory(history);
-    }
-  } catch (err) {
-    disposeSeq();
-    logger.error("Failed to create chat session:", err);
-    if (!res.headersSent)
-      res.writeHead(500, { "Content-Type": "application/json" });
-    if (!res.writableEnded)
-      res.end(
-        JSON.stringify({
-          error: { message: `Session creation failed: ${String(err)}` },
-        }),
-      );
-    return;
-  }
-
-  try {
-    const hasTools = Array.isArray(payload.tools) && payload.tools.length > 0;
-
-    if (hasTools) {
-      await handleWithTools(
-        session,
-        userPrompt,
-        payload,
-        abort,
-        req,
-        res,
-        reqId,
-        created,
-        modelName,
-      );
-    } else {
-      await handleWithoutTools(
-        session,
-        userPrompt,
-        payload,
-        abort,
-        req,
-        res,
-        reqId,
-        created,
-        modelName,
-      );
-    }
-  } finally {
-    disposeSeq();
-  }
+  await handleTensorRtChatCompletions(
+    rawMessages,
+    payload,
+    req,
+    res,
+    reqId,
+    created,
+    modelName,
+  );
 }
 
 function readBody(req: http.IncomingMessage): Promise<string> {
@@ -2428,9 +864,9 @@ function readBody(req: http.IncomingMessage): Promise<string> {
   });
 }
 
-// ─── HTTP server ──────────────────────────────────────────────────────────────
+// ─── TensorRT HTTP server (only active when TensorRT is the loaded backend) ──
 
-export function startServer(): Promise<void> {
+function ensureTensorRtServerListening(): Promise<void> {
   if (server) return Promise.resolve();
   return new Promise((resolve, reject) => {
     server = http.createServer(async (req, res) => {
@@ -2452,9 +888,8 @@ export function startServer(): Promise<void> {
         if (url === "/v1/models" && req.method === "GET") {
           const name = currentModelPath?.split(/[/\\]/).pop() ?? "no-model";
           const hasModel =
-            currentModel !== null ||
-            (currentBackend === "tensorrt-native" &&
-              getTensorRtBackend().getStatus().loaded);
+            currentBackend === "tensorrt-native" &&
+            getTensorRtBackend().getStatus().loaded;
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(
             JSON.stringify({
@@ -2475,7 +910,7 @@ export function startServer(): Promise<void> {
         }
 
         if (url === "/v1/chat/completions" && req.method === "POST") {
-          await handleChatCompletions(req, res);
+          await handleTensorRtRequest(req, res);
           return;
         }
 
@@ -2484,7 +919,7 @@ export function startServer(): Promise<void> {
           res.end(
             JSON.stringify({
               status: "ok",
-              modelLoaded: getModelLoaded(),
+              modelLoaded: getServerStatus().modelLoaded,
               modelPath: currentModelPath,
               backend: currentBackend,
               gpuLayers: currentGpuLayers,
@@ -2507,22 +942,38 @@ export function startServer(): Promise<void> {
           res.end(JSON.stringify({ error: { message: String(err) } }));
       }
     });
-    server.on("error", reject);
+    server.on("error", (err) => {
+      server = null;
+      reject(err);
+    });
     server.listen(EMBEDDED_PORT, "127.0.0.1", () => {
-      logger.info(`Inference server on port ${EMBEDDED_PORT}`);
+      logger.info(`TensorRT HTTP server on port ${EMBEDDED_PORT}`);
       resolve();
     });
   });
 }
 
-export async function stopServer(): Promise<void> {
-  await _fullReset();
-  if (!server) return;
+function stopTensorRtServer(): Promise<void> {
+  const current = server;
+  if (!current) return Promise.resolve();
+  server = null;
   return new Promise((resolve) => {
-    server!.close(() => {
-      server = null;
-      logger.info("Inference server stopped");
+    current.close(() => {
+      logger.info("TensorRT HTTP server stopped");
       resolve();
     });
   });
+}
+
+// ─── Public lifecycle hooks (called from main.ts at app start/exit) ──────────
+
+export function startServer(): Promise<void> {
+  // No port is bound at startup — whichever backend the user loads next
+  // (llama-server child process or our TensorRT wrapper) will claim
+  // EMBEDDED_PORT. Kept as a no-op so existing callers don't need to change.
+  return Promise.resolve();
+}
+
+export async function stopServer(): Promise<void> {
+  await _fullReset();
 }

@@ -1,6 +1,13 @@
 -r requirements-base.txt
-torch>=2.3.0
-torchvision>=0.18.0
-diffusers>=0.28.0
-transformers>=4.41.0
-accelerate>=0.30.0
+torch>=2.5.0
+torchvision>=0.20.0
+diffusers>=0.32.0
+transformers>=4.45.0
+accelerate>=0.34.0
+sentencepiece>=0.2.0
+imageio>=2.34.0
+imageio-ffmpeg>=0.5.0
+av>=12.0.0
+TTS>=0.22.0
+kokoro>=0.7.0
+librosa>=0.10.0

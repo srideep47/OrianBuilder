@@ -67,20 +67,30 @@ export interface InjectedMessage {
 
 /**
  * Transform a UserMessageContentPart to the format expected by the AI SDK.
- * For images, validates dimensions and returns a text message if the image
- * exceeds the maximum allowed size (8000px in any dimension).
+ *
+ * For images this validates dimensions (oversized images are replaced with a
+ * text placeholder) and, when `supportsImages` is false, swaps the image for
+ * a text placeholder regardless of size. Tools like `browser_qa_gate` always
+ * push image parts; the model-level decision about whether to forward them
+ * lives here so it can't accidentally leak into a text-only inference run.
  */
 export function transformContentPart(
   part: UserMessageContentPart,
+  options?: { supportsImages?: boolean },
 ): TextPart | ImagePart {
   if (part.type === "text") {
     return { type: "text", text: part.text };
   }
   // part.type === "image-url"
+  if (options?.supportsImages === false) {
+    return {
+      type: "text",
+      text: "[Image omitted: the loaded model is text-only. Reload an mmproj-equipped multimodal model to attach screenshots.]",
+    };
+  }
   // Validate image dimensions before sending to LLM
   const validation = validateImageDimensions(part.url);
   if (!validation.isValid && validation.errorMessage) {
-    // Return a text explanation instead of the oversized image
     return {
       type: "text",
       text: `[Image omitted: ${validation.errorMessage}]`,
@@ -96,11 +106,15 @@ export function transformContentPart(
  * @param pendingUserMessages - Queue of pending messages (will be mutated/emptied)
  * @param allInjectedMessages - List of already injected messages (will be mutated)
  * @param currentMessageCount - The current number of messages in the conversation
+ * @param options.supportsImages - Whether the active model can accept image content.
+ *   When false, image parts are replaced with a text placeholder so the model
+ *   doesn't error out on multimodal inputs it can't parse.
  */
 export function processPendingMessages(
   pendingUserMessages: UserMessageContentPart[][],
   allInjectedMessages: InjectedMessage[],
   currentMessageCount: number,
+  options?: { supportsImages?: boolean },
 ): void {
   while (pendingUserMessages.length > 0) {
     const content = pendingUserMessages.shift()!;
@@ -109,7 +123,7 @@ export function processPendingMessages(
       sequence: allInjectedMessages.length, // Track insertion order
       message: {
         role: "user" as const,
-        content: content.map(transformContentPart),
+        content: content.map((part) => transformContentPart(part, options)),
       },
     });
   }
@@ -168,6 +182,7 @@ export function prepareStepMessages<
   options: T,
   pendingUserMessages: UserMessageContentPart[][],
   allInjectedMessages: InjectedMessage[],
+  capabilities?: { supportsImages?: boolean },
 ): (Omit<T, "messages"> & { messages: TMessage[] }) | undefined {
   const { messages, ...rest } = options;
 
@@ -176,6 +191,7 @@ export function prepareStepMessages<
     pendingUserMessages,
     allInjectedMessages,
     messages.length,
+    capabilities,
   );
 
   // Clean messages for OpenAI compatibility during multi-step agent flows:

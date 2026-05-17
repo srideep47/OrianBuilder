@@ -4,10 +4,12 @@ import path from "node:path";
 import {
   IMAGE_MODEL_TIERS as SHARED_IMAGE_TIERS,
   AUDIO_TTS_TIERS as SHARED_AUDIO_TIERS,
+  AUDIO_STT_TIERS as SHARED_AUDIO_STT_TIERS,
   VIDEO_TIERS as SHARED_VIDEO_TIERS,
   pickBestTier as sharedPickBestTier,
   pickBestImageTier as sharedPickBestImage,
   pickBestAudioTtsTier as sharedPickBestAudio,
+  pickBestAudioSttTier as sharedPickBestAudioStt,
   pickBestVideoTier as sharedPickBestVideo,
   selectAvailableTiers as sharedSelectAvailableTiers,
   type MediaQuality as SharedMediaQuality,
@@ -47,7 +49,7 @@ export interface LlmLoadParams {
 export type MediaQuality = SharedMediaQuality;
 
 export interface MediaGenerationRequest {
-  modelType: "image" | "audio" | "video" | "music";
+  modelType: "image" | "audio" | "video" | "music" | "transcribe";
   prompt: string;
   outputPath: string;
   options?: Record<string, unknown>;
@@ -357,10 +359,12 @@ export function _resetOrchestratorForTests(): void {
 export type MediaTier = SharedMediaTier;
 export const IMAGE_MODEL_TIERS = SHARED_IMAGE_TIERS;
 export const AUDIO_TTS_TIERS = SHARED_AUDIO_TIERS;
+export const AUDIO_STT_TIERS = SHARED_AUDIO_STT_TIERS;
 export const VIDEO_TIERS = SHARED_VIDEO_TIERS;
 export const pickBestTier = sharedPickBestTier;
 export const pickBestImageTier = sharedPickBestImage;
 export const pickBestAudioTtsTier = sharedPickBestAudio;
+export const pickBestAudioSttTier = sharedPickBestAudioStt;
 export const pickBestVideoTier = sharedPickBestVideo;
 
 /** Estimate VRAM (in MB) that will be freed when the currently loaded LLM is

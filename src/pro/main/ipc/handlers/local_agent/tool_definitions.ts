@@ -60,6 +60,8 @@ import { exitPlanTool } from "./tools/exit_plan";
 import { readGuideTool } from "./tools/read_guide";
 import { editAstTool } from "./tools/edit_ast";
 import { githubPrTool } from "./tools/github_pr";
+import { connectGithubRepoTool } from "./tools/connect_github_repo";
+import { connectVercelProjectTool } from "./tools/connect_vercel_project";
 import type { LanguageModelV3ToolResultOutput } from "@ai-sdk/provider";
 import {
   escapeXmlAttr,
@@ -122,6 +124,8 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   packageNativeArtifactTool,
   exportZipTool,
   githubPrTool,
+  connectGithubRepoTool,
+  connectVercelProjectTool,
   setChatSummaryTool,
   addIntegrationTool,
   readLogsTool,

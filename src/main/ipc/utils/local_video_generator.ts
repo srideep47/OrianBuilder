@@ -12,19 +12,29 @@ export interface LocalVideoGenResult {
   success: boolean;
   outputPath: string;
   durationMs: number;
+  tier?: string;
+  model?: string;
   error?: string;
+}
+
+export interface LocalVideoGenOptions {
+  tier?: string | null;
+  num_frames?: number;
+  fps?: number;
+  width?: number;
+  height?: number;
+  steps?: number;
 }
 
 /**
  * Generates a short video via the local Python media backend's
- * `POST /generate/video` endpoint (existing route — the v1 surface
- * currently doesn't cover video). Downloads the resulting file to
+ * `POST /v1/generate/video` endpoint. Downloads the resulting file to
  * outputPath. Never throws — returns success:false on any failure.
  */
 export async function generateVideoViaLocalBackend(
   prompt: string,
   outputPath: string,
-  options: { num_frames?: number; width?: number; height?: number } = {},
+  options: LocalVideoGenOptions = {},
 ): Promise<LocalVideoGenResult> {
   const started = Date.now();
 
@@ -38,7 +48,7 @@ export async function generateVideoViaLocalBackend(
   }
 
   try {
-    const response = await fetch(`${MEDIA_AI_SERVER_URL}/generate/video`, {
+    const response = await fetch(`${MEDIA_AI_SERVER_URL}/v1/generate/video`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt, ...options }),
@@ -54,7 +64,8 @@ export async function generateVideoViaLocalBackend(
     }
     const data = (await response.json()) as {
       video_url?: string;
-      video_path?: string;
+      tier?: string;
+      model?: string;
     };
     const url = data.video_url;
     if (!url) {
@@ -81,6 +92,8 @@ export async function generateVideoViaLocalBackend(
       success: true,
       outputPath,
       durationMs: Date.now() - started,
+      tier: data.tier,
+      model: data.model,
     };
   } catch (err) {
     logger.warn("local video gen failed:", err);

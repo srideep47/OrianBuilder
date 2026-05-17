@@ -969,15 +969,15 @@ export default function InferencePage() {
   };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-background">
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b px-6 py-4 flex items-center justify-between shrink-0">
+    <div className="flex flex-col h-full overflow-hidden bg-transparent">
+      <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-xl border-b border-border/50 px-6 py-4 flex items-center justify-between shrink-0">
         <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
+          <h1 className="text-xl font-bold flex items-center gap-2 page-title">
             <Zap className="w-5 h-5 text-yellow-500" />
             Inference Engine
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Embedded tensor inference · node-llama-cpp · CUDA{" "}
+            Embedded tensor inference · llama-server · CUDA{" "}
             {gpuInfo?.tensorCoreGen ?? "—"}
           </p>
         </div>

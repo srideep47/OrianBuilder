@@ -50,7 +50,9 @@
     "build-storybook": "storybook build",
     "build:tensorrt-runner": "powershell -ExecutionPolicy Bypass -File scripts/build-tensorrt-runner.ps1",
     "build:tensorrt-engine": "powershell -ExecutionPolicy Bypass -File scripts/build-tensorrt-engine.ps1",
-    "build:trt-llm-engine": "powershell -ExecutionPolicy Bypass -File scripts/build-trt-llm-engine.ps1"
+    "build:trt-llm-engine": "powershell -ExecutionPolicy Bypass -File scripts/build-trt-llm-engine.ps1",
+    "download:llama-server": "node scripts/download-llama-server.mjs",
+    "download:llama-server:here": "node scripts/download-llama-server.mjs --here"
   },
   "dependencies": {
     "@ai-sdk/amazon-bedrock": "^4.0.46",
@@ -113,7 +115,6 @@
     "lexical-beautiful-mentions": "^0.1.47",
     "lucide-react": "^0.487.0",
     "monaco-editor": "^0.52.2",
-    "node-llama-cpp": "^3.18.1",
     "node-pty": "^1.1.0",
     "perfect-freehand": "^1.2.2",
     "posthog-js": "^1.265.1",

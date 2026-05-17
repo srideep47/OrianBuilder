@@ -4,7 +4,7 @@ import { Message } from "@/ipc/types";
 
 import { findLanguageModel } from "./findLanguageModel";
 import { getLMStudioContextWindow } from "../handlers/local_model_lmstudio_handler";
-import http from "node:http";
+import { getServerStatus } from "./embedded_inference_server";
 
 // Estimate tokens (4 characters per token)
 export const estimateTokens = (text: string): number => {
@@ -20,35 +20,6 @@ export const estimateMessagesTokens = (messages: Message[]): number => {
 
 const DEFAULT_CONTEXT_WINDOW = 128_000;
 
-// Query the embedded inference server's /health endpoint for the actual
-// loaded context size. Mirrors getLMStudioContextWindow().
-async function getEmbeddedContextWindow(): Promise<number | undefined> {
-  return new Promise((resolve) => {
-    const req = http.request(
-      { hostname: "127.0.0.1", port: 11435, path: "/health", method: "GET" },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on("data", (c) => chunks.push(c));
-        res.on("end", () => {
-          try {
-            const body = JSON.parse(Buffer.concat(chunks).toString());
-            const size = body.contextSize as number | undefined;
-            resolve(size && size > 0 ? size : undefined);
-          } catch {
-            resolve(undefined);
-          }
-        });
-      },
-    );
-    req.on("error", () => resolve(undefined));
-    req.setTimeout(2000, () => {
-      req.destroy();
-      resolve(undefined);
-    });
-    req.end();
-  });
-}
-
 export async function getContextWindow() {
   const settings = readSettings();
   const model = settings.selectedModel;
@@ -61,12 +32,13 @@ export async function getContextWindow() {
     if (lmsWindow) return lmsWindow;
   }
 
-  // For the embedded node-llama-cpp engine, query the actual loaded context size.
-  // Without this, OrianBuilder falls back to 128K and sends 40K+ token codebase payloads
-  // to a model loaded with 8K context — causing silent truncation and ~98-token outputs.
+  // For the embedded engine (llama-server child process or TensorRT), read
+  // the actual loaded context size from the in-process status. Without this,
+  // OrianBuilder falls back to 128K and sends 40K+ token codebase payloads to
+  // a model loaded with 8K context — silent truncation, ~98-token outputs.
   if (model.provider === "embedded") {
-    const embeddedWindow = await getEmbeddedContextWindow();
-    if (embeddedWindow) return embeddedWindow;
+    const size = getServerStatus().actualContextSize;
+    if (size && size > 0) return size;
   }
 
   const modelOption = await findLanguageModel(model);
@@ -106,4 +78,41 @@ export function shouldTriggerCompaction(
   contextWindow: number,
 ): boolean {
   return totalTokens >= getCompactionThreshold(contextWindow);
+}
+
+/** Smallest output budget we'll permit before refusing a turn. Below this the
+ *  model truncates mid-write — that's the failure mode we're guarding against
+ *  (broken file writes that take the preview down with a parse error). */
+export const MIN_OUTPUT_BUDGET_TOKENS = 1024;
+
+export interface OutputBudgetEstimate {
+  contextWindow: number;
+  estimatedInputTokens: number;
+  outputBudget: number;
+  /** True if outputBudget < MIN_OUTPUT_BUDGET_TOKENS — caller must not stream. */
+  exhausted: boolean;
+}
+
+/**
+ * Compute how many tokens of output headroom the model has *before* we hit
+ * its context window. Used as a pre-flight check at the top of a chat turn:
+ * if the codebase + history + system prompt already fill the window, sending
+ * the turn produces mid-string truncation (see chat 97 / message 336, which
+ * ended with `from-indigo-500 to\n</orianbuilder-write>` because the model
+ * had ~13 tokens left to write with).
+ */
+export function estimateOutputBudget(input: {
+  contextWindow: number;
+  estimatedInputTokens: number;
+}): OutputBudgetEstimate {
+  const outputBudget = Math.max(
+    0,
+    input.contextWindow - input.estimatedInputTokens,
+  );
+  return {
+    contextWindow: input.contextWindow,
+    estimatedInputTokens: input.estimatedInputTokens,
+    outputBudget,
+    exhausted: outputBudget < MIN_OUTPUT_BUDGET_TOKENS,
+  };
 }

@@ -379,6 +379,12 @@ const BaseUserSettingsFields = {
    * aborted for a retry. Clamped to [30, 300] at the call site. Default 90.
    */
   streamStallTimeoutSeconds: z.number().min(30).max(300).optional(),
+  /**
+   * Maximum wall-clock minutes a single agent turn may run before the
+   * mission-budget guard pauses it with a step-limit notice. Default 480
+   * (8h). Clamped to [10, 1440] at the call site.
+   */
+  missionRuntimeBudgetMinutes: z.number().min(10).max(1440).optional(),
   skipNotificationBanner: z.boolean().optional(),
   enableSelectAppFromHomeChatInput: z.boolean().optional(),
   previewIdleTimeoutPolicy: z.enum(["default", "never"]).optional(),

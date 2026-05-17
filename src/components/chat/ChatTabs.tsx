@@ -601,7 +601,7 @@ export function ChatTabs({ selectedChatId }: ChatTabsProps) {
                             setDraggingChatId(null);
                           }}
                           className={cn(
-                            "group relative flex h-10 min-w-[160px] max-w-52 items-center gap-1 rounded-md px-2.5 transition-all active:scale-[0.97]",
+                            "group relative flex h-8 min-w-[160px] max-w-52 items-center gap-1 rounded-md px-2.5 transition-all active:scale-[0.97]",
                             isActive
                               ? "bg-background text-foreground shadow-sm"
                               : "bg-muted/50 text-muted-foreground hover:bg-muted",

@@ -275,8 +275,12 @@ export function ChatPanel({
                 }
               />
             )}
-            <MissionControl chatId={chatId} />
-            <NotificationBanner />
+            <div className="px-2 mb-3">
+              <div className="max-w-3xl mx-auto w-full">
+                <MissionControl chatId={chatId} />
+                <NotificationBanner />
+              </div>
+            </div>
             <ChatInput chatId={chatId} />
           </div>
         )}

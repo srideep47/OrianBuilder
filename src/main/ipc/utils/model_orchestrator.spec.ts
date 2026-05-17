@@ -238,44 +238,53 @@ describe("ModelOrchestrator state machine", () => {
 });
 
 describe("pickBestImageTier", () => {
+  it("returns flux-dev with 32 GB VRAM", () => {
+    expect(pickBestImageTier(32000).id).toBe("flux-dev");
+  });
+
   it("returns flux-schnell with 15 GB VRAM", () => {
     expect(pickBestImageTier(15000).id).toBe("flux-schnell");
   });
 
-  it("returns sdxl-turbo with 9 GB VRAM", () => {
-    expect(pickBestImageTier(9000).id).toBe("sdxl-turbo");
+  it("returns z-image-turbo with 8 GB VRAM (above sdxl-turbo by tier order)", () => {
+    expect(pickBestImageTier(8000).id).toBe("z-image-turbo");
+  });
+
+  it("returns sdxl-turbo when only quality 'good' allowed", () => {
+    expect(pickBestImageTier(8000, "good").id).toBe("sdxl-turbo");
   });
 
   it("returns sd-1.5 with 5 GB VRAM", () => {
     expect(pickBestImageTier(5000).id).toBe("sd-1.5");
   });
 
-  it("returns sd-1.5-cpu with 0 VRAM", () => {
-    expect(pickBestImageTier(0).id).toBe("sd-1.5-cpu");
-  });
-
-  it("never returns a tier above preferredQuality", () => {
-    // 15 GB VRAM is enough for flux-schnell but user wants 'good' max
-    expect(pickBestImageTier(15000, "good").id).toBe("sdxl-turbo");
+  it("returns sd-1.5-onnx-cpu with 0 VRAM", () => {
+    expect(pickBestImageTier(0).id).toBe("sd-1.5-onnx-cpu");
   });
 
   it("still returns floor tier when preferredQuality is set but VRAM is 0", () => {
-    expect(pickBestImageTier(0, "good").id).toBe("sd-1.5-cpu");
+    expect(pickBestImageTier(0, "good").id).toBe("sd-1.5-onnx-cpu");
   });
 
-  it("orders tiers best to slow", () => {
+  it("orders tiers ultra → best → good → basic → slow", () => {
     expect(IMAGE_MODEL_TIERS.map((t) => t.id)).toEqual([
+      "flux-dev",
       "flux-schnell",
+      "z-image-turbo",
       "sdxl-turbo",
       "sd-1.5",
-      "sd-1.5-cpu",
+      "sd-1.5-onnx-cpu",
     ]);
   });
 });
 
 describe("pickBestAudioTtsTier", () => {
-  it("returns xtts-v2 with 4 GB VRAM", () => {
+  it("returns xtts-v2 with 4 GB VRAM (best tier that fits)", () => {
     expect(pickBestAudioTtsTier(4000).id).toBe("xtts-v2");
+  });
+
+  it("returns kokoro-82m with 1 GB VRAM", () => {
+    expect(pickBestAudioTtsTier(1500).id).toBe("kokoro-82m");
   });
 
   it("returns piper with 0 VRAM", () => {
@@ -286,19 +295,25 @@ describe("pickBestAudioTtsTier", () => {
 describe("selectAvailableTiers", () => {
   it("combines live and freed VRAM when computing fitting tiers", () => {
     const snapshot = selectAvailableTiers(2000, 6000);
-    // 2000 + 6000 = 8000 → sdxl-turbo fits
+    // 2000 + 6000 = 8000 → z-image-turbo fits (above sdxl-turbo in order)
     expect(snapshot.projectedAvailableVramMb).toBe(8000);
-    expect(snapshot.image[0].id).toBe("sdxl-turbo");
+    expect(snapshot.image[0].id).toBe("z-image-turbo");
   });
 
-  it("returns ALL fitting tiers in best-first order", () => {
+  it("returns ALL fitting image tiers in best-first order at 13 GB", () => {
     const snapshot = selectAvailableTiers(13000, 0);
     expect(snapshot.image.map((t) => t.id)).toEqual([
       "flux-schnell",
+      "z-image-turbo",
       "sdxl-turbo",
       "sd-1.5",
-      "sd-1.5-cpu",
+      "sd-1.5-onnx-cpu",
     ]);
+  });
+
+  it("includes the new audioStt tiers in the snapshot", () => {
+    const snapshot = selectAvailableTiers(8000, 0);
+    expect(snapshot.audioStt[0]?.id).toBe("whisper-large-v3-turbo");
   });
 });
 

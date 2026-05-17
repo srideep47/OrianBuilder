@@ -27,26 +27,37 @@ export const LlmLoadParamsSchema = z.object({
 });
 export type LlmLoadParams = z.infer<typeof LlmLoadParamsSchema>;
 
-export const MediaQualitySchema = z.enum(["best", "good", "basic", "slow"]);
+export const MediaQualitySchema = z.enum([
+  "ultra",
+  "best",
+  "good",
+  "basic",
+  "slow",
+]);
 export type MediaQuality = z.infer<typeof MediaQualitySchema>;
 
 export const MediaTierSchema = z.object({
   id: z.string(),
+  label: z.string().optional(),
   vramRequiredMb: z.number(),
+  downloadSizeMb: z.number().optional(),
   quality: MediaQualitySchema,
+  hfRepo: z.string().optional(),
+  approxSecondsPerGen: z.number().optional(),
 });
 export type MediaTier = z.infer<typeof MediaTierSchema>;
 
 export const AvailableTiersSchema = z.object({
   image: z.array(MediaTierSchema),
   audio: z.array(MediaTierSchema),
+  audioStt: z.array(MediaTierSchema),
   video: z.array(MediaTierSchema),
   projectedAvailableVramMb: z.number(),
 });
 export type AvailableTiers = z.infer<typeof AvailableTiersSchema>;
 
 export const MediaGenerationRequestSchema = z.object({
-  modelType: z.enum(["image", "audio", "video", "music"]),
+  modelType: z.enum(["image", "audio", "video", "music", "transcribe"]),
   prompt: z.string(),
   outputPath: z.string(),
   options: z.record(z.string(), z.unknown()).optional(),

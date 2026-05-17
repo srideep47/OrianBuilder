@@ -1,15 +1,13 @@
 /**
- * Phase 4: hardware-aware LLM backend selection for node-llama-cpp.
+ * Hardware-aware LLM backend selection for the llama-server child process.
  *
- * node-llama-cpp ships prebuilt binaries for CUDA, Metal, Vulkan, and CPU.
- * The correct backend is selected at model-load time based on which GPU the
- * user has — CUDA for Nvidia, Vulkan for AMD/Intel on Windows (auto-picked
- * by node-llama-cpp when CUDA is absent), Metal on Apple Silicon (auto on
- * macOS arm64), and CPU as the safe fallback.
- *
- * IMPORTANT — this module ONLY computes the options; it deliberately does
- * NOT wire them into the existing load path in embedded_inference_server.ts.
- * Rule #1: existing Nvidia/CUDA code paths must not be modified.
+ * llama.cpp ships prebuilt llama-server variants for CUDA, Metal, Vulkan, and
+ * CPU; `llama_server_binary.ts::pickLlamaServerVariant` chooses which binary
+ * to spawn from a hardware profile. This module owns the secondary decision:
+ * given a chosen variant, how many layers should be offloaded to the GPU and
+ * should mmap be enabled. CPU-only systems get `gpuLayers=0, useMmap=true`;
+ * any system with a usable GPU gets `gpuLayers=-1, useMmap=false` ("all
+ * layers on GPU" until the caller computes a precise count for the model).
  */
 
 import type { HardwareProfile } from "@/main/hardware/types";
@@ -25,16 +23,16 @@ export interface LlmBackendOptions {
 }
 
 /**
- * Returns node-llama-cpp options selecting the correct hardware backend for
- * this profile. The backend itself is auto-detected by node-llama-cpp at
- * load time — we just have to tell it whether to use GPU at all (via
- * gpuLayers > 0) and whether to memory-map (CPU only).
+ * Returns llama-server options selecting the correct hardware backend for
+ * this profile. The actual backend (CUDA/Vulkan/Metal/CPU) is encoded by the
+ * binary variant we pick — here we just decide whether to use the GPU at all
+ * (via gpuLayers > 0) and whether to memory-map the model file (CPU only).
  *
- * AMD / Intel on Windows: node-llama-cpp's Vulkan prebuilt is selected
- * automatically when CUDA is unavailable. gpuLayers > 0 is sufficient.
+ * AMD / Intel on Windows: the win-vulkan variant runs on top of Vulkan and
+ * accepts gpuLayers > 0 the same way as CUDA does.
  *
- * Apple Silicon (macOS arm64): Metal is the built-in default. gpuLayers > 0
- * triggers Metal offload automatically.
+ * Apple Silicon (macOS arm64): the mac-metal variant maps GPU layers to
+ * Metal automatically; gpuLayers > 0 triggers offload.
  *
  * CPU-only: gpuLayers = 0, useMmap = true.
  */
