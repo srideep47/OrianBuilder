@@ -643,37 +643,76 @@ function GenerationTab({
 function VideoSlideshow({ frames }: { frames: string[] }) {
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(true);
-  const [loaded, setLoaded] = useState<Set<number>>(new Set());
+  // Map of frame index -> local blob URL (or null = still loading)
+  const [blobs, setBlobs] = useState<(string | null)[]>(() =>
+    frames.map(() => null),
+  );
+  const [errorCount, setErrorCount] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const FRAME_MS = 700;
 
+  // Fetch every frame as a blob (same trick as LoadingImage). Cleans up old
+  // blob URLs on unmount or frames change.
   useEffect(() => {
-    if (!playing) {
+    const controllers = frames.map(() => new AbortController());
+    const localBlobs: (string | null)[] = frames.map(() => null);
+    setBlobs([...localBlobs]);
+    setErrorCount(0);
+
+    frames.forEach((url, i) => {
+      fetch(url, { signal: controllers[i].signal })
+        .then(async (r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const blob = await r.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          localBlobs[i] = blobUrl;
+          setBlobs((prev) => {
+            const next = [...prev];
+            next[i] = blobUrl;
+            return next;
+          });
+        })
+        .catch((err) => {
+          if (err?.name === "AbortError") return;
+          setErrorCount((n) => n + 1);
+        });
+    });
+
+    return () => {
+      controllers.forEach((c) => c.abort());
+      localBlobs.forEach((u) => u && URL.revokeObjectURL(u));
+    };
+  }, [frames]);
+
+  const loadedCount = blobs.filter((b) => b !== null).length;
+
+  // Auto-advance the playhead, skipping frames that haven't loaded yet
+  useEffect(() => {
+    if (!playing || loadedCount === 0) {
       if (intervalRef.current) clearInterval(intervalRef.current);
       return;
     }
     intervalRef.current = setInterval(() => {
-      setIndex((i) => (i + 1) % frames.length);
+      setIndex((i) => {
+        for (let step = 1; step <= frames.length; step++) {
+          const next = (i + step) % frames.length;
+          if (blobs[next]) return next;
+        }
+        return i;
+      });
     }, FRAME_MS);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [playing, frames.length]);
+  }, [playing, loadedCount, frames.length, blobs]);
 
+  // Once at least one frame loads, snap to it
   useEffect(() => {
-    frames.forEach((url, i) => {
-      const probe = new window.Image();
-      probe.onload = () => {
-        setLoaded((prev) => {
-          if (prev.has(i)) return prev;
-          const next = new Set(prev);
-          next.add(i);
-          return next;
-        });
-      };
-      probe.src = url;
-    });
-  }, [frames]);
+    if (loadedCount > 0 && blobs[index] == null) {
+      const first = blobs.findIndex((b) => b !== null);
+      if (first >= 0) setIndex(first);
+    }
+  }, [loadedCount, blobs, index]);
 
   return (
     <div className="flex flex-col items-center gap-3">
@@ -681,18 +720,27 @@ function VideoSlideshow({ frames }: { frames: string[] }) {
         className="relative w-full max-w-2xl overflow-hidden rounded-lg border bg-black shadow-sm"
         style={{ aspectRatio: "16 / 9" }}
       >
-        {frames.map((url, i) => (
-          <img
-            key={i}
-            src={url}
-            alt={`Frame ${i + 1}`}
-            className="absolute inset-0 h-full w-full object-cover transition-opacity duration-300"
-            style={{ opacity: i === index ? 1 : 0 }}
-          />
-        ))}
-        {loaded.size < 2 && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-sm text-white">
-            Loading frames... ({loaded.size}/{frames.length})
+        {blobs.map(
+          (blobUrl, i) =>
+            blobUrl && (
+              <img
+                key={i}
+                src={blobUrl}
+                alt={`Frame ${i + 1}`}
+                className="absolute inset-0 h-full w-full object-cover transition-opacity duration-300"
+                style={{ opacity: i === index ? 1 : 0 }}
+              />
+            ),
+        )}
+        {loadedCount === 0 && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70 text-sm text-white">
+            <Loader2 className="h-6 w-6 animate-spin" />
+            Generating frames... (first one can take 10-30s)
+          </div>
+        )}
+        {loadedCount > 0 && loadedCount < frames.length && (
+          <div className="absolute bottom-10 right-2 rounded bg-black/60 px-2 py-1 text-[10px] text-white">
+            {loadedCount} / {frames.length} loaded
           </div>
         )}
         <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1.5">
@@ -701,10 +749,13 @@ function VideoSlideshow({ frames }: { frames: string[] }) {
               key={i}
               type="button"
               onClick={() => {
-                setIndex(i);
-                setPlaying(false);
+                if (blobs[i]) {
+                  setIndex(i);
+                  setPlaying(false);
+                }
               }}
-              className={`h-1.5 rounded-full transition-all ${
+              disabled={!blobs[i]}
+              className={`h-1.5 rounded-full transition-all disabled:opacity-30 ${
                 i === index ? "w-6 bg-white" : "w-1.5 bg-white/50"
               }`}
               aria-label={`Frame ${i + 1}`}
@@ -716,14 +767,15 @@ function VideoSlideshow({ frames }: { frames: string[] }) {
         <button
           type="button"
           onClick={() => setPlaying((p) => !p)}
-          className="rounded-full border px-3 py-1 hover:bg-accent"
+          className="rounded-full border px-3 py-1 hover:bg-accent disabled:opacity-50"
+          disabled={loadedCount === 0}
         >
           {playing ? "Pause" : "Play"}
         </button>
         <span>
           Frame {index + 1} / {frames.length}
-          {loaded.size < frames.length &&
-            ` - ${loaded.size}/${frames.length} loaded`}
+          {loadedCount < frames.length && ` - ${loadedCount} loaded`}
+          {errorCount > 0 && ` - ${errorCount} failed`}
         </span>
       </div>
     </div>
@@ -731,10 +783,71 @@ function VideoSlideshow({ frames }: { frames: string[] }) {
 }
 
 // -----------------------------------------------------------------------------
-// LoadingImage — shows a spinner overlay while a remote image loads, and a
-// friendly error message if it fails. Used for cloud Pollinations.ai output
-// where first-byte-time can be 10-30 seconds.
+// useBlobImage — fetches a remote image as bytes and exposes a local blob URL.
+// Cross-origin <img src=https://...> is unreliable in the Electron renderer
+// for Pollinations.ai (slow first-byte time triggers onError, and some
+// referrer/origin combos get rejected). Going through fetch + blob bypasses
+// both issues: the byte stream completes once and is then served from the
+// same-origin blob: URL, which <img> loads reliably.
 // -----------------------------------------------------------------------------
+
+function useBlobImage(src: string): {
+  blobUrl: string | null;
+  status: "loading" | "loaded" | "error";
+  error: string | null;
+  retry: () => void;
+} {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [status, setStatus] = useState<"loading" | "loaded" | "error">(
+    "loading",
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    let createdUrl: string | null = null;
+    setStatus("loading");
+    setError(null);
+    setBlobUrl(null);
+
+    const controller = new AbortController();
+
+    (async () => {
+      try {
+        const res = await fetch(src, { signal: controller.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        if (cancelled) return;
+        createdUrl = URL.createObjectURL(blob);
+        setBlobUrl(createdUrl);
+        setStatus("loaded");
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof Error && err.name === "AbortError") return;
+        setError(err instanceof Error ? err.message : String(err));
+        setStatus("error");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [src, attempt]);
+
+  return {
+    blobUrl,
+    status,
+    error,
+    retry: () => setAttempt((a) => a + 1),
+  };
+}
+
+// LoadingImage — wraps a cross-origin URL with the blob loader above plus a
+// spinner / retry-on-error UI. Used for cloud Pollinations.ai output where
+// first-byte time can be 10-30 seconds.
 
 function LoadingImage({
   src,
@@ -745,52 +858,29 @@ function LoadingImage({
   alt?: string;
   className?: string;
 }) {
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">(
-    "loading",
-  );
-
-  // Reset whenever the src changes so re-generation shows the spinner again
-  useEffect(() => {
-    setStatus("loading");
-  }, [src]);
+  const { blobUrl, status, error, retry } = useBlobImage(src);
 
   return (
     <div className="flex justify-center">
-      <div className="relative">
-        {status !== "error" && (
-          <img
-            src={src}
-            alt={alt}
-            className={className}
-            onLoad={() => setStatus("loaded")}
-            onError={() => setStatus("error")}
-            style={status === "loading" ? { visibility: "hidden" } : undefined}
-          />
-        )}
-        {status === "loading" && (
-          <div className="flex h-72 w-[512px] max-w-full flex-col items-center justify-center gap-3 rounded-lg border bg-muted/30 text-sm text-muted-foreground">
-            <Loader2 className="h-8 w-8 animate-spin" />
-            <p>Generating... (first request can take 10-30s)</p>
-          </div>
-        )}
-        {status === "error" && (
-          <div className="flex h-72 w-[512px] max-w-full flex-col items-center justify-center gap-3 rounded-lg border border-rose-500/40 bg-rose-500/5 p-4 text-center text-sm text-rose-500">
-            <p className="font-medium">Couldn't load the image</p>
-            <p className="text-xs text-muted-foreground">
-              Pollinations.ai may be busy. Try again, or open the URL in a
-              browser:
-            </p>
-            <a
-              href={src}
-              target="_blank"
-              rel="noreferrer"
-              className="break-all text-xs underline"
-            >
-              {src.length > 80 ? `${src.slice(0, 80)}...` : src}
-            </a>
-          </div>
-        )}
-      </div>
+      {status === "loaded" && blobUrl && (
+        <img src={blobUrl} alt={alt} className={className} />
+      )}
+      {status === "loading" && (
+        <div className="flex h-72 w-[512px] max-w-full flex-col items-center justify-center gap-3 rounded-lg border bg-muted/30 text-sm text-muted-foreground">
+          <Loader2 className="h-8 w-8 animate-spin" />
+          <p>Generating... (first request can take 10-30s)</p>
+        </div>
+      )}
+      {status === "error" && (
+        <div className="flex h-72 w-[512px] max-w-full flex-col items-center justify-center gap-3 rounded-lg border border-rose-500/40 bg-rose-500/5 p-4 text-center text-sm">
+          <p className="font-medium text-rose-500">Couldn't load the image</p>
+          {error && <p className="text-xs text-muted-foreground">{error}</p>}
+          <Button variant="secondary" size="sm" onClick={retry}>
+            <RefreshCw className="mr-2 h-3.5 w-3.5" />
+            Try again
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
