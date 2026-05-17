@@ -25,6 +25,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_run' ||
       (github.event_name == 'pull_request_target' && github.event.label.name == 'cc:request:now')
+    if: github.repository_owner == 'wwwillchen'
     environment: ai-bots
     runs-on:
       - self-hosted

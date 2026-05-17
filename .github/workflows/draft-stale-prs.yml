@@ -13,6 +13,7 @@ permissions:
 jobs:
   draft-stale-prs:
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'wwwillchen'
     environment: ai-bots
     steps:
       - name: Create GitHub App token

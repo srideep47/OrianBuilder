@@ -13,6 +13,7 @@ concurrency:
 
 jobs:
   codex-review:
+    if: github.repository_owner == 'wwwillchen'
     environment: ai-bots
     # Only review code from regular contributors since Codex review has non-trivial costs.
     # This also keeps privileged pull_request_target tokens away from untrusted PRs.

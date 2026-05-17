@@ -15,6 +15,7 @@ jobs:
       && !github.event.issue.pull_request
       && github.event.comment.user.login == github.event.issue.user.login
       && github.event.comment.user.type != 'Bot'
+    if: github.repository_owner == 'wwwillchen'
     environment: ai-bots
     runs-on: ubuntu-latest
     permissions:
@@ -109,6 +110,7 @@ jobs:
       && github.event.comment.author_association != 'MEMBER'
       && github.event.comment.author_association != 'COLLABORATOR'
       && github.event.comment.author_association != 'OWNER'
+    if: github.repository_owner == 'wwwillchen'
     environment: ai-bots
     runs-on: ubuntu-latest
     permissions:

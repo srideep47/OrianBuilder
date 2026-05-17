@@ -14,6 +14,7 @@ on:
 
 jobs:
   deflake:
+    if: github.repository_owner == 'wwwillchen'
     environment: ai-bots
     runs-on:
       - self-hosted
