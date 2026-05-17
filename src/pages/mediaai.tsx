@@ -149,69 +149,42 @@ export default function MediaAIPage() {
 
     // Image & Video: cloud-first via Pollinations.ai (no backend required).
     // This bypasses the Python ONNX pipeline that fails on Python 3.14.
+    //
+    // Pollinations generates server-side and can take 10-30s for the first
+    // request. We DON'T probe the URL — the probe was unreliable because img
+    // onerror can fire for slow first-byte time, transient network blips, or
+    // when the renderer aborts. Instead we set the result immediately and let
+    // the actual <img> tag in the result card handle loading + error display.
     if (activeTab === "image") {
-      try {
-        const url = pollinationsUrl(prompt.trim(), { width: 768, height: 768 });
-        await new Promise<void>((resolve, reject) => {
-          const probe = new window.Image();
-          probe.onload = () => resolve();
-          probe.onerror = () =>
-            reject(new Error("Pollinations.ai unreachable"));
-          probe.src = url;
-        });
-        setResult({
-          type: "image",
-          absoluteUrl: url,
-          filename: `image-${Date.now()}.jpg`,
-          source: "cloud",
-        });
-        toast.success("Image generated");
-      } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : "Image generation failed",
-        );
-      } finally {
-        setIsGenerating(false);
-      }
+      const url = pollinationsUrl(prompt.trim(), { width: 768, height: 768 });
+      setResult({
+        type: "image",
+        absoluteUrl: url,
+        filename: `image-${Date.now()}.jpg`,
+        source: "cloud",
+      });
+      toast.success("Generating image — first request can take 10-30s");
+      setIsGenerating(false);
       return;
     }
 
     if (activeTab === "video") {
-      try {
-        const baseSeed = Math.floor(Math.random() * 1_000_000);
-        const frames = Array.from({ length: 6 }, (_, i) =>
-          pollinationsUrl(prompt.trim(), {
-            width: 640,
-            height: 360,
-            seed: baseSeed + i,
-          }),
-        );
-        await Promise.all(
-          frames.slice(0, 2).map(
-            (u) =>
-              new Promise<void>((resolve, reject) => {
-                const probe = new window.Image();
-                probe.onload = () => resolve();
-                probe.onerror = () =>
-                  reject(new Error("Pollinations.ai unreachable"));
-                probe.src = u;
-              }),
-          ),
-        );
-        setResult({
-          type: "video",
-          frames,
-          filename: `video-${Date.now()}.gif`,
-          source: "cloud",
-        });
-        toast.success("Motion sequence generated");
-      } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : "Video generation failed",
-        );
-      } finally {
-        setIsGenerating(false);
-      }
+      const baseSeed = Math.floor(Math.random() * 1_000_000);
+      const frames = Array.from({ length: 6 }, (_, i) =>
+        pollinationsUrl(prompt.trim(), {
+          width: 640,
+          height: 360,
+          seed: baseSeed + i,
+        }),
+      );
+      setResult({
+        type: "video",
+        frames,
+        filename: `video-${Date.now()}.gif`,
+        source: "cloud",
+      });
+      toast.success("Generating frames — first one can take 10-30s");
+      setIsGenerating(false);
       return;
     }
 
@@ -322,13 +295,11 @@ export default function MediaAIPage() {
             </div>
           )}
           {result.type === "image" && imageSrc && (
-            <div className="flex justify-center">
-              <img
-                src={imageSrc}
-                alt="Generated"
-                className="max-h-[512px] max-w-full rounded-lg border shadow-sm"
-              />
-            </div>
+            <LoadingImage
+              src={imageSrc}
+              alt="Generated"
+              className="max-h-[512px] max-w-full rounded-lg border shadow-sm"
+            />
           )}
           {result.type === "audio" && result.url && (
             <audio controls className="w-full">
@@ -754,6 +725,71 @@ function VideoSlideshow({ frames }: { frames: string[] }) {
           {loaded.size < frames.length &&
             ` - ${loaded.size}/${frames.length} loaded`}
         </span>
+      </div>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// LoadingImage — shows a spinner overlay while a remote image loads, and a
+// friendly error message if it fails. Used for cloud Pollinations.ai output
+// where first-byte-time can be 10-30 seconds.
+// -----------------------------------------------------------------------------
+
+function LoadingImage({
+  src,
+  alt,
+  className,
+}: {
+  src: string;
+  alt?: string;
+  className?: string;
+}) {
+  const [status, setStatus] = useState<"loading" | "loaded" | "error">(
+    "loading",
+  );
+
+  // Reset whenever the src changes so re-generation shows the spinner again
+  useEffect(() => {
+    setStatus("loading");
+  }, [src]);
+
+  return (
+    <div className="flex justify-center">
+      <div className="relative">
+        {status !== "error" && (
+          <img
+            src={src}
+            alt={alt}
+            className={className}
+            onLoad={() => setStatus("loaded")}
+            onError={() => setStatus("error")}
+            style={status === "loading" ? { visibility: "hidden" } : undefined}
+          />
+        )}
+        {status === "loading" && (
+          <div className="flex h-72 w-[512px] max-w-full flex-col items-center justify-center gap-3 rounded-lg border bg-muted/30 text-sm text-muted-foreground">
+            <Loader2 className="h-8 w-8 animate-spin" />
+            <p>Generating... (first request can take 10-30s)</p>
+          </div>
+        )}
+        {status === "error" && (
+          <div className="flex h-72 w-[512px] max-w-full flex-col items-center justify-center gap-3 rounded-lg border border-rose-500/40 bg-rose-500/5 p-4 text-center text-sm text-rose-500">
+            <p className="font-medium">Couldn't load the image</p>
+            <p className="text-xs text-muted-foreground">
+              Pollinations.ai may be busy. Try again, or open the URL in a
+              browser:
+            </p>
+            <a
+              href={src}
+              target="_blank"
+              rel="noreferrer"
+              className="break-all text-xs underline"
+            >
+              {src.length > 80 ? `${src.slice(0, 80)}...` : src}
+            </a>
+          </div>
+        )}
       </div>
     </div>
   );
