@@ -657,19 +657,20 @@ function VideoSlideshow({ frames }: { frames: string[] }) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const FRAME_MS = 700;
 
-  // Fetch every frame as a blob (same trick as LoadingImage). Cleans up old
-  // blob URLs on unmount or frames change.
+  // Fetch every frame via the main-process IPC proxy (no CORS/Referer issues).
+  // Cleans up old blob URLs on unmount or when frames change.
   useEffect(() => {
-    const controllers = frames.map(() => new AbortController());
+    let cancelled = false;
     const localBlobs: (string | null)[] = frames.map(() => null);
     setBlobs([...localBlobs]);
     setErrorCount(0);
 
     frames.forEach((url, i) => {
-      fetch(url, { signal: controllers[i].signal })
-        .then(async (r) => {
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          const blob = await r.blob();
+      ipc.mediaAi
+        .fetchCloudImage({ url })
+        .then(({ base64, contentType }) => {
+          if (cancelled) return;
+          const blob = base64ToBlob(base64, contentType);
           const blobUrl = URL.createObjectURL(blob);
           localBlobs[i] = blobUrl;
           setBlobs((prev) => {
@@ -678,14 +679,14 @@ function VideoSlideshow({ frames }: { frames: string[] }) {
             return next;
           });
         })
-        .catch((err) => {
-          if (err?.name === "AbortError") return;
+        .catch(() => {
+          if (cancelled) return;
           setErrorCount((n) => n + 1);
         });
     });
 
     return () => {
-      controllers.forEach((c) => c.abort());
+      cancelled = true;
       localBlobs.forEach((u) => u && URL.revokeObjectURL(u));
     };
   }, [frames]);
@@ -789,13 +790,22 @@ function VideoSlideshow({ frames }: { frames: string[] }) {
 }
 
 // -----------------------------------------------------------------------------
-// useBlobImage — fetches a remote image as bytes and exposes a local blob URL.
-// Cross-origin <img src=https://...> is unreliable in the Electron renderer
-// for Pollinations.ai (slow first-byte time triggers onError, and some
-// referrer/origin combos get rejected). Going through fetch + blob bypasses
-// both issues: the byte stream completes once and is then served from the
-// same-origin blob: URL, which <img> loads reliably.
+// useBlobImage — fetches a remote image and exposes a local blob URL.
+//
+// We use the main-process IPC proxy (media-ai:fetch-cloud-image) instead of
+// renderer-side fetch. The renderer can't reliably load Pollinations.ai
+// because Electron sends an unblockable Referer that the host rejects with
+// HTTP 403. The main process fetch has no such restriction, and we receive
+// the bytes as base64 and turn them into a same-origin blob: URL for <img>.
 // -----------------------------------------------------------------------------
+
+function base64ToBlob(base64: string, contentType: string): Blob {
+  const binary = atob(base64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: contentType });
+}
 
 function useBlobImage(src: string): {
   blobUrl: string | null;
@@ -817,20 +827,18 @@ function useBlobImage(src: string): {
     setError(null);
     setBlobUrl(null);
 
-    const controller = new AbortController();
-
     (async () => {
       try {
-        const res = await fetch(src, { signal: controller.signal });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const blob = await res.blob();
+        const { base64, contentType } = await ipc.mediaAi.fetchCloudImage({
+          url: src,
+        });
         if (cancelled) return;
+        const blob = base64ToBlob(base64, contentType);
         createdUrl = URL.createObjectURL(blob);
         setBlobUrl(createdUrl);
         setStatus("loaded");
       } catch (err) {
         if (cancelled) return;
-        if (err instanceof Error && err.name === "AbortError") return;
         setError(err instanceof Error ? err.message : String(err));
         setStatus("error");
       }
@@ -838,7 +846,6 @@ function useBlobImage(src: string): {
 
     return () => {
       cancelled = true;
-      controller.abort();
       if (createdUrl) URL.revokeObjectURL(createdUrl);
     };
   }, [src, attempt]);
