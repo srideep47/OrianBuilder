@@ -13,6 +13,7 @@ concurrency:
 
 jobs:
   rebase:
+    if: github.repository_owner == 'wwwillchen'
     environment: ai-bots
     if: github.event.action == 'labeled' && github.event.label.name == 'cc:rebase'
     runs-on: ubuntu-latest

@@ -54,6 +54,18 @@ export type InstallForBackendParams = z.infer<
   typeof InstallForBackendParamsSchema
 >;
 
+// Generic image proxy: fetches a URL from the Electron main process (where
+// there are no CORS / Origin / Referer restrictions) and returns the bytes
+// as base64. Used by the cloud image/video paths to bypass the browser-side
+// fetch limits that block Pollinations.ai from the renderer.
+export const FetchCloudImageParamsSchema = z.object({
+  url: z.string().url(),
+});
+export const FetchCloudImageResultSchema = z.object({
+  base64: z.string(),
+  contentType: z.string(),
+});
+
 export const mediaAiContracts = {
   getStatus: defineContract({
     channel: "media-ai:get-status",
@@ -84,6 +96,11 @@ export const mediaAiContracts = {
     channel: "media-ai:stop-backend",
     input: z.void(),
     output: MediaAiStatusSchema,
+  }),
+  fetchCloudImage: defineContract({
+    channel: "media-ai:fetch-cloud-image",
+    input: FetchCloudImageParamsSchema,
+    output: FetchCloudImageResultSchema,
   }),
 } as const;
 

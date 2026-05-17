@@ -8,6 +8,7 @@ permissions: {}
 
 jobs:
   triage:
+    if: github.repository_owner == 'wwwillchen'
     environment: ai-bots
     runs-on: ubuntu-latest
     permissions:

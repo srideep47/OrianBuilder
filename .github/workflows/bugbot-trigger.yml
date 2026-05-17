@@ -9,6 +9,7 @@ permissions: {}
 
 jobs:
   trigger-bugbot:
+    if: github.repository_owner == 'wwwillchen'
     environment: ai-bots
     # Only review code from regular contributors since bug bot has a capped # of PR reviews.
     if: >-

@@ -49,7 +49,14 @@ interface GenerationResult {
   tab: MediaTab;
   content?: string;
   url?: string;
+  // When set, the renderer uses this URL directly (no server prefix). Used by
+  // cloud image sources like Pollinations.ai.
+  absoluteUrl?: string;
+  // Video-as-slideshow frames (cloud video). Renderer cycles them to simulate
+  // motion when a true text-to-video model isn't available.
+  frames?: string[];
   filename?: string;
+  source?: "cloud" | "local";
 }
 
 const BACKEND_LABELS: Record<string, string> = {
@@ -111,6 +118,32 @@ function TierBadge({ tier }: { tier: MediaTier | null }) {
       {display} · {tier.quality}
     </span>
   );
+}
+
+// Pollinations.ai — free public text-to-image service. No auth, no key. Used as
+// a cloud fallback for image/video so users don't have to set up the broken
+// Python ONNX pipeline (Python 3.14 + Windows path issues).
+//
+// IMPORTANT: Pollinations now requires a `referrer` query param to identify
+// the calling app. Without it the API returns HTTP 403 for fetch() callers
+// (this is their app-identifier system, not auth — any string works).
+const POLLINATIONS_BASE = "https://image.pollinations.ai/prompt";
+const POLLINATIONS_REFERRER = "orianbuilder";
+
+function pollinationsUrl(
+  prompt: string,
+  opts: { width?: number; height?: number; seed?: number; model?: string } = {},
+): string {
+  const seed = opts.seed ?? Math.floor(Math.random() * 1_000_000);
+  const params = new URLSearchParams({
+    width: String(opts.width ?? 768),
+    height: String(opts.height ?? 768),
+    seed: String(seed),
+    nologo: "true",
+    model: opts.model ?? "flux",
+    referrer: POLLINATIONS_REFERRER,
+  });
+  return `${POLLINATIONS_BASE}/${encodeURIComponent(prompt)}?${params}`;
 }
 
 export default function MediaAIPage() {
@@ -195,25 +228,68 @@ export default function MediaAIPage() {
       toast.error("Please enter a prompt");
       return;
     }
-    if (!isBackendOnline) {
-      toast.error("Start the Media AI backend first.");
-      return;
-    }
 
     setIsGenerating(true);
     setResult(null);
+
+    // Image & Video: cloud-first via Pollinations.ai (no backend required).
+    // This bypasses the Python ONNX pipeline that fails on Python 3.14.
+    //
+    // Pollinations generates server-side and can take 10-30s for the first
+    // request. We DON'T probe the URL — the probe was unreliable because img
+    // onerror can fire for slow first-byte time, transient network blips, or
+    // when the renderer aborts. Instead we set the result immediately and let
+    // the actual <img> tag in the result card handle loading + error display.
+    if (activeTab === "image") {
+      const url = pollinationsUrl(prompt.trim(), { width: 768, height: 768 });
+      setResult({
+        tab: "image",
+        absoluteUrl: url,
+        filename: `image-${Date.now()}.jpg`,
+        source: "cloud",
+      });
+      toast.success("Generating image — first request can take 10-30s");
+      setIsGenerating(false);
+      return;
+    }
+
+    if (activeTab === "video") {
+      const baseSeed = Math.floor(Math.random() * 1_000_000);
+      const frames = Array.from({ length: 6 }, (_, i) =>
+        pollinationsUrl(prompt.trim(), {
+          width: 640,
+          height: 360,
+          seed: baseSeed + i,
+        }),
+      );
+      setResult({
+        tab: "video",
+        frames,
+        filename: `video-${Date.now()}.gif`,
+        source: "cloud",
+      });
+      toast.success("Generating frames — first one can take 10-30s");
+      setIsGenerating(false);
+      return;
+    }
+
+    // Text & Audio still require the local backend
+    if (!isBackendOnline) {
+      toast.error("Start the Media AI backend before generating.");
+      setIsGenerating(false);
+      return;
+    }
 
     try {
       let endpoint = "";
       let body: Record<string, unknown> = { prompt: prompt.trim() };
 
-      if (activeTab === "image") {
-        endpoint = "/v1/generate/image";
-      } else if (activeTab === "audio") {
+      // image + video now go through the Pollinations cloud path above; only
+      // audio (text-to-speech) and audio-transcription still hit the local
+      // backend here.
+      if (activeTab === "audio") {
         endpoint = "/v1/generate/audio/tts";
         body = { text: prompt.trim() };
-      } else if (activeTab === "video") {
-        endpoint = "/v1/generate/video";
       } else {
         return;
       }
@@ -247,6 +323,7 @@ export default function MediaAIPage() {
                 ? data.video_url
                 : undefined,
         filename: typeof data.filename === "string" ? data.filename : undefined,
+        source: "local",
       });
 
       toast.success(`${activeTab} generated successfully`);
@@ -306,10 +383,20 @@ export default function MediaAIPage() {
   };
 
   const handleDownload = () => {
-    if (!result?.url) return;
+    if (!result) return;
+    let href: string | undefined;
+    if (result.absoluteUrl) {
+      href = result.absoluteUrl;
+    } else if (result.url) {
+      href = `${serverUrl}${result.url}`;
+    } else if (result.frames && result.frames.length > 0) {
+      href = result.frames[0];
+    }
+    if (!href) return;
     const link = document.createElement("a");
-    link.href = `${serverUrl}${result.url}`;
+    link.href = href;
     link.download = result.filename ?? `generated-${activeTab}`;
+    link.target = "_blank";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -325,14 +412,32 @@ export default function MediaAIPage() {
   const renderResult = () => {
     if (!result) return null;
 
+    const imageSrc = result.absoluteUrl
+      ? result.absoluteUrl
+      : result.url
+        ? `${serverUrl}${result.url}`
+        : undefined;
+    const hasDownloadable =
+      result.absoluteUrl || result.url || (result.frames?.length ?? 0) > 0;
+
     return (
       <Card className="mt-6">
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>
+            <CardTitle className="flex items-center gap-2">
               {result.tab === "transcribe"
                 ? "Transcription"
                 : `Generated ${result.tab}`}
+              {result.source === "cloud" && (
+                <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-medium uppercase text-sky-500">
+                  Cloud
+                </span>
+              )}
+              {result.source === "local" && (
+                <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-medium uppercase text-emerald-500">
+                  Local
+                </span>
+              )}
             </CardTitle>
             <CardDescription>
               {result.tab === "transcribe"
@@ -340,7 +445,7 @@ export default function MediaAIPage() {
                 : "Your AI-generated content is ready"}
             </CardDescription>
           </div>
-          {result.url && (
+          {hasDownloadable && (
             <Button variant="outline" size="sm" onClick={handleDownload}>
               <Download className="mr-2 h-4 w-4" />
               Download
@@ -355,21 +460,24 @@ export default function MediaAIPage() {
               </p>
             </div>
           )}
-          {result.tab === "image" && result.url && (
-            <div className="flex justify-center">
-              <img
-                src={`${serverUrl}${result.url}`}
-                alt="Generated"
-                className="max-h-[420px] max-w-full rounded-lg border shadow-sm"
-              />
-            </div>
+          {result.tab === "image" && imageSrc && (
+            <LoadingImage
+              src={imageSrc}
+              alt="Generated"
+              className="max-h-[512px] max-w-full rounded-lg border shadow-sm"
+            />
           )}
           {result.tab === "audio" && result.url && (
             <audio controls className="w-full">
               <source src={`${serverUrl}${result.url}`} type="audio/wav" />
             </audio>
           )}
-          {result.tab === "video" && result.url && (
+          {result.tab === "video" &&
+            result.frames &&
+            result.frames.length > 0 && (
+              <VideoSlideshow frames={result.frames} />
+            )}
+          {result.tab === "video" && result.url && !result.frames && (
             <video controls className="max-h-[420px] w-full rounded-lg border">
               <source src={`${serverUrl}${result.url}`} type="video/mp4" />
             </video>
@@ -380,7 +488,7 @@ export default function MediaAIPage() {
   };
 
   return (
-    <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
+    <div className="h-full w-full overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-5xl">
         {/* Header */}
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -824,6 +932,263 @@ function GenerationForm({
         )}
         {loading ? "Generating..." : buttonText}
       </Button>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// VideoSlideshow — auto-cycling slideshow of cloud-generated keyframes. Used
+// as a stand-in for true text-to-video, which has no good free no-auth API.
+// -----------------------------------------------------------------------------
+
+function VideoSlideshow({ frames }: { frames: string[] }) {
+  const [index, setIndex] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  // Map of frame index -> local blob URL (or null = still loading)
+  const [blobs, setBlobs] = useState<(string | null)[]>(() =>
+    frames.map(() => null),
+  );
+  const [errorCount, setErrorCount] = useState(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const FRAME_MS = 700;
+
+  // Fetch every frame via the main-process IPC proxy (no CORS/Referer issues).
+  // Cleans up old blob URLs on unmount or when frames change.
+  useEffect(() => {
+    let cancelled = false;
+    const localBlobs: (string | null)[] = frames.map(() => null);
+    setBlobs([...localBlobs]);
+    setErrorCount(0);
+
+    frames.forEach((url, i) => {
+      ipc.mediaAi
+        .fetchCloudImage({ url })
+        .then(({ base64, contentType }) => {
+          if (cancelled) return;
+          const blob = base64ToBlob(base64, contentType);
+          const blobUrl = URL.createObjectURL(blob);
+          localBlobs[i] = blobUrl;
+          setBlobs((prev) => {
+            const next = [...prev];
+            next[i] = blobUrl;
+            return next;
+          });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setErrorCount((n) => n + 1);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+      localBlobs.forEach((u) => u && URL.revokeObjectURL(u));
+    };
+  }, [frames]);
+
+  const loadedCount = blobs.filter((b) => b !== null).length;
+
+  // Auto-advance the playhead, skipping frames that haven't loaded yet
+  useEffect(() => {
+    if (!playing || loadedCount === 0) {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      return;
+    }
+    intervalRef.current = setInterval(() => {
+      setIndex((i) => {
+        for (let step = 1; step <= frames.length; step++) {
+          const next = (i + step) % frames.length;
+          if (blobs[next]) return next;
+        }
+        return i;
+      });
+    }, FRAME_MS);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [playing, loadedCount, frames.length, blobs]);
+
+  // Once at least one frame loads, snap to it
+  useEffect(() => {
+    if (loadedCount > 0 && blobs[index] == null) {
+      const first = blobs.findIndex((b) => b !== null);
+      if (first >= 0) setIndex(first);
+    }
+  }, [loadedCount, blobs, index]);
+
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <div
+        className="relative w-full max-w-2xl overflow-hidden rounded-lg border bg-black shadow-sm"
+        style={{ aspectRatio: "16 / 9" }}
+      >
+        {blobs.map(
+          (blobUrl, i) =>
+            blobUrl && (
+              <img
+                key={i}
+                src={blobUrl}
+                alt={`Frame ${i + 1}`}
+                className="absolute inset-0 h-full w-full object-cover transition-opacity duration-300"
+                style={{ opacity: i === index ? 1 : 0 }}
+              />
+            ),
+        )}
+        {loadedCount === 0 && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70 text-sm text-white">
+            <Loader2 className="h-6 w-6 animate-spin" />
+            Generating frames... (first one can take 10-30s)
+          </div>
+        )}
+        {loadedCount > 0 && loadedCount < frames.length && (
+          <div className="absolute bottom-10 right-2 rounded bg-black/60 px-2 py-1 text-[10px] text-white">
+            {loadedCount} / {frames.length} loaded
+          </div>
+        )}
+        <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1.5">
+          {frames.map((_, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => {
+                if (blobs[i]) {
+                  setIndex(i);
+                  setPlaying(false);
+                }
+              }}
+              disabled={!blobs[i]}
+              className={`h-1.5 rounded-full transition-all disabled:opacity-30 ${
+                i === index ? "w-6 bg-white" : "w-1.5 bg-white/50"
+              }`}
+              aria-label={`Frame ${i + 1}`}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <button
+          type="button"
+          onClick={() => setPlaying((p) => !p)}
+          className="rounded-full border px-3 py-1 hover:bg-accent disabled:opacity-50"
+          disabled={loadedCount === 0}
+        >
+          {playing ? "Pause" : "Play"}
+        </button>
+        <span>
+          Frame {index + 1} / {frames.length}
+          {loadedCount < frames.length && ` - ${loadedCount} loaded`}
+          {errorCount > 0 && ` - ${errorCount} failed`}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// useBlobImage — fetches a remote image and exposes a local blob URL.
+//
+// We use the main-process IPC proxy (media-ai:fetch-cloud-image) instead of
+// renderer-side fetch. The renderer can't reliably load Pollinations.ai
+// because Electron sends an unblockable Referer that the host rejects with
+// HTTP 403. The main process fetch has no such restriction, and we receive
+// the bytes as base64 and turn them into a same-origin blob: URL for <img>.
+// -----------------------------------------------------------------------------
+
+function base64ToBlob(base64: string, contentType: string): Blob {
+  const binary = atob(base64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: contentType });
+}
+
+function useBlobImage(src: string): {
+  blobUrl: string | null;
+  status: "loading" | "loaded" | "error";
+  error: string | null;
+  retry: () => void;
+} {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [status, setStatus] = useState<"loading" | "loaded" | "error">(
+    "loading",
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    let createdUrl: string | null = null;
+    setStatus("loading");
+    setError(null);
+    setBlobUrl(null);
+
+    (async () => {
+      try {
+        const { base64, contentType } = await ipc.mediaAi.fetchCloudImage({
+          url: src,
+        });
+        if (cancelled) return;
+        const blob = base64ToBlob(base64, contentType);
+        createdUrl = URL.createObjectURL(blob);
+        setBlobUrl(createdUrl);
+        setStatus("loaded");
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : String(err));
+        setStatus("error");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [src, attempt]);
+
+  return {
+    blobUrl,
+    status,
+    error,
+    retry: () => setAttempt((a) => a + 1),
+  };
+}
+
+// LoadingImage — wraps a cross-origin URL with the blob loader above plus a
+// spinner / retry-on-error UI. Used for cloud Pollinations.ai output where
+// first-byte time can be 10-30 seconds.
+
+function LoadingImage({
+  src,
+  alt,
+  className,
+}: {
+  src: string;
+  alt?: string;
+  className?: string;
+}) {
+  const { blobUrl, status, error, retry } = useBlobImage(src);
+
+  return (
+    <div className="flex justify-center">
+      {status === "loaded" && blobUrl && (
+        <img src={blobUrl} alt={alt} className={className} />
+      )}
+      {status === "loading" && (
+        <div className="flex h-72 w-[512px] max-w-full flex-col items-center justify-center gap-3 rounded-lg border bg-muted/30 text-sm text-muted-foreground">
+          <Loader2 className="h-8 w-8 animate-spin" />
+          <p>Generating... (first request can take 10-30s)</p>
+        </div>
+      )}
+      {status === "error" && (
+        <div className="flex h-72 w-[512px] max-w-full flex-col items-center justify-center gap-3 rounded-lg border border-rose-500/40 bg-rose-500/5 p-4 text-center text-sm">
+          <p className="font-medium text-rose-500">Couldn't load the image</p>
+          {error && <p className="text-xs text-muted-foreground">{error}</p>}
+          <Button variant="secondary" size="sm" onClick={retry}>
+            <RefreshCw className="mr-2 h-3.5 w-3.5" />
+            Try again
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

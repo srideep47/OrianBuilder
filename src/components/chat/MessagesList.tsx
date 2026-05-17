@@ -72,6 +72,7 @@ function FooterComponent({ context }: { context?: FooterContext }) {
     setMessagesById,
     settings,
     userBudget,
+    renderSetupBanner: _renderSetupBanner,
   } = context;
 
   const questionnaireState =

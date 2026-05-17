@@ -10,6 +10,7 @@ concurrency:
 
 jobs:
   label-conflicting-prs:
+    if: github.repository_owner == 'wwwillchen'
     environment: ai-bots
     runs-on: ubuntu-latest
     steps:
