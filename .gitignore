@@ -134,3 +134,10 @@ storybook-static/
 
 # Eval framework — run results
 eval-results/
+
+# Local utility scripts
+check-lint.bat
+run-voice-setup.bat
+
+# Temp/fixed test files
+*.spec.ts.fixed
