@@ -1,0 +1,43 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules/
+
+# Build output / Electron packaging artifacts
+dist/
+dist_electron/
+out/
+release/
+build/
+
+# OrianBuilder publish: native installers are uploaded to GitHub Releases,
+# not committed to git. Keep the static download page (index.html, vercel.json)
+# so Vercel can deploy it, but exclude the binaries.
+native-download-site/downloads/
+
+# OrianBuilder runtime cache (screenshots, logs)
+.orianbuilder/
+
+# Env
+.env
+.env.local
+.env.*.local
+*.local
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

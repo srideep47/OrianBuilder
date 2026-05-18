@@ -17,8 +17,10 @@ const SKIP_DIRECTORIES = new Set([
   ".turbo",
   ".cache",
   "dist",
+  "dist_electron",
   "build",
   "out",
+  "release",
   ".orianbuilder",
   "android/app/build",
   "android/.gradle",
@@ -57,9 +59,19 @@ async function walkAndAdd(
     if (entry.isSymbolicLink()) continue; // skip symlinks for portability
     if (!entry.isFile()) continue;
     if (SKIP_FILES.has(entry.name)) continue;
-    const stat = await fs.stat(fullPath);
+    let stat: import("node:fs").Stats;
+    try {
+      stat = await fs.stat(fullPath);
+    } catch {
+      continue; // broken symlink or file disappeared during walk
+    }
     if (stat.size > MAX_FILE_BYTES) continue; // skip very large binaries
-    const data = await fs.readFile(fullPath);
+    let data: Buffer;
+    try {
+      data = await fs.readFile(fullPath);
+    } catch {
+      continue; // file unreadable or disappeared
+    }
     zip.file(relPath, data);
     counts.files += 1;
   }

@@ -27,6 +27,7 @@ import { registerContextPathsHandlers } from "./handlers/context_paths_handlers"
 import { registerAppUpgradeHandlers } from "./handlers/app_upgrade_handlers";
 import { registerCapacitorHandlers } from "./handlers/capacitor_handlers";
 import { registerProblemsHandlers } from "./handlers/problems_handlers";
+import { registerNativePublishHandlers } from "./handlers/native_publish_handlers";
 import { registerAppEnvVarsHandlers } from "./handlers/app_env_vars_handlers";
 import { registerTemplateHandlers } from "./handlers/template_handlers";
 import { registerThemesHandlers } from "../pro/main/ipc/handlers/themes_handlers";
@@ -63,6 +64,7 @@ export function registerIpcHandlers() {
   registerVercelHandlers();
   registerNodeHandlers();
   registerProblemsHandlers();
+  registerNativePublishHandlers();
   registerProposalHandlers();
   registerDebugHandlers();
   registerSupabaseHandlers();

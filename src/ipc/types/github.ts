@@ -104,6 +104,41 @@ export const CloneRepoResultSchema = z.union([
   }),
 ]);
 
+// GitHub Releases schemas
+export const UploadReleaseAssetsParamsSchema = z.object({
+  appId: z.number(),
+  tag: z.string(),
+  name: z.string().optional(),
+  body: z.string().optional(),
+  targetCommitish: z.string().optional(),
+  files: z.array(
+    z.object({
+      absolutePath: z.string(),
+      name: z.string(),
+    }),
+  ),
+});
+
+export const UploadedReleaseAssetSchema = z.object({
+  name: z.string(),
+  size: z.number(),
+  browser_download_url: z.string(),
+});
+
+export const UploadReleaseAssetsResultSchema = z.object({
+  release_html_url: z.string(),
+  tag: z.string(),
+  assets: z.array(UploadedReleaseAssetSchema),
+});
+
+export type UploadReleaseAssetsParams = z.infer<
+  typeof UploadReleaseAssetsParamsSchema
+>;
+export type UploadedReleaseAsset = z.infer<typeof UploadedReleaseAssetSchema>;
+export type UploadReleaseAssetsResult = z.infer<
+  typeof UploadReleaseAssetsResultSchema
+>;
+
 // GitHub Device Flow schemas
 export const GitHubDeviceFlowUpdateSchema = z.object({
   userCode: z.string().optional(),
@@ -301,6 +336,12 @@ export const githubContracts = {
     channel: "github:clone-repo-from-url",
     input: CloneRepoParamsSchema,
     output: CloneRepoResultSchema,
+  }),
+
+  uploadReleaseAssets: defineContract({
+    channel: "github:upload-release-assets",
+    input: UploadReleaseAssetsParamsSchema,
+    output: UploadReleaseAssetsResultSchema,
   }),
 } as const;
 

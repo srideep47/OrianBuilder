@@ -68,7 +68,10 @@ export function useVoiceAssistant({
   }, [stopMediaStream, stopSpeech]);
 
   const startListening = useCallback(async () => {
-    if (context.state === VoiceState.PROCESSING || context.state === VoiceState.SPEAKING) {
+    if (
+      context.state === VoiceState.PROCESSING ||
+      context.state === VoiceState.SPEAKING
+    ) {
       return;
     }
 
@@ -137,47 +140,14 @@ export function useVoiceAssistant({
 
         try {
           const arrayBuffer = await blob.arrayBuffer();
-          const hasProviderKey = !!settings?.providerSettings?.auto?.apiKey?.value;
           let transcribedText = "";
-
-          if (hasProviderKey) {
-            const audioData = Array.from(new Uint8Array(arrayBuffer));
-            const result = await ipc.audio.transcribeAudio({
-              audioData,
-              filename: "recording.webm",
-              requestId: uuidv4(),
-            });
-            transcribedText = result.text.trim();
-          } else {
-            // Convert ArrayBuffer to Base64 for Gemini API
-            let binary = '';
-            const bytes = new Uint8Array(arrayBuffer);
-            for (let i = 0; i < bytes.byteLength; i++) {
-                binary += String.fromCharCode(bytes[i]);
-            }
-            const base64Audio = window.btoa(binary);
-
-            const geminiKey = "AIzaSyA7CqpUWshpfdDrBMCTRsepDk3I_dD2pXI";
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                contents: [{
-                  parts: [
-                    { text: "Please transcribe the following audio exactly as spoken. Return only the transcription, nothing else." },
-                    { inlineData: { mimeType: "audio/webm", data: base64Audio } }
-                  ]
-                }]
-              })
-            });
-
-            if (!res.ok) {
-               throw new Error(`Gemini transcription failed: ${res.statusText}`);
-            }
-
-            const data = await res.json();
-            transcribedText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-          }
+          const audioData = Array.from(new Uint8Array(arrayBuffer));
+          const result = await ipc.audio.transcribeAudio({
+            audioData,
+            filename: "recording.webm",
+            requestId: uuidv4(),
+          });
+          transcribedText = result.text.trim();
 
           if (transcribedText) {
             setContext((prev) => ({
@@ -231,7 +201,14 @@ export function useVoiceAssistant({
       }));
       onError?.(message);
     }
-  }, [enabled, context.state, onTranscription, onError, stopMediaStream, settings]);
+  }, [
+    enabled,
+    context.state,
+    onTranscription,
+    onError,
+    stopMediaStream,
+    settings,
+  ]);
 
   const stopListening = useCallback(() => {
     isStoppingRef.current = true;
@@ -263,7 +240,10 @@ export function useVoiceAssistant({
       return;
     }
 
-    if (context.state === VoiceState.PROCESSING || context.state === VoiceState.SPEAKING) {
+    if (
+      context.state === VoiceState.PROCESSING ||
+      context.state === VoiceState.SPEAKING
+    ) {
       return;
     }
 

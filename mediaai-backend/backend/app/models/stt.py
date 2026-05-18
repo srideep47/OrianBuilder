@@ -1,28 +1,39 @@
-"""Tiered Whisper speech-to-text via transformers' ASR pipeline.
+"""Tiered Whisper speech-to-text via faster-whisper (CTranslate2).
 
 Tier order (best → fallback):
-  • whisper-large-v3-turbo: 6GB, near-Large-v3 quality, ~6× faster
-  • whisper-large-v3:       8GB, highest accuracy
-  • whisper-medium:         4GB
-  • whisper-base:           2GB
-  • whisper-tiny:           CPU fallback
+  • whisper-large-v3-turbo: 6GB VRAM, near-Large-v3 quality, ~8× faster than original
+  • whisper-medium:         4GB, balanced quality/speed
+  • whisper-base:           2GB, fast on CPU
+  • whisper-tiny:           CPU fallback, ~500ms, 75MB download
 """
 
 from __future__ import annotations
 
 import gc
 import logging
+import os
+from pathlib import Path
 from typing import Optional, TypedDict
 
-from ..hardware import get_backend, get_torch_device, get_torch_dtype, get_vram_mb
+from ..hardware import get_backend, get_vram_mb
 
 log = logging.getLogger(__name__)
+
+# Make bundled ffmpeg (from imageio-ffmpeg) visible to faster-whisper's ffmpeg subprocess.
+try:
+    import imageio_ffmpeg  # type: ignore
+
+    _ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    _ffmpeg_dir = str(Path(_ffmpeg_exe).parent)
+    os.environ["PATH"] = _ffmpeg_dir + os.pathsep + os.environ.get("PATH", "")
+except Exception:
+    pass
 
 
 class SttTier(TypedDict):
     id: str
     label: str
-    repo: str
+    repo: str  # faster-whisper model name (auto-downloaded from HF)
     vram_mb: int
     download_size_mb: int
     backends: list[str]
@@ -33,39 +44,31 @@ STT_TIERS: list[SttTier] = [
     {
         "id": "whisper-large-v3-turbo",
         "label": "Whisper Large v3 Turbo",
-        "repo": "openai/whisper-large-v3-turbo",
+        "repo": "large-v3-turbo",
         "vram_mb": 6000,
         "download_size_mb": 1620,
         "backends": ["cuda", "rocm", "metal", "mps"],
     },
     {
-        "id": "whisper-large-v3",
-        "label": "Whisper Large v3",
-        "repo": "openai/whisper-large-v3",
-        "vram_mb": 8000,
-        "download_size_mb": 3100,
-        "backends": ["cuda", "rocm", "metal", "mps"],
-    },
-    {
         "id": "whisper-medium",
         "label": "Whisper Medium",
-        "repo": "openai/whisper-medium",
+        "repo": "medium",
         "vram_mb": 4000,
-        "download_size_mb": 1530,
+        "download_size_mb": 770,
         "backends": ["cuda", "rocm", "metal", "mps", "directml"],
     },
     {
         "id": "whisper-base",
         "label": "Whisper Base",
-        "repo": "openai/whisper-base",
+        "repo": "base",
         "vram_mb": 2000,
-        "download_size_mb": 290,
+        "download_size_mb": 145,
         "backends": ["cuda", "rocm", "metal", "mps", "directml", "openvino", "cpu"],
     },
     {
         "id": "whisper-tiny-cpu",
         "label": "Whisper Tiny (CPU)",
-        "repo": "openai/whisper-tiny",
+        "repo": "tiny",
         "vram_mb": 0,
         "download_size_mb": 75,
         "backends": ["cuda", "rocm", "metal", "mps", "directml", "openvino", "cpu"],
@@ -86,38 +89,39 @@ def pick_stt_tier(forced_tier_id: Optional[str] = None) -> SttTier:
     return STT_TIERS[-1]
 
 
-_pipeline = None
+_model = None
+_model_tier_id: Optional[str] = None
+# Alias expected by main.py's /v1/models/available endpoint.
 _pipeline_tier_id: Optional[str] = None
 
 
 def get_pipeline(forced_tier_id: Optional[str] = None):
-    global _pipeline, _pipeline_tier_id
+    global _model, _model_tier_id, _pipeline_tier_id
 
     tier = pick_stt_tier(forced_tier_id)
-    if _pipeline is not None and _pipeline_tier_id == tier["id"]:
-        return _pipeline
+    if _model is not None and _model_tier_id == tier["id"]:
+        return _model
 
-    if _pipeline is not None and _pipeline_tier_id != tier["id"]:
+    if _model is not None:
         unload()
 
-    from transformers import pipeline  # type: ignore
+    from faster_whisper import WhisperModel  # type: ignore
 
-    device = get_torch_device()
-    dtype = get_torch_dtype()
+    backend = get_backend()
+    device = "cuda" if backend in ("cuda", "rocm") else "cpu"
+    compute_type = "float16" if device == "cuda" else "int8"
+
     log.info(
-        "loading stt tier id=%s repo=%s device=%s",
+        "loading stt tier id=%s repo=%s device=%s compute_type=%s",
         tier["id"],
         tier["repo"],
         device,
+        compute_type,
     )
-    _pipeline = pipeline(
-        "automatic-speech-recognition",
-        model=tier["repo"],
-        torch_dtype=dtype,
-        device=device if device != "privateuseone" else "cpu",
-    )
+    _model = WhisperModel(tier["repo"], device=device, compute_type=compute_type)
+    _model_tier_id = tier["id"]
     _pipeline_tier_id = tier["id"]
-    return _pipeline
+    return _model
 
 
 def transcribe(
@@ -125,18 +129,18 @@ def transcribe(
     language: Optional[str] = None,
     forced_tier_id: Optional[str] = None,
 ) -> str:
-    pipe = get_pipeline(forced_tier_id)
+    model = get_pipeline(forced_tier_id)
     kwargs: dict = {}
     if language:
-        kwargs["generate_kwargs"] = {"language": language}
-    result = pipe(audio_path, **kwargs)
-    text = result.get("text") if isinstance(result, dict) else None
-    return text or ""
+        kwargs["language"] = language
+    segments, _info = model.transcribe(audio_path, beam_size=5, **kwargs)
+    return "".join(seg.text for seg in segments).strip()
 
 
 def unload() -> None:
-    global _pipeline, _pipeline_tier_id
-    _pipeline = None
+    global _model, _model_tier_id, _pipeline_tier_id
+    _model = None
+    _model_tier_id = None
     _pipeline_tier_id = None
     gc.collect()
     try:

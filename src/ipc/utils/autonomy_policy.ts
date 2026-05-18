@@ -30,6 +30,18 @@ const TRUSTED_WORKSPACE_ALLOWLIST_HIGH_RISK_TOOLS = new Set([
   "package_native_artifact",
 ]);
 
+// When the user has flipped the Publish toggle in the chat input, these tools
+// are the ones the auto-publish flow needs to invoke (or that the agent itself
+// would call to do an equivalent end-to-end publish). The toggle is an
+// explicit, persistent user opt-in to push to external state, so we treat it
+// as standing consent and bypass the per-call prompt for these specific tools.
+const PUBLISH_TOGGLE_AUTO_CONSENT_TOOLS = new Set([
+  "connect_github_repo",
+  "connect_vercel_project",
+  "deploy_preview",
+  "package_native_artifact",
+]);
+
 const CRITICAL_PATTERNS = [
   /\brm\s+-rf\b/i,
   /\brmdir\s+\/s\b/i,
@@ -78,6 +90,11 @@ export function getAutonomyPolicyDecision(params: {
   toolName: string;
   inputPreview?: string | null;
   mcpToolTrustOverrides?: McpToolTrustOverrideMap;
+  // When true, the user has the chat-input Publish toggle on, meaning they've
+  // pre-authorized GitHub/Vercel/native-package/deploy actions for the current
+  // session. We auto-approve those specific tools so the agent doesn't prompt
+  // for each external-state step of the publish chain.
+  autoPublishToggleOn?: boolean;
 }): AutonomyPolicyDecision {
   const risk = getToolRisk(params);
   if (risk === "critical") {
@@ -85,6 +102,18 @@ export function getAutonomyPolicyDecision(params: {
       decision: "deny",
       risk,
       reason: "Critical destructive action is blocked by autonomy policy.",
+    };
+  }
+
+  if (
+    params.autoPublishToggleOn &&
+    PUBLISH_TOGGLE_AUTO_CONSENT_TOOLS.has(params.toolName)
+  ) {
+    return {
+      decision: "auto_approve",
+      risk,
+      reason:
+        "Auto-publish toggle is on; the user pre-authorized this tool as part of the publish flow.",
     };
   }
 
