@@ -68,8 +68,11 @@ function getBinaryName(): string {
  *   and from `app.getAppPath()` to handle both Forge-dev and direct-vite runs.
  */
 function candidateRoots(): string[] {
+  // User-data dir is always checked first — holds runtime-downloaded binaries.
+  const userDataRoot = path.join(app.getPath("userData"), "llama-server");
+
   if (app.isPackaged) {
-    return [path.join(process.resourcesPath, "llama-server")];
+    return [userDataRoot, path.join(process.resourcesPath, "llama-server")];
   }
   // In dev with electron-forge + vite, __dirname is <projectRoot>/.vite/build,
   // so two levels up is the project root.
@@ -77,9 +80,10 @@ function candidateRoots(): string[] {
   const fromAppPath = app.getAppPath();
   const fromCwd = process.cwd();
   const roots = new Set<string>([fromDirname, fromAppPath, fromCwd]);
-  return Array.from(roots).map((root) =>
+  const devRoots = Array.from(roots).map((root) =>
     path.join(root, "resources", "llama-server"),
   );
+  return [userDataRoot, ...devRoots];
 }
 
 export interface LlamaServerBinaryLocation {

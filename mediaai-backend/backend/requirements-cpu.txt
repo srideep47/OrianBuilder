@@ -1,5 +1,6 @@
 -r requirements-base.txt
 onnxruntime>=1.18.0
+optimum>=1.19.0
 diffusers>=0.32.0
 transformers>=4.45.0
 torch>=2.5.0

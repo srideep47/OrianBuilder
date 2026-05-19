@@ -53,6 +53,15 @@ async def hardware_info() -> dict:
     return hardware.describe()
 
 
+@app.post("/v1/pipeline/unload")
+async def unload_pipeline() -> dict:
+    """Evict the in-memory image pipeline so it reloads (on the correct device)
+    on the next generation request. Useful when the first generation ran on CPU
+    because CUDA was not yet visible at startup."""
+    image_model.unload_pipeline()
+    return {"status": "ok", "message": "pipeline evicted"}
+
+
 # ─── Filename helpers ────────────────────────────────────────────────────────
 
 
@@ -75,6 +84,7 @@ class V1ImageRequest(BaseModel):
     width: int = 512
     height: int = 512
     tier: str | None = None
+    seed: int | None = None
 
 
 class V1ImageResponse(BaseModel):
@@ -93,6 +103,7 @@ async def v1_generate_image(req: V1ImageRequest) -> V1ImageResponse:
             req.width,
             req.height,
             req.tier,
+            req.seed,
         )
     except Exception as exc:  # noqa: BLE001 — surface generation errors verbatim
         raise HTTPException(status_code=500, detail=f"image generation failed: {exc}") from exc

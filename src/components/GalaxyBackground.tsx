@@ -1,151 +1,248 @@
 import { useEffect, useRef } from "react";
 
-interface Star {
+// ─── Palette sampled from the reference cosmic image ───────────────────────
+// RGB triplets weighted by their real frequency:
+// warm orange/ember dominate bottom-left → violet/steel top-right
+const PALETTE = [
+  { r: 200, g: 95,  b: 55,  w: 14, group: 0 },
+  { r: 220, g: 130, b: 70,  w: 12, group: 0 },
+  { r: 245, g: 175, b: 100, w:  9, group: 0 },
+  { r: 160, g: 70,  b: 50,  w: 11, group: 0 },
+  { r: 120, g: 55,  b: 50,  w:  8, group: 0 },
+  { r: 255, g: 215, b: 145, w:  4, group: 0 },
+  { r: 130, g: 72,  b: 82,  w:  4, group: 1 },
+  { r: 150, g: 85,  b: 100, w:  3, group: 1 },
+  { r: 180, g: 110, b: 130, w:  2, group: 1 },
+  { r: 110, g: 70,  b: 130, w:  4, group: 2 },
+  { r: 135, g: 85,  b: 150, w:  3, group: 2 },
+  { r: 80,  g: 60,  b: 120, w:  4, group: 2 },
+  { r: 165, g: 100, b: 175, w:  2, group: 2 },
+  { r: 60,  g: 75,  b: 125, w:  4, group: 3 },
+  { r: 80,  g: 100, b: 145, w:  3, group: 3 },
+  { r: 55,  g: 85,  b: 115, w:  2, group: 3 },
+  { r: 45,  g: 110, b: 75,  w:  1, group: 4 },
+  { r: 60,  g: 140, b: 90,  w:  1, group: 4 },
+] as const;
+
+type PaletteEntry = { r: number; g: number; b: number; w: number; group: number };
+
+const PALETTE_BY_GROUP: PaletteEntry[][] = [[], [], [], [], []];
+PALETTE.forEach((c) => {
+  for (let i = 0; i < c.w; i++) PALETTE_BY_GROUP[c.group].push(c as PaletteEntry);
+});
+
+function pickColor(x: number, y: number, w: number, h: number): PaletteEntry {
+  const xN = x / w;
+  const yN = y / h;
+  const warmth = Math.max(0, Math.min(1, (1 - xN) * 0.55 + yN * 0.45));
+  const r = Math.random();
+  const pick = (g: number) =>
+    PALETTE_BY_GROUP[g][Math.floor(Math.random() * PALETTE_BY_GROUP[g].length)];
+
+  if (warmth > 0.65) {
+    if (r < 0.86) return pick(0);
+    if (r < 0.94) return pick(1);
+    if (r < 0.98) return pick(2);
+    return pick(4);
+  }
+  if (warmth > 0.42) {
+    if (r < 0.55) return pick(0);
+    if (r < 0.75) return pick(1);
+    if (r < 0.93) return pick(2);
+    return pick(3);
+  }
+  if (r < 0.40) return pick(2);
+  if (r < 0.78) return pick(3);
+  if (r < 0.92) return pick(0);
+  if (r < 0.98) return pick(1);
+  return pick(4);
+}
+
+function brighten(c: PaletteEntry, k = 0.45) {
+  return {
+    r: Math.min(255, c.r + (255 - c.r) * k),
+    g: Math.min(255, c.g + (255 - c.g) * k),
+    b: Math.min(255, c.b + (255 - c.b) * k),
+  };
+}
+
+// FLW (Flow) parameters — locked
+const FLOW = { speed: 1.0, length: 1.3, width: 0.9 };
+// Diagonal angle: ~240° base (down-right) + 13° fixed bend
+const BASE_ANGLE = ((240 + 13) * Math.PI) / 180;
+
+interface Ray {
   x: number;
   y: number;
-  r: number;
-  s: number;
-  a: number;
-  p: number;
-  pf: number;
+  len: number;
+  thick: number;
+  color: PaletteEntry;
+  sp: number;
+  ao: number;
+  tw: number;
+  twSp: number;
+  br: number;
+  hot: boolean;
 }
+
+function makeRay(W: number, H: number): Ray {
+  const x = Math.random() * W * 1.4 - W * 0.2;
+  const y = Math.random() * H * 1.4 - H * 0.2;
+  const rnd = Math.random();
+  const lenBase = rnd < 0.7 ? 30 + Math.random() * 90 : 140 + Math.random() * 280;
+  return {
+    x,
+    y,
+    len: lenBase * FLOW.length,
+    thick:
+      (Math.random() < 0.85 ? 0.6 + Math.random() * 0.9 : 1.6 + Math.random() * 1.6) *
+      FLOW.width,
+    color: pickColor(x, y, W, H),
+    sp: 0.4 + Math.random() * 1.4,
+    ao: (Math.random() - 0.5) * 0.05,
+    tw: Math.random() * Math.PI * 2,
+    twSp: 0.5 + Math.random() * 1.5,
+    br: 0.45 + Math.random() * 0.55,
+    hot: Math.random() < 0.18,
+  };
+}
+
+function targetCount(W: number, H: number) {
+  return Math.max(700, Math.min(2800, Math.round((W * H) / 900)));
+}
+
+const dirX = Math.cos(BASE_ANGLE);
+const dirY = Math.sin(BASE_ANGLE);
 
 export function GalaxyBackground() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const shoot1Ref = useRef<HTMLDivElement>(null);
-  const shoot2Ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const c = canvasRef.current;
-    if (!c) return;
-    const ctx = c.getContext("2d");
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    let w = 0,
-      h = 0,
-      t = 0,
-      raf = 0;
-    let stars: Star[] = [];
-    const dpr = () => window.devicePixelRatio || 1;
+    let W = 0;
+    let H = 0;
+    let DPR = 1;
+    let rays: Ray[] = [];
+    let raf = 0;
+    let last = performance.now();
 
-    function build() {
-      stars = [];
-      const layers = [
-        { n: 120, s: 0.3, r: 0.4, a: 0.4 },
-        { n: 80, s: 0.6, r: 0.8, a: 0.7 },
-        { n: 40, s: 1.0, r: 1.4, a: 1.0 },
-      ];
-      layers.forEach((L) => {
-        for (let i = 0; i < L.n; i++) {
-          stars.push({
-            x: Math.random() * w,
-            y: Math.random() * h,
-            r: L.r * (0.5 + Math.random() * 0.8),
-            s: L.s * (0.05 + Math.random() * 0.08),
-            a: L.a,
-            p: Math.random() * Math.PI * 2,
-            pf: 0.4 + Math.random() * 1.6,
-          });
+    const resize = () => {
+      DPR = Math.min(window.devicePixelRatio || 1, 2);
+      W = window.innerWidth;
+      H = window.innerHeight;
+      canvas.width = Math.floor(W * DPR);
+      canvas.height = Math.floor(H * DPR);
+      canvas.style.width = `${W}px`;
+      canvas.style.height = `${H}px`;
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      rays = Array.from({ length: targetCount(W, H) }, () => makeRay(W, H));
+    };
+
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const speedScale = reduce ? 0.12 : 1;
+
+    const loop = (now: number) => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+
+      // Low-alpha clear → motion-blur trails
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = "rgba(4, 3, 10, 0.22)";
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.globalCompositeOperation = "lighter";
+      ctx.lineCap = "round";
+
+      for (const ray of rays) {
+        const ang = BASE_ANGLE + ray.ao;
+        const speed = 60 * ray.sp * FLOW.speed * speedScale;
+        ray.x += Math.cos(ang) * speed * dt;
+        ray.y += Math.sin(ang) * speed * dt;
+
+        const margin = 220;
+        if (
+          ray.x > W + margin ||
+          ray.y > H + margin ||
+          ray.x < -margin ||
+          ray.y < -margin
+        ) {
+          const t = Math.random();
+          ray.x = -margin + (W + margin * 2) * t - dirX * 240;
+          ray.y = -margin + (H + margin * 2) * t - dirY * 240;
+          ray.color = pickColor(ray.x, ray.y, W, H);
         }
-      });
-    }
 
-    function resize() {
-      const d = dpr();
-      w = c!.width = window.innerWidth * d;
-      h = c!.height = window.innerHeight * d;
-      c!.style.width = `${window.innerWidth}px`;
-      c!.style.height = `${window.innerHeight}px`;
-      build();
-    }
+        ray.tw += dt * ray.twSp;
+        const tw = 0.55 + 0.45 * Math.sin(ray.tw);
 
-    function loop() {
-      t += 0.012;
-      const d = dpr();
-      ctx!.clearRect(0, 0, w, h);
-      stars.forEach((st) => {
-        st.x -= st.s * d;
-        if (st.x < -4) st.x = w + 4;
-        const tw = 0.5 + Math.sin(t * st.pf + st.p) * 0.5;
-        ctx!.globalAlpha = st.a * (0.4 + tw * 0.6);
-        ctx!.fillStyle = "#fff";
-        ctx!.beginPath();
-        ctx!.arc(st.x, st.y, st.r * d, 0, Math.PI * 2);
-        ctx!.fill();
-        if (st.r > 1.1) {
-          ctx!.globalAlpha = st.a * tw * 0.3;
-          ctx!.beginPath();
-          ctx!.arc(st.x, st.y, st.r * 3 * d, 0, Math.PI * 2);
-          ctx!.fill();
+        const len = ray.len * (0.7 + 0.3 * ray.sp);
+        const ex = ray.x + Math.cos(ang) * len;
+        const ey = ray.y + Math.sin(ang) * len;
+
+        const col = ray.color;
+        const core = brighten(col, 0.45);
+        const alpha = ray.br * tw * 0.9;
+
+        const grad = ctx.createLinearGradient(ray.x, ray.y, ex, ey);
+        grad.addColorStop(0.0,  `rgba(${col.r|0},${col.g|0},${col.b|0},0)`);
+        grad.addColorStop(0.3,  `rgba(${col.r|0},${col.g|0},${col.b|0},${alpha * 0.5})`);
+        grad.addColorStop(0.6,  `rgba(${core.r|0},${core.g|0},${core.b|0},${alpha})`);
+        grad.addColorStop(0.85, `rgba(${col.r|0},${col.g|0},${col.b|0},${alpha * 0.6})`);
+        grad.addColorStop(1.0,  `rgba(${col.r|0},${col.g|0},${col.b|0},0)`);
+
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = ray.thick;
+        ctx.beginPath();
+        ctx.moveTo(ray.x, ray.y);
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
+
+        // Hot-head sparkle on brightest rays
+        if (ray.hot && tw > 0.82) {
+          const hx = ray.x + Math.cos(ang) * len * 0.65;
+          const hy = ray.y + Math.sin(ang) * len * 0.65;
+          const hot = brighten(col, 0.7);
+          const radius = 5 * ray.thick;
+          const rg = ctx.createRadialGradient(hx, hy, 0, hx, hy, radius);
+          rg.addColorStop(0,   `rgba(${hot.r|0},${hot.g|0},${hot.b|0},${0.85 * tw})`);
+          rg.addColorStop(0.4, `rgba(${core.r|0},${core.g|0},${core.b|0},${0.45 * tw})`);
+          rg.addColorStop(1,   `rgba(${col.r|0},${col.g|0},${col.b|0},0)`);
+          ctx.fillStyle = rg;
+          ctx.beginPath();
+          ctx.arc(hx, hy, radius, 0, Math.PI * 2);
+          ctx.fill();
         }
-      });
+      }
+
       raf = requestAnimationFrame(loop);
-    }
+    };
 
     window.addEventListener("resize", resize);
     resize();
-    loop();
+    raf = requestAnimationFrame(loop);
+
     return () => {
       window.removeEventListener("resize", resize);
       cancelAnimationFrame(raf);
     };
   }, []);
 
-  useEffect(() => {
-    function fireShooter(el: HTMLDivElement | null) {
-      if (!el) return;
-      const top = Math.random() * 60 + "vh";
-      const left = Math.random() * 40 + "vw";
-      const ang = 20 + Math.random() * 15;
-      el.style.cssText =
-        `position:absolute;top:${top};left:${left};` +
-        `transform:rotate(${ang}deg);width:140px;height:1px;` +
-        `background:linear-gradient(90deg,transparent,#fff,transparent);opacity:0;` +
-        `filter:drop-shadow(0 0 4px #c5b3ff);transform-origin:left center`;
-      el.animate(
-        [
-          { opacity: 0, transform: `rotate(${ang}deg) translateX(0)` },
-          { opacity: 1, offset: 0.2 },
-          { opacity: 1, offset: 0.8 },
-          { opacity: 0, transform: `rotate(${ang}deg) translateX(700px)` },
-        ],
-        { duration: 1100, easing: "cubic-bezier(.2,.6,.4,1)" },
-      );
-    }
-
-    const t1 = (() => {
-      let id: ReturnType<typeof setTimeout>;
-      function loop() {
-        fireShooter(shoot1Ref.current);
-        id = setTimeout(loop, 3000 + Math.random() * 7000);
-      }
-      id = setTimeout(loop, 2000);
-      return () => clearTimeout(id);
-    })();
-
-    const t2 = (() => {
-      let id: ReturnType<typeof setTimeout>;
-      function loop() {
-        fireShooter(shoot2Ref.current);
-        id = setTimeout(loop, 3000 + Math.random() * 7000);
-      }
-      id = setTimeout(loop, 4500);
-      return () => clearTimeout(id);
-    })();
-
-    return () => {
-      t1();
-      t2();
-    };
-  }, []);
-
   return (
     <div className="cosmos" aria-hidden="true">
-      <canvas ref={canvasRef} className="starfield" />
-      <div className="nebula" />
-      <div className="grid-overlay" />
-      <div ref={shoot1Ref} className="design-shooter" />
-      <div ref={shoot2Ref} className="design-shooter" />
+      {/* Deep-space warm amber → navy wash */}
+      <div className="orion-stage" />
+      {/* Drifting starfield */}
+      <div className="orion-stars" />
+      {/* Canvas: cosmic rays (mix-blend-mode: screen) */}
+      <canvas ref={canvasRef} className="orion-streaks starfield" />
+      {/* Filmic grain */}
+      <div className="orion-grain" />
+      {/* Vignette */}
+      <div className="orion-vignette" />
     </div>
   );
 }

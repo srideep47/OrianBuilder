@@ -1,7 +1,18 @@
 import { z } from "zod";
 import { createClient, defineContract } from "../contracts/core";
 
-export const MediaAiModelIdSchema = z.enum(["text", "image", "audio", "video"]);
+// Coarse model groups + specific image tier IDs that the user can download
+// individually from the Media AI page dropdown. Adding a new tier here means
+// also updating MODEL_LABELS (utils/media_ai_backend.ts) and the
+// IMAGE_TIER_REPOS table (scripts/download_models.py).
+export const MediaAiModelIdSchema = z.enum([
+  "text",
+  "image",
+  "audio",
+  "video",
+  "image-sd-turbo",
+  "image-z-image-turbo",
+]);
 
 export const MediaAiModelStatusSchema = z.object({
   id: MediaAiModelIdSchema,
@@ -96,6 +107,11 @@ export const mediaAiContracts = {
     channel: "media-ai:stop-backend",
     input: z.void(),
     output: MediaAiStatusSchema,
+  }),
+  cancelDownload: defineContract({
+    channel: "media-ai:cancel-download",
+    input: z.void(),
+    output: z.object({ cancelled: z.boolean() }),
   }),
   fetchCloudImage: defineContract({
     channel: "media-ai:fetch-cloud-image",

@@ -1,12 +1,14 @@
 -r requirements-base.txt
---extra-index-url https://download.pytorch.org/whl/cu128
-torch>=2.3.0
-torchvision>=0.18.0
+--index-url https://download.pytorch.org/whl/cu128
+--extra-index-url https://pypi.org/simple
+torch>=2.3.0+cu128
+torchvision>=0.18.0+cu128
 # diffusers 0.32+ ships LTXPipeline, CogVideoXPipeline, WanPipeline, FluxPipeline,
 # AnimateDiffPipeline and the model-CPU-offload helpers used by tts/video loaders.
 diffusers>=0.32.0
 transformers>=4.45.0
 accelerate>=0.30.0
+optimum>=1.19.0
 xformers>=0.0.26
 sentencepiece>=0.2.0
 # Image: Z Image Turbo / FLUX use bfloat16 + custom schedulers shipped with diffusers.

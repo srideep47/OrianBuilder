@@ -68,19 +68,7 @@ VIDEO_TIERS: list[VideoTier] = [
         "default_steps": 30,
     },
     {
-        "id": "cogvideox-2b",
-        "label": "CogVideoX 2B",
-        "repo": "THUDM/CogVideoX-2b",
-        "vram_mb": 6000,
-        "download_size_mb": 11000,
-        "backends": ["cuda", "rocm", "metal", "mps"],
-        "default_frames": 49,
-        "default_fps": 8,
-        "default_width": 720,
-        "default_height": 480,
-        "default_steps": 50,
-    },
-    {
+        # 4 GB VRAM — fits cleanly on RTX 3060 6GB, runs fully on GPU.
         "id": "animatediff-sd15",
         "label": "AnimateDiff + SD 1.5",
         "repo": "guoyww/animatediff-motion-adapter-v1-5-3",
@@ -92,6 +80,19 @@ VIDEO_TIERS: list[VideoTier] = [
         "default_width": 512,
         "default_height": 512,
         "default_steps": 25,
+    },
+    {
+        "id": "cogvideox-2b",
+        "label": "CogVideoX 2B",
+        "repo": "THUDM/CogVideoX-2b",
+        "vram_mb": 7000,
+        "download_size_mb": 11000,
+        "backends": ["cuda", "rocm", "metal", "mps"],
+        "default_frames": 49,
+        "default_fps": 8,
+        "default_width": 720,
+        "default_height": 480,
+        "default_steps": 50,
     },
     {
         "id": "text-to-video-cpu",
@@ -187,8 +188,10 @@ def get_pipeline(forced_tier_id: Optional[str] = None):
         )
 
         adapter = MotionAdapter.from_pretrained(tier["repo"], torch_dtype=dtype)
+        # stable-diffusion-v1-5/stable-diffusion-v1-5 is a public mirror of
+        # runwayml/stable-diffusion-v1-5 that doesn't require HF login.
         pipe = AnimateDiffPipeline.from_pretrained(
-            "runwayml/stable-diffusion-v1-5",
+            "stable-diffusion-v1-5/stable-diffusion-v1-5",
             motion_adapter=adapter,
             torch_dtype=dtype,
             safety_checker=None,

@@ -11,6 +11,7 @@ export function SidebarPanel() {
 
   return (
     <div
+      data-panel="sidebar-panel"
       className={cn(
         "flex-shrink-0 h-screenish mt-11 mb-2 sm:mb-4 overflow-hidden",
         "transition-[width] duration-200 ease-linear",

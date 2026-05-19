@@ -24,6 +24,8 @@ const MODEL_LABELS: Record<MediaAiModelId, string> = {
   image: "Stable Diffusion image model",
   audio: "SpeechT5 audio models",
   video: "Text-to-video model",
+  "image-sd-turbo": "SD Turbo (image)",
+  "image-z-image-turbo": "Z Image Turbo (image)",
 };
 
 let pythonServer: ChildProcess | null = null;
@@ -78,6 +80,9 @@ function getBackendEnvironment(): NodeJS.ProcessEnv {
     ),
     ORIANBUILDER_GPU_VENDOR:
       cachedHardwareProfile?.primaryGpu?.vendor ?? "unknown",
+    // Full-bandwidth HuggingFace downloads via both Xet and hf_transfer.
+    HF_XET_HIGH_PERFORMANCE: "1",
+    HF_HUB_ENABLE_HF_TRANSFER: "1",
   };
 }
 
@@ -157,18 +162,75 @@ async function isBackendHealthy() {
 export const MEDIA_AI_SERVER_URL = SERVER_URL;
 export const isMediaAiBackendHealthy = isBackendHealthy;
 
+// HuggingFace Hub stores repos under <HF_HOME>/hub/models--<org>--<model>/.
+// "stabilityai/sd-turbo" → "models--stabilityai--sd-turbo"
+function hfHubRepoDir(repoId: string): string {
+  return `models--${repoId.replace("/", "--")}`;
+}
+
+// Map of per-tier download IDs to their HuggingFace repo IDs. Used to probe
+// the HF hub cache when the script-based marker file is absent (e.g. the
+// model was auto-downloaded by diffusers on first generation run).
+const TIER_HF_REPOS: Partial<Record<MediaAiModelId, string>> = {
+  "image-sd-turbo": "stabilityai/sd-turbo",
+  "image-z-image-turbo": "Tongyi-MAI/Z-Image-Turbo",
+};
+
+function isTierInHfCache(id: MediaAiModelId, hfCachePath: string): boolean {
+  const repo = TIER_HF_REPOS[id];
+  if (!repo) return false;
+
+  const hubDir = path.join(hfCachePath, "hub", hfHubRepoDir(repo));
+  if (fs.existsSync(hubDir)) {
+    // The hub dir exists; verify it has at least a snapshots sub-directory
+    // so we don't count an empty/partial directory as downloaded.
+    const snapshotsDir = path.join(hubDir, "snapshots");
+    if (fs.existsSync(snapshotsDir)) {
+      const snaps = fs.readdirSync(snapshotsDir);
+      if (snaps.length > 0) return true;
+    }
+  }
+
+  // Also check the local_dir path used by download_models.py's snapshot_download.
+  const localDir = path.join(
+    hfCachePath,
+    "snapshots",
+    repo.replace("/", "__"),
+  );
+  return fs.existsSync(localDir);
+}
+
+export function writeModelMarker(id: MediaAiModelId, modelsPath: string): void {
+  const markerDir = path.join(modelsPath, ".model-markers");
+  fs.mkdirSync(markerDir, { recursive: true });
+  const markerPath = path.join(markerDir, `${id}.json`);
+  if (!fs.existsSync(markerPath)) {
+    fs.writeFileSync(
+      markerPath,
+      JSON.stringify({ modelGroup: id, downloadedAt: new Date().toISOString(), paths: [] }),
+    );
+  }
+}
+
 export async function getMediaAiBackendStatus(): Promise<MediaAiStatus> {
   const backendPath = resolveMediaAiBackendPath();
   const requirementsPath = path.join(backendPath, "requirements.txt");
-  const { modelsPath, outputsPath } = getMediaAiDataPaths();
+  const { modelsPath, outputsPath, hfCachePath } = getMediaAiDataPaths();
   const markerDir = path.join(modelsPath, ".model-markers");
 
   const models = (Object.keys(MODEL_LABELS) as MediaAiModelId[]).map((id) => {
     const markerPath = path.join(markerDir, `${id}.json`);
+    const hasMarker = fs.existsSync(markerPath);
+    // Also accept models that diffusers downloaded automatically during a
+    // previous generation — they live in the HF hub cache even without a
+    // script-written marker file. Write the marker lazily so future checks
+    // are fast (file-stat only, no directory scan).
+    const inHfCache = !hasMarker && isTierInHfCache(id, hfCachePath);
+    if (inHfCache) writeModelMarker(id, modelsPath);
     return {
       id,
       label: MODEL_LABELS[id],
-      downloaded: fs.existsSync(markerPath),
+      downloaded: hasMarker || inHfCache,
       markerPath,
     };
   });
@@ -240,12 +302,90 @@ export async function installMediaAiDependenciesForBackend(
     ["-m", "pip", "install", "--upgrade", "pip"],
     { cwd: backendPath, timeoutMs: 10 * 60 * 1000 },
   );
-  const requirementsInstall = await runCommand(
-    pythonPath,
-    ["-m", "pip", "install", "-r", requirementsFile],
-    { cwd: backendPath, timeoutMs: 90 * 60 * 1000 },
-  );
-  return trimOutput(`${pipUpgrade}\n${requirementsInstall}`);
+
+  // Step 1: base packages (uvicorn, fastapi) — always first so server can start.
+  const baseRequirementsFile = path.join(backendPath, "requirements-base.txt");
+  let baseInstall = "";
+  if (
+    fs.existsSync(baseRequirementsFile) &&
+    baseRequirementsFile !== requirementsFile
+  ) {
+    baseInstall = await runCommand(
+      pythonPath,
+      ["-m", "pip", "install", "-r", baseRequirementsFile],
+      { cwd: backendPath, timeoutMs: 15 * 60 * 1000 },
+    );
+  }
+
+  // Step 2: core ML packages individually — ensures diffusers/onnxruntime/optimum
+  // are present even if the full backend requirements abort on a problem package
+  // (xformers often fails on Windows Python 3.12+).
+  // optimum is required by the image service (ORTStableDiffusionPipeline) on ALL backends.
+  const corePackages =
+    effectiveBackend === "directml"
+      ? [
+          "hf_transfer>=0.1.4",
+          "diffusers>=0.32.0",
+          "transformers>=4.45.0",
+          "accelerate>=0.30.0",
+          "onnxruntime-directml>=1.18.0",
+          "optimum>=1.19.0",
+          "sentencepiece>=0.2.0",
+          "imageio>=2.34.0",
+          "imageio-ffmpeg>=0.5.0",
+          "stable-diffusion-cpp-python>=0.1.0",
+        ]
+      : [
+          "hf_transfer>=0.1.4",
+          "diffusers>=0.32.0",
+          "transformers>=4.45.0",
+          "accelerate>=0.30.0",
+          "onnxruntime>=1.18.0",
+          "optimum>=1.19.0",
+          "sentencepiece>=0.2.0",
+          "imageio>=2.34.0",
+          "imageio-ffmpeg>=0.5.0",
+          "stable-diffusion-cpp-python>=0.1.0",
+        ];
+
+  // For CUDA backend, install torch with GPU support explicitly before other
+  // packages so CPU-only torch from PyPI is never picked up by accident.
+  if (effectiveBackend === "cuda") {
+    await runCommand(
+      pythonPath,
+      [
+        "-m", "pip", "install",
+        "torch>=2.3.0", "torchvision>=0.18.0",
+        "--index-url", "https://download.pytorch.org/whl/cu128",
+      ],
+      { cwd: backendPath, timeoutMs: 30 * 60 * 1000 },
+    );
+  }
+
+  let coreInstall = "";
+  if (corePackages.length > 0) {
+    coreInstall = await runCommand(
+      pythonPath,
+      ["-m", "pip", "install", ...corePackages],
+      { cwd: backendPath, timeoutMs: 30 * 60 * 1000 },
+    );
+  }
+
+  // Step 3: full backend requirements (torch, xformers, TTS etc.) — may fail
+  // on some packages but core image/audio gen already works from steps 1-2.
+  let requirementsInstall = "";
+  try {
+    requirementsInstall = await runCommand(
+      pythonPath,
+      ["-m", "pip", "install", "-r", requirementsFile],
+      { cwd: backendPath, timeoutMs: 90 * 60 * 1000 },
+    );
+  } catch (err) {
+    requirementsInstall = `Warning: some packages failed to install: ${err instanceof Error ? err.message : String(err)}`;
+    logger.warn("Some backend requirements failed to install:", err);
+  }
+
+  return trimOutput(`${pipUpgrade}\n${baseInstall}\n${coreInstall}\n${requirementsInstall}`);
 }
 
 export async function installMediaAiDependencies() {
@@ -269,26 +409,160 @@ export async function installMediaAiDependencies() {
     ["-m", "pip", "install", "--upgrade", "pip"],
     { cwd: backendPath, timeoutMs: 10 * 60 * 1000 },
   );
-  const requirementsInstall = await runCommand(
+
+  // Step 1: base packages so server can start regardless of what follows.
+  const baseRequirementsFile = path.join(backendPath, "requirements-base.txt");
+  let baseInstall = "";
+  if (fs.existsSync(baseRequirementsFile)) {
+    baseInstall = await runCommand(
+      pythonPath,
+      ["-m", "pip", "install", "-r", baseRequirementsFile],
+      { cwd: backendPath, timeoutMs: 15 * 60 * 1000 },
+    );
+  }
+
+  // Step 2: core ML packages so image generation works even if the full
+  // requirements install aborts on a problem package like xformers.
+  // optimum is always required by the image service (ORTStableDiffusionPipeline).
+  const coreInstall = await runCommand(
     pythonPath,
-    ["-m", "pip", "install", "-r", path.join(backendPath, "requirements.txt")],
-    { cwd: backendPath, timeoutMs: 90 * 60 * 1000 },
+    [
+      "-m", "pip", "install",
+      "diffusers>=0.32.0",
+      "transformers>=4.45.0",
+      "accelerate>=0.30.0",
+      "onnxruntime>=1.18.0",
+      "optimum>=1.19.0",
+      "sentencepiece>=0.2.0",
+      "imageio>=2.34.0",
+      "imageio-ffmpeg>=0.5.0",
+      "stable-diffusion-cpp-python>=0.1.0",
+    ],
+    { cwd: backendPath, timeoutMs: 30 * 60 * 1000 },
   );
 
-  return trimOutput(`${pipUpgrade}\n${requirementsInstall}`);
+  // Step 3: full requirements — allowed to partially fail.
+  let requirementsInstall = "";
+  try {
+    requirementsInstall = await runCommand(
+      pythonPath,
+      ["-m", "pip", "install", "-r", path.join(backendPath, "requirements.txt")],
+      { cwd: backendPath, timeoutMs: 90 * 60 * 1000 },
+    );
+  } catch (err) {
+    requirementsInstall = `Warning: some packages failed to install: ${err instanceof Error ? err.message : String(err)}`;
+    logger.warn("Some legacy requirements failed to install:", err);
+  }
+
+  return trimOutput(`${pipUpgrade}\n${baseInstall}\n${coreInstall}\n${requirementsInstall}`);
 }
 
-export async function downloadMediaAiModels(models: MediaAiModelId[]) {
+let activeDownloadProcess: ChildProcess | null = null;
+
+export function cancelMediaAiDownload(): void {
+  if (activeDownloadProcess) {
+    activeDownloadProcess.kill("SIGTERM");
+    activeDownloadProcess = null;
+    logger.info("Active media-AI download cancelled");
+  }
+}
+
+export function isMediaAiDownloadActive(): boolean {
+  return activeDownloadProcess !== null;
+}
+
+export async function downloadMediaAiModels(models: MediaAiModelId[]): Promise<string> {
   const backendPath = resolveMediaAiBackendPath();
   const scriptPath = path.join(backendPath, "scripts", "download_models.py");
-  const output = await runCommand(getPythonCommand(), [scriptPath, ...models], {
-    cwd: backendPath,
-    timeoutMs: 120 * 60 * 1000,
+  const env = getBackendEnvironment();
+
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn(getPythonCommand(), [scriptPath, ...models], {
+      cwd: backendPath,
+      env,
+      shell: false,
+      windowsHide: true,
+    });
+    activeDownloadProcess = child;
+    appendLog(`Starting download: ${models.join(", ")}\n`);
+
+    let output = "";
+    child.stdout?.on("data", (chunk: Buffer) => {
+      const text = chunk.toString();
+      output += text;
+      appendLog(text);
+    });
+    child.stderr?.on("data", (chunk: Buffer) => {
+      const text = chunk.toString();
+      output += text;
+      appendLog(text);
+    });
+    child.on("close", (code) => {
+      activeDownloadProcess = null;
+      if (code === 0 || code === null) {
+        resolve(trimOutput(output));
+      } else {
+        reject(new Error(`Download exited with code ${code}:\n${trimOutput(output)}`));
+      }
+    });
+    child.on("error", (err) => {
+      activeDownloadProcess = null;
+      reject(err);
+    });
   });
-  return output;
 }
 
-export function startMediaAiBackend() {
+async function ensureBaseRequirements(): Promise<void> {
+  const backendPath = resolveMediaAiBackendPath();
+  const pythonPath = getPythonCommand();
+
+  try {
+    await runCommand(pythonPath, ["-c", "import uvicorn"], {
+      cwd: backendPath,
+      timeoutMs: 10_000,
+    });
+  } catch {
+    logger.warn("uvicorn not found in venv — installing base requirements...");
+    const baseRequirementsFile = path.join(backendPath, "requirements-base.txt");
+    if (fs.existsSync(baseRequirementsFile)) {
+      await runCommand(
+        pythonPath,
+        ["-m", "pip", "install", "-r", baseRequirementsFile],
+        { cwd: backendPath, timeoutMs: 15 * 60 * 1000 },
+      );
+    }
+  }
+
+
+  // For CUDA backend: verify torch has CUDA support. Auto-reinstall GPU torch
+  // if CPU-only build is installed (common when pip picks the wrong wheel).
+  const effectiveBackend = cachedHardwareProfile?.bestMediaBackend ?? "cpu";
+  if (effectiveBackend === "cuda") {
+    try {
+      await runCommand(
+        pythonPath,
+        ["-c", "import torch; assert torch.cuda.is_available(), 'no cuda'"],
+        { cwd: backendPath, timeoutMs: 15_000 },
+      );
+    } catch {
+      logger.warn("torch CUDA unavailable — reinstalling GPU torch (cu128)...");
+      await runCommand(
+        pythonPath,
+        [
+          "-m", "pip", "install",
+          "torch>=2.3.0+cu128", "torchvision>=0.18.0+cu128",
+          "--index-url", "https://download.pytorch.org/whl/cu128",
+          "--extra-index-url", "https://pypi.org/simple",
+          "--force-reinstall",
+          "--no-cache-dir",
+        ],
+        { cwd: backendPath, timeoutMs: 30 * 60 * 1000 },
+      );
+    }
+  }
+}
+
+export async function startMediaAiBackend() {
   const backendPath = resolveMediaAiBackendPath();
   if (pythonServer) {
     return;
@@ -304,6 +578,8 @@ export function startMediaAiBackend() {
   fs.mkdirSync(modelsPath, { recursive: true });
   fs.mkdirSync(outputsPath, { recursive: true });
   fs.mkdirSync(hfCachePath, { recursive: true });
+
+  await ensureBaseRequirements();
 
   pythonServer = spawn(
     getPythonCommand(),

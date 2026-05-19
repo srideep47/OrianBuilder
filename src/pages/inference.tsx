@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ipc } from "@/ipc/types";
 import { HardwareCard } from "@/components/HardwareCard";
+import { LlamaBinaryDownloader } from "@/components/LlamaBinaryDownloader";
 import type {
   GpuInfo,
   GpuStats,
@@ -406,10 +407,13 @@ function InferenceMonitor({
   stats: InferenceStats | null;
   logs: InferenceLogEntry[];
 }) {
-  const logsEndRef = useRef<HTMLDivElement>(null);
+  const logsContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = logsContainerRef.current;
+    if (!el) return;
+    // Scroll only the log container itself — never the page scroll parent
+    el.scrollTop = el.scrollHeight;
   }, [logs]);
 
   const state = stats?.state ?? "idle";
@@ -517,6 +521,7 @@ function InferenceMonitor({
           </span>
         </div>
         <div
+          ref={logsContainerRef}
           className="overflow-y-auto p-2 space-y-0.5 font-mono text-[10px]"
           style={{ maxHeight: 240 }}
         >
@@ -549,7 +554,6 @@ function InferenceMonitor({
               </div>
             ))
           )}
-          <div ref={logsEndRef} />
         </div>
       </div>
     </div>
@@ -580,6 +584,7 @@ const DEFAULT_CONFIG: EmbeddedModelConfig = {
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 export default function InferencePage() {
+  const [binaryExists, setBinaryExists] = useState<boolean | null>(null);
   const [gpuInfo, setGpuInfo] = useState<GpuInfo | null>(null);
   const [gpuStats, setGpuStats] = useState<GpuStats | null>(null);
   const [status, setStatus] = useState<EmbeddedServerStatus | null>(null);
@@ -640,6 +645,11 @@ export default function InferencePage() {
     } catch {
       /* ignore */
     }
+  }, []);
+
+  // Check whether the llama-server binary is present
+  useEffect(() => {
+    ipc.llamaBinary.check().then((r) => setBinaryExists(r.exists)).catch(() => setBinaryExists(false));
   }, []);
 
   // Initial data load
@@ -969,7 +979,13 @@ export default function InferencePage() {
   };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-transparent">
+    <div className="flex flex-col h-full overflow-hidden bg-transparent relative">
+      {/* Binary not installed — show downloader overlay */}
+      {binaryExists === false && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <LlamaBinaryDownloader />
+        </div>
+      )}
       <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-xl border-b border-border/50 px-6 py-4 flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2 page-title">
@@ -1383,13 +1399,22 @@ export default function InferencePage() {
                 )}
 
                 <div className="flex gap-2 pt-1">
+                  {/* When `isLoading`, we don't pass `disabled` here: the
+                      Button variant's `disabled:opacity-50` makes the cream
+                      background + dark text fade to the same mid-grey in
+                      galaxy mode, hiding the spinner. `pointer-events-none`
+                      blocks clicks while keeping full contrast. */}
                   <Button
                     onClick={handleLoad}
                     disabled={
-                      isLoading ||
+                      !isLoading &&
                       (usingTensorRt ? !tensorRtEngineDir : !config.modelPath)
                     }
-                    className="flex-1"
+                    aria-busy={isLoading}
+                    className={cn(
+                      "flex-1",
+                      isLoading && "pointer-events-none cursor-wait",
+                    )}
                   >
                     {isLoading ? (
                       <>

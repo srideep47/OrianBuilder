@@ -49,6 +49,13 @@ MODEL_GROUPS = {
             ),
         },
     ],
+    # Tier-specific image entries, exposed in the Media AI page dropdown.
+    "image-sd-turbo": [
+        {"kind": "snapshot", "repo_id": "stabilityai/sd-turbo"},
+    ],
+    "image-z-image-turbo": [
+        {"kind": "snapshot", "repo_id": "Tongyi-MAI/Z-Image-Turbo"},
+    ],
 }
 
 
