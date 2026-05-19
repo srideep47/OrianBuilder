@@ -1,5 +1,8 @@
 # Set the default behavior, in case people don't have core.autocrlf set.
-* text=auto
+# eol=lf ensures all text files are stored AND checked out with LF endings on
+# every platform. Without this, Windows checkouts get CRLF and oxfmt --check
+# fails on the macOS CI runner (which expects LF), breaking presubmit.
+* text=auto eol=lf
 
 # Make everything in the e2e-tests/snapshots directory use LF line endings.
 # Otherwise we'll get diffs in the snapshots when running on Windows.
