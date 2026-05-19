@@ -26,6 +26,7 @@ const MODEL_LABELS: Record<MediaAiModelId, string> = {
   video: "Text-to-video model",
   "image-sd-turbo": "SD Turbo (image)",
   "image-z-image-turbo": "Z Image Turbo (image)",
+  whisper: "Whisper Base (transcription)",
 };
 
 let pythonServer: ChildProcess | null = null;
@@ -142,6 +143,38 @@ function runCommand(
   });
 }
 
+// Verify system Python is available and is 3.10+
+async function checkSystemPython(cwd: string): Promise<void> {
+  for (const cmd of ["python", "python3"]) {
+    try {
+      const out = await runCommand(cmd, ["--version"], {
+        cwd,
+        timeoutMs: 8000,
+      });
+      const m = out.match(/Python\s+(\d+)\.(\d+)/i);
+      if (m) {
+        const major = parseInt(m[1], 10);
+        const minor = parseInt(m[2], 10);
+        if (major < 3 || (major === 3 && minor < 10)) {
+          throw new Error(
+            `Python ${major}.${minor} found but 3.10+ is required. ` +
+              `Download from https://www.python.org/downloads/`,
+          );
+        }
+        return; // found and valid
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("3.10+")) throw err;
+      // ENOENT or non-zero exit — try next command
+    }
+  }
+  throw new Error(
+    "Python 3.10+ not found in PATH. " +
+      "Install it from https://www.python.org/downloads/ " +
+      "and make sure to check 'Add Python to PATH' during installation.",
+  );
+}
+
 async function isBackendHealthy() {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 1500);
@@ -174,6 +207,7 @@ function hfHubRepoDir(repoId: string): string {
 const TIER_HF_REPOS: Partial<Record<MediaAiModelId, string>> = {
   "image-sd-turbo": "stabilityai/sd-turbo",
   "image-z-image-turbo": "Tongyi-MAI/Z-Image-Turbo",
+  whisper: "Systran/faster-whisper-base",
 };
 
 function isTierInHfCache(id: MediaAiModelId, hfCachePath: string): boolean {
@@ -192,11 +226,7 @@ function isTierInHfCache(id: MediaAiModelId, hfCachePath: string): boolean {
   }
 
   // Also check the local_dir path used by download_models.py's snapshot_download.
-  const localDir = path.join(
-    hfCachePath,
-    "snapshots",
-    repo.replace("/", "__"),
-  );
+  const localDir = path.join(hfCachePath, "snapshots", repo.replace("/", "__"));
   return fs.existsSync(localDir);
 }
 
@@ -207,7 +237,11 @@ export function writeModelMarker(id: MediaAiModelId, modelsPath: string): void {
   if (!fs.existsSync(markerPath)) {
     fs.writeFileSync(
       markerPath,
-      JSON.stringify({ modelGroup: id, downloadedAt: new Date().toISOString(), paths: [] }),
+      JSON.stringify({
+        modelGroup: id,
+        downloadedAt: new Date().toISOString(),
+        paths: [],
+      }),
     );
   }
 }
@@ -281,6 +315,8 @@ export async function installMediaAiDependenciesForBackend(
   await fs.promises.mkdir(outputsPath, { recursive: true });
   await fs.promises.mkdir(hfCachePath, { recursive: true });
 
+  await checkSystemPython(backendPath);
+
   if (!fs.existsSync(getVenvPythonPath())) {
     await runCommand("python", ["-m", "venv", getVenvPath()], {
       cwd: backendPath,
@@ -310,11 +346,16 @@ export async function installMediaAiDependenciesForBackend(
     fs.existsSync(baseRequirementsFile) &&
     baseRequirementsFile !== requirementsFile
   ) {
-    baseInstall = await runCommand(
-      pythonPath,
-      ["-m", "pip", "install", "-r", baseRequirementsFile],
-      { cwd: backendPath, timeoutMs: 15 * 60 * 1000 },
-    );
+    try {
+      baseInstall = await runCommand(
+        pythonPath,
+        ["-m", "pip", "install", "-r", baseRequirementsFile],
+        { cwd: backendPath, timeoutMs: 15 * 60 * 1000 },
+      );
+    } catch (err) {
+      baseInstall = `Warning: some base packages failed: ${err instanceof Error ? err.message : String(err)}`;
+      logger.warn("Some base requirements failed:", err);
+    }
   }
 
   // Step 2: core ML packages individually — ensures diffusers/onnxruntime/optimum
@@ -333,7 +374,6 @@ export async function installMediaAiDependenciesForBackend(
           "sentencepiece>=0.2.0",
           "imageio>=2.34.0",
           "imageio-ffmpeg>=0.5.0",
-          "stable-diffusion-cpp-python>=0.1.0",
         ]
       : [
           "hf_transfer>=0.1.4",
@@ -345,18 +385,26 @@ export async function installMediaAiDependenciesForBackend(
           "sentencepiece>=0.2.0",
           "imageio>=2.34.0",
           "imageio-ffmpeg>=0.5.0",
-          "stable-diffusion-cpp-python>=0.1.0",
         ];
 
   // For CUDA backend, install torch with GPU support explicitly before other
   // packages so CPU-only torch from PyPI is never picked up by accident.
+  // --upgrade --force-reinstall handles the "I had CPU torch from a previous
+  // failed install" case — pip skips reinstall otherwise even though the
+  // existing wheel has no CUDA support.
   if (effectiveBackend === "cuda") {
     await runCommand(
       pythonPath,
       [
-        "-m", "pip", "install",
-        "torch>=2.3.0", "torchvision>=0.18.0",
-        "--index-url", "https://download.pytorch.org/whl/cu128",
+        "-m",
+        "pip",
+        "install",
+        "--upgrade",
+        "--force-reinstall",
+        "torch>=2.3.0",
+        "torchvision>=0.18.0",
+        "--index-url",
+        "https://download.pytorch.org/whl/cu128",
       ],
       { cwd: backendPath, timeoutMs: 30 * 60 * 1000 },
     );
@@ -385,7 +433,9 @@ export async function installMediaAiDependenciesForBackend(
     logger.warn("Some backend requirements failed to install:", err);
   }
 
-  return trimOutput(`${pipUpgrade}\n${baseInstall}\n${coreInstall}\n${requirementsInstall}`);
+  return trimOutput(
+    `${pipUpgrade}\n${baseInstall}\n${coreInstall}\n${requirementsInstall}`,
+  );
 }
 
 export async function installMediaAiDependencies() {
@@ -427,7 +477,9 @@ export async function installMediaAiDependencies() {
   const coreInstall = await runCommand(
     pythonPath,
     [
-      "-m", "pip", "install",
+      "-m",
+      "pip",
+      "install",
       "diffusers>=0.32.0",
       "transformers>=4.45.0",
       "accelerate>=0.30.0",
@@ -436,7 +488,6 @@ export async function installMediaAiDependencies() {
       "sentencepiece>=0.2.0",
       "imageio>=2.34.0",
       "imageio-ffmpeg>=0.5.0",
-      "stable-diffusion-cpp-python>=0.1.0",
     ],
     { cwd: backendPath, timeoutMs: 30 * 60 * 1000 },
   );
@@ -446,7 +497,13 @@ export async function installMediaAiDependencies() {
   try {
     requirementsInstall = await runCommand(
       pythonPath,
-      ["-m", "pip", "install", "-r", path.join(backendPath, "requirements.txt")],
+      [
+        "-m",
+        "pip",
+        "install",
+        "-r",
+        path.join(backendPath, "requirements.txt"),
+      ],
       { cwd: backendPath, timeoutMs: 90 * 60 * 1000 },
     );
   } catch (err) {
@@ -454,7 +511,9 @@ export async function installMediaAiDependencies() {
     logger.warn("Some legacy requirements failed to install:", err);
   }
 
-  return trimOutput(`${pipUpgrade}\n${baseInstall}\n${coreInstall}\n${requirementsInstall}`);
+  return trimOutput(
+    `${pipUpgrade}\n${baseInstall}\n${coreInstall}\n${requirementsInstall}`,
+  );
 }
 
 let activeDownloadProcess: ChildProcess | null = null;
@@ -471,7 +530,9 @@ export function isMediaAiDownloadActive(): boolean {
   return activeDownloadProcess !== null;
 }
 
-export async function downloadMediaAiModels(models: MediaAiModelId[]): Promise<string> {
+export async function downloadMediaAiModels(
+  models: MediaAiModelId[],
+): Promise<string> {
   const backendPath = resolveMediaAiBackendPath();
   const scriptPath = path.join(backendPath, "scripts", "download_models.py");
   const env = getBackendEnvironment();
@@ -502,7 +563,11 @@ export async function downloadMediaAiModels(models: MediaAiModelId[]): Promise<s
       if (code === 0 || code === null) {
         resolve(trimOutput(output));
       } else {
-        reject(new Error(`Download exited with code ${code}:\n${trimOutput(output)}`));
+        reject(
+          new Error(
+            `Download exited with code ${code}:\n${trimOutput(output)}`,
+          ),
+        );
       }
     });
     child.on("error", (err) => {
@@ -523,7 +588,10 @@ async function ensureBaseRequirements(): Promise<void> {
     });
   } catch {
     logger.warn("uvicorn not found in venv — installing base requirements...");
-    const baseRequirementsFile = path.join(backendPath, "requirements-base.txt");
+    const baseRequirementsFile = path.join(
+      backendPath,
+      "requirements-base.txt",
+    );
     if (fs.existsSync(baseRequirementsFile)) {
       await runCommand(
         pythonPath,
@@ -533,31 +601,48 @@ async function ensureBaseRequirements(): Promise<void> {
     }
   }
 
+  // python-multipart is required by FastAPI for File/Form uploads (transcription).
+  // Check and install separately so existing venvs without it get auto-fixed.
+  try {
+    await runCommand(pythonPath, ["-c", "import multipart"], {
+      cwd: backendPath,
+      timeoutMs: 10_000,
+    });
+  } catch {
+    logger.warn("python-multipart not found — installing...");
+    await runCommand(
+      pythonPath,
+      ["-m", "pip", "install", "python-multipart>=0.0.9"],
+      { cwd: backendPath, timeoutMs: 5 * 60 * 1000 },
+    );
+  }
 
-  // For CUDA backend: verify torch has CUDA support. Auto-reinstall GPU torch
-  // if CPU-only build is installed (common when pip picks the wrong wheel).
-  const effectiveBackend = cachedHardwareProfile?.bestMediaBackend ?? "cpu";
-  if (effectiveBackend === "cuda") {
+  // diffusers is the core ML dep for all image/video generation. Auto-install
+  // if missing so an existing venv that only has uvicorn still gets generation.
+  try {
+    await runCommand(pythonPath, ["-c", "import diffusers"], {
+      cwd: backendPath,
+      timeoutMs: 10_000,
+    });
+  } catch {
+    logger.warn("diffusers not found — installing core ML packages...");
     try {
       await runCommand(
         pythonPath,
-        ["-c", "import torch; assert torch.cuda.is_available(), 'no cuda'"],
-        { cwd: backendPath, timeoutMs: 15_000 },
-      );
-    } catch {
-      logger.warn("torch CUDA unavailable — reinstalling GPU torch (cu128)...");
-      await runCommand(
-        pythonPath,
         [
-          "-m", "pip", "install",
-          "torch>=2.3.0+cu128", "torchvision>=0.18.0+cu128",
-          "--index-url", "https://download.pytorch.org/whl/cu128",
-          "--extra-index-url", "https://pypi.org/simple",
-          "--force-reinstall",
-          "--no-cache-dir",
+          "-m",
+          "pip",
+          "install",
+          "diffusers>=0.32.0",
+          "transformers>=4.45.0",
+          "accelerate>=0.30.0",
+          "hf_transfer>=0.1.4",
+          "sentencepiece>=0.2.0",
         ],
         { cwd: backendPath, timeoutMs: 30 * 60 * 1000 },
       );
+    } catch (err) {
+      logger.warn("Core ML package install failed (non-fatal):", err);
     }
   }
 }
@@ -616,4 +701,106 @@ export function stopMediaAiBackend() {
   logger.info("Stopping Media AI backend...");
   pythonServer.kill();
   pythonServer = null;
+}
+
+export async function deleteMediaAiModel(
+  modelId: MediaAiModelId,
+): Promise<void> {
+  const { modelsPath, hfCachePath } = getMediaAiDataPaths();
+
+  // Remove marker file
+  const markerPath = path.join(modelsPath, ".model-markers", `${modelId}.json`);
+  if (fs.existsSync(markerPath)) {
+    fs.unlinkSync(markerPath);
+    logger.info(`Deleted model marker: ${markerPath}`);
+  }
+
+  // Remove HF cache directory for this model
+  const repo = TIER_HF_REPOS[modelId];
+  if (repo) {
+    const hubDir = path.join(hfCachePath, "hub", hfHubRepoDir(repo));
+    if (fs.existsSync(hubDir)) {
+      fs.rmSync(hubDir, { recursive: true, force: true });
+      logger.info(`Deleted HF hub cache: ${hubDir}`);
+    }
+    const snapshotLocalDir = path.join(
+      hfCachePath,
+      "snapshots",
+      repo.replace("/", "__"),
+    );
+    if (fs.existsSync(snapshotLocalDir)) {
+      fs.rmSync(snapshotLocalDir, { recursive: true, force: true });
+      logger.info(`Deleted snapshot local dir: ${snapshotLocalDir}`);
+    }
+  }
+}
+
+/** Nukes the Python venv so the next install starts from a clean slate. The
+ *  downloaded model weights under <userData>/mediaai/models/huggingface are
+ *  preserved — they're disk-heavy and unchanged by a venv wipe. */
+export async function resetMediaAiSetup(opts?: {
+  alsoDeleteModels?: boolean;
+}): Promise<{ removed: string[] }> {
+  stopMediaAiBackend();
+  cancelMediaAiDownload();
+
+  const venvPath = getVenvPath();
+  const { modelsPath } = getMediaAiDataPaths();
+  const removed: string[] = [];
+
+  if (fs.existsSync(venvPath)) {
+    await fs.promises.rm(venvPath, { recursive: true, force: true });
+    removed.push(venvPath);
+    logger.info(`Removed venv at ${venvPath}`);
+  }
+
+  if (opts?.alsoDeleteModels) {
+    if (fs.existsSync(modelsPath)) {
+      await fs.promises.rm(modelsPath, { recursive: true, force: true });
+      removed.push(modelsPath);
+      logger.info(`Removed models at ${modelsPath}`);
+    }
+  } else {
+    // Always wipe the per-model marker files so the Media AI UI re-checks the
+    // HF cache instead of trusting stale markers from a broken install.
+    const markerDir = path.join(modelsPath, ".model-markers");
+    if (fs.existsSync(markerDir)) {
+      await fs.promises.rm(markerDir, { recursive: true, force: true });
+      removed.push(markerDir);
+    }
+  }
+
+  lastLog = undefined;
+  return { removed };
+}
+
+export async function checkMediaAiPythonAvailable(): Promise<{
+  available: boolean;
+  version: string | null;
+  error: string | null;
+}> {
+  const backendPath = resolveMediaAiBackendPath();
+  try {
+    await checkSystemPython(backendPath);
+    // If we get here, Python is available. Get the version string.
+    for (const cmd of ["python", "python3"]) {
+      try {
+        const out = await runCommand(cmd, ["--version"], {
+          cwd: backendPath,
+          timeoutMs: 5000,
+        });
+        const m = out.match(/Python\s+(\d+\.\d+(?:\.\d+)?)/i);
+        return { available: true, version: m?.[1] ?? null, error: null };
+      } catch {
+        continue;
+      }
+    }
+    return { available: true, version: null, error: null };
+  } catch (err) {
+    return {
+      available: false,
+      version: null,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }

@@ -290,6 +290,21 @@ async function detectWindowsBackends(
   if (hasRocm) backends.add("rocm");
   if (hasOpenVINO) backends.add("openvino");
 
+  // nvidia-smi ships with the CUDA toolkit, not the driver — so plenty of
+  // NVIDIA users don't have it on PATH despite having a working CUDA driver.
+  // Detect the driver directly by probing nvcuda.dll, which is installed by
+  // every modern GeForce driver. PyTorch wheels (cu128) bundle their own CUDA
+  // runtime, so the driver alone is enough for GPU inference.
+  if (!hasCuda && gpus.some((g) => g.vendor === "nvidia")) {
+    const sysRoot = process.env["SystemRoot"] ?? "C:\\Windows";
+    try {
+      await fs.promises.access(path.join(sysRoot, "System32", "nvcuda.dll"));
+      backends.add("cuda");
+    } catch {
+      /* nvcuda.dll not present — no NVIDIA driver, leave cuda out */
+    }
+  }
+
   const releaseParts = os.release().split(".");
   const build = parseInt(releaseParts[2] ?? "0", 10);
   if (!isNaN(build) && build >= 18362) backends.add("directml");
@@ -399,7 +414,9 @@ async function detectLinuxGpus(): Promise<GpuInfo[]> {
   return gpus;
 }
 
-async function detectLinuxBackends(): Promise<InferenceBackend[]> {
+async function detectLinuxBackends(
+  gpus: GpuInfo[] = [],
+): Promise<InferenceBackend[]> {
   const [hasCuda, hasRocm, hasVulkan, hasOpenVINO] = await Promise.all([
     checkCmdAvailable("nvidia-smi", ["-L"]),
     checkCmdAvailable("rocm-smi", ["--version"]),
@@ -411,6 +428,25 @@ async function detectLinuxBackends(): Promise<InferenceBackend[]> {
   if (hasRocm) backends.add("rocm");
   if (hasVulkan) backends.add("vulkan");
   if (hasOpenVINO) backends.add("openvino");
+
+  // Same nvidia-smi caveat as Windows: nvidia-smi can be missing even when the
+  // NVIDIA driver is installed. Probe libcuda.so.1 which the driver ships.
+  if (!hasCuda && gpus.some((g) => g.vendor === "nvidia")) {
+    for (const candidate of [
+      "/usr/lib/x86_64-linux-gnu/libcuda.so.1",
+      "/usr/lib64/libcuda.so.1",
+      "/usr/lib/libcuda.so.1",
+    ]) {
+      try {
+        await fs.promises.access(candidate);
+        backends.add("cuda");
+        break;
+      } catch {
+        /* try next candidate */
+      }
+    }
+  }
+
   // DirectML and Metal are not available on Linux.
   return Array.from(backends);
 }
@@ -504,10 +540,8 @@ export async function detectHardwareProfile(): Promise<HardwareProfile> {
       Promise.resolve(detectMacOsBackends()),
     ]);
   } else if (platform === "linux") {
-    [gpus, availableBackends] = await Promise.all([
-      detectLinuxGpus(),
-      detectLinuxBackends(),
-    ]);
+    gpus = await detectLinuxGpus();
+    availableBackends = await detectLinuxBackends(gpus);
   }
 
   const primaryGpu = selectPrimaryGpu(gpus);

@@ -12,6 +12,7 @@ export const MediaAiModelIdSchema = z.enum([
   "video",
   "image-sd-turbo",
   "image-z-image-turbo",
+  "whisper",
 ]);
 
 export const MediaAiModelStatusSchema = z.object({
@@ -117,6 +118,16 @@ export const mediaAiContracts = {
     channel: "media-ai:fetch-cloud-image",
     input: FetchCloudImageParamsSchema,
     output: FetchCloudImageResultSchema,
+  }),
+  deleteModel: defineContract({
+    channel: "media-ai:delete-model",
+    input: z.object({ modelId: MediaAiModelIdSchema }),
+    output: z.object({ deleted: z.boolean() }),
+  }),
+  resetSetup: defineContract({
+    channel: "media-ai:reset-setup",
+    input: z.object({ alsoDeleteModels: z.boolean().default(false) }),
+    output: z.object({ removed: z.array(z.string()) }),
   }),
 } as const;
 

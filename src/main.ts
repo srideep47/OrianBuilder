@@ -58,10 +58,7 @@ import {
   stopServer as stopEmbeddedServer,
 } from "./ipc/utils/embedded_inference_server";
 import { recoverInterruptedMissionsOnStartup } from "./ipc/utils/mission_recovery";
-import {
-  startMediaAiBackend,
-  stopMediaAiBackend,
-} from "./ipc/utils/media_ai_backend";
+import { stopMediaAiBackend } from "./ipc/utils/media_ai_backend";
 
 log.errorHandler.startCatching();
 log.eventLogger.startLogging();
@@ -292,8 +289,6 @@ export async function onReady() {
   startEmbeddedServer().catch((err) =>
     logger.warn("Embedded inference server failed to start:", err),
   );
-
-  startMediaAiBackend();
 
   await onFirstRunMaybe(settings);
   createWindow();

@@ -188,15 +188,26 @@ def get_pipeline(forced_tier_id: Optional[str] = None):
 
     if tier["id"] == "z-image-turbo-gguf":
         import torch  # type: ignore
-        from diffusers import GGUFQuantizationConfig, ZImagePipeline  # type: ignore
-        from diffusers import ZImageTransformer2DModel  # type: ignore
+        try:
+            from diffusers import GGUFQuantizationConfig, ZImagePipeline  # type: ignore
+            from diffusers import ZImageTransformer2DModel  # type: ignore
+        except ImportError as _imp_err:
+            raise RuntimeError(
+                "diffusers>=0.33.0 is required for the z-image-turbo-gguf tier. "
+                "Run: pip install -U 'diffusers>=0.33.0'"
+            ) from _imp_err
 
-        hf_cache = os.path.join(
+        _hf_model_dir = os.path.join(
             os.getenv("HF_HOME", ""),
             "hub", "models--Tongyi-MAI--Z-Image-Turbo",
-            "snapshots", "f332072aa78be7aecdf3ee76d5c247082da564a6",
         )
-        transformer_cfg = os.path.join(hf_cache, "transformer")
+        _snaps_dir = os.path.join(_hf_model_dir, "snapshots")
+        _snaps = sorted(os.listdir(_snaps_dir)) if os.path.isdir(_snaps_dir) else []
+        if not _snaps:
+            raise RuntimeError(
+                "Z-Image-Turbo HF snapshot not found. Re-download the model from the Media AI page."
+            )
+        transformer_cfg = os.path.join(_hf_model_dir, "snapshots", _snaps[-1], "transformer")
         active_backend = get_backend()
         compute_dtype = torch.bfloat16 if active_backend != "cpu" else torch.float32
 

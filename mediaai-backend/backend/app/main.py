@@ -3,7 +3,7 @@ import os
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -189,30 +189,34 @@ async def v1_generate_tts(req: V1TtsRequest) -> V1TtsResponse:
 
 # ─── v1 STT (Whisper) ─────────────────────────────────────────────────────────
 
-
-class V1TranscribeRequest(BaseModel):
-    audio_path: str
-    language: str | None = None
-    tier: str | None = None
-
-
 class V1TranscribeResponse(BaseModel):
     text: str
     tier: str
 
 
 @app.post("/v1/transcribe", response_model=V1TranscribeResponse)
-async def v1_transcribe(req: V1TranscribeRequest) -> V1TranscribeResponse:
-    if not os.path.exists(req.audio_path):
-        raise HTTPException(status_code=400, detail=f"file not found: {req.audio_path}")
+async def v1_transcribe(
+    audio: UploadFile = File(...),
+    language: str | None = Form(default=None),
+    tier: str | None = Form(default=None),
+) -> V1TranscribeResponse:
+    import tempfile
+    import shutil as _shutil
+    suffix = Path(audio.filename or "audio.wav").suffix or ".wav"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        _shutil.copyfileobj(audio.file, tmp)
+        tmp_path = tmp.name
     try:
-        text = await run_in_threadpool(
-            stt_model.transcribe, req.audio_path, req.language, req.tier
-        )
+        text = await run_in_threadpool(stt_model.transcribe, tmp_path, language, tier)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"transcription failed: {exc}") from exc
-    tier = stt_model.pick_stt_tier(req.tier)
-    return V1TranscribeResponse(text=text, tier=tier["id"])
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+    stt_tier = stt_model.pick_stt_tier(tier)
+    return V1TranscribeResponse(text=text, tier=stt_tier["id"])
 
 
 # ─── v1 model registry ────────────────────────────────────────────────────────

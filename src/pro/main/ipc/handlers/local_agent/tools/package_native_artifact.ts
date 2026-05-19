@@ -12,6 +12,7 @@ import {
 } from "./types";
 import {
   ANDROID_STUDIO_JBR_DEFAULT,
+  findAndroidSdkCMakeDir,
   findUsableNdkVersion,
   resolveAndroidSdkRoot,
 } from "./android_env";
@@ -27,9 +28,9 @@ const packageNativeArtifactSchema = z.object({
   variant: z
     .enum(["debug", "release"])
     .optional()
-    .default("debug")
+    .default("release")
     .describe(
-      "Android build variant. Debug is unsigned and best for quick downloadable QA; release requires signing configuration.",
+      "Android build variant. Release builds run standalone without a Metro server and are suitable for distribution. Debug builds require an active Metro server to function.",
     ),
   initialize_capacitor_if_missing: z
     .boolean()
@@ -360,11 +361,19 @@ async function ensureAndroidLocalEnvironment(
     const localProperties = (await exists(localPropertiesPath))
       ? await fs.readFile(localPropertiesPath, "utf-8")
       : "";
-    const updatedLocalProperties = upsertJavaProperty(
+    let updatedLocalProperties = upsertJavaProperty(
       localProperties,
       "sdk.dir",
       toJavaPropertiesPath(resolvedSdkDir),
     );
+    const cmakeDir = await findAndroidSdkCMakeDir(resolvedSdkDir);
+    if (cmakeDir) {
+      updatedLocalProperties = upsertJavaProperty(
+        updatedLocalProperties,
+        "cmake.dir",
+        toJavaPropertiesPath(cmakeDir),
+      );
+    }
     if (updatedLocalProperties !== localProperties) {
       await fs.writeFile(localPropertiesPath, updatedLocalProperties, "utf-8");
     }
@@ -485,6 +494,38 @@ export const __testing__ = {
   isUnpackedOutputDir,
   HELPER_BINARY_NAMES,
 };
+
+async function tryAdbInstall(input: {
+  apkPath: string;
+  sdkRoot: string;
+  ctx: AgentContext;
+  timeoutMs: number;
+}): Promise<CommandResult | null> {
+  const adb = path.join(
+    input.sdkRoot,
+    "platform-tools",
+    process.platform === "win32" ? "adb.exe" : "adb",
+  );
+  if (!(await exists(adb))) return null;
+
+  const devicesResult = await runCommand({
+    command: `"${adb}" devices`,
+    cwd: path.dirname(input.apkPath),
+    timeoutMs: 10_000,
+    ctx: input.ctx,
+  });
+  const hasDevice = devicesResult.output
+    .split("\n")
+    .some((line) => /\t(device|emulator)/.test(line));
+  if (!hasDevice) return null;
+
+  return runCommand({
+    command: `"${adb}" install -r "${input.apkPath}"`,
+    cwd: path.dirname(input.apkPath),
+    timeoutMs: 120_000,
+    ctx: input.ctx,
+  });
+}
 
 async function inferTarget(appPath: string): Promise<NativeTarget> {
   if (
@@ -615,6 +656,15 @@ async function packageAndroid(input: {
       root: apkRoot,
       extensions: new Set([".apk"]),
     });
+    if (artifacts.length > 0 && androidSdkRoot) {
+      const install = await tryAdbInstall({
+        apkPath: artifacts[0].path,
+        sdkRoot: androidSdkRoot,
+        ctx: input.ctx,
+        timeoutMs: 120_000,
+      });
+      if (install) commands.push(install);
+    }
     return { artifacts, commands };
   }
 
@@ -652,6 +702,15 @@ async function packageAndroid(input: {
       root: apkRoot,
       extensions: new Set([".apk"]),
     });
+    if (artifacts.length > 0 && androidSdkRoot) {
+      const install = await tryAdbInstall({
+        apkPath: artifacts[0].path,
+        sdkRoot: androidSdkRoot,
+        ctx: input.ctx,
+        timeoutMs: 120_000,
+      });
+      if (install) commands.push(install);
+    }
     return { artifacts, commands };
   }
 
@@ -743,6 +802,15 @@ async function packageAndroid(input: {
     root: apkRoot,
     extensions: new Set([".apk"]),
   });
+  if (artifacts.length > 0 && androidSdkRoot) {
+    const install = await tryAdbInstall({
+      apkPath: artifacts[0].path,
+      sdkRoot: androidSdkRoot,
+      ctx: input.ctx,
+      timeoutMs: 120_000,
+    });
+    if (install) commands.push(install);
+  }
   return { artifacts, commands };
 }
 
@@ -1145,7 +1213,7 @@ After this tool creates native-download-site/, use deploy_preview with provider 
         ctx.appendUserMessage([
           {
             type: "text",
-            text: 'Native packaging succeeded and native-download-site/ exists, but the user\'s request still requires a download page URL. Continue by calling deploy_preview with provider="custom_command", target="production", and deploy_directory="native-download-site". Omit custom_command so OrianBuilder serves the static download page locally when no external provider is linked. Do not finish until deploy_preview returns a URL.',
+            text: 'Native packaging succeeded and native-download-site/ exists. Your NEXT tool call MUST be deploy_preview to publish the download page. Call deploy_preview with deploy_directory="native-download-site" and target="production". For a public Vercel URL use provider="vercel". If Vercel is not configured, use provider="custom_command" with no custom_command value so OrianBuilder serves it locally. Do not end the turn until deploy_preview returns a URL.',
           },
         ]);
       }

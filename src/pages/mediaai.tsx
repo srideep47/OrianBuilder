@@ -54,7 +54,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -175,6 +174,16 @@ type EventLogEntry = {
   level: "info" | "error" | "success";
 };
 
+// Phase drives the setup banner UI. 'checking' = initial load, transitions based on status.
+type SetupPhase =
+  | "checking" // waiting for first status response
+  | "stopped" // venv exists, backend not running — user must press Start
+  | "needs-setup" // no venv, waiting for user to click
+  | "python-missing" // python not in PATH
+  | "setting-up" // setup chain running (install → download → start)
+  | "online" // backend healthy
+  | "error"; // unrecoverable error
+
 const TIER_PREF_KEY = "mediaai:image:tier";
 const SETTINGS_KEY = "mediaai:image:settings-by-tier";
 
@@ -216,6 +225,10 @@ export default function MediaAIPage() {
   const [availTiers, setAvailTiers] = useState<AvailableTiers | null>(null);
   const [setupAction, setSetupAction] = useState<string | null>(null);
   const [setupChainStep, setSetupChainStep] = useState<string | null>(null);
+  // Which model group inside the "download" step is currently being fetched.
+  // null means no download active (or step is "install" / "start").
+  const [setupChainModelId, setSetupChainModelId] =
+    useState<MediaAiModelId | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   // Hardware as seen by the Python backend (may differ from Electron's view
   // if the backend started before CUDA detection finished).
@@ -224,6 +237,9 @@ export default function MediaAIPage() {
     torch_device: string;
     vram_mb: number;
   } | null>(null);
+
+  const [setupPhase, setSetupPhase] = useState<SetupPhase>("checking");
+  const [setupError, setSetupError] = useState<string | null>(null);
 
   // Image-tier picker + per-tier persisted resolution/steps.
   const [selectedImageTierId, setSelectedImageTierId] = useState<string>(() =>
@@ -330,6 +346,24 @@ export default function MediaAIPage() {
     return () => clearInterval(interval);
   }, [refreshAll]);
 
+  useEffect(() => {
+    if (!status) return;
+
+    if (status.healthy) {
+      setSetupPhase("online");
+      return;
+    }
+
+    // Backend not online — show correct idle state
+    if (status.venvExists) {
+      if (setupPhase === "checking") {
+        setSetupPhase("stopped");
+      }
+    } else if (setupPhase === "checking") {
+      setSetupPhase("needs-setup");
+    }
+  }, [status]); // intentionally minimal deps — only re-run when status changes
+
   const runSetupAction = async (
     actionName: string,
     action: () => Promise<void>,
@@ -388,33 +422,93 @@ export default function MediaAIPage() {
     [appendLog, refreshAll],
   );
 
-  // One-button setup: install deps (if missing) → download the currently-
-  // selected image model (if missing) → start backend (if not running).
-  // Each step is skipped when already satisfied, so re-running is safe.
+  // One-button setup: install deps with the detected GPU backend (if missing),
+  // download every Media AI model group needed for image / audio / video /
+  // transcription (skipping ones already on disk), then start the backend.
+  // Each step is idempotent so re-running is safe and resumable.
   const runSetupChain = useCallback(async () => {
+    // Order matters for UX: smallest fast-to-use models first so the user can
+    // start generating while the larger video model is still downloading.
+    const ALL_COMPONENTS: {
+      id: MediaAiModelId;
+      label: string;
+      sizeGb: number;
+    }[] = [
+      { id: "whisper", label: "Whisper Base (transcription)", sizeGb: 0.15 },
+      { id: "audio", label: "SpeechT5 + MMS-TTS (audio)", sizeGb: 1.0 },
+      { id: "image-sd-turbo", label: "SD Turbo (image)", sizeGb: 2.5 },
+      {
+        id: "image-z-image-turbo",
+        label: "Z-Image Turbo (image)",
+        sizeGb: 6.0,
+      },
+      { id: "image", label: "Stable Diffusion 1.5 ONNX (image)", sizeGb: 4.0 },
+      { id: "text", label: "Phi-3 mini (text)", sizeGb: 2.4 },
+      { id: "video", label: "ModelScope text-to-video", sizeGb: 11.0 },
+    ];
+
     try {
       if (!status?.venvExists) {
         setSetupChainStep("install");
-        appendLog("Installing Python dependencies…");
-        const backend = hardware?.bestMediaBackend ?? undefined;
-        await ipc.mediaAi.installDependenciesForBackend({ backend });
+        // Re-detect hardware right before installing so we pick up the GPU
+        // even if the initial detect-at-startup race missed it (or the user
+        // installed drivers since launching the app).
+        appendLog("Detecting hardware…");
+        const freshHw = await ipc.hardware
+          .refreshProfile(undefined)
+          .catch(() => null);
+        const backend =
+          freshHw?.bestMediaBackend ?? hardware?.bestMediaBackend ?? "cpu";
+        if (freshHw) setHardware(freshHw);
+        appendLog(
+          `Installing Python dependencies (${backend} backend${freshHw?.primaryGpu?.model ? ` · ${freshHw.primaryGpu.model}` : ""})…`,
+        );
+        await ipc.mediaAi.installDependenciesForBackend({
+          backend: backend === "cpu" ? undefined : backend,
+        });
         appendLog("Dependencies installed.", "success");
       }
-      if (!tierDownloaded(selectedImageTier.downloadId)) {
-        setSetupChainStep("download");
-        setIsDownloading(true);
+
+      setSetupChainStep("download");
+      // Fetch a fresh status snapshot so we don't redownload anything
+      // that was completed in a previous run of this chain.
+      const freshStatus = await ipc.mediaAi.getStatus(undefined);
+      const isDownloaded = (id: MediaAiModelId) =>
+        freshStatus?.models.some((m) => m.id === id && m.downloaded) ?? false;
+
+      const pending = ALL_COMPONENTS.filter((c) => !isDownloaded(c.id));
+      if (pending.length === 0) {
+        appendLog("All Media AI models already downloaded.", "success");
+      } else {
+        const totalGb = pending.reduce((acc, c) => acc + c.sizeGb, 0);
         appendLog(
-          `Downloading ${selectedImageTier.shortName} (~${selectedImageTier.downloadGb} GB)…`,
+          `Downloading ${pending.length} model${pending.length === 1 ? "" : "s"} (~${totalGb.toFixed(1)} GB total)…`,
         );
+        setIsDownloading(true);
         try {
-          await ipc.mediaAi.downloadModels({
-            models: [selectedImageTier.downloadId as MediaAiModelId],
-          });
-          appendLog(`${selectedImageTier.shortName} downloaded.`, "success");
+          for (const comp of pending) {
+            setSetupChainModelId(comp.id);
+            appendLog(`→ ${comp.label} (~${comp.sizeGb} GB)…`);
+            try {
+              await ipc.mediaAi.downloadModels({ models: [comp.id] });
+              appendLog(`✓ ${comp.label}`, "success");
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              // Treat user-cancelled downloads as a hard stop. Anything else
+              // is logged but doesn't abort the whole chain — the user can
+              // still use whatever already downloaded.
+              if (msg.includes("SIGTERM") || msg.includes("cancelled")) {
+                throw err;
+              }
+              appendLog(`✗ ${comp.label} failed: ${msg}`, "error");
+            }
+          }
         } finally {
+          setSetupChainModelId(null);
           setIsDownloading(false);
         }
       }
+
       if (!isBackendOnline) {
         setSetupChainStep("start");
         appendLog("Starting backend…");
@@ -426,19 +520,25 @@ export default function MediaAIPage() {
       const msg = error instanceof Error ? error.message : String(error);
       appendLog(`Setup failed: ${msg}`, "error");
       toast.error(msg);
+      throw error;
     } finally {
       setSetupChainStep(null);
+      setSetupChainModelId(null);
       await refreshAll();
     }
-  }, [
-    status,
-    hardware,
-    isBackendOnline,
-    selectedImageTier,
-    tierDownloaded,
-    appendLog,
-    refreshAll,
-  ]);
+  }, [status, hardware, isBackendOnline, appendLog, refreshAll]);
+
+  const triggerOneClickSetup = useCallback(async () => {
+    setSetupPhase("setting-up");
+    setSetupError(null);
+    try {
+      await runSetupChain();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setSetupError(msg);
+      setSetupPhase("error");
+    }
+  }, [runSetupChain]);
 
   const installDependencies = () =>
     runSetupAction("install", async () => {
@@ -458,6 +558,53 @@ export default function MediaAIPage() {
       await ipc.mediaAi.stopBackend(undefined);
       toast.success("Media AI backend stopped");
     });
+
+  // Wipes the Python venv + model markers and re-runs the full setup chain.
+  // Use this when a previous install picked the wrong backend (e.g. CPU torch
+  // got installed on an NVIDIA machine because nvidia-smi wasn't in PATH).
+  // The downloaded HF model weights are preserved.
+  const resetAndReinstall = useCallback(async () => {
+    const ok = window.confirm(
+      "Reset Media AI setup?\n\n" +
+        "This deletes the Python environment so it can be reinstalled with the correct GPU backend. " +
+        "Downloaded models will be kept.\n\n" +
+        "Setup will start again immediately.",
+    );
+    if (!ok) return;
+    setSetupPhase("setting-up");
+    setSetupError(null);
+    try {
+      appendLog("Stopping backend and clearing Python environment…");
+      await ipc.mediaAi.resetSetup({ alsoDeleteModels: false });
+      appendLog("Python environment removed.", "success");
+      await refreshAll();
+      await runSetupChain();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setSetupError(msg);
+      setSetupPhase("error");
+    }
+  }, [appendLog, refreshAll, runSetupChain]);
+
+  const reinstallForGpu = useCallback(async () => {
+    setSetupPhase("setting-up");
+    setSetupError(null);
+    try {
+      appendLog("Stopping backend…");
+      await ipc.mediaAi.stopBackend(undefined);
+      appendLog("Installing GPU dependencies…");
+      const backend = hardware?.bestMediaBackend ?? undefined;
+      await ipc.mediaAi.installDependenciesForBackend({ backend });
+      appendLog("Restarting backend…");
+      await ipc.mediaAi.startBackend(undefined);
+      toast.success("GPU dependencies installed — backend restarted");
+      void refreshAll();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setSetupError(msg);
+      setSetupPhase("error");
+    }
+  }, [hardware, appendLog, refreshAll]);
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
@@ -537,7 +684,8 @@ export default function MediaAIPage() {
           // Fetch image bytes and convert to blob URL — avoids Electron
           // img-src CSP restrictions on http://127.0.0.1 direct loading.
           const imgResp = await fetch(`${serverUrl}${imageUrl}`);
-          if (!imgResp.ok) throw new Error(`Failed to fetch image: HTTP ${imgResp.status}`);
+          if (!imgResp.ok)
+            throw new Error(`Failed to fetch image: HTTP ${imgResp.status}`);
           const blob = await imgResp.blob();
           const blobUrl = URL.createObjectURL(blob);
           setResult({
@@ -550,7 +698,9 @@ export default function MediaAIPage() {
             `Image generated${data.tier ? ` (${data.tier})` : ""}.`,
             "success",
           );
-          toast.success(`Image generated locally${data.tier ? ` (${data.tier})` : ""}`);
+          toast.success(
+            `Image generated locally${data.tier ? ` (${data.tier})` : ""}`,
+          );
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
           appendLog(`Generation failed: ${msg}`, "error");
@@ -567,7 +717,9 @@ export default function MediaAIPage() {
           filename: `image-${Date.now()}.jpg`,
           source: "cloud",
         });
-        toast.info("Backend offline — using cloud fallback. Start the backend to generate locally.");
+        toast.info(
+          "Backend offline — using cloud fallback. Start the backend to generate locally.",
+        );
         setIsGenerating(false);
       }
       return;
@@ -575,7 +727,9 @@ export default function MediaAIPage() {
 
     if (activeTab === "video") {
       if (isBackendOnline) {
-        toast.info("Generating video locally… first run downloads the model (~11GB) and may take 10–15 minutes.");
+        toast.info(
+          "Generating video locally… first run downloads the model (~11GB) and may take 10–15 minutes.",
+        );
         try {
           const response = await fetch(`${serverUrl}/v1/generate/video`, {
             method: "POST",
@@ -620,7 +774,9 @@ export default function MediaAIPage() {
           filename: `video-${Date.now()}.gif`,
           source: "cloud",
         });
-        toast.info("Backend offline — using cloud fallback. Start the backend to generate locally.");
+        toast.info(
+          "Backend offline — using cloud fallback. Start the backend to generate locally.",
+        );
         setIsGenerating(false);
       }
       return;
@@ -846,230 +1002,47 @@ export default function MediaAIPage() {
     <div className="h-full w-full overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-5xl">
         {/* Header */}
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="flex items-center text-3xl font-bold">
-              <Sparkles className="mr-3 h-8 w-8 text-primary" />
-              Media AI
-            </h1>
-            <p className="mt-2 text-muted-foreground">
-              Local image, audio, transcription, and video generation — hardware
-              accelerated.
-            </p>
-          </div>
-          <div className="flex flex-col items-end gap-2">
-            <div
-              className={cn(
-                "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm",
-                isBackendOnline
-                  ? "border-green-500/30 text-green-600"
-                  : "border-red-500/30 text-red-600",
-              )}
-            >
-              {isBackendOnline ? (
-                <Server className="h-4 w-4" />
-              ) : (
-                <ServerOff className="h-4 w-4" />
-              )}
-              {isBackendOnline ? "Backend online" : "Backend offline"}
-            </div>
-            {hardware?.primaryGpu && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Zap className="h-3 w-3" />
-                {hardware.primaryGpu.model}
-                {hardware.primaryGpu.vramMb > 0 && (
-                  <span>
-                    · {Math.round(hardware.primaryGpu.vramMb / 1024)} GB VRAM
-                  </span>
-                )}
-                {hardware.bestMediaBackend && (
-                  <BackendBadge backend={hardware.bestMediaBackend} />
-                )}
-              </div>
-            )}
-          </div>
+        <div className="mb-6">
+          <h1 className="flex items-center text-3xl font-bold">
+            <Sparkles className="mr-3 h-8 w-8 text-primary" />
+            Media AI
+          </h1>
+          <p className="mt-2 text-muted-foreground">
+            Local image, audio, transcription, and video generation — hardware
+            accelerated.
+          </p>
         </div>
 
-        {/* Setup Card */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Wrench className="h-5 w-5" />
-              Backend Setup
-            </CardTitle>
-            <CardDescription>
-              Install the Python runtime for your GPU, download model groups,
-              and control the FastAPI server.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="grid gap-3 text-sm md:grid-cols-2">
-              <StatusRow label="Backend" value={status?.backendPath} />
-              <StatusRow label="Models" value={status?.modelsPath} />
-              <StatusRow
-                label="Python environment"
-                value={status?.venvExists ? status.pythonPath : "Not installed"}
-              />
-              <StatusRow label="Server" value={serverUrl} />
-              {hardware && (
-                <StatusRow
-                  label="GPU backend (Electron)"
-                  value={
-                    hardware.bestMediaBackend
-                      ? `${BACKEND_LABELS[hardware.bestMediaBackend] ?? hardware.bestMediaBackend} — ${hardware.primaryGpu?.model ?? "unknown GPU"}`
-                      : "CPU only"
-                  }
-                />
-              )}
-              {backendHardware && (
-                <StatusRow
-                  label="GPU backend (Python)"
-                  value={`${backendHardware.backend.toUpperCase()} · device=${backendHardware.torch_device} · ${Math.round(backendHardware.vram_mb / 1024)} GB VRAM`}
-                />
-              )}
-              {orchStatus && (
-                <StatusRow label="Orchestrator" value={orchStatus.state} />
-              )}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              {/* One-button setup chain — installs deps, downloads the
-                  selected image model, and starts the backend if any of
-                  those is still missing. Re-runnable: each step is skipped
-                  when already satisfied. */}
-              <Button
-                onClick={() => void runSetupChain()}
-                disabled={
-                  setupChainStep !== null || !status?.backendAvailable
-                }
-                aria-busy={setupChainStep !== null}
-                className={cn(
-                  setupChainStep !== null && "pointer-events-none cursor-wait",
-                )}
-              >
-                {setupChainStep !== null ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Wrench className="mr-2 h-4 w-4" />
-                )}
-                {setupChainStep === "install"
-                  ? "Installing dependencies…"
-                  : setupChainStep === "download"
-                    ? `Downloading ${selectedImageTier.shortName}…`
-                    : setupChainStep === "start"
-                      ? "Starting backend…"
-                      : "Setup Media AI"}
-              </Button>
-
-              <Button
-                variant="outline"
-                onClick={() => void refreshAll()}
-                disabled={setupAction !== null || setupChainStep !== null}
-              >
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Refresh
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => void installDependencies()}
-                disabled={
-                  setupAction !== null ||
-                  setupChainStep !== null ||
-                  !status?.backendAvailable
-                }
-              >
-                {setupAction === "install" ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Download className="mr-2 h-4 w-4" />
-                )}
-                Install
-                {hardware?.bestMediaBackend
-                  ? ` (${BACKEND_LABELS[hardware.bestMediaBackend] ?? hardware.bestMediaBackend})`
-                  : " Dependencies"}
-              </Button>
-              {isBackendOnline && backendHardware?.torch_device === "cpu" && (
-                <Button
-                  variant="outline"
-                  title="The pipeline was loaded on CPU. Click to flush it and reload on GPU."
-                  onClick={() => {
-                    void fetch(`${serverUrl}/v1/pipeline/unload`, {
-                      method: "POST",
-                    }).then(() => {
-                      appendLog("Pipeline flushed — next generation will reload on GPU.", "success");
-                      toast.success("Pipeline reloaded — GPU will be used on next generation");
-                    });
-                  }}
-                  disabled={setupAction !== null || setupChainStep !== null}
-                >
-                  <Zap className="mr-2 h-4 w-4" />
-                  Reload GPU Pipeline
-                </Button>
-              )}
-              {isBackendOnline ? (
-                <Button
-                  variant="outline"
-                  onClick={() => void stopBackend()}
-                  disabled={setupAction !== null || setupChainStep !== null}
-                >
-                  <Square className="mr-2 h-4 w-4" />
-                  Stop Backend
-                </Button>
-              ) : (
-                <Button
-                  onClick={() => void startBackend()}
-                  disabled={
-                    (setupAction !== null && setupAction !== "start") ||
-                    setupChainStep !== null ||
-                    !status?.backendAvailable
-                  }
-                  aria-busy={setupAction === "start"}
-                  className={cn(
-                    setupAction === "start" && "pointer-events-none cursor-wait",
-                  )}
-                >
-                  {setupAction === "start" ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Play className="mr-2 h-4 w-4" />
-                  )}
-                  {setupAction === "start" ? "Starting…" : "Start Backend"}
-                </Button>
-              )}
-            </div>
-
-            {availTiers && (
-              <>
-                <Separator />
-                <div>
-                  <p className="mb-3 text-sm font-medium">
-                    Available tiers
-                    {availTiers.projectedAvailableVramMb > 0 && (
-                      <span className="ml-2 text-xs font-normal text-muted-foreground">
-                        (~
-                        {Math.round(
-                          availTiers.projectedAvailableVramMb / 1024,
-                        )}{" "}
-                        GB projected free VRAM)
-                      </span>
-                    )}
-                  </p>
-                  <div className="grid gap-2 md:grid-cols-3">
-                    <TierRow label="Image" tier={bestTier("image")} />
-                    <TierRow label="Audio" tier={bestTier("audio")} />
-                    <TierRow label="Video" tier={bestTier("video")} />
-                  </div>
-                </div>
-              </>
-            )}
-
-            {status?.lastLog && (
-              <pre className="max-h-40 overflow-auto rounded-lg bg-muted p-3 text-xs">
-                {status.lastLog}
-              </pre>
-            )}
-          </CardContent>
-        </Card>
+        <SetupBanner
+          phase={setupPhase}
+          setupChainStep={setupChainStep}
+          setupChainModelId={setupChainModelId}
+          setupError={setupError}
+          status={status}
+          hardware={hardware}
+          backendHardware={backendHardware}
+          orchStatus={orchStatus}
+          availTiers={availTiers}
+          isDownloading={isDownloading}
+          setupAction={setupAction}
+          showLog={showLog}
+          eventLog={eventLog}
+          serverUrl={serverUrl}
+          onOneClickSetup={() => void triggerOneClickSetup()}
+          onStartBackend={() => void startBackend()}
+          onStopBackend={() => void stopBackend()}
+          onRefresh={() => void refreshAll()}
+          onInstall={() => void installDependencies()}
+          onToggleLog={() => setShowLog((v) => !v)}
+          onCancelDownload={() => void cancelDownload()}
+          onReinstallForGpu={() => void reinstallForGpu()}
+          onResetAndReinstall={() => void resetAndReinstall()}
+          onRetry={() => {
+            setSetupPhase("checking");
+            setSetupError(null);
+            void refreshAll();
+          }}
+        />
 
         {/* Generation Tabs */}
         <Tabs
@@ -1106,8 +1079,8 @@ export default function MediaAIPage() {
                   <div>
                     <CardTitle>Image Generation</CardTitle>
                     <CardDescription>
-                      Pick a model that fits your hardware. Settings persist
-                      per model across sessions.
+                      Pick a model that fits your hardware. Settings persist per
+                      model across sessions.
                     </CardDescription>
                   </div>
                   <TierBadge tier={bestTier("image")} />
@@ -1121,6 +1094,23 @@ export default function MediaAIPage() {
                   isTierDownloaded={(id) => tierDownloaded(id)}
                   onDownload={(tier) => void downloadTier(tier)}
                   onCancelDownload={() => void cancelDownload()}
+                  onDeleteAndRedownload={(tier) => {
+                    void (async () => {
+                      try {
+                        await ipc.mediaAi.deleteModel({
+                          modelId:
+                            tier.downloadId as import("@/ipc/types").MediaAiModelId,
+                        });
+                        await refreshAll();
+                        toast.info(
+                          `${tier.shortName} deleted — ready to re-download.`,
+                        );
+                        void downloadTier(tier);
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : String(e));
+                      }
+                    })();
+                  }}
                   isDownloading={isDownloading}
                   downloadingTierId={
                     setupAction?.startsWith("download-")
@@ -1379,6 +1369,7 @@ function ImageModelPicker({
   isTierDownloaded,
   onDownload,
   onCancelDownload,
+  onDeleteAndRedownload,
   isDownloading,
   downloadingTierId,
 }: {
@@ -1388,6 +1379,7 @@ function ImageModelPicker({
   isTierDownloaded: (downloadId: string) => boolean;
   onDownload: (tier: ImageTierUiConfig) => void;
   onCancelDownload: () => void;
+  onDeleteAndRedownload: (tier: ImageTierUiConfig) => void;
   isDownloading: boolean;
   downloadingTierId: string | null;
 }) {
@@ -1402,9 +1394,20 @@ function ImageModelPicker({
           Model
         </Label>
         {selectedDownloaded ? (
-          <span className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-emerald-500">
-            Downloaded
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-emerald-500">
+              Downloaded
+            </span>
+            <button
+              type="button"
+              title="Delete model files and re-download"
+              onClick={() => onDeleteAndRedownload(selected)}
+              disabled={isDownloading}
+              className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-rose-500/40 hover:bg-rose-500/10 hover:text-rose-500 disabled:opacity-40 transition-colors"
+            >
+              Re-download
+            </button>
+          </div>
         ) : selectedIsDownloading ? (
           <span className="inline-flex items-center gap-1 rounded border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-sky-500">
             <Loader2 className="h-2.5 w-2.5 animate-spin" />
@@ -1446,8 +1449,12 @@ function ImageModelPicker({
       <div className="flex items-start gap-2 text-xs text-muted-foreground">
         <div className="flex-1 leading-relaxed">{selected.description}</div>
         <div className="shrink-0 space-y-0.5 text-right text-[10px]">
-          <div className="text-muted-foreground/70">{selected.vramGb} GB VRAM</div>
-          <div className="text-muted-foreground/70">{selected.downloadGb} GB download</div>
+          <div className="text-muted-foreground/70">
+            {selected.vramGb} GB VRAM
+          </div>
+          <div className="text-muted-foreground/70">
+            {selected.downloadGb} GB download
+          </div>
         </div>
       </div>
 
@@ -1593,7 +1600,9 @@ function ImageSettingsPanel({
           <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Steps
           </Label>
-          <span className="text-xs text-muted-foreground">{settings.steps}</span>
+          <span className="text-xs text-muted-foreground">
+            {settings.steps}
+          </span>
         </div>
         <SegmentPicker
           values={stepValues}
@@ -1601,7 +1610,8 @@ function ImageSettingsPanel({
           onSelect={(v) => onChange({ steps: v })}
         />
         <p className="text-[11px] text-muted-foreground">
-          More steps = higher quality, slower. {tier.shortName}: {tier.minSteps}–{tier.maxSteps} steps.
+          More steps = higher quality, slower. {tier.shortName}: {tier.minSteps}
+          –{tier.maxSteps} steps.
         </p>
       </div>
 
@@ -1612,7 +1622,9 @@ function ImageSettingsPanel({
             <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Guidance scale
             </Label>
-            <span className="text-xs text-muted-foreground">{settings.guidance}</span>
+            <span className="text-xs text-muted-foreground">
+              {settings.guidance}
+            </span>
           </div>
           <SegmentPicker
             values={guidanceValues}
@@ -1620,7 +1632,8 @@ function ImageSettingsPanel({
             onSelect={(v) => onChange({ guidance: v })}
           />
           <p className="text-[11px] text-muted-foreground">
-            Higher = follows prompt more strictly. 3–5 works well for most prompts.
+            Higher = follows prompt more strictly. 3–5 works well for most
+            prompts.
           </p>
         </div>
       )}
@@ -1666,7 +1679,12 @@ function ImageSettingsPanel({
             min={0}
             max={999999}
             onChange={(e) =>
-              onChange({ seed: Math.max(0, Math.min(999999, parseInt(e.target.value, 10) || 0)) })
+              onChange({
+                seed: Math.max(
+                  0,
+                  Math.min(999999, parseInt(e.target.value, 10) || 0),
+                ),
+              })
             }
             className="h-8 w-full rounded-md border border-border bg-background/50 px-3 text-xs text-foreground outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/30"
           />
@@ -1813,10 +1831,7 @@ function GenerationForm({
         onClick={onGenerate}
         disabled={!loading && disabled}
         aria-busy={loading}
-        className={cn(
-          "w-full",
-          loading && "pointer-events-none cursor-wait",
-        )}
+        className={cn("w-full", loading && "pointer-events-none cursor-wait")}
       >
         {loading ? (
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1840,7 +1855,9 @@ function LocalImage({ src }: { src: string }) {
   if (imgError) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-lg border border-rose-500/40 bg-rose-500/5 p-6 text-center text-sm">
-        <p className="font-medium text-rose-500">Image generated but could not load</p>
+        <p className="font-medium text-rose-500">
+          Image generated but could not load
+        </p>
         <p className="text-xs text-muted-foreground break-all">{src}</p>
         <p className="text-xs text-muted-foreground">
           Check the backend log in the Setup panel above for details.
@@ -2127,5 +2144,713 @@ function LoadingImage({
         </div>
       )}
     </div>
+  );
+}
+
+// ─── SetupBanner — smart setup panel, collapses when backend is online ────────
+
+function SetupBanner({
+  phase,
+  setupChainStep,
+  setupChainModelId,
+  setupError,
+  status,
+  hardware,
+  backendHardware,
+  orchStatus,
+  availTiers,
+  isDownloading,
+  setupAction,
+  showLog,
+  eventLog,
+  serverUrl,
+  onOneClickSetup,
+  onStartBackend,
+  onStopBackend,
+  onRefresh,
+  onInstall,
+  onToggleLog,
+  onCancelDownload,
+  onReinstallForGpu,
+  onResetAndReinstall,
+  onRetry,
+}: {
+  phase:
+    | "checking"
+    | "stopped"
+    | "needs-setup"
+    | "python-missing"
+    | "setting-up"
+    | "online"
+    | "error";
+  setupChainStep: string | null;
+  setupChainModelId: MediaAiModelId | null;
+  setupError: string | null;
+  status: MediaAiStatus | null;
+  hardware: HardwareProfile | null;
+  backendHardware: {
+    backend: string;
+    torch_device: string;
+    vram_mb: number;
+  } | null;
+  orchStatus: OrchestratorStatus | null;
+  availTiers: AvailableTiers | null;
+  isDownloading: boolean;
+  setupAction: string | null;
+  showLog: boolean;
+  eventLog: EventLogEntry[];
+  serverUrl: string;
+  onOneClickSetup: () => void;
+  onStartBackend: () => void;
+  onStopBackend: () => void;
+  onRefresh: () => void;
+  onInstall: () => void;
+  onToggleLog: () => void;
+  onCancelDownload: () => void;
+  onReinstallForGpu: () => void;
+  onResetAndReinstall: () => void;
+  onRetry: () => void;
+}) {
+  // ── Online: compact status bar ───────────────────────────────────────────
+  if (phase === "online") {
+    const gpuExpected =
+      hardware?.bestMediaBackend && hardware.bestMediaBackend !== "cpu";
+    const runningOnCpu = backendHardware?.backend === "cpu";
+    const showGpuWarning = gpuExpected && runningOnCpu;
+    return (
+      <div className="mb-6 flex flex-col gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-green-500/30 bg-green-500/5 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <Server className="h-4 w-4 text-green-600" />
+            <span className="text-sm font-medium text-green-700">
+              Backend online
+            </span>
+            {backendHardware && (
+              <BackendBadge backend={backendHardware.backend} />
+            )}
+            {hardware?.primaryGpu && hardware.primaryGpu.vramMb > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {hardware.primaryGpu.model} ·{" "}
+                {Math.round(hardware.primaryGpu.vramMb / 1024)} GB VRAM
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onRefresh}
+              className="h-7 px-2 text-xs"
+            >
+              <RefreshCw className="mr-1 h-3 w-3" />
+              Refresh
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onResetAndReinstall}
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+              title="Wipe the Python environment and reinstall — useful if GPU isn't being used"
+            >
+              <Wrench className="mr-1 h-3 w-3" />
+              Reset
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onStopBackend}
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-rose-500"
+            >
+              <Square className="mr-1 h-3 w-3" />
+              Stop
+            </Button>
+          </div>
+        </div>
+        {showGpuWarning && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/5 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Zap className="h-4 w-4 text-yellow-600" />
+              <span className="text-sm text-yellow-700">
+                Running on CPU — GPU torch not installed for{" "}
+                {BACKEND_LABELS[hardware!.bestMediaBackend!] ??
+                  hardware!.bestMediaBackend}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 border-yellow-500/40 px-3 text-xs"
+                onClick={onReinstallForGpu}
+              >
+                <Wrench className="mr-1.5 h-3 w-3" />
+                Install GPU Support
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-3 text-xs text-muted-foreground hover:text-rose-500"
+                onClick={onResetAndReinstall}
+              >
+                Reset &amp; Reinstall
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Checking ─────────────────────────────────────────────────────────────
+  if (phase === "checking") {
+    return (
+      <div className="mb-6 flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        <span className="text-sm text-muted-foreground">Checking backend…</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onRefresh}
+          className="ml-auto h-7 px-2 text-xs"
+        >
+          <RefreshCw className="mr-1 h-3 w-3" />
+          Refresh
+        </Button>
+      </div>
+    );
+  }
+
+  // ── Stopped (venv exists, not running) ───────────────────────────────────
+  if (phase === "stopped") {
+    const gpuBackend =
+      hardware?.bestMediaBackend && hardware.bestMediaBackend !== "cpu"
+        ? hardware.bestMediaBackend
+        : null;
+    return (
+      <div className="mb-6 flex flex-col gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <ServerOff className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">
+              Backend stopped
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onRefresh}
+              className="h-7 px-2 text-xs"
+            >
+              <RefreshCw className="mr-1 h-3 w-3" />
+              Refresh
+            </Button>
+            <Button
+              size="sm"
+              onClick={onStartBackend}
+              className="h-7 px-3 text-xs"
+            >
+              <Play className="mr-1.5 h-3 w-3" />
+              Start Backend
+            </Button>
+          </div>
+        </div>
+        {gpuBackend && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/5 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Zap className="h-4 w-4 text-yellow-600" />
+              <span className="text-sm text-yellow-700">
+                GPU detected ({BACKEND_LABELS[gpuBackend] ?? gpuBackend}) —
+                install GPU support to run on your graphics card
+              </span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 border-yellow-500/40 px-3 text-xs"
+              onClick={onReinstallForGpu}
+            >
+              <Wrench className="mr-1.5 h-3 w-3" />
+              Install GPU Support
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Error ────────────────────────────────────────────────────────────────
+  if (phase === "error") {
+    return (
+      <Card className="mb-6 border-rose-500/40">
+        <CardContent className="pt-6">
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start gap-3">
+              <ServerOff className="mt-0.5 h-5 w-5 shrink-0 text-rose-500" />
+              <div>
+                <p className="font-medium text-rose-600">Setup failed</p>
+                {setupError && (
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {setupError}
+                  </p>
+                )}
+                {setupError?.includes("python.org") && (
+                  <a
+                    href="https://www.python.org/downloads/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 inline-flex items-center gap-1 text-sm text-primary underline"
+                  >
+                    Download Python →
+                  </a>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={onRetry}>
+                <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                Try Again
+              </Button>
+              <Button variant="outline" size="sm" onClick={onToggleLog}>
+                <Terminal className="mr-2 h-3.5 w-3.5" />
+                {showLog ? "Hide Log" : "Show Log"}
+              </Button>
+            </div>
+            {showLog && (
+              <div className="max-h-48 overflow-auto rounded-md border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed">
+                {eventLog
+                  .slice()
+                  .reverse()
+                  .map((e) => (
+                    <div key={e.id} className="flex gap-2">
+                      <span className="shrink-0 text-muted-foreground">
+                        {e.time}
+                      </span>
+                      <span
+                        className={cn(
+                          e.level === "error" && "text-rose-500",
+                          e.level === "success" && "text-emerald-500",
+                        )}
+                      >
+                        {e.message}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // ── Setting up (chain running) ────────────────────────────────────────────
+  if (phase === "setting-up") {
+    const steps = [
+      { id: "install", label: "Install Python packages" },
+      { id: "download", label: "Download all media models" },
+      { id: "start", label: "Start backend server" },
+    ];
+    // Same ordering as runSetupChain so the per-component sub-list matches the
+    // sequence the chain actually runs.
+    const COMPONENTS: { id: MediaAiModelId; label: string; sizeGb: number }[] =
+      [
+        { id: "whisper", label: "Whisper Base (transcription)", sizeGb: 0.15 },
+        { id: "audio", label: "SpeechT5 + MMS-TTS (audio)", sizeGb: 1.0 },
+        { id: "image-sd-turbo", label: "SD Turbo (image)", sizeGb: 2.5 },
+        {
+          id: "image-z-image-turbo",
+          label: "Z-Image Turbo (image)",
+          sizeGb: 6.0,
+        },
+        {
+          id: "image",
+          label: "Stable Diffusion 1.5 ONNX (image)",
+          sizeGb: 4.0,
+        },
+        { id: "text", label: "Phi-3 mini (text)", sizeGb: 2.4 },
+        { id: "video", label: "ModelScope text-to-video", sizeGb: 11.0 },
+      ];
+    const stepOrder = ["install", "download", "start"];
+    const currentIdx = stepOrder.indexOf(setupChainStep ?? "");
+    const activeComponentIdx = setupChainModelId
+      ? COMPONENTS.findIndex((c) => c.id === setupChainModelId)
+      : -1;
+    return (
+      <Card className="mb-6">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Setting up Media AI…
+          </CardTitle>
+          {hardware?.bestMediaBackend && (
+            <CardDescription className="flex items-center gap-2">
+              Installing with{" "}
+              <BackendBadge backend={hardware.bestMediaBackend} /> support
+              {hardware.primaryGpu?.model
+                ? ` on ${hardware.primaryGpu.model}`
+                : ""}
+            </CardDescription>
+          )}
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            {steps.map((step, i) => {
+              const stepIdx = stepOrder.indexOf(step.id);
+              const isDone = currentIdx > stepIdx;
+              const isActive = step.id === setupChainStep;
+              return (
+                <div key={step.id}>
+                  <div className="flex items-center gap-2.5 text-sm">
+                    {isDone ? (
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-500 text-[10px] font-bold">
+                        ✓
+                      </span>
+                    ) : isActive ? (
+                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    ) : (
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full border border-border text-[10px] text-muted-foreground">
+                        {i + 1}
+                      </span>
+                    )}
+                    <span
+                      className={cn(
+                        isDone && "text-muted-foreground line-through",
+                        isActive && "font-medium",
+                      )}
+                    >
+                      {step.label}
+                    </span>
+                  </div>
+                  {step.id === "download" && (isActive || isDone) && (
+                    <div className="ml-7 mt-1.5 space-y-1 border-l border-border/50 pl-3">
+                      {COMPONENTS.map((c, ci) => {
+                        const downloaded =
+                          status?.models.some(
+                            (m) => m.id === c.id && m.downloaded,
+                          ) ?? false;
+                        const isComponentActive =
+                          isActive && ci === activeComponentIdx;
+                        const isComponentDone =
+                          downloaded ||
+                          (isActive &&
+                            activeComponentIdx >= 0 &&
+                            ci < activeComponentIdx) ||
+                          isDone;
+                        return (
+                          <div
+                            key={c.id}
+                            className="flex items-center gap-2 text-xs"
+                          >
+                            {isComponentDone ? (
+                              <span className="text-emerald-500">✓</span>
+                            ) : isComponentActive ? (
+                              <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                            ) : (
+                              <span className="text-muted-foreground">•</span>
+                            )}
+                            <span
+                              className={cn(
+                                "flex-1",
+                                isComponentDone && "text-muted-foreground",
+                                isComponentActive && "font-medium",
+                              )}
+                            >
+                              {c.label}
+                            </span>
+                            <span className="text-muted-foreground">
+                              ~{c.sizeGb} GB
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {isDownloading && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onCancelDownload}
+              className="text-muted-foreground hover:text-rose-500"
+            >
+              Cancel download
+            </Button>
+          )}
+          <button
+            type="button"
+            onClick={onToggleLog}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Terminal className="h-3 w-3" />
+            {showLog ? "Hide" : "Show"} activity log
+          </button>
+          {showLog && (
+            <div className="max-h-48 overflow-auto rounded-md border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed">
+              {eventLog.length === 0 ? (
+                <p className="text-muted-foreground">No events yet.</p>
+              ) : (
+                eventLog
+                  .slice()
+                  .reverse()
+                  .map((e) => (
+                    <div key={e.id} className="flex gap-2">
+                      <span className="shrink-0 text-muted-foreground">
+                        {e.time}
+                      </span>
+                      <span
+                        className={cn(
+                          e.level === "error" && "text-rose-500",
+                          e.level === "success" && "text-emerald-500",
+                        )}
+                      >
+                        {e.message}
+                      </span>
+                    </div>
+                  ))
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // ── Needs setup (no venv) ─────────────────────────────────────────────────
+  // Components downloaded by the one-click chain. Keep this in sync with
+  // runSetupChain in MediaAIPage and the COMPONENTS list above.
+  const ALL_COMPONENT_SUMMARY: {
+    id: MediaAiModelId;
+    label: string;
+    sizeGb: number;
+  }[] = [
+    { id: "whisper", label: "Whisper (transcribe)", sizeGb: 0.15 },
+    { id: "audio", label: "SpeechT5 + MMS-TTS (audio)", sizeGb: 1.0 },
+    { id: "image-sd-turbo", label: "SD Turbo", sizeGb: 2.5 },
+    { id: "image-z-image-turbo", label: "Z-Image Turbo", sizeGb: 6.0 },
+    { id: "image", label: "Stable Diffusion 1.5", sizeGb: 4.0 },
+    { id: "text", label: "Phi-3 mini (text)", sizeGb: 2.4 },
+    { id: "video", label: "Text-to-video", sizeGb: 11.0 },
+  ];
+  const pendingComponents = ALL_COMPONENT_SUMMARY.filter(
+    (c) =>
+      !(status?.models.some((m) => m.id === c.id && m.downloaded) ?? false),
+  );
+  const totalGb = pendingComponents.reduce((acc, c) => acc + c.sizeGb, 0);
+  return (
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Sparkles className="h-5 w-5 text-primary" />
+          Set Up Media AI
+        </CardTitle>
+        <CardDescription>
+          One click installs the Python runtime with GPU support (when
+          available), downloads every media model, and launches the local
+          backend.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {/* Hardware detected */}
+        {hardware && (
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/20 px-4 py-3 text-sm">
+            <Zap className="h-4 w-4 text-muted-foreground" />
+            {hardware.primaryGpu?.model ? (
+              <>
+                <span className="font-medium">{hardware.primaryGpu.model}</span>
+                {hardware.primaryGpu.vramMb > 0 && (
+                  <span className="text-muted-foreground">
+                    · {Math.round(hardware.primaryGpu.vramMb / 1024)} GB VRAM
+                  </span>
+                )}
+                {hardware.bestMediaBackend && (
+                  <BackendBadge backend={hardware.bestMediaBackend} />
+                )}
+              </>
+            ) : (
+              <span className="text-muted-foreground">
+                No dedicated GPU detected — CPU mode
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* What will be downloaded */}
+        <div className="rounded-lg border bg-muted/20 px-4 py-3 text-sm">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="font-medium">
+              {pendingComponents.length === 0
+                ? "All media models already installed"
+                : `${pendingComponents.length} model${pendingComponents.length === 1 ? "" : "s"} to download`}
+            </span>
+            {pendingComponents.length > 0 && (
+              <span className="text-xs text-muted-foreground">
+                ~{totalGb.toFixed(1)} GB total
+              </span>
+            )}
+          </div>
+          {pendingComponents.length > 0 && (
+            <ul className="space-y-1 text-xs text-muted-foreground">
+              {ALL_COMPONENT_SUMMARY.map((c) => {
+                const downloaded =
+                  status?.models.some((m) => m.id === c.id && m.downloaded) ??
+                  false;
+                return (
+                  <li key={c.id} className="flex items-center gap-2">
+                    <span
+                      className={
+                        downloaded
+                          ? "text-emerald-500"
+                          : "text-muted-foreground"
+                      }
+                    >
+                      {downloaded ? "✓" : "•"}
+                    </span>
+                    <span
+                      className={cn("flex-1", downloaded && "line-through")}
+                    >
+                      {c.label}
+                    </span>
+                    <span>~{c.sizeGb} GB</span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        {/* Primary CTA */}
+        <Button
+          size="lg"
+          className="w-full"
+          onClick={onOneClickSetup}
+          disabled={!status?.backendAvailable}
+        >
+          <Wrench className="mr-2 h-4 w-4" />
+          {pendingComponents.length === 0
+            ? "Launch Media AI"
+            : `Install & Download Everything (~${totalGb.toFixed(1)} GB)`}
+        </Button>
+        {!status?.backendAvailable && (
+          <p className="text-xs text-muted-foreground text-center">
+            Backend files not found. Check that the mediaai-backend folder is
+            present.
+          </p>
+        )}
+
+        {/* Advanced / manual controls */}
+        <details className="group">
+          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground select-none">
+            Advanced options
+          </summary>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={onRefresh}>
+              <RefreshCw className="mr-2 h-3.5 w-3.5" /> Refresh
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onInstall}
+              disabled={setupAction !== null || !status?.backendAvailable}
+            >
+              {setupAction === "install" ? (
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="mr-2 h-3.5 w-3.5" />
+              )}
+              Install Deps Only
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onStartBackend}
+              disabled={setupAction !== null || !status?.backendAvailable}
+            >
+              {setupAction === "start" ? (
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Play className="mr-2 h-3.5 w-3.5" />
+              )}
+              Start Backend
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onResetAndReinstall}
+              disabled={setupAction !== null || !status?.venvExists}
+              className="text-muted-foreground hover:text-foreground"
+              title="Delete the Python environment and reinstall — keeps downloaded models"
+            >
+              <Wrench className="mr-2 h-3.5 w-3.5" />
+              Reset &amp; Reinstall
+            </Button>
+          </div>
+          <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
+            <StatusRow label="Backend" value={status?.backendPath} />
+            <StatusRow
+              label="Python env"
+              value={status?.venvExists ? status.pythonPath : "Not installed"}
+            />
+            <StatusRow label="Models" value={status?.modelsPath} />
+            <StatusRow label="Server" value={serverUrl} />
+          </div>
+          {orchStatus && (
+            <div className="mt-2">
+              <StatusRow label="Orchestrator" value={orchStatus.state} />
+            </div>
+          )}
+          {availTiers && (
+            <div className="mt-3 grid gap-2 md:grid-cols-3">
+              <TierRow label="Image" tier={availTiers.image?.[0] ?? null} />
+              <TierRow label="Audio" tier={availTiers.audio?.[0] ?? null} />
+              <TierRow label="Video" tier={availTiers.video?.[0] ?? null} />
+            </div>
+          )}
+        </details>
+
+        {/* Log */}
+        {(showLog || setupAction !== null) && (
+          <>
+            <button
+              type="button"
+              onClick={onToggleLog}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <Terminal className="h-3 w-3" />
+              {showLog ? "Hide" : "Show"} activity log
+            </button>
+            {showLog && (
+              <div className="max-h-48 overflow-auto rounded-md border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed">
+                {eventLog.length === 0 ? (
+                  <p className="text-muted-foreground">No events yet.</p>
+                ) : (
+                  eventLog
+                    .slice()
+                    .reverse()
+                    .map((e) => (
+                      <div key={e.id} className="flex gap-2">
+                        <span className="shrink-0 text-muted-foreground">
+                          {e.time}
+                        </span>
+                        <span
+                          className={cn(
+                            e.level === "error" && "text-rose-500",
+                            e.level === "success" && "text-emerald-500",
+                          )}
+                        >
+                          {e.message}
+                        </span>
+                      </div>
+                    ))
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }

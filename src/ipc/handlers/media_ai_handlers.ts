@@ -2,11 +2,13 @@ import { mediaAiContracts } from "../types/media_ai";
 import { createTypedHandler } from "./base";
 import {
   cancelMediaAiDownload,
+  deleteMediaAiModel,
   downloadMediaAiModels,
   getMediaAiBackendStatus,
   installMediaAiDependencies,
   installMediaAiDependenciesForBackend,
   isMediaAiDownloadActive,
+  resetMediaAiSetup,
   startMediaAiBackend,
   stopMediaAiBackend,
 } from "../utils/media_ai_backend";
@@ -57,6 +59,15 @@ export function registerMediaAiHandlers() {
     const wasActive = isMediaAiDownloadActive();
     cancelMediaAiDownload();
     return { cancelled: wasActive };
+  });
+
+  createTypedHandler(mediaAiContracts.deleteModel, async (_, params) => {
+    await deleteMediaAiModel(params.modelId);
+    return { deleted: true };
+  });
+
+  createTypedHandler(mediaAiContracts.resetSetup, async (_, params) => {
+    return resetMediaAiSetup(params);
   });
 
   // Image proxy via main-process fetch (no CORS / Origin / Referer issues).

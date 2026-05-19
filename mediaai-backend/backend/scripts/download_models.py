@@ -56,6 +56,12 @@ MODEL_GROUPS = {
     "image-z-image-turbo": [
         {"kind": "snapshot", "repo_id": "Tongyi-MAI/Z-Image-Turbo"},
     ],
+    # Whisper Base CT2 weights — pre-downloads the default tier for /v1/transcribe
+    # so the first transcription doesn't block on a HF fetch. faster-whisper
+    # accepts the model name ("base") and pulls from Systran/faster-whisper-base.
+    "whisper": [
+        {"kind": "snapshot", "repo_id": "Systran/faster-whisper-base"},
+    ],
 }
 
 

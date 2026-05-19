@@ -16,6 +16,20 @@ _RAW_VENDOR = os.environ.get("ORIANBUILDER_GPU_VENDOR", "unknown").lower()
 
 
 def get_backend() -> str:
+    # If a GPU backend was requested, verify torch actually supports it before
+    # trusting it — avoids confusing failures when a CPU torch wheel is installed.
+    if _RAW_BACKEND in ("cuda", "rocm"):
+        try:
+            import torch  # type: ignore
+            if torch.cuda.is_available():
+                return _RAW_BACKEND
+            import logging as _log
+            _log.getLogger(__name__).warning(
+                "Backend '%s' requested but CUDA unavailable — falling back to CPU", _RAW_BACKEND
+            )
+        except ImportError:
+            pass
+        return "cpu"
     if _RAW_BACKEND != "cpu":
         return _RAW_BACKEND
     # Electron may not have nvidia-smi in PATH, causing it to send "cpu" even
