@@ -105,6 +105,25 @@ export const AgentProblemsUpdateSchema = z.object({
   problems: ProblemReportSchema,
 });
 
+export const ProgressAnnotationSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  step: z.number().optional(),
+  totalSteps: z.number().optional(),
+  status: z.enum(["in-progress", "completed", "failed"]),
+});
+
+export type ProgressAnnotation = z.infer<typeof ProgressAnnotationSchema>;
+
+export const AgentProgressUpdateSchema = z.object({
+  chatId: z.number(),
+  annotation: ProgressAnnotationSchema,
+});
+
+export type AgentProgressUpdatePayload = z.infer<
+  typeof AgentProgressUpdateSchema
+>;
+
 export type AgentProblemsUpdatePayload = z.infer<
   typeof AgentProblemsUpdateSchema
 >;
@@ -184,6 +203,14 @@ export const agentEvents = {
   problemsUpdate: defineEvent({
     channel: "agent-tool:problems-update",
     payload: AgentProblemsUpdateSchema,
+  }),
+
+  /**
+   * Emitted when a tool reports structured progress (multi-step operations).
+   */
+  progressUpdate: defineEvent({
+    channel: "agent-tool:progress",
+    payload: AgentProgressUpdateSchema,
   }),
 } as const;
 

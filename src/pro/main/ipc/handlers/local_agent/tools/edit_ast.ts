@@ -12,6 +12,7 @@ import {
   OrianBuilderError,
   OrianBuilderErrorKind,
 } from "@/errors/orianbuilder_error";
+import { isPathLocked } from "@/pro/main/ipc/utils/chat_path_locks";
 
 const logger = log.scope("edit_ast");
 
@@ -559,6 +560,14 @@ export const editAstTool: ToolDefinition<EditAstArgs> = {
       `edit_ast: op=${args.operation} file=${args.file} appPath=${ctx.appPath}`,
     );
 
+    if (isPathLocked(args.file, ctx.runState.lockedPaths)) {
+      throw new OrianBuilderError(
+        `Refusing to edit: ${args.file} is locked by the user for this chat. ` +
+          "Ask the user to unlock it before retrying, or target a different file.",
+        OrianBuilderErrorKind.Validation,
+      );
+    }
+
     ctx.onXmlStream(
       `<orianbuilder-ast-edit operation="${escapeXmlAttr(args.operation)}" file="${escapeXmlAttr(args.file)}">Processing…`,
     );
@@ -600,6 +609,13 @@ export const editAstTool: ToolDefinition<EditAstArgs> = {
     }
 
     logger.log(`edit_ast: done — ${resultText}`);
+
+    ctx.runState.filesWrittenSinceCreateProject.add(
+      args.file.replace(/\\/g, "/"),
+    );
+    // Any AST edit invalidates the previous QA result.
+    ctx.runState.lastBrowserQaStatus = null;
+    ctx.runState.lastBrowserQaPlaceholderDetected = false;
 
     ctx.onXmlComplete(
       `<orianbuilder-ast-edit operation="${escapeXmlAttr(args.operation)}" file="${escapeXmlAttr(args.file)}">${escapeXmlContent(resultText)}</orianbuilder-ast-edit>`,

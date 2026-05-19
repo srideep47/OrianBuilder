@@ -1,0 +1,11 @@
+-r requirements-base.txt
+onnxruntime>=1.18.0
+diffusers>=0.32.0
+transformers>=4.45.0
+torch>=2.5.0
+sentencepiece>=0.2.0
+imageio>=2.34.0
+imageio-ffmpeg>=0.5.0
+# CPU-friendly TTS — Kokoro 82M runs near-realtime on CPU
+kokoro>=0.7.0
+librosa>=0.10.0

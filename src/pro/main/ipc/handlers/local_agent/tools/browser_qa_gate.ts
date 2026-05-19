@@ -19,8 +19,27 @@ import {
 const browserQaGateSchema = z.object({
   start_runtime: z.boolean().optional().default(true),
   full_page: z.boolean().optional().default(false),
-  runtime_timeout_seconds: z.number().min(5).max(180).optional().default(45),
+  runtime_timeout_seconds: z
+    .number()
+    .min(5)
+    .max(240)
+    .optional()
+    .describe(
+      "Max seconds to wait for the runtime to be ready. Defaults to 45s for most projects and 120s for Expo (where expo export + serve startup is slow).",
+    ),
 });
+
+async function isExpoProject(appPath: string): Promise<boolean> {
+  try {
+    await fs.access(path.join(appPath, "app.json"));
+    return true;
+  } catch {}
+  try {
+    await fs.access(path.join(appPath, "app", "index.tsx"));
+    return true;
+  } catch {}
+  return false;
+}
 
 type BrowserQaGateArgs = z.infer<typeof browserQaGateSchema>;
 
@@ -50,6 +69,97 @@ const ERROR_PATTERNS = [
   /build.*failed/i,
 ];
 
+/**
+ * Strings that indicate the app is still showing the Expo scaffold placeholder
+ * and has not been implemented yet. Any match forces QA to fail.
+ */
+const PLACEHOLDER_PATTERNS = [
+  /⚠\s*PLACEHOLDER/i,
+  /scaffold starter screen/i,
+  /Replace app\/index\.tsx/i,
+  /Edit app\/index\.tsx to build/i,
+] as const;
+
+function isPlaceholderScreen(text: string): boolean {
+  return PLACEHOLDER_PATTERNS.some((p) => p.test(text));
+}
+
+/**
+ * Minimal but valid Expo Router screen used as the 3rd-strike auto-write.
+ * Renders something visibly different from the yellow placeholder so QA
+ * progresses to runtime/screenshot/console checks. The agent can then
+ * customize it to match the actual user request.
+ */
+function buildDefaultExpoScreen(): string {
+  return `import { StyleSheet, Text, View } from "react-native";
+
+export default function Index() {
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>App is running</Text>
+      <Text style={styles.subtitle}>
+        This is a default screen written by the build harness because the
+        agent failed to implement the requested UI after multiple attempts.
+        Edit app/index.tsx to customize.
+      </Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#0b0d12",
+    padding: 24,
+  },
+  title: {
+    color: "#f8fafc",
+    fontSize: 28,
+    fontWeight: "600",
+    marginBottom: 12,
+  },
+  subtitle: {
+    color: "#94a3b8",
+    fontSize: 14,
+    textAlign: "center",
+  },
+});
+`;
+}
+
+/**
+ * Skeleton the agent can adapt during a 2nd-strike refusal. Includes the
+ * required imports + a StyleSheet so weak models have less to fabricate.
+ */
+function buildExpoScreenTemplate(): string {
+  return `import { StyleSheet, Text, View } from "react-native";
+
+export default function Index() {
+  return (
+    <View style={styles.container}>
+      {/* TODO: replace with the user's requested UI */}
+      <Text style={styles.text}>Hello</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+  },
+  text: {
+    fontSize: 18,
+    color: "#111",
+  },
+});
+`;
+}
+
 const NOISE_PATTERNS = [
   /^\s*$/,
   /vite.*ready/i,
@@ -62,6 +172,10 @@ const NOISE_PATTERNS = [
   /props\.pointerEvents is deprecated/i,
   /"shadow\*" style props are deprecated/i,
   /Image: style\.resizeMode is deprecated/i,
+  /style\.resizeMode is deprecated/i,
+  /setNativeProps is deprecated/i,
+  /react-native-web.*deprecat/i,
+  /deprecat.*react-native-web/i,
 ];
 
 type BrowserQaResult = {
@@ -77,6 +191,7 @@ type BrowserQaResult = {
   consoleStatus: GateStatus;
   consoleOutput: string;
   browserError: string | null;
+  placeholderDetected: boolean;
 };
 
 function looksLikeProblem(message: string): boolean {
@@ -129,9 +244,11 @@ async function runBrowserQa(
     await runAppById(ctx.event, ctx.appId);
   }
 
+  const expoDefault = (await isExpoProject(ctx.appPath)) ? 120 : 45;
+  const effectiveTimeoutSeconds = args.runtime_timeout_seconds ?? expoDefault;
   const readiness = await waitForManagedRuntimeReady({
     appId: ctx.appId,
-    timeoutMs: (args.runtime_timeout_seconds ?? 45) * 1000,
+    timeoutMs: effectiveTimeoutSeconds * 1000,
   });
   const runtimeUrl =
     readiness.previewUrl ?? getManagedRuntimePreviewUrl(ctx.appId);
@@ -207,11 +324,14 @@ async function runBrowserQa(
   }
 
   const consoleResult = readRecentConsole(ctx.appId);
+  const placeholderDetected = isPlaceholderScreen(accessibilityText);
+
   const status: GateStatus =
     runtimeStatus === "passed" &&
     screenshotStatus === "passed" &&
     accessibilityStatus === "passed" &&
-    consoleResult.status === "passed"
+    consoleResult.status === "passed" &&
+    !placeholderDetected
       ? "passed"
       : "failed";
 
@@ -228,6 +348,7 @@ async function runBrowserQa(
     consoleStatus: consoleResult.status,
     consoleOutput: consoleResult.output,
     browserError,
+    placeholderDetected,
   };
 }
 
@@ -249,10 +370,116 @@ This starts or reuses the managed preview, waits for runtime readiness, captures
   },
 
   execute: async (args, ctx) => {
+    const indexPath = path.join(ctx.appPath, "app", "index.tsx");
+    let indexExists = false;
+    let indexSource = "";
+    try {
+      indexSource = await fs.readFile(indexPath, "utf-8");
+      indexExists = true;
+    } catch {
+      // app/index.tsx doesn't exist (non-Expo project) — fall through to normal QA.
+    }
+
+    if (indexExists) {
+      const isPlaceholder = PLACEHOLDER_PATTERNS.some((pattern) =>
+        pattern.test(indexSource),
+      );
+
+      // The scaffold now ships a working baseline counter app, so we only
+      // refuse when the file *literally still matches the old yellow
+      // placeholder text* (e.g., a project scaffolded before this update, or
+      // an agent that reverted the baseline). Skipped-implementation is no
+      // longer a refusal: an unmodified baseline is a valid (if generic) app.
+      if (isPlaceholder) {
+        ctx.runState.lastBrowserQaStatus = "failed";
+        ctx.runState.lastBrowserQaPlaceholderDetected = true;
+        ctx.runState.placeholderRefusalCount += 1;
+        const refusalCount = ctx.runState.placeholderRefusalCount;
+        const reason =
+          "app/index.tsx still contains the legacy unimplemented scaffold placeholder.";
+
+        // Third strike: auto-write a sensible default so weak local models
+        // cannot dead-end the turn. The user can still iterate further; this
+        // just unblocks the pipeline so packaging can succeed.
+        if (refusalCount >= 3) {
+          const defaultContent = buildDefaultExpoScreen();
+          await fs.writeFile(indexPath, defaultContent, "utf-8");
+          ctx.runState.filesWrittenSinceCreateProject.add("app/index.tsx");
+          const autoMessage =
+            `browser_qa_gate auto-wrote app/index.tsx with a sensible default after ${refusalCount} placeholder refusals. ` +
+            `The model failed to implement the requested UI after multiple directives. ` +
+            `A minimal valid Expo screen is now in place. You can re-run browser_qa_gate to verify, ` +
+            `or write_file again to customise the UI to match the user's request.`;
+          ctx.appendUserMessage([
+            {
+              type: "text",
+              text:
+                `[gate] After ${refusalCount} placeholder refusals, the harness auto-wrote a default app/index.tsx so the pipeline can proceed. ` +
+                `Now: (1) re-run browser_qa_gate to verify, (2) then customize app/index.tsx with write_file to match the user's actual request, ` +
+                `(3) re-run browser_qa_gate, (4) then call package_native_artifact.`,
+            },
+          ]);
+          ctx.onXmlComplete(
+            `<orianbuilder-browser-qa status="failed" runtime-status="failed" runtime-url="" runtime-error="${escapeXmlAttr(`auto-wrote default after ${refusalCount} refusals`)}" browser-error="" screenshot-status="failed" desktop-path="" mobile-path="" accessibility-status="failed" console-status="failed">${escapeXmlContent(autoMessage)}</orianbuilder-browser-qa>`,
+          );
+          return autoMessage;
+        }
+
+        // Second strike: push the file content + a template the agent can
+        // copy-modify, so it doesn't need to call read_file separately.
+        const escalatedBody =
+          refusalCount >= 2
+            ? "\n\nCurrent app/index.tsx content (USE write_file to REPLACE this with real UI):\n```tsx\n" +
+              indexSource.slice(0, 4000) +
+              "\n```\n\nTEMPLATE you can adapt (replace the body of the View with the user's requested UI):\n```tsx\n" +
+              buildExpoScreenTemplate() +
+              "\n```"
+            : "";
+
+        const message =
+          `browser_qa_gate refused (attempt ${refusalCount}/3): ${reason} ` +
+          "REQUIRED NEXT STEPS (in order): " +
+          "(1) write_file on app/index.tsx with the implemented UI using React Native components and StyleSheet " +
+          "(2) re-run browser_qa_gate. " +
+          "Do NOT call package_native_artifact until QA reports status=passed." +
+          escalatedBody;
+        ctx.appendUserMessage([
+          {
+            type: "text",
+            text:
+              `[gate refusal ${refusalCount}/3] ${reason} ` +
+              "Your VERY NEXT tool call MUST be write_file({path: 'app/index.tsx', content: '...real UI here...'}). " +
+              "Use React Native components (View, Text, StyleSheet). " +
+              "Then call browser_qa_gate again. Do not call package_native_artifact yet." +
+              (refusalCount >= 2
+                ? " The current file content is provided below — replace it with real UI."
+                : ""),
+          },
+        ]);
+        ctx.onXmlComplete(
+          `<orianbuilder-browser-qa status="failed" runtime-status="failed" runtime-url="" runtime-error="${escapeXmlAttr(reason)}" browser-error="" screenshot-status="failed" desktop-path="" mobile-path="" accessibility-status="failed" console-status="failed">${escapeXmlContent(message)}</orianbuilder-browser-qa>`,
+        );
+        return message;
+      }
+    }
+
     ctx.onXmlStream(
       `<orianbuilder-browser-qa status="running">Running browser QA gate...`,
     );
+    ctx.emitProgress?.({
+      id: "browser_qa",
+      label: "Running browser QA",
+      status: "in-progress",
+    });
     const result = await runBrowserQa(args, ctx);
+    ctx.emitProgress?.({
+      id: "browser_qa",
+      label:
+        result.status === "passed" ? "Browser QA passed" : "Browser QA failed",
+      status: result.status === "passed" ? "completed" : "failed",
+    });
+    ctx.runState.lastBrowserQaStatus = result.status;
+    ctx.runState.lastBrowserQaPlaceholderDetected = result.placeholderDetected;
     const report = [
       `Browser QA ${result.status}.`,
       `runtime: ${result.runtimeStatus} - ${result.runtimeUrl}`,
@@ -262,6 +489,9 @@ This starts or reuses the managed preview, waits for runtime readiness, captures
       `console: ${result.consoleStatus}`,
       result.runtimeError ? `runtime error: ${result.runtimeError}` : null,
       result.browserError ? `browser error: ${result.browserError}` : null,
+      result.placeholderDetected
+        ? "\n⛔ IMPLEMENTATION REQUIRED: The app is showing the unimplemented scaffold placeholder screen. You MUST write the actual app content to app/index.tsx now and re-run QA. Do NOT call package_native_artifact until QA passes without this error."
+        : null,
       "",
       "Accessibility snapshot:",
       result.accessibilityText.trim() || "(empty)",

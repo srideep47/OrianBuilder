@@ -1,105 +1,99 @@
-# AI Rules — Expo + NativeWind
+# AI Rules — Expo (React Native)
+
+## ⚠ MANDATORY FIRST STEP AFTER SCAFFOLDING
+
+1. **Read `app/index.tsx`** — it contains an obvious yellow PLACEHOLDER screen.
+2. **Replace it** with the actual app content the user requested using React Native
+   components and `StyleSheet`.
+3. Only run `npm run preview` / QA **after** your content is visible in the app.
+4. **Never package a PLACEHOLDER as an APK.** If the QA screenshot or
+   accessibility tree still shows "PLACEHOLDER" or the warning yellow screen,
+   you have not implemented the app yet — go back to step 2.
+
+---
 
 ## Project overview
 
-- **Runtime**: React Native (Expo SDK 53) + expo-router v4
-- **Styling**: NativeWind v4 (Tailwind CSS utility classes on native components)
+- **Runtime**: React Native (Expo SDK 53) + expo-router v5
+- **Styling**: React Native `StyleSheet` (built-in — no Tailwind, no NativeWind)
 - **Language**: TypeScript (strict)
-- **Navigation**: expo-router (file-based, like Next.js but for native)
+- **Navigation**: expo-router v5 (file-based routing, like Next.js App Router for native)
 
 ## Expo Router — file-based routing
 
-| File                       | Route                          |
-| -------------------------- | ------------------------------ |
-| `app/index.tsx`            | `/` (home)                     |
-| `app/about.tsx`            | `/about`                       |
-| `app/[id].tsx`             | `/123`, `/abc` (dynamic)       |
-| `app/(tabs)/_layout.tsx`   | Tab navigator                  |
-| `app/(tabs)/home.tsx`      | Tab: Home                      |
-| `app/_layout.tsx`          | Root layout (wraps all routes) |
-| `app/(modal)/settings.tsx` | Modal route                    |
+| File                     | Route                    |
+| ------------------------ | ------------------------ |
+| `app/index.tsx`          | `/` (home)               |
+| `app/about.tsx`          | `/about`                 |
+| `app/[id].tsx`           | `/123`, `/abc` (dynamic) |
+| `app/(tabs)/_layout.tsx` | Tab navigator            |
+| `app/(tabs)/home.tsx`    | Tab: Home                |
+| `app/_layout.tsx`        | Root layout              |
 
 ## Navigation
 
 ```tsx
 import { Link, router } from "expo-router";
 
-// Declarative link
 <Link href="/about">Go to About</Link>
 <Link href={{ pathname: "/user/[id]", params: { id: "42" } }}>User</Link>
 
-// Imperative
 router.push("/about");
 router.replace("/home");
 router.back();
 ```
 
-## NativeWind (Tailwind on Native)
+## Styling — React Native StyleSheet
 
-- Use Tailwind classes on ALL React Native core components
-- Classes work on `View`, `Text`, `TouchableOpacity`, `ScrollView`, etc.
-- Use `className` prop (NOT `style` for layout when Tailwind covers it)
-- Dark mode: `dark:bg-gray-900`, `dark:text-white` etc.
+Use `StyleSheet.create()` for all styling. Do NOT use HTML/CSS classes or Tailwind.
 
 ```tsx
-// CORRECT
-<View className="flex-1 bg-white items-center justify-center p-4">
-  <Text className="text-2xl font-bold text-gray-800 dark:text-white">Hello</Text>
-</View>
+import { StyleSheet, View, Text } from "react-native";
 
-// WRONG — web-only CSS
-<div style={{ display: "flex" }}>
+export default function Screen() {
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Hello</Text>
+    </View>
+  );
+}
 
-// WRONG — CSS properties not in NativeWind
-<View className="grid grid-cols-3">  // grid not supported on native
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+  },
+  title: { fontSize: 24, fontWeight: "bold", color: "#333" },
+});
 ```
 
 ## React Native components (NOT HTML)
 
 - `<View>` not `<div>`
-- `<Text>` not `<p>`, `<span>`, `<h1>`, etc.
+- `<Text>` not `<p>`, `<span>`, `<h1>` etc.
 - `<TouchableOpacity>` or `<Pressable>` not `<button>`
 - `<TextInput>` not `<input>`
-- `<Image>` not `<img>` (import from react-native)
-- `<ScrollView>` not `<div style={{ overflow: "scroll" }}>`
-- `<FlatList>` for long lists (virtualized)
-- `<SafeAreaView>` for screens that need to avoid notches
+- `<Image source={...}>` not `<img>` (import from react-native)
+- `<ScrollView>` for scrollable content
+- `<FlatList>` for long virtualized lists
+- `<SafeAreaView>` to avoid notch/status bar overlap
 
-## Layouts
+## Adding native packages
 
-```tsx
-// Tabs
-import { Tabs } from "expo-router";
-export default function TabLayout() {
-  return (
-    <Tabs>
-      <Tabs.Screen name="index" options={{ title: "Home", tabBarIcon: ... }} />
-      <Tabs.Screen name="profile" options={{ title: "Profile" }} />
-    </Tabs>
-  );
-}
+For packages with native code (anything in the Expo ecosystem), use
+`run_terminal_command` with `npx expo install` — this pins the version
+that is compatible with the installed Expo SDK:
 
-// Stack with options
-import { Stack } from "expo-router";
-export default function StackLayout() {
-  return <Stack screenOptions={{ headerShown: false }} />;
-}
+```
+npx expo install @react-native-picker/picker
+npx expo install expo-camera
+npx expo install expo-location
+npx expo install react-native-maps
 ```
 
-## Screen options (header, modal, etc.)
-
-```tsx
-import { useNavigation } from "expo-router";
-import { useLayoutEffect } from "react";
-
-export default function Screen() {
-  const nav = useNavigation();
-  useLayoutEffect(() => {
-    nav.setOptions({ title: "My Title", headerRight: () => <Button /> });
-  }, [nav]);
-  return <View />;
-}
-```
+For pure JavaScript packages (no native code), `add_dependency` works fine.
 
 ## Icons
 
@@ -110,39 +104,27 @@ import { Ionicons } from "@expo/vector-icons";
 
 ## Data fetching
 
-- Use `useEffect` + `fetch` or `axios` (no server-only modules)
-- React Query works fine: `useQuery`, `useMutation`
-- No `fs`, `path`, or other Node.js modules — it's a mobile runtime
-
-## Images
-
-```tsx
-import { Image } from "react-native";
-<Image source={require("./assets/logo.png")} className="w-24 h-24" />
-// or remote:
-<Image source={{ uri: "https://..." }} className="w-24 h-24 rounded-full" />
-```
+Use `useEffect` + `fetch`, or React Query. No Node.js modules (`fs`, `path`, etc.).
 
 ## Platform-specific code
 
 ```tsx
 import { Platform } from "react-native";
-const isIOS = Platform.OS === "ios";
-// or:
-import { Platform } from "react-native";
-const styles = Platform.select({
-  ios: "bg-blue-500",
-  android: "bg-green-500",
-  default: "bg-gray-500",
-});
+if (Platform.OS === "android") {
+  /* ... */
+}
+if (Platform.OS === "ios") {
+  /* ... */
+}
 ```
 
 ## CRITICAL RULES
 
 1. NEVER use HTML tags (`div`, `span`, `button`, `input`) — use React Native components
-2. NEVER use `position: fixed` — use `SafeAreaView` and flex layout
-3. NEVER use `window`, `document`, or browser APIs — check `Platform.OS` first
-4. ALWAYS wrap top-level screens in `<SafeAreaView className="flex-1">` or `<ScrollView>`
-5. NativeWind `flex-1` is essential on containers — RN defaults to `flexDirection: "column"` already
-6. Expo Router `<Link>` must navigate to file-based routes, not arbitrary URLs
-7. Use `npx expo start` to start the dev server and scan the QR code with Expo Go
+2. NEVER use `className` prop — use `style={styles.xxx}` with StyleSheet
+3. NEVER use `position: fixed` — use `SafeAreaView` and flex layout
+4. NEVER use `window`, `document`, or browser-only APIs
+5. ALWAYS wrap top-level screens in `<SafeAreaView style={{ flex: 1 }}>` or `<ScrollView>`
+6. `flex: 1` is essential on containers — RN uses column-flex by default
+7. For native packages (Expo ecosystem), install with `npx expo install <pkg>` via `run_terminal_command`
+8. The `preview` script exports a static web build — it is not an Android/iOS preview

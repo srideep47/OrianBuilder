@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ipc } from "@/ipc/types";
+import { HardwareCard } from "@/components/HardwareCard";
 import type {
   GpuInfo,
   GpuStats,
@@ -976,7 +977,7 @@ export default function InferencePage() {
             Inference Engine
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Embedded tensor inference · node-llama-cpp · CUDA{" "}
+            Embedded tensor inference · llama-server · CUDA{" "}
             {gpuInfo?.tensorCoreGen ?? "—"}
           </p>
         </div>
@@ -1000,6 +1001,7 @@ export default function InferencePage() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 max-w-7xl mx-auto w-full">
+        <HardwareCard />
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px] items-start">
           <div className="space-y-5 min-w-0">
             <Section title="Runtime" icon={Zap}>

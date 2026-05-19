@@ -81,6 +81,35 @@ export {
   modelMarketplaceEventClient,
 } from "./model_marketplace";
 export { missionContracts, missionClient } from "./mission";
+export {
+  hardwareContracts,
+  hardwareClient,
+  HardwareProfileSchema,
+  HardwareGpuInfoSchema,
+} from "./hardware";
+export type { HardwareGpuInfo, HardwareProfile } from "./hardware";
+export {
+  orchestratorContracts,
+  orchestratorClient,
+  OrchestratorStateSchema,
+  OrchestratorStatusSchema,
+  LlmLoadParamsSchema,
+  MediaGenerationRequestSchema,
+  MediaGenerationResultSchema,
+  MediaTierSchema,
+  MediaQualitySchema,
+  AvailableTiersSchema,
+} from "./model_orchestrator";
+export type {
+  OrchestratorState,
+  OrchestratorStatus,
+  LlmLoadParams,
+  MediaGenerationRequest,
+  MediaGenerationResult,
+  MediaTier,
+  MediaQuality,
+  AvailableTiers,
+} from "./model_orchestrator";
 export type {
   HFSearchModel,
   HFFileSibling,
@@ -476,6 +505,8 @@ import {
   modelMarketplaceEventClient,
 } from "./model_marketplace";
 import { missionClient } from "./mission";
+import { hardwareClient } from "./hardware";
+import { orchestratorClient } from "./model_orchestrator";
 
 /**
  * Unified IPC client with all domains organized by namespace.
@@ -539,6 +570,8 @@ export const ipc = {
   embeddedModel: embeddedModelClient,
   marketplace: modelMarketplaceClient,
   mission: missionClient,
+  hardware: hardwareClient,
+  orchestrator: orchestratorClient,
 
   // Event clients for main->renderer pub/sub
   events: {

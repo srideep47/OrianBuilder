@@ -79,6 +79,8 @@ import { ChatInputControls } from "../ChatInputControls";
 import { ChatErrorBox } from "./ChatErrorBox";
 import { AgentConsentBanner } from "./AgentConsentBanner";
 import { TodoList } from "./TodoList";
+import { AgentProgressList } from "./AgentProgressList";
+import { LockedFilesPanel } from "./LockedFilesPanel";
 import { QuestionnaireInput } from "./QuestionnaireInput";
 import { QueuedMessagesList } from "./QueuedMessagesList";
 import {
@@ -119,7 +121,7 @@ import { useRouter } from "@tanstack/react-router";
 import { showError as showErrorToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { useVoiceToText } from "@/hooks/useVoiceToText";
-import { isOrianBuilderProEnabled } from "@/lib/schemas";
+import { VoiceAssistantModal } from "@/components/chat/VoiceAssistantModal";
 import { useChatMode } from "@/hooks/useChatMode";
 import { useInitialChatMode } from "@/hooks/useInitialChatMode";
 
@@ -278,7 +280,6 @@ export function ChatInput({ chatId }: { chatId?: number }) {
   }, [chatId, messagesById]);
 
   const { userBudget } = useUserBudgetInfo();
-  const isProEnabled = settings ? isOrianBuilderProEnabled(settings) : false;
 
   const handleTranscription = useCallback(
     (text: string) => {
@@ -288,10 +289,12 @@ export function ChatInput({ chatId }: { chatId?: number }) {
   );
 
   const { isRecording, isTranscribing, toggleRecording } = useVoiceToText({
-    enabled: isProEnabled,
+    enabled: true,
     onTranscription: handleTranscription,
     onError: (message) => showErrorToast(message),
   });
+
+  const [voiceModalOpen, setVoiceModalOpen] = useState(false);
 
   const [needsFreshPlanChat, setNeedsFreshPlanChat] = useAtom(
     needsFreshPlanChatAtom,
@@ -497,31 +500,60 @@ export function ChatInput({ chatId }: { chatId?: number }) {
     if (!appId || !settings?.autoPublishAfterChecks || isAutoPublishing) {
       return;
     }
-    if (
-      !settings.githubAccessToken?.value ||
-      !settings.vercelAccessToken?.value
-    ) {
+    // GitHub is the minimum requirement (creates the repo, pushes source, hosts
+    // the Releases for native installers). Vercel is optional: without it we
+    // still do the GitHub work and just skip the deploy step.
+    if (!settings.githubAccessToken?.value) {
       showWarning(
-        "Auto-publish is on, but GitHub and Vercel must both be connected first.",
+        "Auto-publish is on, but GitHub isn't connected. Connect GitHub in Settings to enable publishing.",
       );
       return;
     }
+    const hasVercel = !!settings.vercelAccessToken?.value;
 
     setIsAutoPublishing(true);
     try {
       showInfo("Auto-publish: running checks before publishing.");
       const problemReport = await ipc.misc.checkProblems({ appId });
       if (problemReport.problems.length > 0) {
+        // Soft gate: surface the warning but continue. The agent already
+        // produced a working build; type/check noise shouldn't block a release.
         showWarning(
-          `Auto-publish skipped: ${problemReport.problems.length} problem${
+          `Publish: ${problemReport.problems.length} problem${
             problemReport.problems.length === 1 ? "" : "s"
-          } found.`,
+          } reported — continuing anyway.`,
         );
-        return;
+      }
+
+      // Web flow pushes the source repo and lets Vercel rebuild from GitHub.
+      // Native flow ALSO needs to:
+      //   1. Upload the freshly built APK/exe/dmg to GitHub Releases (Vercel
+      //      can't economically host large native binaries).
+      //   2. Rewrite native-download-site/index.html to link those release URLs.
+      //   3. Add a project-root vercel.json so Vercel deploys the static
+      //      download page instead of trying to build the native source.
+      const nativeDownloads = await ipc.misc.listNativeDownloads({ appId });
+      const isNativePublish = nativeDownloads.exists;
+
+      // Make sure binaries that GitHub rejects (node_modules, dist, release,
+      // native installers) are gitignored AND untracked before we try to push.
+      // Scaffolds occasionally miss .gitignore (electron-app did) or get out
+      // of sync after an agent run, so we self-heal here.
+      const gitignorePrep = await ipc.misc.preparePublishGitignore({ appId });
+      if (
+        gitignorePrep.gitignoreUpdated ||
+        gitignorePrep.untrackedPaths.length > 0
+      ) {
+        showInfo(
+          gitignorePrep.untrackedPaths.length > 0
+            ? `Auto-publish: untracked ${gitignorePrep.untrackedPaths.join(", ")} to avoid GitHub's 100 MB file limit.`
+            : "Auto-publish: refreshed .gitignore to keep binaries out of git.",
+        );
       }
 
       let app = await ipc.app.getApp(appId);
       if (!app.githubOrg || !app.githubRepo) {
+        showInfo(`Auto-publish: creating GitHub repo "${app.name}".`);
         await ipc.github.createRepo({
           appId,
           org: "",
@@ -531,6 +563,9 @@ export function ChatInput({ chatId }: { chatId?: number }) {
       } else {
         const files = await ipc.git.getUncommittedFiles({ appId });
         if (files.length > 0) {
+          showInfo(
+            `Auto-publish: committing ${files.length} change${files.length === 1 ? "" : "s"}.`,
+          );
           await ipc.git.commitChanges({
             appId,
             message: "chore: publish latest app changes",
@@ -538,10 +573,101 @@ export function ChatInput({ chatId }: { chatId?: number }) {
         }
       }
 
+      // Push source so GitHub Releases can target the right commit.
+      showInfo("Auto-publish: pushing source to GitHub.");
       await ipc.github.push({ appId });
       app = await ipc.app.getApp(appId);
 
+      if (isNativePublish) {
+        showInfo(
+          `Auto-publish: uploading ${nativeDownloads.files.length} native artifact${
+            nativeDownloads.files.length === 1 ? "" : "s"
+          } to GitHub Releases.`,
+        );
+        const releaseTag = `auto-${new Date()
+          .toISOString()
+          .replace(/[-:T]/g, "")
+          .replace(/\..+$/, "")}`;
+        const releaseName = `${app.name} ${releaseTag}`;
+        const releaseBody = [
+          `Automated release published from OrianBuilder for app **${app.name}**.`,
+          "",
+          ...nativeDownloads.files.map(
+            (file) => `- \`${file.name}\` (${file.sizeBytes} bytes)`,
+          ),
+        ].join("\n");
+
+        const releaseResult = await ipc.github.uploadReleaseAssets({
+          appId,
+          tag: releaseTag,
+          name: releaseName,
+          body: releaseBody,
+          targetCommitish: app.githubBranch ?? "main",
+          files: nativeDownloads.files.map((file) => ({
+            absolutePath: file.absolutePath,
+            name: file.name,
+          })),
+        });
+
+        const linksByName = new Map(
+          releaseResult.assets.map((asset) => [asset.name, asset]),
+        );
+        const links = nativeDownloads.files
+          .map((file) => {
+            const asset = linksByName.get(file.name);
+            if (!asset) return null;
+            return {
+              name: asset.name,
+              url: asset.browser_download_url,
+              sizeBytes: asset.size,
+            };
+          })
+          .filter(
+            (
+              value,
+            ): value is { name: string; url: string; sizeBytes: number } =>
+              value !== null,
+          );
+
+        await ipc.misc.applyNativeReleaseLinks({
+          appId,
+          releaseHtmlUrl: releaseResult.release_html_url,
+          tag: releaseTag,
+          links,
+          pruneLocalDownloads: true,
+        });
+
+        // Commit the rewritten index.html + new root vercel.json and push, so
+        // Vercel's auto-deploy picks up the static download page.
+        const updates = await ipc.git.getUncommittedFiles({ appId });
+        if (updates.length > 0) {
+          await ipc.git.commitChanges({
+            appId,
+            message: `chore: publish native download page (${releaseTag})`,
+          });
+          await ipc.github.push({ appId });
+        }
+        showSuccess(
+          `Auto-publish: GitHub Release created → ${releaseResult.release_html_url}`,
+        );
+      }
+
+      // Vercel section is OPTIONAL. If the user hasn't connected Vercel, we're
+      // done after the GitHub work above (source push + native Releases upload).
+      if (!hasVercel) {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.apps.detail({ appId }),
+        });
+        showSuccess(
+          isNativePublish
+            ? "Auto-publish: native installer is live on GitHub Releases. Connect Vercel in Settings to also publish a download page."
+            : "Auto-publish: source synced to GitHub. Connect Vercel in Settings to enable deployment.",
+        );
+        return;
+      }
+
       if (!app.vercelProjectId) {
+        showInfo(`Auto-publish: linking Vercel project "${app.name}".`);
         const projects = await ipc.vercel.listProjects();
         const existing = projects.find((project) => project.name === app.name);
         if (existing) {
@@ -555,6 +681,8 @@ export function ChatInput({ chatId }: { chatId?: number }) {
             name: app.name,
           });
         }
+      } else {
+        showInfo("Auto-publish: triggering Vercel deployment.");
       }
 
       let deploymentUrl: string | null = null;
@@ -581,7 +709,9 @@ export function ChatInput({ chatId }: { chatId?: number }) {
       });
       showSuccess(
         url
-          ? `Published to Vercel: ${url}`
+          ? isNativePublish
+            ? `Published native download page to Vercel: ${url}`
+            : `Published to Vercel: ${url}`
           : "Published to GitHub and started Vercel deployment.",
       );
     } catch (error: any) {
@@ -910,6 +1040,10 @@ export function ChatInput({ chatId }: { chatId?: number }) {
 
           {/* Show todo list if there are todos for this chat */}
           {chatTodos.length > 0 && <TodoList todos={chatTodos} />}
+          {/* Live multi-step progress (APK packaging, browser QA, etc.) */}
+          <AgentProgressList chatId={chatId ?? null} />
+          {/* Per-chat file locks the user has set */}
+          <LockedFilesPanel chatId={chatId ?? null} />
           {/* Show agent consent banner if there's a pending consent request */}
           {pendingAgentConsent && (
             <AgentConsentBanner
@@ -1082,68 +1216,52 @@ export function ChatInput({ chatId }: { chatId?: number }) {
             />
 
             {/* Voice-to-text button */}
-            {isProEnabled ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      onClick={toggleRecording}
-                      disabled={isTranscribing}
-                      aria-label={
-                        isRecording
-                          ? t("stopRecording", "Stop recording")
-                          : isTranscribing
-                            ? t("transcribing", "Transcribing...")
-                            : t("voiceToText", "Voice to text")
-                      }
-                      className={cn(
-                        "px-2 py-2 mb-0.5 text-muted-foreground rounded-lg transition-colors duration-150 cursor-pointer disabled:cursor-default disabled:opacity-30",
-                        isRecording &&
-                          "text-red-500 hover:text-red-600 animate-pulse",
-                        !isRecording && !isTranscribing && "hover:text-primary",
-                      )}
-                    />
-                  }
-                >
-                  {isTranscribing ? (
-                    <Loader2 size={20} className="animate-spin" />
-                  ) : isRecording ? (
-                    <MicOff size={20} />
-                  ) : (
-                    <Mic size={20} />
-                  )}
-                </TooltipTrigger>
-                <TooltipContent>
-                  {isRecording
-                    ? t("stopRecording", "Stop recording")
-                    : isTranscribing
-                      ? t("transcribing", "Transcribing...")
-                      : t("voiceToText", "Voice to text")}
-                </TooltipContent>
-              </Tooltip>
-            ) : (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      onClick={() =>
-                        ipc.system.openExternalUrl(
-                          "https://orianbuilder.sh/pro",
-                        )
-                      }
-                      aria-label={t("voiceToTextPro", "Voice to text (Pro)")}
-                      className="px-2 py-2 mb-0.5 text-muted-foreground hover:text-primary rounded-lg transition-colors duration-150 cursor-pointer relative"
-                    />
-                  }
-                >
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    onClick={() => setVoiceModalOpen((prev) => !prev)}
+                    disabled={isTranscribing}
+                    aria-label={
+                      voiceModalOpen
+                        ? t("stopRecording", "Stop recording")
+                        : isTranscribing
+                          ? t("transcribing", "Transcribing...")
+                          : t("voiceToText", "Voice to text")
+                    }
+                    className={cn(
+                      "px-2 py-2 mb-0.5 text-muted-foreground rounded-lg transition-colors duration-150 cursor-pointer disabled:cursor-default disabled:opacity-30",
+                      voiceModalOpen &&
+                        "text-red-500 hover:text-red-600 animate-pulse",
+                      !voiceModalOpen &&
+                        !isTranscribing &&
+                        "hover:text-primary",
+                    )}
+                  />
+                }
+              >
+                {isTranscribing ? (
+                  <Loader2 size={20} className="animate-spin" />
+                ) : voiceModalOpen ? (
+                  <MicOff size={20} />
+                ) : (
                   <Mic size={20} />
-                  <Lock size={10} className="absolute -top-0.5 -right-0.5" />
-                </TooltipTrigger>
-                <TooltipContent>
-                  {t("voiceToTextRequiresPro", "Voice to text (requires Pro)")}
-                </TooltipContent>
-              </Tooltip>
-            )}
+                )}
+              </TooltipTrigger>
+              <TooltipContent>
+                {voiceModalOpen
+                  ? t("stopRecording", "Stop recording")
+                  : isTranscribing
+                    ? t("transcribing", "Transcribing...")
+                    : t("voiceToText", "Voice to text")}
+              </TooltipContent>
+            </Tooltip>
+
+            <VoiceAssistantModal
+              open={voiceModalOpen}
+              onOpenChange={setVoiceModalOpen}
+              onTranscription={handleTranscription}
+            />
 
             {isStreaming ? (
               <Tooltip>
@@ -1289,6 +1407,31 @@ function SummarizeInNewChatButton() {
       tooltipText={t("summarizeNewChatTip")}
     >
       {t("summarizeToNewChat")}
+    </SuggestionButton>
+  );
+}
+
+export function QuickActionButton({
+  label,
+  prompt,
+}: {
+  label: string;
+  prompt: string;
+}) {
+  const chatId = useAtomValue(selectedChatIdAtom);
+  const { streamMessage } = useStreamChat();
+  const onClick = () => {
+    if (!chatId) {
+      console.error("No chat id found");
+      return;
+    }
+    streamMessage({ prompt, chatId, redo: false });
+  };
+  return (
+    <SuggestionButton onClick={onClick} tooltipText={prompt}>
+      <span className="max-w-[200px] overflow-hidden whitespace-nowrap text-ellipsis">
+        {label}
+      </span>
     </SuggestionButton>
   );
 }

@@ -27,6 +27,7 @@ import {
 } from "../types/embedded_model";
 import { TensorRtNativeBackend } from "../utils/tensorrt_native_backend";
 import { createTypedHandler } from "./base";
+import { getOrchestrator } from "@/main/ipc/utils/model_orchestrator";
 import {
   OrianBuilderError,
   OrianBuilderErrorKind,
@@ -597,9 +598,54 @@ async function loadModelFromConfig(config: EmbeddedModelConfig): Promise<void> {
   });
 
   writeSettings({ embeddedConfig: config } as any);
+
+  // Inform the orchestrator that an LLM is now loaded. We use the post-load
+  // server status for the real GPU layer count, and forward the model
+  // geometry that computeModelInfo already derived so the orchestrator's
+  // estimateFreedLlmVramMb can return a real (weights + KV) figure rather
+  // than the 250 MB/layer fallback.
+  try {
+    const s = getServerStatus();
+    const totalLayers = config._estimatedLayers ?? s.totalLayers;
+    const layerSizeMb = config._layerSizeMb;
+    // `loaded weights MB` per layer is what computeModelInfo computed for
+    // `_layerSizeMb`, so multiplying by totalLayers gives us total weight
+    // residency. We then pass quantFactor=1 because that math is already
+    // applied.
+    const modelSizeMb =
+      typeof layerSizeMb === "number" && layerSizeMb > 0 && totalLayers > 0
+        ? layerSizeMb * totalLayers
+        : undefined;
+    getOrchestrator().informLlmAcquired({
+      modelPath: config.modelPath,
+      gpuLayers: s.gpuLayers,
+      contextSize: s.actualContextSize || config.contextSize,
+      modelSizeMb,
+      totalLayers: totalLayers > 0 ? totalLayers : undefined,
+      quantFactor: modelSizeMb !== undefined ? 1 : undefined,
+      kvBytesPerTokenPerLayer: config._kvBytesPerTokenPerLayer,
+    });
+  } catch (err) {
+    logger.warn("orchestrator informLlmAcquired failed (non-fatal):", err);
+  }
 }
 
 export function registerEmbeddedModelHandlers(): void {
+  // Wire orchestrator hooks so it can drive unload/reload during media swaps.
+  // The hooks are intentionally thin — they call the same load/unload paths
+  // the IPC handlers do, so we never duplicate model-load logic.
+  getOrchestrator().setHooks({
+    unloadLlm: async () => {
+      await unloadModel();
+    },
+    reloadLlm: async () => {
+      const settings = readSettings() as any;
+      const cfg = settings.embeddedConfig as EmbeddedModelConfig | undefined;
+      if (cfg?.modelPath) {
+        await loadModelFromConfig(cfg);
+      }
+    },
+  });
   // Subscribe to live stats + log events from the inference server and
   // broadcast them to all renderer windows so the Engine page stays live.
   addStatsListener((s) => broadcast(embeddedModelEvents.stats.channel, s));
@@ -790,6 +836,7 @@ export function registerEmbeddedModelHandlers(): void {
   ipcMain.handle("embedded-model:unload", async () => {
     try {
       await unloadModel();
+      getOrchestrator().informLlmReleased();
       return { success: true };
     } catch (err) {
       logger.error("Failed to unload model:", err);

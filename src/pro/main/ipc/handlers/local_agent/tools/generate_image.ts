@@ -9,17 +9,17 @@ import {
   escapeXmlAttr,
   escapeXmlContent,
 } from "./types";
-import { readSettings } from "@/main/settings";
 import { ORIANBUILDER_MEDIA_DIR_NAME } from "@/ipc/utils/media_path_utils";
-import { ImageGenerationApiResponseSchema } from "@/ipc/types/image_generation";
 import {
   OrianBuilderError,
   OrianBuilderErrorKind,
 } from "@/errors/orianbuilder_error";
+import { getOrchestrator } from "@/main/ipc/utils/model_orchestrator";
+import { generateImageViaCloud } from "@/main/ipc/utils/cloud_image_generator";
+import { generateImageViaLocalBackend } from "@/main/ipc/utils/local_image_generator";
+import { initMediaDispatcher } from "@/main/ipc/utils/media_dispatcher";
 
 const logger = log.scope("generate_image");
-
-const OPENAI_IMAGE_URL = "https://api.openai.com/v1/images/generations";
 
 const generateImageSchema = z.object({
   prompt: z
@@ -52,103 +52,18 @@ Write detailed, descriptive prompts. Be specific about:
 The tool returns the file path in .orianbuilder/media. Use the copy_file tool to copy it to the appropriate location in the project (e.g., public/assets/) and reference that path in your code.
 `;
 
-// Resolve the best available API key for image generation.
-// Priority: OrianBuilder Pro key (auto) → OpenAI key → none
-function resolveImageApiKey(): { key: string; baseUrl: string } | null {
-  const settings = readSettings();
-  const proKey = settings.providerSettings?.auto?.apiKey?.value;
-  if (proKey) {
-    const engineUrl =
-      process.env.ORIANBUILDER_ENGINE_URL ??
-      "https://engine.orianbuilder.sh/v1";
-    return { key: proKey, baseUrl: `${engineUrl}/images/generations` };
-  }
-  const openaiKey = settings.providerSettings?.openai?.apiKey?.value;
-  if (openaiKey) {
-    return { key: openaiKey, baseUrl: OPENAI_IMAGE_URL };
-  }
-  return null;
-}
-
-async function callGenerateImage(
-  prompt: string,
-): Promise<z.infer<typeof ImageGenerationApiResponseSchema>["data"][number]> {
-  const resolved = resolveImageApiKey();
-
-  if (!resolved) {
-    throw new OrianBuilderError(
-      "Image generation requires an OpenAI API key. Add one in Settings → Providers → OpenAI.",
-      OrianBuilderErrorKind.Auth,
-    );
-  }
-
-  const response = await fetch(resolved.baseUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${resolved.key}`,
-    },
-    body: JSON.stringify({
-      prompt,
-      model: "dall-e-3",
-      n: 1,
-      size: "1024x1024",
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Image generation failed: ${response.status} ${response.statusText} - ${errorText}`,
-    );
-  }
-
-  const data = ImageGenerationApiResponseSchema.parse(await response.json());
-
-  if (!data.data || data.data.length === 0) {
-    throw new OrianBuilderError(
-      "Image generation returned no results",
-      OrianBuilderErrorKind.External,
-    );
-  }
-
-  return data.data[0];
-}
-
-async function saveGeneratedImage(
-  imageData: z.infer<typeof ImageGenerationApiResponseSchema>["data"][number],
-  appPath: string,
-): Promise<string> {
+async function reserveOutputPath(appPath: string): Promise<{
+  absolutePath: string;
+  relativePath: string;
+}> {
   const mediaDir = path.join(appPath, ORIANBUILDER_MEDIA_DIR_NAME);
   await fs.mkdir(mediaDir, { recursive: true });
-
   const hash = crypto.randomBytes(8).toString("hex");
-  const timestamp = Date.now();
-  const fileName = `generated-${timestamp}-${hash}.png`;
-  const filePath = path.join(mediaDir, fileName);
-  const relativePath = path.join(ORIANBUILDER_MEDIA_DIR_NAME, fileName);
-
-  if (imageData.b64_json) {
-    const buffer = Buffer.from(imageData.b64_json, "base64");
-    await fs.writeFile(filePath, buffer);
-  } else if (imageData.url) {
-    const response = await fetch(imageData.url);
-    if (!response.ok) {
-      throw new OrianBuilderError(
-        `Failed to download generated image: ${response.status}`,
-        OrianBuilderErrorKind.External,
-      );
-    }
-    const arrayBuffer = await response.arrayBuffer();
-    await fs.writeFile(filePath, Buffer.from(arrayBuffer));
-  } else {
-    throw new OrianBuilderError(
-      "Image generation returned no image data",
-      OrianBuilderErrorKind.External,
-    );
-  }
-
-  return relativePath;
+  const fileName = `generated-${Date.now()}-${hash}.png`;
+  return {
+    absolutePath: path.join(mediaDir, fileName),
+    relativePath: path.join(ORIANBUILDER_MEDIA_DIR_NAME, fileName),
+  };
 }
 
 export const generateImageTool: ToolDefinition<
@@ -175,9 +90,52 @@ export const generateImageTool: ToolDefinition<
       `<orianbuilder-image-generation prompt="${escapeXmlAttr(args.prompt)}">`,
     );
 
+    const { absolutePath, relativePath } = await reserveOutputPath(ctx.appPath);
+
     try {
-      const imageData = await callGenerateImage(args.prompt);
-      const relativePath = await saveGeneratedImage(imageData, ctx.appPath);
+      const orch = getOrchestrator();
+      const state = orch.getStatus().state;
+      const llmIsLoaded = state === "llm-loaded";
+
+      let success = false;
+      let errMessage: string | undefined;
+
+      if (llmIsLoaded) {
+        // Drive through the orchestrator so the embedded LLM is unloaded
+        // before generation and reloaded after. The orchestrator's media
+        // provider (initialized via initMediaDispatcher) handles the actual
+        // image synthesis.
+        initMediaDispatcher();
+        const result = await orch.runMediaGeneration({
+          modelType: "image",
+          prompt: args.prompt,
+          outputPath: absolutePath,
+        });
+        success = result.success;
+        errMessage = result.error;
+      } else {
+        // No embedded LLM is loaded — no swap needed. Try local Python
+        // backend first, then cloud.
+        const local = await generateImageViaLocalBackend(
+          args.prompt,
+          absolutePath,
+        );
+        if (local.success) {
+          success = true;
+        } else {
+          const cloud = await generateImageViaCloud(args.prompt, absolutePath);
+          success = cloud.success;
+          errMessage = cloud.error ?? local.error;
+        }
+      }
+
+      if (!success) {
+        throw new OrianBuilderError(
+          errMessage ??
+            "Image generation failed. Configure an OpenAI API key in Settings → Providers, or wait for local image generation to come online.",
+          OrianBuilderErrorKind.External,
+        );
+      }
 
       ctx.onXmlComplete(
         `<orianbuilder-image-generation prompt="${escapeXmlAttr(args.prompt)}" path="${escapeXmlAttr(relativePath)}">${escapeXmlContent(relativePath)}</orianbuilder-image-generation>`,

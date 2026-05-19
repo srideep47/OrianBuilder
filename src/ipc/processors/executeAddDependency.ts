@@ -195,10 +195,11 @@ export async function executeAddDependency({
   }
 
   const packageManager = await detectPreferredPackageManager();
-  let { succeeded, installResults, lastError } = await runAddDependencyCommand(
-    buildAddDependencyCommand(packages, packageManager, useSocketFirewall),
-    appPath,
-  );
+  const { succeeded, installResults, lastError } =
+    await runAddDependencyCommand(
+      buildAddDependencyCommand(packages, packageManager, useSocketFirewall),
+      appPath,
+    );
 
   if (!succeeded && lastError) {
     throw new ExecuteAddDependencyError({

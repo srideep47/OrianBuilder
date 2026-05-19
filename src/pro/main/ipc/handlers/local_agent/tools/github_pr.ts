@@ -27,6 +27,7 @@ import {
   listGithubPullRequestComments,
   listGithubPullRequests,
 } from "@/ipc/utils/github_pr_api";
+import { preparePublishGitignoreForAppPath } from "@/ipc/handlers/native_publish_handlers";
 
 import {
   type AgentContext,
@@ -81,7 +82,9 @@ const githubPrSchema = z.object({
     .string()
     .max(500)
     .optional()
-    .describe("Commit message. Required for `commit_all`/`autopilot`."),
+    .describe(
+      "Commit message. Required for `commit_all`. Optional for `autopilot` (falls back to `chore: <title>` if omitted).",
+    ),
   pull_number: z
     .number()
     .int()
@@ -455,23 +458,30 @@ Requires the app to be connected to GitHub (org/repo present) and a valid access
         return text;
       }
       case "autopilot": {
-        if (!args.commit_message) {
-          throw new OrianBuilderError(
-            "autopilot requires commit_message.",
-            OrianBuilderErrorKind.Validation,
-          );
-        }
+        // `title` is still required: the upstream GitHub API needs a non-empty
+        // pull request title. But `commit_message` is now optional with a
+        // sensible default so the agent's autopilot path doesn't bail when
+        // the model forgot to supply one — falling back to the title (or a
+        // generic message) is strictly better than failing the whole publish.
         if (!args.title) {
           throw new OrianBuilderError(
             "autopilot requires title.",
             OrianBuilderErrorKind.Validation,
           );
         }
+        const commitMessage =
+          args.commit_message?.trim() || `chore: ${args.title}`;
+        // Self-heal the repo before pushing: write a publish-aware .gitignore
+        // and untrack any already-staged binaries (node_modules, native
+        // installers, etc.) that GitHub rejects past its 100 MB file limit.
+        const gitignorePrep = await preparePublishGitignoreForAppPath(
+          repo.appPath,
+        ).catch(() => ({ gitignoreUpdated: false, untrackedPaths: [] }));
         const branchName =
           args.branch ??
           `agent/${slugifyBranch(args.title)}-${Date.now().toString(36)}`;
         const ensure = await performEnsureBranch(repo, branchName);
-        const commit = await performCommitAll(repo, args.commit_message);
+        const commit = await performCommitAll(repo, commitMessage);
         await performPush(repo, ensure.branch, args.force_with_lease === true);
         const pr = await createGithubPullRequest({
           owner: repo.owner,
@@ -485,12 +495,19 @@ Requires the app to be connected to GitHub (org/repo present) and a valid access
         });
         const summary = [
           `Branch ${ensure.branch} ${ensure.created ? "created" : "reused"}`,
+          gitignorePrep.untrackedPaths.length > 0
+            ? `Untracked large-binary paths to satisfy GitHub's 100 MB limit: ${gitignorePrep.untrackedPaths.join(", ")}.`
+            : gitignorePrep.gitignoreUpdated
+              ? "Refreshed .gitignore with publish guards."
+              : null,
           commit.commitHash
             ? `Committed all changes (${commit.commitHash}).`
             : "No staged changes; nothing committed.",
           `Pushed to origin.`,
           `Opened PR #${pr.number}: ${pr.url}`,
-        ].join("\n");
+        ]
+          .filter((line): line is string => line !== null)
+          .join("\n");
         ctx.onXmlComplete(
           `<orianbuilder-github-pr action="autopilot" pr-number="${pr.number}" pr-url="${escapeXmlAttr(pr.url)}" branch="${escapeXmlAttr(ensure.branch)}" base="${escapeXmlAttr(baseBranch)}" commit-hash="${escapeXmlAttr(commit.commitHash ?? "")}">${escapeXmlContent(summary)}</orianbuilder-github-pr>`,
         );

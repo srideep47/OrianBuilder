@@ -10,6 +10,11 @@ import {
   escapeXmlContent,
   ToolDefinition,
 } from "./types";
+import {
+  ANDROID_STUDIO_JBR_DEFAULT,
+  findUsableNdkVersion,
+  resolveAndroidSdkRoot,
+} from "./android_env";
 
 const packageNativeArtifactSchema = z.object({
   target: z
@@ -17,7 +22,7 @@ const packageNativeArtifactSchema = z.object({
     .optional()
     .default("auto")
     .describe(
-      "Native artifact to produce. Use android_apk for Android/Capacitor apps, electron_desktop for Electron desktop apps, or auto to infer from project files.",
+      "Native artifact to produce. Use android_apk for Android/Expo/Capacitor apps, electron_desktop for Electron desktop apps, or auto to infer from project files.",
     ),
   variant: z
     .enum(["debug", "release"])
@@ -77,10 +82,42 @@ type Artifact = {
   sizeBytes: number;
 };
 
+type NativePackageResult = {
+  artifacts: Artifact[];
+  commands: CommandResult[];
+  warning?: string;
+};
+
 const MAX_OUTPUT_CHARS = 18_000;
-const ANDROID_SDK_DEFAULT = "C:\\Users\\sride\\AppData\\Local\\Android\\Sdk";
-const ANDROID_STUDIO_JBR_DEFAULT =
-  "C:\\Program Files\\Android\\Android Studio\\jbr";
+const ANDROID_SDK_MISSING_MESSAGE =
+  "Android SDK not detected. Set ANDROID_HOME or install Android Studio, then retry. Alternatively, configure EAS cloud build (run `npx eas build:configure`).";
+
+const SCAFFOLD_PLACEHOLDER_PATTERNS = [
+  /⚠\s*PLACEHOLDER/i,
+  /scaffold starter screen/i,
+  /Replace app\/index\.tsx/i,
+  /Edit app\/index\.tsx to build/i,
+];
+
+async function assertNotScaffoldPlaceholder(appPath: string): Promise<void> {
+  const indexPath = path.join(appPath, "app", "index.tsx");
+  let content: string;
+  try {
+    content = await fs.readFile(indexPath, "utf-8");
+  } catch {
+    return;
+  }
+  const matched = SCAFFOLD_PLACEHOLDER_PATTERNS.find((pattern) =>
+    pattern.test(content),
+  );
+  if (matched) {
+    throw new Error(
+      "Refusing to package: app/index.tsx is still the unimplemented scaffold placeholder. " +
+        "Write the requested content to app/index.tsx (use read_file then write_file or search_replace) " +
+        "and re-run browser_qa_gate before calling package_native_artifact again.",
+    );
+  }
+}
 
 function truncateOutput(output: string): string {
   if (output.length <= MAX_OUTPUT_CHARS) return output;
@@ -211,43 +248,19 @@ function toJavaPropertiesPath(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/:/g, "\\:");
 }
 
-function compareAndroidVersionNames(a: string, b: string): number {
-  const aParts = a.split(".").map((part) => Number.parseInt(part, 10) || 0);
-  const bParts = b.split(".").map((part) => Number.parseInt(part, 10) || 0);
-  for (let i = 0; i < Math.max(aParts.length, bParts.length); i += 1) {
-    const diff = (aParts[i] ?? 0) - (bParts[i] ?? 0);
-    if (diff !== 0) return diff;
+function upsertJavaProperty(
+  content: string,
+  key: string,
+  value: string,
+): string {
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const line = `${key}=${value}`;
+  const pattern = new RegExp(`^${escapedKey}=.*$`, "m");
+  if (pattern.test(content)) {
+    return content.replace(pattern, line);
   }
-  return a.localeCompare(b);
-}
-
-async function findUsableNdkVersion(sdkDir: string): Promise<string | null> {
-  const ndkRoot = path.join(sdkDir, "ndk");
-  let entries: Array<{ name: string; isDirectory: () => boolean }>;
-  try {
-    entries = await fs.readdir(ndkRoot, { withFileTypes: true });
-  } catch {
-    return null;
-  }
-
-  const validVersions: string[] = [];
-  for (const entry of entries) {
-    if (
-      entry.isDirectory() &&
-      (await exists(path.join(ndkRoot, entry.name, "source.properties")))
-    ) {
-      validVersions.push(entry.name);
-    }
-  }
-  if (validVersions.length === 0) return null;
-
-  const preferredMajor = validVersions
-    .filter((version) => version.startsWith("27."))
-    .sort(compareAndroidVersionNames);
-  if (preferredMajor.length > 0) {
-    return preferredMajor.at(-1) ?? null;
-  }
-  return validVersions.sort(compareAndroidVersionNames).at(-1) ?? null;
+  const prefix = content.length > 0 && !content.endsWith("\n") ? "\n" : "";
+  return `${content}${prefix}${line}\n`;
 }
 
 async function patchAndroidNdkVersion(
@@ -335,28 +348,41 @@ export async function ensureExpoAndroidPackage(
   await fs.writeFile(appConfigPath, content, "utf-8");
 }
 
-async function ensureAndroidLocalEnvironment(appPath: string) {
+async function ensureAndroidLocalEnvironment(
+  appPath: string,
+  sdkRoot?: string | null,
+) {
   const androidPath = path.join(appPath, "android");
   const localPropertiesPath = path.join(androidPath, "local.properties");
   const gradlePropertiesPath = path.join(androidPath, "gradle.properties");
-  const sdkDir = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
-  const resolvedSdkDir =
-    sdkDir ||
-    ((await exists(ANDROID_SDK_DEFAULT)) ? ANDROID_SDK_DEFAULT : null);
+  const resolvedSdkDir = sdkRoot ?? (await resolveAndroidSdkRoot());
   if (resolvedSdkDir) {
-    await fs.appendFile(
-      localPropertiesPath,
-      `${(await exists(localPropertiesPath)) ? "\n" : ""}sdk.dir=${toJavaPropertiesPath(resolvedSdkDir)}\n`,
+    const localProperties = (await exists(localPropertiesPath))
+      ? await fs.readFile(localPropertiesPath, "utf-8")
+      : "";
+    const updatedLocalProperties = upsertJavaProperty(
+      localProperties,
+      "sdk.dir",
+      toJavaPropertiesPath(resolvedSdkDir),
     );
+    if (updatedLocalProperties !== localProperties) {
+      await fs.writeFile(localPropertiesPath, updatedLocalProperties, "utf-8");
+    }
     const ndkVersion = await findUsableNdkVersion(resolvedSdkDir);
     if (ndkVersion) {
       const gradleProperties = (await exists(gradlePropertiesPath))
         ? await fs.readFile(gradlePropertiesPath, "utf-8")
         : "";
-      if (!/^ndkVersion=/m.test(gradleProperties)) {
-        await fs.appendFile(
+      const updatedGradleProperties = upsertJavaProperty(
+        upsertJavaProperty(gradleProperties, "android.ndkVersion", ndkVersion),
+        "ndkVersion",
+        ndkVersion,
+      );
+      if (updatedGradleProperties !== gradleProperties) {
+        await fs.writeFile(
           gradlePropertiesPath,
-          `${gradleProperties.endsWith("\n") || gradleProperties.length === 0 ? "" : "\n"}ndkVersion=${ndkVersion}\n`,
+          updatedGradleProperties,
+          "utf-8",
         );
       }
       await patchAndroidNdkVersion(appPath, ndkVersion);
@@ -387,6 +413,35 @@ async function ensureAndroidLocalEnvironment(appPath: string) {
   }
 }
 
+// Directory names produced by electron-builder/forge that contain UNPACKED
+// app binaries — `MyApp.exe` inside `win-unpacked/` is not a distributable
+// installer, it's a helper that depends on its sibling `resources/` to run.
+// Including those in the artifact list is what shipped a 105 KB `elevate.exe`
+// as the "Windows installer" download.
+const UNPACKED_OUTPUT_DIR_PATTERNS: RegExp[] = [
+  /-unpacked$/i, // win-unpacked, win-ia32-unpacked, linux-unpacked, mac-arm64-unpacked
+  /^mac$/i,
+  /^mac-arm64$/i,
+  /^linux$/i,
+  /^linux-arm64$/i,
+];
+
+// Helper binaries that electron-builder/forge bundle alongside the real
+// installer. They share the .exe extension but are not user-runnable apps.
+const HELPER_BINARY_NAMES = new Set(
+  [
+    "elevate.exe",
+    "squirrel.exe",
+    "update.exe",
+    "chrome_crashpad_handler.exe",
+    "d3dcompiler_47.dll", // .dll just for safety if we ever extend extensions
+  ].map((name) => name.toLowerCase()),
+);
+
+function isUnpackedOutputDir(dirName: string): boolean {
+  return UNPACKED_OUTPUT_DIR_PATTERNS.some((pattern) => pattern.test(dirName));
+}
+
 async function findFiles(input: {
   root: string;
   extensions: Set<string>;
@@ -407,8 +462,14 @@ async function findFiles(input: {
       const fullPath = path.join(directory, entry.name);
       if (entry.isDirectory()) {
         if (entry.name === "node_modules" || entry.name === ".git") continue;
+        // Skip unpacked-app subdirectories so we don't pick up the bundled
+        // win-unpacked/MyApp.exe (depends on siblings) or the embedded
+        // resources/elevate.exe (UAC helper).
+        if (isUnpackedOutputDir(entry.name)) continue;
         await walk(fullPath, depth + 1);
       } else if (input.extensions.has(path.extname(entry.name))) {
+        // Filter out known helper binaries by basename, case-insensitive.
+        if (HELPER_BINARY_NAMES.has(entry.name.toLowerCase())) continue;
         const stat = await fs.stat(fullPath);
         results.push({ path: fullPath, sizeBytes: stat.size });
       }
@@ -418,6 +479,12 @@ async function findFiles(input: {
   await walk(input.root, 0);
   return results.sort((a, b) => b.sizeBytes - a.sizeBytes);
 }
+
+// Exported for unit testing the filter rules.
+export const __testing__ = {
+  isUnpackedOutputDir,
+  HELPER_BINARY_NAMES,
+};
 
 async function inferTarget(appPath: string): Promise<NativeTarget> {
   if (
@@ -446,7 +513,9 @@ async function packageAndroid(input: {
   args: PackageNativeArtifactArgs;
   ctx: AgentContext;
   timeoutMs: number;
-}): Promise<{ artifacts: Artifact[]; commands: CommandResult[] }> {
+}): Promise<NativePackageResult> {
+  await assertNotScaffoldPlaceholder(input.ctx.appPath);
+
   const commands: CommandResult[] = [];
   const stack = await detectProjectStack(input.ctx.appPath);
   const packageJson = await readJson(
@@ -478,6 +547,15 @@ async function packageAndroid(input: {
   const isExpoProject = stack.framework === "expo" || Boolean(deps.expo);
   const isReactNativeProject =
     stack.framework === "react-native" || Boolean(deps["react-native"]);
+  const androidSdkRoot = await resolveAndroidSdkRoot();
+
+  if (!androidSdkRoot) {
+    return {
+      artifacts: [],
+      commands,
+      warning: ANDROID_SDK_MISSING_MESSAGE,
+    };
+  }
 
   if (isExpoProject) {
     await ensureExpoAndroidPackage(input.ctx.appPath, appId);
@@ -487,14 +565,14 @@ async function packageAndroid(input: {
         command: execForPackageManager(
           packageManager,
           "expo",
-          hasAndroid
-            ? "prebuild --platform android --clean"
-            : "prebuild --platform android",
+          "prebuild --platform android --clean",
         ),
         cwd: input.ctx.appPath,
         timeoutMs: input.timeoutMs,
         ctx: input.ctx,
         env: {
+          ANDROID_HOME: androidSdkRoot,
+          ANDROID_SDK_ROOT: androidSdkRoot,
           CI: "1",
           EXPO_NO_TELEMETRY: "1",
         },
@@ -503,7 +581,7 @@ async function packageAndroid(input: {
       ensureSuccessful(prebuild);
     }
 
-    await ensureAndroidLocalEnvironment(input.ctx.appPath);
+    await ensureAndroidLocalEnvironment(input.ctx.appPath, androidSdkRoot);
     const gradleCommand =
       process.platform === "win32"
         ? ".\\gradlew.bat assembleDebug"
@@ -517,6 +595,8 @@ async function packageAndroid(input: {
       timeoutMs: input.timeoutMs,
       ctx: input.ctx,
       env: {
+        ANDROID_HOME: androidSdkRoot,
+        ANDROID_SDK_ROOT: androidSdkRoot,
         NODE_ENV: "production",
       },
     });
@@ -539,7 +619,7 @@ async function packageAndroid(input: {
   }
 
   if (isReactNativeProject && hasAndroid && !hasCapacitor) {
-    await ensureAndroidLocalEnvironment(input.ctx.appPath);
+    await ensureAndroidLocalEnvironment(input.ctx.appPath, androidSdkRoot);
     const gradleCommand =
       process.platform === "win32"
         ? ".\\gradlew.bat assembleDebug"
@@ -552,6 +632,10 @@ async function packageAndroid(input: {
       cwd: path.join(input.ctx.appPath, "android"),
       timeoutMs: input.timeoutMs,
       ctx: input.ctx,
+      env: {
+        ANDROID_HOME: androidSdkRoot,
+        ANDROID_SDK_ROOT: androidSdkRoot,
+      },
     });
     commands.push(gradle);
     ensureSuccessful(gradle);
@@ -626,7 +710,7 @@ async function packageAndroid(input: {
   commands.push(sync);
   ensureSuccessful(sync);
 
-  await ensureAndroidLocalEnvironment(input.ctx.appPath);
+  await ensureAndroidLocalEnvironment(input.ctx.appPath, androidSdkRoot);
   const gradleCommand =
     process.platform === "win32"
       ? ".\\gradlew.bat assembleDebug"
@@ -639,6 +723,10 @@ async function packageAndroid(input: {
     cwd: path.join(input.ctx.appPath, "android"),
     timeoutMs: input.timeoutMs,
     ctx: input.ctx,
+    env: {
+      ANDROID_HOME: androidSdkRoot,
+      ANDROID_SDK_ROOT: androidSdkRoot,
+    },
   });
   commands.push(gradle);
   ensureSuccessful(gradle);
@@ -661,7 +749,7 @@ async function packageAndroid(input: {
 async function packageElectron(input: {
   ctx: AgentContext;
   timeoutMs: number;
-}): Promise<{ artifacts: Artifact[]; commands: CommandResult[] }> {
+}): Promise<NativePackageResult> {
   const packageJson = await readJson(
     path.join(input.ctx.appPath, "package.json"),
   );
@@ -827,9 +915,9 @@ export const packageNativeArtifactTool: ToolDefinition<PackageNativeArtifactArgs
 Use this after implementation, project checks, and browser QA pass when the user asks for an Android APK, desktop installer, native app build, or downloadable hosted artifact.
 
 Android flow:
-- Ensures Capacitor exists for web apps when allowed.
-- Runs the web build, syncs Android assets, runs Gradle, and collects APK files.
-- If Android SDK/JDK paths are available locally, writes project-local Gradle config so the build can complete.
+- Expo projects run Expo prebuild, then Gradle, and collect APK files.
+- Web projects use Capacitor when allowed, then run the web build, sync Android assets, run Gradle, and collect APK files.
+- If Android SDK/JDK paths are available locally, writes project-local Gradle config so the build can complete. If the Android SDK is missing, reports the setup action instead of running Gradle.
 
 Electron flow:
 - Runs the existing package/make/dist/build script and collects common installer/archive outputs.
@@ -854,10 +942,125 @@ After this tool creates native-download-site/, use deploy_preview with provider 
           ? await inferTarget(ctx.appPath)
           : args.target;
 
-      const result =
-        target === "android_apk"
-          ? await packageAndroid({ args, ctx, timeoutMs })
-          : await packageElectron({ ctx, timeoutMs });
+      if (target === "android_apk") {
+        // Reject when the Expo project was scaffolded but app/index.tsx was
+        // never written this turn — this is the most common skip-the-impl bug.
+        const indexKey = "app/index.tsx";
+        const indexExistsPromise = fs
+          .access(path.join(ctx.appPath, indexKey))
+          .then(() => true)
+          .catch(() => false);
+        const indexExists = await indexExistsPromise;
+        if (
+          indexExists &&
+          ctx.runState.createdProjectThisTurn &&
+          !ctx.runState.filesWrittenSinceCreateProject.has(indexKey)
+        ) {
+          ctx.appendUserMessage([
+            {
+              type: "text",
+              text:
+                "[gate] You called package_native_artifact without ever writing app/index.tsx after create_project. " +
+                "Your VERY NEXT tool call MUST be read_file({path: 'app/index.tsx'}). " +
+                "Then write the actual UI content with write_file. Then call browser_qa_gate. " +
+                "Only after QA reports status=passed can you call package_native_artifact.",
+            },
+          ]);
+          throw new Error(
+            "Refusing to package: app/index.tsx was never written since create_project. " +
+              "Required sequence: read_file('app/index.tsx') → write_file (real UI) → browser_qa_gate (status=passed) → package_native_artifact.",
+          );
+        }
+
+        if (ctx.runState.lastBrowserQaStatus === null) {
+          ctx.appendUserMessage([
+            {
+              type: "text",
+              text:
+                "[gate] You called package_native_artifact before running browser_qa_gate. " +
+                "Run browser_qa_gate first and verify status=passed before packaging.",
+            },
+          ]);
+          throw new Error(
+            "Refusing to package: browser_qa_gate has not been run since the last edit. " +
+              "Implement the requested content in app/index.tsx, then call browser_qa_gate and verify status=passed before calling package_native_artifact.",
+          );
+        }
+        if (ctx.runState.lastBrowserQaStatus === "failed") {
+          const placeholderHint = ctx.runState.lastBrowserQaPlaceholderDetected
+            ? " The previous QA reported the unimplemented scaffold placeholder is still showing — write the requested content to app/index.tsx first."
+            : "";
+          ctx.appendUserMessage([
+            {
+              type: "text",
+              text:
+                "[gate] Last browser_qa_gate failed." +
+                placeholderHint +
+                " Fix the issues, then re-run browser_qa_gate. Do not call package_native_artifact until QA passes.",
+            },
+          ]);
+          throw new Error(
+            "Refusing to package: the most recent browser_qa_gate failed." +
+              placeholderHint +
+              " Fix the issues, re-run browser_qa_gate until status=passed, then call package_native_artifact again.",
+          );
+        }
+      }
+
+      ctx.emitProgress?.({
+        id: "package_native",
+        label:
+          target === "android_apk"
+            ? "Building Android APK"
+            : "Building desktop installer",
+        status: "in-progress",
+      });
+
+      let result;
+      try {
+        result =
+          target === "android_apk"
+            ? await packageAndroid({ args, ctx, timeoutMs })
+            : await packageElectron({ ctx, timeoutMs });
+      } catch (err) {
+        ctx.emitProgress?.({
+          id: "package_native",
+          label: "Native packaging failed",
+          status: "failed",
+        });
+        throw err;
+      }
+      ctx.emitProgress?.({
+        id: "package_native",
+        label: result.warning
+          ? "Native packaging finished with warnings"
+          : "Native artifact built",
+        status: result.warning ? "failed" : "completed",
+      });
+
+      if (result.warning) {
+        const commandLines =
+          result.commands.length > 0
+            ? result.commands.map(
+                (command) =>
+                  `- ${command.command} [exit ${command.exitCode}]${command.output.trim() ? `\n${command.output.trim().slice(-1200)}` : ""}`,
+              )
+            : ["- (no packaging commands were run)"];
+        const summary = [
+          `Native package target: ${target}`,
+          "",
+          result.warning,
+          "",
+          "Commands:",
+          ...commandLines,
+        ].join("\n");
+
+        ctx.onWarningMessage?.(result.warning);
+        ctx.onXmlComplete(
+          `<orianbuilder-native-package target="${escapeXmlAttr(target)}" status="warning" artifact-count="0" download-site="" error="${escapeXmlAttr(result.warning)}">${escapeXmlContent(summary)}</orianbuilder-native-package>`,
+        );
+        return summary;
+      }
 
       if (result.artifacts.length === 0) {
         throw new Error(`No native artifacts were found for ${target}.`);

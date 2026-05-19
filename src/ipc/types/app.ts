@@ -503,6 +503,28 @@ export const appContracts = {
       ),
     }),
   }),
+
+  exportAppZip: defineContract({
+    channel: "app:export-zip",
+    input: z.object({
+      appId: z.number(),
+      destinationPath: z.string(),
+    }),
+    output: z.object({
+      zipPath: z.string(),
+      fileCount: z.number(),
+      sizeBytes: z.number(),
+    }),
+  }),
+
+  pickExportZipDestination: defineContract({
+    channel: "app:pick-export-zip-destination",
+    input: z.object({ suggestedName: z.string() }),
+    output: z.object({
+      canceled: z.boolean(),
+      path: z.string().nullable(),
+    }),
+  }),
 } as const;
 
 // =============================================================================

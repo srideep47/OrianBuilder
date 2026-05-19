@@ -129,6 +129,11 @@ type ResolvedBuiltinModel = {
 let builtinCatalogCache: BuiltinLanguageModelCatalog | null = null;
 let builtinCatalogFetchPromise: Promise<BuiltinLanguageModelCatalog> | null =
   null;
+// Tracks how many consecutive remote catalog fetches have failed. First
+// failure logs at `warn`; subsequent ones drop to `debug` so the log isn't
+// spammed when the user is offline (the background refresh fires on every
+// catalog read). Recovery logs at `info`.
+let remoteCatalogConsecutiveFailures = 0;
 
 const DEFAULT_THEME_GENERATION_OPTIONS: ThemeGenerationModelOption[] = [
   { id: "orianbuilder/theme-generator/google", label: "Google" },
@@ -350,12 +355,27 @@ async function fetchRemoteCatalog(): Promise<BuiltinLanguageModelCatalog | null>
         convertedCatalog.themeGenerationOptions.length,
     });
 
+    if (remoteCatalogConsecutiveFailures > 0) {
+      logger.info(
+        `Remote catalog fetch recovered after ${remoteCatalogConsecutiveFailures} consecutive failure(s)`,
+      );
+      remoteCatalogConsecutiveFailures = 0;
+    }
+
     return convertedCatalog;
   } catch (error) {
-    logger.warn("Failed to fetch remote language model catalog", {
-      catalogUrl,
-      error,
-    });
+    remoteCatalogConsecutiveFailures += 1;
+    if (remoteCatalogConsecutiveFailures === 1) {
+      logger.warn("Failed to fetch remote language model catalog", {
+        catalogUrl,
+        error,
+      });
+    } else {
+      logger.debug(
+        `Failed to fetch remote language model catalog (${remoteCatalogConsecutiveFailures} consecutive failures; further failures suppressed until recovery)`,
+        { catalogUrl, error },
+      );
+    }
     return null;
   } finally {
     clearTimeout(timeoutId);

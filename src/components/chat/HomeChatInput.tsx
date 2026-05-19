@@ -6,13 +6,14 @@ import {
   Mic,
   MicOff,
   Loader2,
-  Lock,
+  CloudUpload,
 } from "lucide-react";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/tooltip";
+import { Switch } from "@/components/ui/switch";
 
 import { useSettings } from "@/hooks/useSettings";
 import { homeChatInputValueAtom, homeSelectedAppAtom } from "@/atoms/chatAtoms";
@@ -21,8 +22,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useStreamChat } from "@/hooks/useStreamChat";
 import { useAttachments } from "@/hooks/useAttachments";
 import { useVoiceToText } from "@/hooks/useVoiceToText";
-import { isOrianBuilderProEnabled } from "@/lib/schemas";
-import { ipc } from "@/ipc/types";
 import { showError } from "@/lib/toast";
 import { AttachmentsList } from "./AttachmentsList";
 import { DragDropOverlay } from "./DragDropOverlay";
@@ -46,14 +45,13 @@ export function HomeChatInput({
   const posthog = usePostHog();
   const [inputValue, setInputValue] = useAtom(homeChatInputValueAtom);
   const [selectedApp, setSelectedApp] = useAtom(homeSelectedAppAtom);
-  const { settings } = useSettings();
+  const { settings, updateSettings } = useSettings();
+  const isAutoPublishEnabled = !!settings?.autoPublishAfterChecks;
   const { isStreaming } = useStreamChat({ hasChatId: false });
   useChatModeToggle();
 
   const [appSearchOpen, setAppSearchOpen] = useState(false);
   const { apps } = useLoadApps();
-  const isProEnabled = settings ? isOrianBuilderProEnabled(settings) : false;
-
   const handleTranscription = useCallback(
     (text: string) => {
       setInputValue((prev: string) => (prev.trim() ? prev + " " + text : text));
@@ -62,7 +60,7 @@ export function HomeChatInput({
   );
 
   const { isRecording, isTranscribing, toggleRecording } = useVoiceToText({
-    enabled: isProEnabled,
+    enabled: true,
     onTranscription: handleTranscription,
     onError: (message) => showError(message),
   });
@@ -162,67 +160,45 @@ export function HomeChatInput({
               inputClassName="text-[18px] min-h-[72px] max-h-[320px]"
             />
 
-            {/* Voice-to-text mic button (Pro feature) */}
-            {isProEnabled ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      onClick={toggleRecording}
-                      disabled={isTranscribing}
-                      aria-label={
-                        isRecording
-                          ? "Stop recording"
-                          : isTranscribing
-                            ? "Transcribing..."
-                            : "Voice to text"
-                      }
-                      className={cn(
-                        "px-2 py-2 mb-0.5 text-muted-foreground rounded-lg transition-colors duration-150 cursor-pointer disabled:cursor-default disabled:opacity-30",
-                        isRecording &&
-                          "text-red-500 hover:text-red-600 animate-pulse",
-                        !isRecording && !isTranscribing && "hover:text-primary",
-                      )}
-                    />
-                  }
-                >
-                  {isTranscribing ? (
-                    <Loader2 size={22} className="animate-spin" />
-                  ) : isRecording ? (
-                    <MicOff size={22} />
-                  ) : (
-                    <Mic size={22} />
-                  )}
-                </TooltipTrigger>
-                <TooltipContent>
-                  {isRecording
-                    ? "Stop recording"
-                    : isTranscribing
-                      ? "Transcribing..."
-                      : "Voice to text"}
-                </TooltipContent>
-              </Tooltip>
-            ) : (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      onClick={() =>
-                        ipc.system.openExternalUrl(
-                          "https://orianbuilder.sh/pro",
-                        )
-                      }
-                      aria-label="Voice to text (Pro)"
-                      className="px-2 py-2 mb-0.5 text-muted-foreground hover:text-primary rounded-lg transition-colors duration-150 cursor-pointer relative"
-                    />
-                  }
-                >
+            {/* Voice-to-text mic button */}
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    onClick={toggleRecording}
+                    disabled={isTranscribing}
+                    aria-label={
+                      isRecording
+                        ? "Stop recording"
+                        : isTranscribing
+                          ? "Transcribing..."
+                          : "Voice to text"
+                    }
+                    className={cn(
+                      "px-2 py-2 mb-0.5 text-muted-foreground rounded-lg transition-colors duration-150 cursor-pointer disabled:cursor-default disabled:opacity-30",
+                      isRecording &&
+                        "text-red-500 hover:text-red-600 animate-pulse",
+                      !isRecording && !isTranscribing && "hover:text-primary",
+                    )}
+                  />
+                }
+              >
+                {isTranscribing ? (
+                  <Loader2 size={22} className="animate-spin" />
+                ) : isRecording ? (
+                  <MicOff size={22} />
+                ) : (
                   <Mic size={22} />
-                  <Lock size={10} className="absolute -top-0.5 -right-0.5" />
-                </TooltipTrigger>
-                <TooltipContent>Voice to text (requires Pro)</TooltipContent>
-              </Tooltip>
-            )}
+                )}
+              </TooltipTrigger>
+              <TooltipContent>
+                {isRecording
+                  ? "Stop recording"
+                  : isTranscribing
+                    ? "Transcribing..."
+                    : "Voice to text"}
+              </TooltipContent>
+            </Tooltip>
 
             {isStreaming ? (
               <Tooltip>
@@ -260,11 +236,48 @@ export function HomeChatInput({
           </div>
 
           <div className="px-2 flex items-center justify-between pb-1 pt-0.5">
-            <div className="flex items-center">
+            <div className="flex items-center gap-2">
               <ChatInputControls
                 showContextFilesPicker={false}
                 showProSelector={false}
               />
+              {/* Publish toggle — shared with the chat-input bar so users can
+                  enable auto-publish before starting a new chat. The actual
+                  publish-after-checks logic lives in ChatInput.handleSubmit;
+                  this control just persists the global setting. */}
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <label
+                      htmlFor="home-auto-publish-after-checks"
+                      className={cn(
+                        "flex items-center gap-1.5 cursor-pointer h-7 rounded-lg px-2 text-[11px] font-medium transition-colors",
+                        "border border-white/10 bg-white/[0.04] text-white/65 hover:border-primary/40 hover:bg-primary/10 hover:text-white",
+                        isAutoPublishEnabled &&
+                          "border-primary/40 bg-primary/15 text-white shadow-[0_0_18px_-10px_rgba(168,140,255,.8)]",
+                      )}
+                    />
+                  }
+                >
+                  <CloudUpload size={14} />
+                  <span>Publish</span>
+                  <Switch
+                    id="home-auto-publish-after-checks"
+                    checked={isAutoPublishEnabled}
+                    onCheckedChange={(checked) => {
+                      void updateSettings({
+                        autoPublishAfterChecks: checked,
+                      });
+                    }}
+                    onClick={(event) => event.stopPropagation()}
+                    aria-label="Auto-publish after checks"
+                  />
+                </TooltipTrigger>
+                <TooltipContent>
+                  Push to GitHub and deploy to Vercel after a successful checked
+                  turn.
+                </TooltipContent>
+              </Tooltip>
               {settings?.enableSelectAppFromHomeChatInput && (
                 <Tooltip>
                   <TooltipTrigger

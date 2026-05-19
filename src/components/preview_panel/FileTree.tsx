@@ -6,11 +6,13 @@ import {
   Folder,
   FolderOpen,
   Loader2,
+  Lock,
+  LockOpen,
   Search,
   X,
 } from "lucide-react";
 import { selectedFileAtom } from "@/atoms/viewAtoms";
-import { useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { Input } from "@/components/ui/input";
 import {
   Tooltip,
@@ -20,7 +22,8 @@ import {
 import type { AppFileSearchResult } from "@/ipc/types";
 import { useSearchAppFiles } from "@/hooks/useSearchAppFiles";
 import { useTranslation } from "react-i18next";
-import { chatInputValueAtom } from "@/atoms/chatAtoms";
+import { chatInputValueAtom, selectedChatIdAtom } from "@/atoms/chatAtoms";
+import { useChatLocks } from "@/hooks/useChatLocks";
 
 interface FileTreeProps {
   appId: number | null;
@@ -43,6 +46,52 @@ const useDebouncedValue = <T,>(value: T, delay = 200) => {
   }, [value, delay]);
 
   return debouncedValue;
+};
+
+const LockToggleButton = ({
+  path,
+  isDirectory,
+}: {
+  path: string;
+  isDirectory: boolean;
+}) => {
+  const chatId = useAtomValue(selectedChatIdAtom);
+  const { isLocked, addLock, removeLock } = useChatLocks(chatId);
+  const locked = isLocked(path);
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (chatId === null) return;
+    if (locked) {
+      removeLock(path);
+    } else {
+      addLock(path);
+    }
+  };
+  const tooltip = locked
+    ? `Locked — the agent will not modify this ${isDirectory ? "folder" : "file"}. Click to unlock.`
+    : `Lock this ${isDirectory ? "folder" : "file"} so the agent cannot modify it.`;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            className={
+              "ml-1 flex-shrink-0 transition-opacity " +
+              (locked
+                ? "text-amber-500 hover:text-amber-400"
+                : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 text-muted-foreground hover:text-foreground")
+            }
+            onClick={handleClick}
+            aria-label={tooltip}
+          >
+            {locked ? <Lock size={14} /> : <LockOpen size={14} />}
+          </button>
+        }
+      />
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
+  );
 };
 
 const MentionFileButton = ({ filePath }: { filePath: string }) => {
@@ -457,6 +506,7 @@ const TreeNode = ({
         <span className="truncate flex-1">
           {isSearchMode ? highlightMatch(node.name, searchQuery) : node.name}
         </span>
+        <LockToggleButton path={node.path} isDirectory={node.isDirectory} />
         {!node.isDirectory && <MentionFileButton filePath={node.path} />}
       </div>
 

@@ -4,6 +4,8 @@ import type { VersionedFiles } from "./versioned_codebase_context";
 import { GoogleGenerativeAIProviderOptions } from "@ai-sdk/google";
 import { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 import { getExtraProviderOptions } from "./thinking_utils";
+import type { JSONObject, JSONValue } from "@ai-sdk/provider";
+import type { ProviderOptions } from "@ai-sdk/provider-utils";
 
 export interface MentionedAppCodebase {
   appName: string;
@@ -36,29 +38,44 @@ export function getProviderOptions({
   mentionedAppsCodebases,
   builtinProviderId,
   settings,
-}: GetProviderOptionsParams): Record<string, any> {
-  const providerOptions: Record<string, any> = {
-    "orianbuilder-engine": {
-      orianbuilderAppId,
-      orianbuilderRequestId,
-      orianbuilderDisableFiles,
-      orianbuilderSmartContextMode: smartContextMode,
-      orianbuilderFiles: versionedFiles ? undefined : files,
-      orianbuilderVersionedFiles: versionedFiles,
-      orianbuilderMentionedApps: mentionedAppsCodebases.map(
-        ({ files, appName }) => ({
-          appName,
-          files,
-        }),
-      ),
-    },
+}: GetProviderOptionsParams): ProviderOptions {
+  const engineOptions: JSONObject = {
+    orianbuilderAppId,
+    orianbuilderMentionedApps: mentionedAppsCodebases.map(
+      ({ files, appName }) => ({
+        appName,
+        files,
+      }),
+    ) as unknown as JSONValue,
+  };
+
+  if (orianbuilderRequestId !== undefined) {
+    engineOptions.orianbuilderRequestId = orianbuilderRequestId;
+  }
+  if (orianbuilderDisableFiles !== undefined) {
+    engineOptions.orianbuilderDisableFiles = orianbuilderDisableFiles;
+  }
+  if (smartContextMode !== undefined) {
+    engineOptions.orianbuilderSmartContextMode = smartContextMode;
+  }
+  if (versionedFiles) {
+    engineOptions.orianbuilderVersionedFiles =
+      versionedFiles as unknown as JSONValue;
+  } else {
+    engineOptions.orianbuilderFiles = files as unknown as JSONValue;
+  }
+
+  const openAIOptions = {
+    reasoningSummary: "auto",
+  } satisfies OpenAIResponsesProviderOptions;
+
+  const providerOptions: ProviderOptions = {
+    "orianbuilder-engine": engineOptions,
     "orianbuilder-gateway": getExtraProviderOptions(
       builtinProviderId,
       settings,
     ),
-    openai: {
-      reasoningSummary: "auto",
-    } satisfies OpenAIResponsesProviderOptions,
+    openai: openAIOptions as JSONObject,
   };
 
   // Conditionally include Google thinking config only for supported models
@@ -72,20 +89,22 @@ export function getProviderOptions({
 
   // Keep Google provider behavior unchanged: always include includeThoughts
   if (isGoogle) {
-    providerOptions.google = {
+    const googleOptions = {
       thinkingConfig: {
         includeThoughts: true,
       },
     } satisfies GoogleGenerativeAIProviderOptions;
+    providerOptions.google = googleOptions as JSONObject;
   }
 
   // Vertex-specific fix: only enable thinking on supported Gemini models
   if (isVertex && isGeminiModel && !isFlashLite && !isPartnerModel) {
-    providerOptions.google = {
+    const googleOptions = {
       thinkingConfig: {
         includeThoughts: true,
       },
     } satisfies GoogleGenerativeAIProviderOptions;
+    providerOptions.google = googleOptions as JSONObject;
   }
 
   return providerOptions;

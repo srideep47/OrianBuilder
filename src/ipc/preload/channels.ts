@@ -53,6 +53,8 @@ import {
   modelMarketplaceEvents,
 } from "../types/model_marketplace";
 import { missionContracts } from "../types/mission";
+import { hardwareContracts } from "../types/hardware";
+import { orchestratorContracts } from "../types/model_orchestrator";
 
 // =============================================================================
 // Invoke Channels (derived from all contracts)
@@ -115,6 +117,8 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(embeddedModelContracts),
   ...getInvokeChannels(modelMarketplaceContracts),
   ...getInvokeChannels(missionContracts),
+  ...getInvokeChannels(hardwareContracts),
+  ...getInvokeChannels(orchestratorContracts),
 
   // Test-only channels
   ...TEST_INVOKE_CHANNELS,

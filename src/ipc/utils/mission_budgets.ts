@@ -1,4 +1,28 @@
-export const MISSION_RUNTIME_BUDGET_MS = 45 * 60 * 1000;
+/**
+ * Default wall-clock cap on a single mission turn. Raised from 45min → 8h
+ * after users running local llama-server complained that complex builds
+ * (Electron, Android packaging) routinely hit the old cap mid-iteration.
+ * The cap remains overridable per call via runtimeBudgetMs and via the
+ * `missionRuntimeBudgetMinutes` user setting (clamped [10, 1440]).
+ */
+export const MISSION_RUNTIME_BUDGET_MS = 8 * 60 * 60 * 1000;
+
+/** Inclusive bounds for the user-overridable mission runtime budget. */
+export const MIN_MISSION_RUNTIME_BUDGET_MINUTES = 10;
+export const MAX_MISSION_RUNTIME_BUDGET_MINUTES = 24 * 60;
+
+export function clampMissionRuntimeBudgetMs(
+  budgetMinutes: number | null | undefined,
+): number {
+  if (typeof budgetMinutes !== "number" || !Number.isFinite(budgetMinutes)) {
+    return MISSION_RUNTIME_BUDGET_MS;
+  }
+  const clamped = Math.min(
+    MAX_MISSION_RUNTIME_BUDGET_MINUTES,
+    Math.max(MIN_MISSION_RUNTIME_BUDGET_MINUTES, Math.floor(budgetMinutes)),
+  );
+  return clamped * 60 * 1000;
+}
 export const MISSION_CONSECUTIVE_TOOL_FAILURE_LIMIT = 3;
 export const MISSION_TOTAL_TOOL_FAILURE_LIMIT = 8;
 export const MISSION_REPEATED_STEP_LOOP_LIMIT = 3;

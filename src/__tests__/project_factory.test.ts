@@ -143,9 +143,9 @@ describe("greenfield project factory", () => {
 
     expect(result.created).toBe(true);
     expect(result.commands).toMatchObject({
-      install: "npm install",
-      dev: "npm run start",
-      build: null,
+      install: "npm install --legacy-peer-deps",
+      dev: "npm run preview",
+      build: "npm run build",
       typecheck: "npm run typecheck",
     });
     expect(result.nextSteps).toContain("Run npm run typecheck");
@@ -154,16 +154,16 @@ describe("greenfield project factory", () => {
       await fs.readFile(path.join(tempRoot, "package.json"), "utf8"),
     );
     expect(packageJson.dependencies).toMatchObject({
-      expo: "~53.0.0",
-      "expo-router": "~5.1.11",
+      expo: "53.0.27",
+      "expo-router": "5.1.11",
       react: "19.0.0",
       "react-native": "0.79.6",
-      "react-native-web": "~0.20.0",
+      "react-native-web": "0.20.0",
     });
     expect(packageJson.dependencies.nativewind).toBeUndefined();
     expect(packageJson.dependencies["react-native-worklets"]).toBeUndefined();
     expect(packageJson.devDependencies).toMatchObject({
-      "@types/react": "~19.0.10",
+      "@types/react": "19.0.10",
     });
 
     const gitignore = await fs.readFile(

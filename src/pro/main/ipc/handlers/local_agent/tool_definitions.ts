@@ -18,6 +18,7 @@ import { browserControlTool } from "./tools/browser_control";
 import { browserQaGateTool } from "./tools/browser_qa_gate";
 import { deployPreviewTool } from "./tools/deploy_preview";
 import { packageNativeArtifactTool } from "./tools/package_native_artifact";
+import { exportZipTool } from "./tools/export_zip";
 
 import { readFileTool } from "./tools/read_file";
 import { listFilesTool } from "./tools/list_files";
@@ -43,6 +44,8 @@ import { webSearchTool } from "./tools/web_search";
 import { webCrawlTool } from "./tools/web_crawl";
 import { webFetchTool } from "./tools/web_fetch";
 import { generateImageTool } from "./tools/generate_image";
+import { generateAudioTool } from "./tools/generate_audio";
+import { generateVideoTool } from "./tools/generate_video";
 import { generateMediaAssetTool } from "./tools/generate_media_asset";
 import { manageMcpServerTool } from "./tools/manage_mcp_server";
 import { updateTodosTool } from "./tools/update_todos";
@@ -57,6 +60,8 @@ import { exitPlanTool } from "./tools/exit_plan";
 import { readGuideTool } from "./tools/read_guide";
 import { editAstTool } from "./tools/edit_ast";
 import { githubPrTool } from "./tools/github_pr";
+import { connectGithubRepoTool } from "./tools/connect_github_repo";
+import { connectVercelProjectTool } from "./tools/connect_vercel_project";
 import type { LanguageModelV3ToolResultOutput } from "@ai-sdk/provider";
 import {
   escapeXmlAttr,
@@ -117,7 +122,10 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   browserQaGateTool,
   deployPreviewTool,
   packageNativeArtifactTool,
+  exportZipTool,
   githubPrTool,
+  connectGithubRepoTool,
+  connectVercelProjectTool,
   setChatSummaryTool,
   addIntegrationTool,
   readLogsTool,
@@ -136,6 +144,8 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   webCrawlTool,
   webFetchTool,
   generateImageTool,
+  generateAudioTool,
+  generateVideoTool,
   generateMediaAssetTool,
   manageMcpServerTool,
   updateTodosTool,

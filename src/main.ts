@@ -417,6 +417,26 @@ const createWindow = () => {
   let forceCloseMessageSent = false;
   let devToolsReloadedCount = 0;
 
+  // Recover from renderer crashes (most commonly OOM during a long agent run
+  // that floods the console-entries atom). Without this the user sees a
+  // permanent blank window and has to quit/restart the app from the dock.
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    log.error(
+      `Renderer process gone: reason=${details.reason} exitCode=${details.exitCode}. Attempting auto-reload.`,
+    );
+    if (details.reason === "killed") {
+      return;
+    }
+    const windowRef = mainWindow;
+    if (windowRef && !windowRef.isDestroyed()) {
+      try {
+        windowRef.webContents.reloadIgnoringCache();
+      } catch (err) {
+        log.warn("Failed to auto-reload after renderer crash:", err);
+      }
+    }
+  });
+
   mainWindow.webContents.on("did-finish-load", () => {
     if (process.env.NODE_ENV === "development") {
       // In dev, wait until AFTER the DevTools-triggered reload before sending the message

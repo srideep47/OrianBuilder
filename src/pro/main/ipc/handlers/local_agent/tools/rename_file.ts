@@ -14,6 +14,7 @@ import {
   isSharedServerModule,
 } from "../../../../../../supabase_admin/supabase_utils";
 import { queueCloudSandboxSnapshotSync } from "@/ipc/utils/cloud_sandbox_provider";
+import { isPathLocked } from "@/pro/main/ipc/utils/chat_path_locks";
 
 const logger = log.scope("rename_file");
 
@@ -42,6 +43,16 @@ export const renameFileTool: ToolDefinition<z.infer<typeof renameFileSchema>> =
     },
 
     execute: async (args, ctx: AgentContext) => {
+      if (
+        isPathLocked(args.from, ctx.runState.lockedPaths) ||
+        isPathLocked(args.to, ctx.runState.lockedPaths)
+      ) {
+        throw new Error(
+          `Refusing to rename: one or both of ${args.from} / ${args.to} is locked by the user for this chat. ` +
+            "Ask the user to unlock it before retrying.",
+        );
+      }
+
       const fromFullPath = safeJoin(ctx.appPath, args.from);
       const toFullPath = safeJoin(ctx.appPath, args.to);
 

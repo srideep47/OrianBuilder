@@ -27,6 +27,25 @@ export {
 // Re-export AgentTodo as Todo for backwards compatibility within this module
 export type Todo = AgentTodo;
 
+/**
+ * Structured progress signal for the UI. `step`/`totalSteps` are optional but
+ * encouraged for fixed-length workflows so the renderer can show a real bar
+ * rather than a spinner.
+ */
+export interface ProgressAnnotation {
+  /** Stable identifier for this progress stream (e.g., "package_native") so
+   *  the UI can group updates together and replace prior labels. */
+  id: string;
+  /** Short human-readable label, e.g. "Installing dependencies". */
+  label: string;
+  /** Current step in a multi-step operation. */
+  step?: number;
+  /** Total number of steps (when known). */
+  totalSteps?: number;
+  /** Lifecycle status for the current label. */
+  status: "in-progress" | "completed" | "failed";
+}
+
 /** Tracks which file-editing tools were used on each file path */
 export const FILE_EDIT_TOOL_NAMES = ["write_file", "search_replace"] as const;
 export type FileEditToolName = (typeof FILE_EDIT_TOOL_NAMES)[number];
@@ -37,10 +56,44 @@ export interface FileEditTracker {
   };
 }
 
+/**
+ * Mutable per-turn state that tools share with each other.
+ * Used to enforce sequencing: e.g. browser_qa_gate must pass before
+ * package_native_artifact runs, and create_project resets the gate.
+ */
+export interface AgentRunState {
+  lastBrowserQaStatus: "passed" | "failed" | null;
+  lastBrowserQaPlaceholderDetected: boolean;
+  /**
+   * Files (relative to appPath, forward-slash) written or edited since the
+   * most recent create_project call in this turn. Reset by create_project.
+   */
+  filesWrittenSinceCreateProject: Set<string>;
+  /** True once create_project has been called in this turn. */
+  createdProjectThisTurn: boolean;
+  /**
+   * Forward-slash project-relative paths the user has locked for this chat.
+   * Folder entries lock everything inside. File-writing tools must refuse to
+   * mutate any path matching this list. Snapshotted at turn start.
+   */
+  lockedPaths: string[];
+  /**
+   * Count of times browser_qa_gate refused because app/index.tsx was still the
+   * scaffold placeholder. After the first refusal we push a strong directive;
+   * after the second we push the actual file content + a write_file template;
+   * after the third the gate auto-writes a sensible default screen so weak
+   * local models can't dead-end the turn.
+   */
+  placeholderRefusalCount: number;
+}
+
 export interface AgentContext {
   event: IpcMainInvokeEvent;
   appId: number;
+  /** Absolute filesystem path to the current app directory. */
   appPath: string;
+  /** Human-readable display name of the current app (from the DB `apps.name` column). */
+  appName?: string;
   /**
    * Apps referenced via `@app:Name` in the current turn. Read-only tools
    * can target these via an `app_name` parameter; write tools cannot reach them.
@@ -67,6 +120,8 @@ export interface AgentContext {
   orianbuilderRequestId: string;
   /** Tracks file edit tool usage per file for telemetry */
   fileEditTracker: FileEditTracker;
+  /** Mutable per-turn coordination state shared between tools. */
+  runState: AgentRunState;
   installEtargetRecoveryCount?: number;
   /**
    * If true, the user has OrianBuilder Pro enabled.
@@ -103,6 +158,14 @@ export interface AgentContext {
    * Queues a warning toast to be shown to the user when the turn completes.
    */
   onWarningMessage?: (message: string) => void;
+  /**
+   * Emit a structured progress update for the UI to render as a step indicator
+   * or progress bar. Pattern borrowed from bolt.diy's ProgressAnnotation.
+   * Tools should call this for multi-step operations (e.g., install →
+   * typecheck → build → QA) so the user sees granular progress rather than a
+   * single opaque "tool running" spinner.
+   */
+  emitProgress?: (params: ProgressAnnotation) => void;
   onToolExecutionStart?: (params: {
     toolName: string;
     inputPreview?: string | null;

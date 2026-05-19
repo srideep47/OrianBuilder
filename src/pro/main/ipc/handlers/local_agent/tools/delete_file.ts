@@ -15,6 +15,7 @@ import {
   OrianBuilderErrorKind,
 } from "@/errors/orianbuilder_error";
 import { queueCloudSandboxSnapshotSync } from "@/ipc/utils/cloud_sandbox_provider";
+import { isPathLocked } from "@/pro/main/ipc/utils/chat_path_locks";
 
 const logger = log.scope("delete_file");
 
@@ -61,6 +62,14 @@ export const deleteFileTool: ToolDefinition<z.infer<typeof deleteFileSchema>> =
         );
       }
 
+      if (isPathLocked(args.path, ctx.runState.lockedPaths)) {
+        throw new OrianBuilderError(
+          `Refusing to delete: ${args.path} is locked by the user for this chat. ` +
+            "Ask the user to unlock it before retrying.",
+          OrianBuilderErrorKind.Validation,
+        );
+      }
+
       const fullFilePath = safeJoin(ctx.appPath, args.path);
 
       // Track if this is a shared module
@@ -75,6 +84,9 @@ export const deleteFileTool: ToolDefinition<z.infer<typeof deleteFileSchema>> =
           fs.unlinkSync(fullFilePath);
         }
         logger.log(`Successfully deleted file: ${fullFilePath}`);
+        // Any deletion invalidates the previous QA result.
+        ctx.runState.lastBrowserQaStatus = null;
+        ctx.runState.lastBrowserQaPlaceholderDetected = false;
 
         // Remove from git
         try {

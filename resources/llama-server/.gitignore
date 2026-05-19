@@ -1,0 +1,4 @@
+# Binaries are fetched by scripts/download-llama-server.mjs — never committed.
+*
+!.gitignore
+!README.md

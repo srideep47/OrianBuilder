@@ -5,6 +5,7 @@ import type {
   ComponentSelection,
 } from "@/ipc/types";
 import type { ListedApp } from "@/ipc/types/app";
+import type { ProgressAnnotation } from "@/ipc/types/agent";
 import type { Getter, Setter } from "jotai";
 import { atom } from "jotai";
 
@@ -238,6 +239,12 @@ export const pendingAgentConsentsAtom = atom<PendingAgentConsent[]>([]);
 
 // Agent todos per chat
 export const agentTodosByChatIdAtom = atom<Map<number, AgentTodo[]>>(new Map());
+
+// Live progress annotations per chat — keyed by annotation.id so subsequent
+// updates with the same id replace prior labels in the UI.
+export const agentProgressByChatIdAtom = atom<
+  Map<number, Map<string, ProgressAnnotation>>
+>(new Map());
 
 export const activeMissionByChatIdAtom = atom<Map<number, number>>(new Map());
 

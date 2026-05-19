@@ -97,10 +97,14 @@ function runCommand(
   return `npm run ${script}`;
 }
 
-function installCommand(packageManager: GreenfieldPackageManager): string {
+function installCommand(
+  packageManager: GreenfieldPackageManager,
+  stack?: GreenfieldProjectStack,
+): string {
   if (packageManager === "pnpm") return "pnpm install";
   if (packageManager === "yarn") return "yarn install";
   if (packageManager === "bun") return "bun install";
+  if (stack === "expo") return "npm install --legacy-peer-deps";
   return "npm install";
 }
 
@@ -112,7 +116,7 @@ export function getProjectVerificationCommands(params: {
   stack: GreenfieldProjectStack;
   packageManager: GreenfieldPackageManager;
 }): ProjectVerificationCommands {
-  const hasBuild = params.stack !== "blank" && params.stack !== "expo";
+  const hasBuild = params.stack !== "blank";
   const hasTypecheck =
     params.stack === "vite-react-ts" ||
     params.stack === "nextjs-ts" ||
@@ -120,12 +124,12 @@ export function getProjectVerificationCommands(params: {
     params.stack === "expo" ||
     params.stack === "electron-app";
   return {
-    install: installCommand(params.packageManager),
+    install: installCommand(params.packageManager, params.stack),
     dev:
       params.stack === "blank"
         ? null
         : params.stack === "expo"
-          ? runCommand(params.packageManager, "start")
+          ? runCommand(params.packageManager, "preview")
           : params.stack === "electron-app"
             ? runCommand(params.packageManager, "preview")
             : runCommand(params.packageManager, "dev"),

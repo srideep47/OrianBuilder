@@ -16,7 +16,42 @@ export const previewModeAtom = atom<
 >("preview");
 export const selectedVersionIdAtom = atom<string | null>(null);
 
-export const appConsoleEntriesAtom = atom<ConsoleEntry[]>([]);
+/**
+ * Upper bound on retained console entries per app. A long agent run
+ * (`npm install`, llama-server stats, Vite HMR, capacitor sync, etc.) can
+ * push tens of thousands of log lines through the renderer in a single
+ * turn. Combined with the quadratic copy in `[...prev, entry]`, this
+ * routinely OOM'd the renderer process (~4GB heap → render-process-gone).
+ * Anything older than this is dropped before the array hits memory.
+ */
+export const MAX_CONSOLE_ENTRIES = 2_000;
+
+const _rawConsoleEntriesAtom = atom<ConsoleEntry[]>([]);
+
+/**
+ * Write proxy for `_rawConsoleEntriesAtom` that always trims to
+ * MAX_CONSOLE_ENTRIES. Use this instead of `setAtom(rawAtom, ...)` directly
+ * so every call site benefits from the cap.
+ */
+export const appConsoleEntriesAtom = atom(
+  (get) => get(_rawConsoleEntriesAtom),
+  (
+    get,
+    set,
+    update: ConsoleEntry[] | ((prev: ConsoleEntry[]) => ConsoleEntry[]),
+  ) => {
+    const prev = get(_rawConsoleEntriesAtom);
+    const next = typeof update === "function" ? update(prev) : update;
+    if (next.length <= MAX_CONSOLE_ENTRIES) {
+      set(_rawConsoleEntriesAtom, next);
+      return;
+    }
+    // Keep the most recent MAX_CONSOLE_ENTRIES entries — old ones are
+    // dropped silently. Users investigating earlier output can read the
+    // full log via the main-process `lib/log_store` IPC.
+    set(_rawConsoleEntriesAtom, next.slice(next.length - MAX_CONSOLE_ENTRIES));
+  },
+);
 export const appUrlAtom = atom<
   | {
       appUrl: string;

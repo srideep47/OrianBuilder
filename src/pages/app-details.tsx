@@ -258,6 +258,33 @@ export default function AppDetailsPage() {
     }
   };
 
+  const exportZipMutation = useMutation({
+    mutationFn: async () => {
+      if (!appId || !selectedApp) {
+        throw new Error("No app selected.");
+      }
+      const suggested = `${selectedApp.name.replace(/[^a-zA-Z0-9._-]+/g, "_")}.zip`;
+      const picked = await ipc.app.pickExportZipDestination({
+        suggestedName: suggested,
+      });
+      if (picked.canceled || !picked.path) return null;
+      return ipc.app.exportAppZip({
+        appId,
+        destinationPath: picked.path,
+      });
+    },
+    onSuccess: (result) => {
+      if (!result) return;
+      showSuccess(`Exported ${result.fileCount} files to ${result.zipPath}`);
+    },
+    onError: (error) => {
+      showError(error);
+    },
+  });
+  const handleExportZip = () => {
+    exportZipMutation.mutate();
+  };
+
   const copyAppMutation = useMutation({
     mutationFn: async ({ withHistory }: { withHistory: boolean }) => {
       if (!appId || !newCopyAppName.trim()) {
@@ -408,6 +435,17 @@ export default function AppDetailsPage() {
                   className="h-8 justify-start text-xs"
                 >
                   Copy app
+                </Button>
+                <Button
+                  onClick={handleExportZip}
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 justify-start text-xs"
+                  disabled={exportZipMutation.isPending}
+                >
+                  {exportZipMutation.isPending
+                    ? "Exporting…"
+                    : "Download as ZIP"}
                 </Button>
                 <Button
                   onClick={() => setIsDeleteDialogOpen(true)}

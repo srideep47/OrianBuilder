@@ -84,6 +84,9 @@ export const chats = sqliteTable("chats", {
   compactionBackupPath: text("compaction_backup_path"),
   pendingCompaction: integer("pending_compaction", { mode: "boolean" }),
   chatMode: text("chat_mode").$type<StoredChatMode | null>(),
+  // Forward-slash project-relative paths the agent must not modify.
+  // Folder paths lock everything inside them. JSON-encoded string[].
+  lockedPaths: text("locked_paths", { mode: "json" }).$type<string[] | null>(),
 });
 
 export const messages = sqliteTable("messages", {

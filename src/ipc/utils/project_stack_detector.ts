@@ -216,10 +216,14 @@ function commandForScript(
   return `npm run ${script}`;
 }
 
-function installCommand(manager: DetectedPackageManager): string {
+function installCommand(
+  manager: DetectedPackageManager,
+  framework?: DetectedProjectFramework,
+): string {
   if (manager === "pnpm") return "pnpm install";
   if (manager === "yarn") return "yarn install";
   if (manager === "bun") return "bun install";
+  if (framework === "expo") return "npm install --legacy-peer-deps";
   return "npm install";
 }
 
@@ -239,12 +243,18 @@ function findFirstScript(
 
 function buildCommands(params: {
   manager: DetectedPackageManager;
+  framework: DetectedProjectFramework;
   scripts: Record<string, string>;
   language: ProjectStackDetection["language"];
   configFiles: string[];
 }): ProjectStackCommands {
   const { manager, scripts } = params;
-  const devScript = findFirstScript(scripts, ["dev", "start", "serve"]);
+  const devScript = findFirstScript(
+    scripts,
+    params.framework === "expo"
+      ? ["preview", "dev", "start", "serve"]
+      : ["dev", "preview", "start", "serve"],
+  );
   const startScript = findFirstScript(scripts, ["start", "dev", "serve"]);
   const buildScript = findFirstScript(scripts, ["build"]);
   const testScript = findFirstScript(scripts, ["test", "test:unit", "vitest"]);
@@ -258,7 +268,7 @@ function buildCommands(params: {
   ]);
 
   return {
-    install: installCommand(manager),
+    install: installCommand(manager, params.framework),
     dev: devScript ? commandForScript(manager, devScript) : null,
     start: startScript ? commandForScript(manager, startScript) : null,
     build: buildScript ? commandForScript(manager, buildScript) : null,
@@ -501,6 +511,7 @@ export async function detectProjectStack(
     lockfiles,
     commands: buildCommands({
       manager: packageManager,
+      framework,
       scripts,
       language,
       configFiles,

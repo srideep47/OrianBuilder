@@ -44,7 +44,7 @@ export function EnginePage() {
               Inference Engine
             </h1>
             <div className="sub">
-              node-llama-cpp · CUDA Ampere · Embedded tensor inference
+              llama-server · CUDA Ampere · Embedded tensor inference
             </div>
           </div>
           <Badge tone="amber">No model loaded</Badge>

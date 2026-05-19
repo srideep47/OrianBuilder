@@ -66,6 +66,14 @@ line 5`;
       todos: [],
       orianbuilderRequestId: "test-request",
       fileEditTracker: {},
+      runState: {
+        lastBrowserQaStatus: null,
+        lastBrowserQaPlaceholderDetected: false,
+        filesWrittenSinceCreateProject: new Set<string>(),
+        createdProjectThisTurn: false,
+        lockedPaths: [],
+        placeholderRefusalCount: 0,
+      },
       onXmlStream: vi.fn(),
       onXmlComplete: vi.fn(),
       requireConsent: vi.fn().mockResolvedValue(true),
@@ -506,13 +514,18 @@ line 5`;
       ).rejects.toThrow(/app-a, app-b/);
     });
 
-    it("error indicates none available when referencedApps is empty", async () => {
+    it("silently falls back to current app when no referenced apps are declared", async () => {
+      // When ctx.referencedApps is empty the agent CANNOT be addressing
+      // another app, so an unknown app_name (e.g. a stale scaffold name
+      // the model echoed back) resolves to the current app. The read then
+      // proceeds against the current app — file-not-found is a real
+      // "file missing" error, NOT an "Unknown app_name" gate.
       await expect(
         readFileTool.execute(
           { path: "other.txt", app_name: "whatever" },
           mockContext,
         ),
-      ).rejects.toThrow(/\(none available\)/);
+      ).rejects.toThrow(/does not exist/i);
     });
 
     it("file-not-found error includes app_name when reading from a referenced app", async () => {

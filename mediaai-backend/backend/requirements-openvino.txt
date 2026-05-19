@@ -1,0 +1,5 @@
+-r requirements-base.txt
+optimum-intel>=1.16.0
+openvino>=2024.1.0
+diffusers>=0.28.0
+transformers>=4.41.0

@@ -2,7 +2,9 @@
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "ignorePatterns": [
     "e2e-tests/fixtures/**/*",
-    "src/__tests__/evals/fixtures/**/*"
+    "src/__tests__/evals/fixtures/**/*",
+    "mediaai-backend/backend/.venv/**/*",
+    "package/build/**/*"
   ],
   "categories": {
     "correctness": "warn"

@@ -23,6 +23,7 @@ import {
 } from "@/errors/orianbuilder_error";
 import { queueCloudSandboxSnapshotSync } from "@/ipc/utils/cloud_sandbox_provider";
 import { withLock, getFileWriteKey } from "@/ipc/utils/lock_utils";
+import { isPathLocked } from "@/pro/main/ipc/utils/chat_path_locks";
 
 const logger = log.scope("search_replace");
 
@@ -99,6 +100,14 @@ CRITICAL REQUIREMENTS FOR USING THIS TOOL:
     if (args.old_string === args.new_string) {
       throw new OrianBuilderError(
         "old_string and new_string must be different",
+        OrianBuilderErrorKind.Validation,
+      );
+    }
+
+    if (isPathLocked(args.file_path, ctx.runState.lockedPaths)) {
+      throw new OrianBuilderError(
+        `Refusing to edit: ${args.file_path} is locked by the user for this chat. ` +
+          "Ask the user to unlock it before retrying, or choose a different path.",
         OrianBuilderErrorKind.Validation,
       );
     }
@@ -235,6 +244,14 @@ CRITICAL REQUIREMENTS FOR USING THIS TOOL:
         filePath: args.file_path,
       });
     });
+
+    ctx.runState.filesWrittenSinceCreateProject.add(
+      args.file_path.replace(/\\/g, "/"),
+    );
+    // Any edit invalidates the previous QA result — the agent must re-run
+    // browser_qa_gate before claiming the app is ready to package.
+    ctx.runState.lastBrowserQaStatus = null;
+    ctx.runState.lastBrowserQaPlaceholderDetected = false;
 
     // Deploy Supabase function if applicable
     if (

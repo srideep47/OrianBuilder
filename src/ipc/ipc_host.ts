@@ -27,6 +27,7 @@ import { registerContextPathsHandlers } from "./handlers/context_paths_handlers"
 import { registerAppUpgradeHandlers } from "./handlers/app_upgrade_handlers";
 import { registerCapacitorHandlers } from "./handlers/capacitor_handlers";
 import { registerProblemsHandlers } from "./handlers/problems_handlers";
+import { registerNativePublishHandlers } from "./handlers/native_publish_handlers";
 import { registerAppEnvVarsHandlers } from "./handlers/app_env_vars_handlers";
 import { registerTemplateHandlers } from "./handlers/template_handlers";
 import { registerThemesHandlers } from "../pro/main/ipc/handlers/themes_handlers";
@@ -46,6 +47,8 @@ import { registerImageGenerationHandlers } from "./handlers/image_generation_han
 import { registerEmbeddedModelHandlers } from "./handlers/embedded_model_handler";
 import { registerMarketplaceHandlers } from "./handlers/model_marketplace_handler";
 import { registerMissionHandlers } from "./handlers/mission_handlers";
+import { registerHardwareHandlers } from "./handlers/hardware_handlers";
+import { registerOrchestratorHandlers } from "./handlers/orchestrator_handlers";
 
 export function registerIpcHandlers() {
   // Register all IPC handlers by category
@@ -61,6 +64,7 @@ export function registerIpcHandlers() {
   registerVercelHandlers();
   registerNodeHandlers();
   registerProblemsHandlers();
+  registerNativePublishHandlers();
   registerProposalHandlers();
   registerDebugHandlers();
   registerSupabaseHandlers();
@@ -97,4 +101,6 @@ export function registerIpcHandlers() {
   registerEmbeddedModelHandlers();
   registerMarketplaceHandlers();
   registerMissionHandlers();
+  registerHardwareHandlers();
+  registerOrchestratorHandlers();
 }

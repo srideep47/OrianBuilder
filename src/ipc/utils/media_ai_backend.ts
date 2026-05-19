@@ -4,6 +4,17 @@ import fs from "fs";
 import path from "path";
 import log from "electron-log";
 import type { MediaAiModelId, MediaAiStatus } from "../types/media_ai";
+import type { HardwareProfile } from "@/main/hardware/types";
+
+/** Cached hardware profile pointer. Set by initMediaAiHardware(profile). */
+let cachedHardwareProfile: HardwareProfile | null = null;
+
+/** Inject the resolved hardware profile so the Python subprocess can read
+ *  ORIANBUILDER_HARDWARE_BACKEND / ORIANBUILDER_GPU_VRAM_MB. Call this once at
+ *  startup after the hardware module has computed the profile. */
+export function initMediaAiHardware(profile: HardwareProfile | null): void {
+  cachedHardwareProfile = profile;
+}
 
 const logger = log.scope("media_ai_backend");
 
@@ -60,6 +71,13 @@ function getBackendEnvironment(): NodeJS.ProcessEnv {
     OMNIGEN_OUTPUTS_DIR: outputsPath,
     OMNIGEN_HF_CACHE_DIR: hfCachePath,
     HF_HOME: hfCachePath,
+    ORIANBUILDER_HARDWARE_BACKEND:
+      cachedHardwareProfile?.bestMediaBackend ?? "cpu",
+    ORIANBUILDER_GPU_VRAM_MB: String(
+      cachedHardwareProfile?.primaryGpu?.vramMb ?? 0,
+    ),
+    ORIANBUILDER_GPU_VENDOR:
+      cachedHardwareProfile?.primaryGpu?.vendor ?? "unknown",
   };
 }
 
@@ -134,6 +152,11 @@ async function isBackendHealthy() {
   }
 }
 
+/** Public re-exports so other utilities (e.g. the orchestrator's media
+ *  dispatcher) can probe and call the Python backend. */
+export const MEDIA_AI_SERVER_URL = SERVER_URL;
+export const isMediaAiBackendHealthy = isBackendHealthy;
+
 export async function getMediaAiBackendStatus(): Promise<MediaAiStatus> {
   const backendPath = resolveMediaAiBackendPath();
   const requirementsPath = path.join(backendPath, "requirements.txt");
@@ -166,6 +189,63 @@ export async function getMediaAiBackendStatus(): Promise<MediaAiStatus> {
     models,
     lastLog,
   };
+}
+
+/** Returns the requirements-{backend}.txt filename to use for the given media
+ *  backend. Falls back to requirements-cpu.txt if the vendor-specific file
+ *  does not exist on disk yet. */
+export function resolveRequirementsFile(
+  backend: HardwareProfile["bestMediaBackend"] | string,
+): string {
+  const backendPath = resolveMediaAiBackendPath();
+  const candidate = path.join(backendPath, `requirements-${backend}.txt`);
+  if (fs.existsSync(candidate)) return candidate;
+  const fallback = path.join(backendPath, "requirements-cpu.txt");
+  if (fs.existsSync(fallback)) return fallback;
+  // Legacy monolithic requirements.txt still works as last-ditch fallback.
+  return path.join(backendPath, "requirements.txt");
+}
+
+/** Installs the per-vendor requirements file matching the given backend.
+ *  When no backend is supplied, uses the cached hardware profile's
+ *  bestMediaBackend, defaulting to "cpu". */
+export async function installMediaAiDependenciesForBackend(
+  backend?: string,
+): Promise<string> {
+  const backendPath = resolveMediaAiBackendPath();
+  const { root, modelsPath, outputsPath, hfCachePath } = getMediaAiDataPaths();
+  await fs.promises.mkdir(root, { recursive: true });
+  await fs.promises.mkdir(modelsPath, { recursive: true });
+  await fs.promises.mkdir(outputsPath, { recursive: true });
+  await fs.promises.mkdir(hfCachePath, { recursive: true });
+
+  if (!fs.existsSync(getVenvPythonPath())) {
+    await runCommand("python", ["-m", "venv", getVenvPath()], {
+      cwd: backendPath,
+      timeoutMs: 5 * 60 * 1000,
+    });
+  }
+
+  const pythonPath = getVenvPythonPath();
+  const effectiveBackend =
+    backend ?? cachedHardwareProfile?.bestMediaBackend ?? "cpu";
+  const requirementsFile = resolveRequirementsFile(effectiveBackend);
+
+  logger.info(
+    `Installing media AI dependencies for backend "${effectiveBackend}" from ${requirementsFile}`,
+  );
+
+  const pipUpgrade = await runCommand(
+    pythonPath,
+    ["-m", "pip", "install", "--upgrade", "pip"],
+    { cwd: backendPath, timeoutMs: 10 * 60 * 1000 },
+  );
+  const requirementsInstall = await runCommand(
+    pythonPath,
+    ["-m", "pip", "install", "-r", requirementsFile],
+    { cwd: backendPath, timeoutMs: 90 * 60 * 1000 },
+  );
+  return trimOutput(`${pipUpgrade}\n${requirementsInstall}`);
 }
 
 export async function installMediaAiDependencies() {

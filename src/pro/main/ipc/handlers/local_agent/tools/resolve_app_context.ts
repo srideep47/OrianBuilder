@@ -31,6 +31,15 @@ const CURRENT_APP_ALIASES: ReadonlySet<string> = new Set([
   "@self",
   "@app",
   "@this",
+  // Additional aliases for newly-created projects where the model echoes the
+  // project's human-readable title back as app_name instead of omitting it.
+  "the app",
+  "the project",
+  "project",
+  "new app",
+  "new project",
+  "my app",
+  "my project",
 ]);
 
 /**
@@ -57,8 +66,12 @@ export function normalizeAppNameArg(
 }
 
 function isCurrentAppPathName(ctx: AgentContext, appName: string): boolean {
-  const currentAppPathName = path.basename(ctx.appPath).trim();
-  return currentAppPathName.toLowerCase() === appName.toLowerCase();
+  const lower = appName.toLowerCase();
+  // Match against the directory basename (e.g. a numeric ID folder)
+  if (path.basename(ctx.appPath).trim().toLowerCase() === lower) return true;
+  // Match against the human-readable app display name stored in the DB
+  if (ctx.appName && ctx.appName.trim().toLowerCase() === lower) return true;
+  return false;
 }
 
 /**
@@ -87,11 +100,21 @@ export function resolveTargetAppPath(
   if (appPath) {
     return appPath;
   }
+  // No referenced apps were declared this turn (no `@app:Name` mentions),
+  // so the agent cannot possibly be targeting another app. The most common
+  // way this happens: the agent calls `create_project({ project_name: "X" })`
+  // and then passes `app_name: "X"` to a follow-up `read_file` call. The DB
+  // `apps.name` still has its original auto-generated name, so X doesn't
+  // match the current-app aliases either. Silently fall back to the current
+  // app instead of erroring — the intent is obvious.
+  if (ctx.referencedApps.size === 0) {
+    return ctx.appPath;
+  }
   const available = [...ctx.referencedApps.keys()];
-  const availableStr =
-    available.length > 0 ? available.join(", ") : "(none available)";
   throw new OrianBuilderError(
-    `Unknown app_name '${appName}'. Available referenced apps: ${availableStr}. To target the current app, omit the app_name parameter entirely.`,
+    `Unknown app_name '${appName}'. Available referenced apps: ${available.join(
+      ", ",
+    )}. To target the current app, omit the app_name parameter entirely.`,
     OrianBuilderErrorKind.NotFound,
   );
 }

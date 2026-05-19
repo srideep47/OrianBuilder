@@ -50,7 +50,7 @@ import {
   OrianBuilderProjectStack,
   OrianBuilderRepoMap,
 } from "./OrianBuilderAgentMetadata";
-import { mapActionToButton } from "./ChatInput";
+import { mapActionToButton, QuickActionButton } from "./ChatInput";
 import { SuggestedAction } from "@/lib/schemas";
 import { FixAllErrorsButton } from "./FixAllErrorsButton";
 import { unescapeXmlAttr, unescapeXmlContent } from "../../../shared/xmlEscape";
@@ -90,6 +90,7 @@ const ORIANBUILDER_CUSTOM_TAGS = [
   "orianbuilder-read",
   "think",
   "orianbuilder-command",
+  "orianbuilder-quick-action",
   "orianbuilder-mcp-tool-call",
   "orianbuilder-mcp-tool-result",
   "orianbuilder-list-files",
@@ -938,6 +939,13 @@ function renderCustomTag(
         return <>{mapActionToButton(action)}</>;
       }
       return null;
+
+    case "orianbuilder-quick-action": {
+      const label = (attributes.label ?? "").trim();
+      const prompt = (attributes.prompt ?? "").trim();
+      if (!label || !prompt) return null;
+      return <QuickActionButton label={label.slice(0, 24)} prompt={prompt} />;
+    }
 
     case "orianbuilder-list-files":
       return (

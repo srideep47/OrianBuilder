@@ -138,23 +138,23 @@ function WindowsControls() {
   };
 
   return (
-    <div className="ml-auto flex no-app-region-drag">
+    <div className="ml-auto flex -mt-3 no-app-region-drag">
       <button
-        className="w-11 h-11 flex items-center justify-center hover:bg-white/[0.08] transition-colors text-foreground/80 hover:text-foreground"
+        className="w-11 h-11 m-0 p-0 flex items-center justify-center hover:bg-white/[0.08] transition-colors text-foreground/80 hover:text-foreground"
         onClick={minimizeWindow}
         aria-label="Minimize"
       >
         <Minus size={14} strokeWidth={2} />
       </button>
       <button
-        className="w-11 h-11 flex items-center justify-center hover:bg-white/[0.08] transition-colors text-foreground/80 hover:text-foreground"
+        className="w-11 h-11 m-0 p-0 flex items-center justify-center hover:bg-white/[0.08] transition-colors text-foreground/80 hover:text-foreground"
         onClick={maximizeWindow}
         aria-label="Maximize"
       >
         <Square size={11} strokeWidth={1.6} />
       </button>
       <button
-        className="w-11 h-11 flex items-center justify-center hover:bg-red-500/90 hover:text-white transition-colors text-foreground/80"
+        className="w-11 h-11 m-0 p-0 flex items-center justify-center hover:bg-red-500/90 hover:text-white transition-colors text-foreground/80"
         onClick={closeWindow}
         aria-label="Close"
       >
@@ -202,7 +202,7 @@ function TitleBarActions() {
 
   return (
     <div
-      className="flex items-center gap-0.5 no-app-region-drag mr-2"
+      className="flex items-center gap-0.5 no-app-region-drag mr-2 -mt-3"
       style={{ visibility: selectedAppId ? "visible" : "hidden" }}
     >
       <DropdownMenu>

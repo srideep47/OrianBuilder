@@ -305,6 +305,22 @@ export const TOOL_CAPABILITIES: Readonly<Record<string, ToolCapability>> = {
     isolation: "sandbox",
     expectedArtifacts: ["deployment"],
   },
+  connect_github_repo: {
+    // High risk: creating a remote repo is irreversible from inside the app
+    // (the GitHub URL is reserved on the user's account permanently).
+    risk: "high",
+    stateScope: "external",
+    isolation: "sandbox",
+    expectedArtifacts: ["github_repo"],
+  },
+  connect_vercel_project: {
+    // High risk for the same reason: a Vercel project gets created under the
+    // user's team and starts accruing build history / billable usage.
+    risk: "high",
+    stateScope: "external",
+    isolation: "sandbox",
+    expectedArtifacts: ["vercel_project"],
+  },
   package_native_artifact: {
     risk: "high",
     stateScope: "host",

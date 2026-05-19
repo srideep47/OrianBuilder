@@ -5,6 +5,7 @@ import {
   escapeXmlContent,
   ToolDefinition,
 } from "./types";
+import { checkAndroidEnv, formatAndroidEnvStatus } from "./android_env";
 import { queueCloudSandboxSnapshotSync } from "@/ipc/utils/cloud_sandbox_provider";
 import {
   createGreenfieldProject,
@@ -74,6 +75,35 @@ Use this only when the user asks to start a new project or the current app is em
       force: args.force ?? false,
     });
 
+    if (result.created) {
+      ctx.runState.createdProjectThisTurn = true;
+      ctx.runState.filesWrittenSinceCreateProject.clear();
+      ctx.runState.lastBrowserQaStatus = null;
+      ctx.runState.lastBrowserQaPlaceholderDetected = false;
+    }
+
+    let androidEnvBlock = "";
+    if (result.created && args.stack === "expo") {
+      const androidStatus = await checkAndroidEnv();
+      androidEnvBlock = `\n\n${formatAndroidEnvStatus(androidStatus)}`;
+      ctx.appendUserMessage([
+        {
+          type: "text",
+          text:
+            "Expo project scaffolded. The scaffold's app/index.tsx ships a working baseline " +
+            "(welcome screen + counter) so the build pipeline works out of the box. " +
+            "If the user's request needs specific UI (e.g., a list of numbers, a form, a custom layout), " +
+            "edit app/index.tsx with write_file or search_replace to match it. " +
+            "Then run browser_qa_gate to verify, then package_native_artifact to build the APK. " +
+            "If the baseline already matches the user's request closely enough, you can proceed straight to QA + packaging." +
+            (androidStatus.issues.length > 0
+              ? "\n\nAndroid env warnings (will only block package_native_artifact, not preview):\n" +
+                androidStatus.issues.map((line) => `- ${line}`).join("\n")
+              : ""),
+        },
+      ]);
+    }
+
     const fileList = result.files.map((file) => `- ${file}`).join("\n");
     const nextSteps = result.nextSteps.map((step) => `- ${step}`).join("\n");
     const commandSummary = [
@@ -106,25 +136,37 @@ Use this only when the user asks to start a new project or the current app is em
     ].join(" ");
 
     ctx.onXmlComplete(
-      `<orianbuilder-create-project created="${result.created}" name="${escapeXmlAttr(args.project_name)}" stack="${escapeXmlAttr(result.stack)}" package-manager="${escapeXmlAttr(result.packageManager)}" scaffold-method="${escapeXmlAttr(result.scaffoldMethod)}" scaffold-command="${escapeXmlAttr(result.scaffoldCommand ?? "")}" ${commandAttrs}>${escapeXmlContent(`${body}\n\nCommands:\n${commandSummary}${outputBlock}`)}</orianbuilder-create-project>`,
+      `<orianbuilder-create-project created="${result.created}" name="${escapeXmlAttr(args.project_name)}" stack="${escapeXmlAttr(result.stack)}" package-manager="${escapeXmlAttr(result.packageManager)}" scaffold-method="${escapeXmlAttr(result.scaffoldMethod)}" scaffold-command="${escapeXmlAttr(result.scaffoldCommand ?? "")}" ${commandAttrs}>${escapeXmlContent(`${body}\n\nCommands:\n${commandSummary}${outputBlock}${androidEnvBlock}`)}</orianbuilder-create-project>`,
     );
 
     if (result.created) {
-      if (result.commands.dev) {
-        await db
-          .update(apps)
-          .set({
-            installCommand: result.commands.install,
-            startCommand: result.commands.dev,
-          })
-          .where(eq(apps.id, ctx.appId));
-      }
+      // Keep DB's apps.name in sync with the human-readable project name
+      // the agent just scaffolded. Without this, later tool calls that
+      // (incorrectly) echo the new name back as app_name fail to match
+      // ctx.appName and fall through to "Unknown app_name". Update is
+      // best-effort; failure here doesn't block the scaffold result.
+      await db
+        .update(apps)
+        .set({
+          name: args.project_name,
+          ...(result.commands.dev
+            ? {
+                installCommand: result.commands.install,
+                startCommand: result.commands.dev,
+              }
+            : {}),
+        })
+        .where(eq(apps.id, ctx.appId))
+        .catch(() => {});
+      // Also keep the in-memory ctx in sync so resolveTargetAppPath matches
+      // immediately, before any future turn reloads the DB row.
+      ctx.appName = args.project_name;
       queueCloudSandboxSnapshotSync({
         appId: ctx.appId,
         changedPaths: result.files,
       });
     }
 
-    return `${body}\n\nCommands:\n${commandSummary}${outputBlock}`;
+    return `${body}\n\nCommands:\n${commandSummary}${outputBlock}${androidEnvBlock}`;
   },
 };

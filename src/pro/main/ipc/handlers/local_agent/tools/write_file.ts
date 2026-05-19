@@ -11,6 +11,7 @@ import {
 } from "../../../../../../supabase_admin/supabase_utils";
 import { queueCloudSandboxSnapshotSync } from "@/ipc/utils/cloud_sandbox_provider";
 import { withLock, getFileWriteKey } from "@/ipc/utils/lock_utils";
+import { isPathLocked } from "@/pro/main/ipc/utils/chat_path_locks";
 const logger = log.scope("write_file");
 
 const writeFileSchema = z.object({
@@ -42,6 +43,13 @@ export const writeFileTool: ToolDefinition<z.infer<typeof writeFileSchema>> = {
   },
 
   execute: async (args, ctx: AgentContext) => {
+    if (isPathLocked(args.path, ctx.runState.lockedPaths)) {
+      throw new Error(
+        `Refusing to write: ${args.path} is locked by the user for this chat. ` +
+          "Ask the user to unlock it before retrying, or choose a different path.",
+      );
+    }
+
     const fullFilePath = safeJoin(ctx.appPath, args.path);
 
     // Track if this is a shared module
@@ -62,6 +70,14 @@ export const writeFileTool: ToolDefinition<z.infer<typeof writeFileSchema>> = {
         changedPaths: [args.path],
       });
     });
+
+    ctx.runState.filesWrittenSinceCreateProject.add(
+      args.path.replace(/\\/g, "/"),
+    );
+    // Any write invalidates the previous QA result — the agent must re-run
+    // browser_qa_gate before claiming the app is ready to package.
+    ctx.runState.lastBrowserQaStatus = null;
+    ctx.runState.lastBrowserQaPlaceholderDetected = false;
 
     // Deploy Supabase function if applicable
     if (
