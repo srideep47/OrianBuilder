@@ -67,7 +67,9 @@ export function VoiceAssistantModal({
         {/* Header */}
         <div className="flex justify-between items-center p-6 border-b border-slate-800">
           <div>
-            <h2 className="text-2xl font-bold text-slate-100">Voice Assistant</h2>
+            <h2 className="text-2xl font-bold text-slate-100">
+              Voice Assistant
+            </h2>
             <p className="text-xs text-slate-400 mt-1">
               Ready to listen for your voice commands
             </p>
@@ -100,7 +102,9 @@ export function VoiceAssistantModal({
               {isTranscribing ? (
                 <div className="flex items-center gap-2">
                   <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
-                  <p className="text-slate-300 text-sm">Building your answer...</p>
+                  <p className="text-slate-300 text-sm">
+                    Building your answer...
+                  </p>
                 </div>
               ) : (
                 <p className="text-slate-300 text-sm leading-relaxed">
@@ -127,7 +131,7 @@ export function VoiceAssistantModal({
                   "flex-1 px-3 py-2 text-xs font-semibold rounded-full border transition-colors uppercase",
                   canSpeak
                     ? "bg-slate-700 hover:bg-slate-600 text-slate-200 border-slate-600"
-                    : "bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed opacity-50"
+                    : "bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed opacity-50",
                 )}
               >
                 SOUND
@@ -148,7 +152,7 @@ export function VoiceAssistantModal({
                     "w-2 rounded-full transition-all duration-200",
                     isActive
                       ? "bg-gradient-to-t from-cyan-400 to-blue-400"
-                      : "bg-slate-600"
+                      : "bg-slate-600",
                   )}
                   style={{
                     height: `${height}px`,
@@ -168,7 +172,7 @@ export function VoiceAssistantModal({
               "flex-1 flex flex-col items-center justify-center gap-1 py-4 rounded-xl transition-all border",
               isRecording || isSpeaking || isTranscribing
                 ? "bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600"
-                : "bg-slate-800 border-slate-700 text-slate-400 opacity-50 cursor-not-allowed"
+                : "bg-slate-800 border-slate-700 text-slate-400 opacity-50 cursor-not-allowed",
             )}
             title="Stop recording or playback"
           >
@@ -185,12 +189,14 @@ export function VoiceAssistantModal({
                 ? "bg-slate-700 border-slate-600 opacity-50 cursor-not-allowed"
                 : isRecording
                   ? "bg-red-600 border-red-500 hover:bg-red-700 shadow-lg shadow-red-600/30"
-                  : "bg-purple-600 border-purple-500 hover:bg-purple-700 shadow-lg shadow-purple-600/30"
+                  : "bg-purple-600 border-purple-500 hover:bg-purple-700 shadow-lg shadow-purple-600/30",
             )}
             title={isRecording ? "Stop recording" : "Start recording"}
           >
             <Mic className="w-6 h-6" />
-            <span className="text-xs font-bold">{isRecording ? "LIVE" : "MIC"}</span>
+            <span className="text-xs font-bold">
+              {isRecording ? "LIVE" : "MIC"}
+            </span>
           </button>
 
           <button
@@ -200,7 +206,7 @@ export function VoiceAssistantModal({
               "flex-1 flex flex-col items-center justify-center gap-1 py-4 rounded-xl transition-all border",
               canSpeak
                 ? "bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600"
-                : "bg-slate-800 border-slate-700 text-slate-400 opacity-50 cursor-not-allowed"
+                : "bg-slate-800 border-slate-700 text-slate-400 opacity-50 cursor-not-allowed",
             )}
             title="Speak the assistant reply"
           >

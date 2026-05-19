@@ -183,7 +183,9 @@
 .visualizerBar {
   width: 9px;
   border-radius: 999px;
-  transition: background-color 0.2s ease, height 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    height 0.2s ease;
 }
 
 .visualizerBarActive {

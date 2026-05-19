@@ -22,22 +22,28 @@ test.describe("Voice Assistant Modal", () => {
 
     // Click voice assistant button (the Zap icon)
     // This assumes the button is visible in the chat input area
-    const voiceButton = page.locator('button[aria-label*="Voice assistant"]').first();
+    const voiceButton = page
+      .locator('button[aria-label*="Voice assistant"]')
+      .first();
 
     if (await voiceButton.isVisible()) {
       await voiceButton.click();
 
       // Wait for modal to appear
-      const modal = page.locator('text=Voice Assistant');
+      const modal = page.locator("text=Voice Assistant");
       await expect(modal).toBeVisible();
     }
   });
 
-  test("should have all voice assistant controls in modal", async ({ page }) => {
+  test("should have all voice assistant controls in modal", async ({
+    page,
+  }) => {
     await page.goto("/chat?id=1");
     await page.waitForLoadState("networkidle");
 
-    const voiceButton = page.locator('button[aria-label*="Voice assistant"]').first();
+    const voiceButton = page
+      .locator('button[aria-label*="Voice assistant"]')
+      .first();
 
     if (await voiceButton.isVisible()) {
       await voiceButton.click();
@@ -63,7 +69,9 @@ test.describe("Voice Assistant Modal", () => {
     await page.goto("/chat?id=1");
     await page.waitForLoadState("networkidle");
 
-    const voiceButton = page.locator('button[aria-label*="Voice assistant"]').first();
+    const voiceButton = page
+      .locator('button[aria-label*="Voice assistant"]')
+      .first();
 
     if (await voiceButton.isVisible()) {
       await voiceButton.click();
@@ -84,14 +92,16 @@ test.describe("Voice Assistant Modal", () => {
     await page.goto("/chat?id=1");
     await page.waitForLoadState("networkidle");
 
-    const voiceButton = page.locator('button[aria-label*="Voice assistant"]').first();
+    const voiceButton = page
+      .locator('button[aria-label*="Voice assistant"]')
+      .first();
 
     if (await voiceButton.isVisible()) {
       await voiceButton.click();
 
       // Check for initial status message
       const statusText = page.locator(
-        'text="Ready to listen for your voice commands"'
+        'text="Ready to listen for your voice commands"',
       );
       await expect(statusText).toBeVisible();
     }
@@ -101,7 +111,9 @@ test.describe("Voice Assistant Modal", () => {
     await page.goto("/chat?id=1");
     await page.waitForLoadState("networkidle");
 
-    const voiceButton = page.locator('button[aria-label*="Voice assistant"]').first();
+    const voiceButton = page
+      .locator('button[aria-label*="Voice assistant"]')
+      .first();
 
     if (await voiceButton.isVisible()) {
       await voiceButton.click();
@@ -125,9 +137,9 @@ test.describe("Voice to Text Integration", () => {
     await page.waitForLoadState("networkidle");
 
     // Check for voice-to-text button (microphone icon)
-    const voiceToTextButton = page.locator(
-      'button[aria-label*="Voice to text"]'
-    ).first();
+    const voiceToTextButton = page
+      .locator('button[aria-label*="Voice to text"]')
+      .first();
 
     if (await voiceToTextButton.isVisible()) {
       await expect(voiceToTextButton).toBeEnabled();
