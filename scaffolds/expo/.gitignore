@@ -6,7 +6,7 @@ ios/
 dist/
 build/
 web-build/
-native-download-site/
+native-download-site/downloads/
 .orianbuilder/
 expo-env.d.ts
 nativewind-env.d.ts

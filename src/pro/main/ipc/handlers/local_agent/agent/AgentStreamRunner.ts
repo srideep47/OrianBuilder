@@ -629,6 +629,7 @@ export async function runAgentStream(
           toolName: params.toolName,
           inputPreview: params.inputPreview,
           mcpToolTrustOverrides,
+          autoPublishToggleOn: settings.autoPublishAfterChecks === true,
         });
         logMissionEvent({
           missionId,

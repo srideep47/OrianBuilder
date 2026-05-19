@@ -3,13 +3,13 @@ import { ipc } from "@/ipc/types";
 import { v4 as uuidv4 } from "uuid";
 
 interface UseVoiceToTextOptions {
-  enabled: boolean;
+  enabled?: boolean;
   onTranscription: (text: string) => void;
   onError?: (error: string) => void;
 }
 
 export function useVoiceToText({
-  enabled,
+  enabled = true,
   onTranscription,
   onError,
 }: UseVoiceToTextOptions) {
@@ -18,42 +18,34 @@ export function useVoiceToText({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
-  const skipOnStopProcessingRef = useRef(false);
+  const skipProcessingRef = useRef(false);
 
-  const stopMediaStream = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
+  const stopStream = useCallback(() => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
   }, []);
 
   useEffect(() => {
     return () => {
-      skipOnStopProcessingRef.current = true;
-      const mediaRecorder = mediaRecorderRef.current;
-      if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop();
-      }
+      skipProcessingRef.current = true;
+      const rec = mediaRecorderRef.current;
+      if (rec && rec.state !== "inactive") rec.stop();
       mediaRecorderRef.current = null;
-      stopMediaStream();
+      stopStream();
       chunksRef.current = [];
     };
-  }, [stopMediaStream]);
+  }, [stopStream]);
 
   const toggleRecording = useCallback(async () => {
     if (isTranscribing) return;
 
     if (isRecording) {
-      // Stop recording
-      if (mediaRecorderRef.current?.state === "recording") {
-        mediaRecorderRef.current.stop();
-      }
+      mediaRecorderRef.current?.stop();
       return;
     }
 
     if (!enabled) return;
 
-    // Start recording
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -63,48 +55,41 @@ export function useVoiceToText({
       });
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
+      skipProcessingRef.current = false;
 
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunksRef.current.push(event.data);
-        }
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
       };
 
       mediaRecorder.onstop = async () => {
         mediaRecorderRef.current = null;
-        stopMediaStream();
-        if (skipOnStopProcessingRef.current) {
+        stopStream();
+        setIsRecording(false);
+
+        if (skipProcessingRef.current) {
           chunksRef.current = [];
           return;
         }
 
-        setIsRecording(false);
-
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
         chunksRef.current = [];
-
-        if (blob.size === 0) {
-          return;
-        }
+        if (blob.size === 0) return;
 
         setIsTranscribing(true);
         try {
           const arrayBuffer = await blob.arrayBuffer();
-          const audioData = Array.from(new Uint8Array(arrayBuffer));
-
           const result = await ipc.audio.transcribeAudio({
-            audioData,
+            audioData: Array.from(new Uint8Array(arrayBuffer)),
             filename: "recording.webm",
             requestId: uuidv4(),
           });
-
-          if (result.text.trim()) {
-            onTranscription(result.text.trim());
-          }
+          const text = result.text.trim();
+          if (text) onTranscription(text);
+          else onError?.("No speech detected. Please try again.");
         } catch (err) {
-          const message =
-            err instanceof Error ? err.message : "Transcription failed";
-          onError?.(message);
+          onError?.(
+            err instanceof Error ? err.message : "Transcription failed",
+          );
         } finally {
           setIsTranscribing(false);
         }
@@ -113,10 +98,10 @@ export function useVoiceToText({
       mediaRecorder.start();
       setIsRecording(true);
     } catch (err) {
-      stopMediaStream();
-      const message =
-        err instanceof Error ? err.message : "Failed to access microphone";
-      onError?.(message);
+      stopStream();
+      onError?.(
+        err instanceof Error ? err.message : "Failed to access microphone",
+      );
     }
   }, [
     enabled,
@@ -124,12 +109,8 @@ export function useVoiceToText({
     isTranscribing,
     onTranscription,
     onError,
-    stopMediaStream,
+    stopStream,
   ]);
 
-  return {
-    isRecording,
-    isTranscribing,
-    toggleRecording,
-  };
+  return { isRecording, isTranscribing, toggleRecording };
 }

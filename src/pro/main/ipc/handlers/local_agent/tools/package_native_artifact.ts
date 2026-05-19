@@ -413,6 +413,35 @@ async function ensureAndroidLocalEnvironment(
   }
 }
 
+// Directory names produced by electron-builder/forge that contain UNPACKED
+// app binaries — `MyApp.exe` inside `win-unpacked/` is not a distributable
+// installer, it's a helper that depends on its sibling `resources/` to run.
+// Including those in the artifact list is what shipped a 105 KB `elevate.exe`
+// as the "Windows installer" download.
+const UNPACKED_OUTPUT_DIR_PATTERNS: RegExp[] = [
+  /-unpacked$/i, // win-unpacked, win-ia32-unpacked, linux-unpacked, mac-arm64-unpacked
+  /^mac$/i,
+  /^mac-arm64$/i,
+  /^linux$/i,
+  /^linux-arm64$/i,
+];
+
+// Helper binaries that electron-builder/forge bundle alongside the real
+// installer. They share the .exe extension but are not user-runnable apps.
+const HELPER_BINARY_NAMES = new Set(
+  [
+    "elevate.exe",
+    "squirrel.exe",
+    "update.exe",
+    "chrome_crashpad_handler.exe",
+    "d3dcompiler_47.dll", // .dll just for safety if we ever extend extensions
+  ].map((name) => name.toLowerCase()),
+);
+
+function isUnpackedOutputDir(dirName: string): boolean {
+  return UNPACKED_OUTPUT_DIR_PATTERNS.some((pattern) => pattern.test(dirName));
+}
+
 async function findFiles(input: {
   root: string;
   extensions: Set<string>;
@@ -433,8 +462,14 @@ async function findFiles(input: {
       const fullPath = path.join(directory, entry.name);
       if (entry.isDirectory()) {
         if (entry.name === "node_modules" || entry.name === ".git") continue;
+        // Skip unpacked-app subdirectories so we don't pick up the bundled
+        // win-unpacked/MyApp.exe (depends on siblings) or the embedded
+        // resources/elevate.exe (UAC helper).
+        if (isUnpackedOutputDir(entry.name)) continue;
         await walk(fullPath, depth + 1);
       } else if (input.extensions.has(path.extname(entry.name))) {
+        // Filter out known helper binaries by basename, case-insensitive.
+        if (HELPER_BINARY_NAMES.has(entry.name.toLowerCase())) continue;
         const stat = await fs.stat(fullPath);
         results.push({ path: fullPath, sizeBytes: stat.size });
       }
@@ -444,6 +479,12 @@ async function findFiles(input: {
   await walk(input.root, 0);
   return results.sort((a, b) => b.sizeBytes - a.sizeBytes);
 }
+
+// Exported for unit testing the filter rules.
+export const __testing__ = {
+  isUnpackedOutputDir,
+  HELPER_BINARY_NAMES,
+};
 
 async function inferTarget(appPath: string): Promise<NativeTarget> {
   if (

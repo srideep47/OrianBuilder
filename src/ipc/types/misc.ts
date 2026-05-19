@@ -379,6 +379,76 @@ export const miscContracts = {
     }),
     output: z.void(),
   }),
+
+  // Native auto-publish helpers (used by the Publish toggle for Android/Electron apps)
+  listNativeDownloads: defineContract({
+    channel: "native-publish:list-downloads",
+    input: z.object({ appId: z.number() }),
+    output: z.object({
+      exists: z.boolean(),
+      siteRelativePath: z.string(),
+      downloadsRelativePath: z.string(),
+      files: z.array(
+        z.object({
+          name: z.string(),
+          sizeBytes: z.number(),
+          absolutePath: z.string(),
+        }),
+      ),
+    }),
+  }),
+
+  preparePublishGitignore: defineContract({
+    channel: "native-publish:prepare-gitignore",
+    input: z.object({ appId: z.number() }),
+    output: z.object({
+      gitignoreUpdated: z.boolean(),
+      untrackedPaths: z.array(z.string()),
+    }),
+  }),
+
+  applyNativeReleaseLinks: defineContract({
+    channel: "native-publish:apply-release-links",
+    input: z.object({
+      appId: z.number(),
+      releaseHtmlUrl: z.string(),
+      tag: z.string(),
+      links: z.array(
+        z.object({
+          name: z.string(),
+          url: z.string(),
+          sizeBytes: z.number(),
+        }),
+      ),
+      // When true, remove the local downloads/ directory after rewriting links
+      // (keeps the Vercel deploy small since the binaries now live on GitHub).
+      pruneLocalDownloads: z.boolean().optional(),
+    }),
+    output: z.object({
+      indexHtmlRelativePath: z.string(),
+      rootVercelJsonRelativePath: z.string(),
+    }),
+  }),
+
+  generateMediaForApp: defineContract({
+    channel: "misc:generate-media-for-app",
+    input: z.object({
+      appId: z.number(),
+      modelType: z.enum(["video", "audio"]),
+      prompt: z.string().min(1).max(2000),
+      requestId: z.string(),
+    }),
+    output: z.object({
+      success: z.boolean(),
+      fileName: z.string().optional(),
+      filePath: z.string().optional(),
+      appPath: z.string().optional(),
+      appId: z.number().optional(),
+      appName: z.string().optional(),
+      durationMs: z.number(),
+      error: z.string().optional(),
+    }),
+  }),
 } as const;
 
 // =============================================================================

@@ -40,7 +40,12 @@ import path from "node:path";
 import { withLock } from "../utils/lock_utils";
 import { createTypedHandler } from "./base";
 import { githubContracts } from "../types/github";
-import type { CloneRepoParams, CloneRepoResult } from "../types/github";
+import type {
+  CloneRepoParams,
+  CloneRepoResult,
+  UploadReleaseAssetsParams,
+  UploadReleaseAssetsResult,
+} from "../types/github";
 import {
   OrianBuilderError,
   OrianBuilderErrorKind,
@@ -1425,6 +1430,194 @@ async function handleCloneRepoFromUrl(
   }
 }
 
+// --- GitHub Releases (upload assets) Handler ---
+//
+// Creates (or reuses) a GitHub Release on the app's connected repo and uploads
+// the supplied local files as release assets. Used by the auto-publish flow to
+// host native installers (.apk / .exe / .dmg / ...) where Vercel is a bad fit.
+async function handleUploadReleaseAssets(
+  _event: IpcMainInvokeEvent,
+  params: UploadReleaseAssetsParams,
+): Promise<UploadReleaseAssetsResult> {
+  const settings = readSettings();
+  const accessToken = settings.githubAccessToken?.value;
+  if (!accessToken) {
+    throw new OrianBuilderError(
+      "Not authenticated with GitHub.",
+      OrianBuilderErrorKind.Auth,
+    );
+  }
+
+  const app = await db.query.apps.findFirst({
+    where: eq(apps.id, params.appId),
+  });
+  if (!app || !app.githubOrg || !app.githubRepo) {
+    throw new OrianBuilderError(
+      "App is not linked to a GitHub repo. Connect a GitHub repo before uploading release assets.",
+      OrianBuilderErrorKind.Precondition,
+    );
+  }
+
+  if (params.files.length === 0) {
+    throw new OrianBuilderError(
+      "No files supplied for release upload.",
+      OrianBuilderErrorKind.Validation,
+    );
+  }
+
+  // Verify each file exists before we open a release.
+  for (const file of params.files) {
+    if (!fs.existsSync(file.absolutePath)) {
+      throw new OrianBuilderError(
+        `Release asset not found on disk: ${file.absolutePath}`,
+        OrianBuilderErrorKind.NotFound,
+      );
+    }
+  }
+
+  const owner = app.githubOrg;
+  const repo = app.githubRepo;
+  const repoApi = `${GITHUB_API_BASE}/repos/${owner}/${repo}`;
+
+  // 1) Look up an existing release by tag (re-using lets us update an in-place
+  //    release for the same version instead of erroring on duplicates).
+  let releaseId: number | null = null;
+  let releaseHtmlUrl: string | null = null;
+  let uploadUrlTemplate: string | null = null;
+
+  const lookupRes = await fetch(
+    `${repoApi}/releases/tags/${encodeURIComponent(params.tag)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/vnd.github+json",
+      },
+    },
+  );
+  if (lookupRes.ok) {
+    const existing = (await lookupRes.json()) as {
+      id: number;
+      html_url: string;
+      upload_url: string;
+    };
+    releaseId = existing.id;
+    releaseHtmlUrl = existing.html_url;
+    uploadUrlTemplate = existing.upload_url;
+  } else if (lookupRes.status !== 404) {
+    const text = await lookupRes.text();
+    throw new Error(
+      `GitHub release lookup failed (${lookupRes.status} ${lookupRes.statusText}): ${text}`,
+    );
+  }
+
+  // 2) Create the release when none exists yet.
+  if (releaseId === null) {
+    const createRes = await fetch(`${repoApi}/releases`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/vnd.github+json",
+      },
+      body: JSON.stringify({
+        tag_name: params.tag,
+        name: params.name ?? params.tag,
+        body: params.body ?? "Automated release from OrianBuilder Publish.",
+        target_commitish: params.targetCommitish ?? app.githubBranch ?? "main",
+        draft: false,
+        prerelease: false,
+      }),
+    });
+    if (!createRes.ok) {
+      const text = await createRes.text();
+      throw new Error(
+        `Failed to create GitHub release (${createRes.status} ${createRes.statusText}): ${text}`,
+      );
+    }
+    const created = (await createRes.json()) as {
+      id: number;
+      html_url: string;
+      upload_url: string;
+    };
+    releaseId = created.id;
+    releaseHtmlUrl = created.html_url;
+    uploadUrlTemplate = created.upload_url;
+  }
+
+  if (releaseId === null || !uploadUrlTemplate || !releaseHtmlUrl) {
+    throw new Error("GitHub release upload state is missing after creation.");
+  }
+
+  // The upload_url comes back with a `{?name,label}` template suffix.
+  const uploadBase = uploadUrlTemplate.replace(/\{\?[^}]*\}$/, "");
+
+  // 3) List existing assets so we can replace ones with the same name (GitHub
+  //    rejects same-name uploads with 422 — replace is the safer default for a
+  //    re-published artifact).
+  const existingAssets = await (async () => {
+    const res = await fetch(
+      `${repoApi}/releases/${releaseId}/assets?per_page=100`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/vnd.github+json",
+        },
+      },
+    );
+    if (!res.ok) return [] as Array<{ id: number; name: string }>;
+    return (await res.json()) as Array<{ id: number; name: string }>;
+  })();
+
+  const uploaded: UploadReleaseAssetsResult["assets"] = [];
+  for (const file of params.files) {
+    const existing = existingAssets.find((asset) => asset.name === file.name);
+    if (existing) {
+      await fetch(`${repoApi}/releases/assets/${existing.id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/vnd.github+json",
+        },
+      });
+    }
+
+    const data = fs.readFileSync(file.absolutePath);
+    const uploadUrl = `${uploadBase}?name=${encodeURIComponent(file.name)}`;
+    const uploadRes = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/octet-stream",
+        "Content-Length": String(data.byteLength),
+        Accept: "application/vnd.github+json",
+      },
+      body: data,
+    });
+    if (!uploadRes.ok) {
+      const text = await uploadRes.text();
+      throw new Error(
+        `Failed to upload release asset '${file.name}' (${uploadRes.status} ${uploadRes.statusText}): ${text}`,
+      );
+    }
+    const asset = (await uploadRes.json()) as {
+      name: string;
+      size: number;
+      browser_download_url: string;
+    };
+    uploaded.push({
+      name: asset.name,
+      size: asset.size,
+      browser_download_url: asset.browser_download_url,
+    });
+  }
+
+  return {
+    release_html_url: releaseHtmlUrl,
+    tag: params.tag,
+    assets: uploaded,
+  };
+}
+
 // --- Registration ---
 export function registerGithubHandlers() {
   createTypedHandler(githubContracts.startFlow, async (event, params) => {
@@ -1507,6 +1700,13 @@ export function registerGithubHandlers() {
     githubContracts.cloneRepoFromUrl,
     async (event, params) => {
       return handleCloneRepoFromUrl(event, params);
+    },
+  );
+
+  createTypedHandler(
+    githubContracts.uploadReleaseAssets,
+    async (event, params) => {
+      return handleUploadReleaseAssets(event, params);
     },
   );
 }
