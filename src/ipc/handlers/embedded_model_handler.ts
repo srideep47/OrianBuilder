@@ -15,7 +15,7 @@ import {
   getCurrentStats,
   startHardwareBroadcast,
 } from "../utils/embedded_inference_server";
-import { detectGpu } from "../utils/gpu_detection";
+import { detectGpu, detectAllGpus } from "../utils/gpu_detection";
 import { readSettings, writeSettings } from "../../main/settings";
 import { readGgufMetadata } from "../utils/gguf_metadata";
 import {
@@ -678,6 +678,10 @@ export function registerEmbeddedModelHandlers(): void {
     },
   );
 
+  ipcMain.handle("embedded-model:detect-all-gpus", async () => {
+    return detectAllGpus();
+  });
+
   ipcMain.handle("embedded-model:get-gpu-stats", async () => {
     return getGpuStats();
   });
@@ -766,7 +770,10 @@ export function registerEmbeddedModelHandlers(): void {
       let attentionSlidingWindowPattern: number | null = null;
 
       try {
-        const gpuInfo = await detectGpu();
+        const gpuInfo = await detectGpu(
+          undefined,
+          config.selectedGpuModel ?? undefined,
+        );
         vramMb = gpuInfo.available ? gpuInfo.vramMb : 0;
       } catch {
         /* nvidia-smi may not be available */
@@ -798,6 +805,7 @@ export function registerEmbeddedModelHandlers(): void {
         aggressiveMemory: config.aggressiveMemory ?? true,
         gpuLayersMode: config.gpuLayersMode ?? "auto",
         manualGpuLayers: config.manualGpuLayers ?? null,
+        selectedGpuModel: config.selectedGpuModel ?? null,
         _vramMb: vramMb,
         _layerSizeMb: layerSizeMb,
         _estimatedLayers: estimatedLayers,
@@ -888,6 +896,7 @@ export function registerEmbeddedModelHandlers(): void {
       aggressiveMemory: cfg.aggressiveMemory ?? true,
       gpuLayersMode: cfg.gpuLayersMode ?? "auto",
       manualGpuLayers: cfg.manualGpuLayers ?? null,
+      selectedGpuModel: cfg.selectedGpuModel ?? null,
     };
   });
 

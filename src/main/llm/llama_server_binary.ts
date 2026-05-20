@@ -21,7 +21,13 @@
 
 import path from "node:path";
 import fs from "node:fs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import log from "electron-log";
 import { app } from "electron";
+
+const execFileAsync = promisify(execFile);
+const logger = log.scope("llama-binary");
 
 import type { HardwareProfile, LlmBackend } from "@/main/hardware/types";
 
@@ -98,6 +104,26 @@ export interface LlamaServerBinaryLocation {
  * Throws if no binary is found — callers should surface this as a user-facing
  * error pointing them at the binary acquisition docs.
  */
+export function resolveLlamaServerBinaryByVariant(
+  variant: LlamaServerVariant,
+): LlamaServerBinaryLocation {
+  const binaryName = getBinaryName();
+  const attempted: string[] = [];
+  for (const root of candidateRoots()) {
+    const candidate = path.join(root, variant, binaryName);
+    attempted.push(candidate);
+    if (fs.existsSync(candidate)) {
+      return { path: candidate, variant, source: "bundled" };
+    }
+  }
+  throw new Error(
+    `llama-server binary not found for variant "${variant}". Tried:\n  ` +
+      attempted.join("\n  ") +
+      `\nSet the LLAMA_SERVER_PATH env var to an absolute path, or run ` +
+      `\`scripts/download-llama-server\` to fetch binaries into resources/llama-server/.`,
+  );
+}
+
 export function resolveLlamaServerBinary(
   profile: Pick<HardwareProfile, "os" | "bestLlmBackend">,
 ): LlamaServerBinaryLocation {
@@ -127,4 +153,95 @@ export function resolveLlamaServerBinary(
       `\nSet the LLAMA_SERVER_PATH env var to an absolute path, or run ` +
       `\`scripts/download-llama-server\` to fetch binaries into resources/llama-server/.`,
   );
+}
+
+/**
+ * Runs `llama-server --list-devices` and returns the exact device identifier
+ * (e.g. "Vulkan0", "Vulkan1") for the GPU whose name best matches `gpuModel`.
+ *
+ * llama-server --list-devices output looks like:
+ *   Vulkan0 (NVIDIA GeForce RTX 4080 Super, VRAM: 16376 MiB, UMA: 0)
+ *   Vulkan1 (AMD Radeon(TM) 890M, VRAM: 8192 MiB, UMA: 1)
+ *
+ * The --device flag only accepts these identifiers — vendor names like "AMD"
+ * are rejected. Returns undefined when no match is found or the binary does
+ * not support --list-devices.
+ */
+export async function findVulkanDeviceName(
+  binaryPath: string,
+  gpuModel: string,
+): Promise<string | undefined> {
+  let output = "";
+  try {
+    // --list-devices prints the list then exits; exit code varies by version
+    // so we capture stdout+stderr regardless of success/failure.
+    const result = await execFileAsync(binaryPath, ["--list-devices"], {
+      timeout: 8000,
+    });
+    output = `${result.stdout}\n${result.stderr}`;
+  } catch (err: unknown) {
+    const e = err as { stdout?: string; stderr?: string };
+    output = `${e.stdout ?? ""}\n${e.stderr ?? ""}`;
+  }
+
+  if (!output.trim()) return undefined;
+
+  // Normalize: strip trademark symbols, collapse whitespace, lower-case.
+  const norm = (s: string) =>
+    s
+      .replace(/[™®©()®™]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+
+  const normalizedModel = norm(gpuModel);
+
+  // Extract the significant tokens from the GPU model name (skip short/generic words)
+  const SKIP = new Set(["amd", "nvidia", "intel", "arc", "the", "and"]);
+  const keywords = normalizedModel
+    .split(" ")
+    .filter((w) => w.length >= 3 && !SKIP.has(w));
+
+  logger.info(
+    `[device-match] Looking for "${gpuModel}" in --list-devices output. Keywords: [${keywords.join(", ")}]`,
+  );
+
+  for (const line of output.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const normalizedLine = norm(line);
+
+    // Score: count how many keywords appear in this line.
+    const matchCount = keywords.filter((k) =>
+      normalizedLine.includes(k),
+    ).length;
+    const threshold = Math.max(1, Math.ceil(keywords.length * 0.5));
+    if (matchCount < threshold) continue;
+
+    // Format A: "  Vulkan0: AMD Radeon(TM) Graphics (33608 MiB, 31927 MiB free)"
+    //           "  Vulkan0 (AMD Radeon(TM) 890M, VRAM: ...)"
+    //           "  CUDA0 (NVIDIA GeForce RTX 4080 Super, ...)"
+    // The colon-separated form is the live format observed from the bundled binary.
+    const matchA = line.trim().match(/^([A-Za-z]+\d+)\s*[:\s(,]/);
+    if (matchA) {
+      logger.info(
+        `[device-match] Matched "${line.trim()}" → device "${matchA[1]}"`,
+      );
+      return matchA[1];
+    }
+
+    // Format B: "ggml_vulkan: 0 = AMD Radeon(TM) 890M | ..."
+    const matchB = line.match(/:\s*(\d+)\s*=/);
+    if (matchB) {
+      const deviceId = `Vulkan${matchB[1]}`;
+      logger.info(
+        `[device-match] Matched "${line.trim()}" → device "${deviceId}"`,
+      );
+      return deviceId;
+    }
+  }
+
+  logger.warn(
+    `[device-match] No Vulkan device found matching "${gpuModel}" in --list-devices output`,
+  );
+  return undefined;
 }

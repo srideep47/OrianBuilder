@@ -53,9 +53,17 @@ export function detectIsIntegrated(name: string, vendor: GpuVendor): boolean {
   if (vendor === "apple") return true;
   if (vendor === "intel") return !n.includes("arc ");
   if (vendor === "amd") {
+    // "AMD Radeon(TM) Graphics" — the trademark symbol sits between "radeon" and
+    // "graphics", so a plain substring check fails. Use a regex that allows any
+    // parenthesised token (e.g. "(TM)", "(R)") in between.
+    const isRadeonGraphics = /radeon\s*(?:\([^)]*\)\s*)?graphics/i.test(name);
+    // RDNA-era APU graphics: "890M", "780M", "760M", "740M" — 3-4 digit number ending in M
+    // without a preceding "RX" which marks discrete cards (RX 6800, RX 7900 XTX, etc.)
+    const isRdnaIgpu = /\b\d{3,4}m\b/.test(n) && !/ rx /.test(n);
     return (
-      n.includes("radeon graphics") ||
-      (n.includes("vega") && !n.includes("rx vega"))
+      isRadeonGraphics ||
+      (n.includes("vega") && !n.includes("rx vega")) ||
+      isRdnaIgpu
     );
   }
   return false;
@@ -145,8 +153,13 @@ export function selectBestLlmBackend(
   if (vendor === "apple" && profile.arch === "arm64" && has("metal"))
     return "metal";
   if (vendor === "amd" && has("rocm")) return "rocm";
-  if (has("vulkan") && profile.primaryGpu && !profile.primaryGpu.isIntegrated)
-    return "vulkan";
+  // Allow Vulkan for AMD GPUs (including iGPUs like 890M — capable RDNA silicon).
+  // Only block Intel integrated GPUs from Vulkan (HD/UHD are too weak for LLM inference).
+  if (has("vulkan") && profile.primaryGpu) {
+    const isIntelIgpu =
+      profile.primaryGpu.vendor === "intel" && profile.primaryGpu.isIntegrated;
+    if (!isIntelIgpu) return "vulkan";
+  }
   if (has("cuda")) return "cuda";
   if (has("metal")) return "metal";
   return "cpu";
@@ -542,6 +555,15 @@ export async function detectHardwareProfile(): Promise<HardwareProfile> {
   } else if (platform === "linux") {
     gpus = await detectLinuxGpus();
     availableBackends = await detectLinuxBackends(gpus);
+  }
+
+  // AMD iGPUs use UMA (shared system RAM). WMI AdapterRAM returns 0 or a tiny
+  // fixed value — the real accessible VRAM is half the system RAM (matching what
+  // the Vulkan driver reports). We cap at 32 GB so the layer calculator stays sane.
+  for (const gpu of gpus) {
+    if (gpu.vendor === "amd" && gpu.isIntegrated && gpu.vramMb === 0) {
+      gpu.vramMb = Math.min(Math.round(totalRamMb / 2), 32768);
+    }
   }
 
   const primaryGpu = selectPrimaryGpu(gpus);

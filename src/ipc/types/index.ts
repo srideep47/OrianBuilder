@@ -73,6 +73,8 @@ export type {
   TensorRtEngineBuildStatus,
   TensorRtEngineBuildRequest,
   SwapEmbeddedModelParams,
+  AllGpuEntry,
+  AllGpusInfo,
 } from "./embedded_model";
 export {
   modelMarketplaceContracts,

@@ -35,11 +35,19 @@ import {
 } from "./tensorrt_native_backend";
 import { embeddedModelEvents } from "../types/embedded_model";
 import { safeSend } from "./safe_sender";
-import { getCachedHardwareProfile } from "@/main/hardware/detect";
+import {
+  getCachedHardwareProfile,
+  selectBestLlmBackend,
+} from "@/main/hardware/detect";
 import {
   resolveLlmBackendOptions,
   getLlmBackendName,
 } from "@/main/llm/backend_resolver";
+import {
+  pickLlamaServerVariant,
+  resolveLlamaServerBinaryByVariant,
+  findVulkanDeviceName,
+} from "@/main/llm/llama_server_binary";
 import {
   openAiToPlainPrompt,
   createThinkingStripper,
@@ -115,6 +123,8 @@ export interface EmbeddedModelConfig {
   _kvBytesPerTokenPerLayer?: number;
   _attentionSlidingWindow?: number | null;
   _attentionSlidingWindowPattern?: number | null;
+  /** User-selected GPU model name (null = auto). Drives binary variant override. */
+  selectedGpuModel?: string | null;
 }
 
 let defaultSampling = {
@@ -401,12 +411,63 @@ async function loadLlamaServerModel(
   // gpuLayers=0 regardless of GGUF math.
   let cpuOnly = false;
   let resolvedBackendLabel: string | null = null;
+  let variantOverride: ReturnType<typeof pickLlamaServerVariant> | undefined;
+  let overrideDevice: string | undefined;
   try {
     const profile = await getCachedHardwareProfile();
-    const opts = resolveLlmBackendOptions(profile);
-    resolvedBackendLabel = getLlmBackendName(profile);
-    if (opts.gpuLayers === 0) {
-      cpuOnly = true;
+
+    // If the user manually selected a GPU, derive backend from that GPU instead
+    // of the auto-detected primary GPU.
+    if (config.selectedGpuModel) {
+      const selectedGpu = profile.gpus.find(
+        (g) => g.model === config.selectedGpuModel,
+      );
+      if (selectedGpu) {
+        const backendForGpu = selectBestLlmBackend({
+          primaryGpu: selectedGpu,
+          availableBackends: profile.availableBackends,
+          arch: profile.arch,
+        });
+        const overrideProfile = { ...profile, bestLlmBackend: backendForGpu };
+        variantOverride = pickLlamaServerVariant(overrideProfile);
+        resolvedBackendLabel = `${backendForGpu.toUpperCase()} (${selectedGpu.model})`;
+        cpuOnly = backendForGpu === "cpu";
+
+        // For Vulkan/ROCm backends on multi-GPU systems, ask the binary which
+        // exact device name to pass via --device. We run --list-devices first so
+        // we get the identifier string that llama-server actually accepts (e.g.
+        // "Vulkan1"), rather than guessing a vendor prefix that it will reject.
+        if (backendForGpu === "vulkan" || backendForGpu === "rocm") {
+          try {
+            const binaryLoc =
+              resolveLlamaServerBinaryByVariant(variantOverride);
+            const deviceName = await findVulkanDeviceName(
+              binaryLoc.path,
+              config.selectedGpuModel,
+            );
+            if (deviceName) {
+              overrideDevice = deviceName;
+              logger.info(
+                `GPU override: using --device ${deviceName} for "${config.selectedGpuModel}"`,
+              );
+            } else {
+              logger.warn(
+                `Could not find Vulkan device name for "${config.selectedGpuModel}"; llama-server will auto-select`,
+              );
+            }
+          } catch (e) {
+            logger.warn("Device name lookup failed:", e);
+          }
+        }
+      }
+    }
+
+    if (!variantOverride) {
+      const opts = resolveLlmBackendOptions(profile);
+      resolvedBackendLabel = getLlmBackendName(profile);
+      if (opts.gpuLayers === 0) {
+        cpuOnly = true;
+      }
     }
   } catch (err) {
     logger.warn(
@@ -454,6 +515,8 @@ async function loadLlamaServerModel(
       // who needs unquantized cache can pass cacheTypeK/V="f16" in the config.
       cacheTypeK: config.cacheTypeK ?? "q8_0",
       cacheTypeV: config.cacheTypeV ?? "q8_0",
+      variantOverride,
+      overrideDevice,
     });
 
     currentBackend = "llama-cpp";

@@ -51,13 +51,14 @@ export interface LlamaServerArgInput {
   /** Mlock model into RAM (Linux/macOS; ignored on Windows). */
   mlock?: boolean;
   /**
-   * KV-cache defrag threshold (0.0–1.0). When fragmentation ratio exceeds
-   * this value llama-server compacts the cache in-place, eliminating the
-   * "non-consecutive token position" warnings and keeping memory tidy during
-   * long multi-turn sessions (e.g. Android builds with 40k+ token contexts).
-   * Defaults to 0.1 (defrag when >10% fragmented).
+   * Vulkan/ROCm device selection hint. Passed as `--device <overrideDevice>` to
+   * llama-server so the correct physical device is chosen when multiple Vulkan
+   * devices are present (e.g. NVIDIA + AMD iGPU on the same system).
+   * llama.cpp accepts a partial name like "AMD", "Intel", or the full device
+   * name. Leave undefined when using CUDA (device selection is handled by
+   * CUDA_VISIBLE_DEVICES or driver default).
    */
-  defragThreshold?: number;
+  overrideDevice?: string;
 }
 
 export interface LlamaServerArgs {
@@ -120,8 +121,9 @@ export function buildLlamaServerArgs(
     flags.push("--chat-template", input.chatTemplate);
   }
 
-  const defragThreshold = input.defragThreshold ?? 0.1;
-  flags.push("--defrag-thold", String(defragThreshold));
+  if (input.overrideDevice) {
+    flags.push("--device", input.overrideDevice);
+  }
 
   return { flags, resolvedGpuLayers };
 }

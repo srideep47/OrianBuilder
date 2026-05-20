@@ -1,6 +1,11 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import log from "electron-log";
+import {
+  getCachedHardwareProfile,
+  selectBestLlmBackend,
+} from "@/main/hardware/detect";
+import type { AllGpusInfo } from "@/ipc/types/embedded_model";
 
 const execFileAsync = promisify(execFile);
 const logger = log.scope("gpu_detection");
@@ -13,6 +18,9 @@ export interface GpuInfo {
   hasTensorCores: boolean;
   tensorCoreGen: string;
   recommendedGpuLayers: number;
+  vendor?: "nvidia" | "amd" | "intel" | "apple" | "unknown";
+  isIntegrated?: boolean;
+  backend?: "cuda" | "vulkan" | "rocm" | "metal" | "cpu";
 }
 
 const TENSOR_CORE_GENS: Record<string, string> = {
@@ -33,16 +41,84 @@ function getTensorCoreGen(cc: number): string {
 }
 
 function recommendGpuLayers(vramMb: number, modelSizeMb: number): number {
-  // Reserve ~1.5 GB for KV cache and OS
   const usableVramMb = vramMb - 1536;
   if (usableVramMb <= 0) return 0;
   const fraction = usableVramMb / modelSizeMb;
-  // Each transformer layer is roughly equal in size; 64 total for 27B models
   const totalLayers = 64;
   return Math.min(totalLayers, Math.floor(fraction * totalLayers));
 }
 
-export async function detectGpu(modelSizeMb = 17920): Promise<GpuInfo> {
+/**
+ * Returns GPU info for the active/selected GPU.
+ *
+ * If `selectedGpuModel` is provided, looks up that GPU in the hardware profile
+ * (for AMD/Intel VRAM) and falls through to nvidia-smi only for NVIDIA GPUs.
+ * Falls back gracefully to CPU-only if nothing is found.
+ */
+export async function detectGpu(
+  modelSizeMb = 17920,
+  selectedGpuModel?: string,
+): Promise<GpuInfo> {
+  // Try hardware profile first — covers AMD, Intel, and NVIDIA VRAM.
+  try {
+    const profile = await getCachedHardwareProfile();
+
+    let targetGpu = selectedGpuModel
+      ? (profile.gpus.find((g) => g.model === selectedGpuModel) ?? null)
+      : profile.primaryGpu;
+
+    if (targetGpu) {
+      const backend = selectBestLlmBackend({
+        primaryGpu: targetGpu,
+        availableBackends: profile.availableBackends,
+        arch: profile.arch,
+      });
+
+      // For NVIDIA, overlay compute capability from nvidia-smi when available.
+      let computeCapability = 0;
+      let hasTensorCores = false;
+      let tensorCoreGen = "None";
+      if (targetGpu.vendor === "nvidia") {
+        try {
+          const { stdout } = await execFileAsync("nvidia-smi", [
+            "--query-gpu=name,memory.total,compute_cap",
+            "--format=csv,noheader,nounits",
+          ]);
+          const line = stdout.trim().split("\n")[0];
+          if (line) {
+            const parts = line.split(",").map((s) => s.trim());
+            const ccStr = parts[2];
+            computeCapability = parseFloat(ccStr);
+            hasTensorCores = computeCapability >= 7.0;
+            tensorCoreGen = getTensorCoreGen(computeCapability);
+            // nvidia-smi VRAM is more accurate than WMI — override if available
+            const nvVram = parseInt(parts[1], 10);
+            if (!isNaN(nvVram) && nvVram > 0)
+              targetGpu = { ...targetGpu, vramMb: nvVram };
+          }
+        } catch {
+          /* nvidia-smi not available — keep WMI values */
+        }
+      }
+
+      return {
+        available: true,
+        name: targetGpu.model,
+        vramMb: targetGpu.vramMb,
+        computeCapability,
+        hasTensorCores,
+        tensorCoreGen,
+        recommendedGpuLayers: recommendGpuLayers(targetGpu.vramMb, modelSizeMb),
+        vendor: targetGpu.vendor,
+        isIntegrated: targetGpu.isIntegrated,
+        backend,
+      };
+    }
+  } catch (err) {
+    logger.warn("Hardware profile GPU detection failed:", err);
+  }
+
+  // Legacy fallback: nvidia-smi only (original behaviour)
   try {
     const { stdout } = await execFileAsync("nvidia-smi", [
       "--query-gpu=name,memory.total,compute_cap",
@@ -59,10 +135,9 @@ export async function detectGpu(modelSizeMb = 17920): Promise<GpuInfo> {
     const computeCapability = parseFloat(ccStr);
     const hasTensorCores = computeCapability >= 7.0;
     const tensorCoreGen = getTensorCoreGen(computeCapability);
-    const recommendedGpuLayers = recommendGpuLayers(vramMb, modelSizeMb);
 
     logger.info(
-      `GPU detected: ${name}, ${vramMb} MB VRAM, CC ${ccStr}, tensor cores: ${hasTensorCores}`,
+      `GPU detected (nvidia-smi): ${name}, ${vramMb} MB VRAM, CC ${ccStr}`,
     );
 
     return {
@@ -72,7 +147,10 @@ export async function detectGpu(modelSizeMb = 17920): Promise<GpuInfo> {
       computeCapability,
       hasTensorCores,
       tensorCoreGen,
-      recommendedGpuLayers,
+      recommendedGpuLayers: recommendGpuLayers(vramMb, modelSizeMb),
+      vendor: "nvidia",
+      isIntegrated: false,
+      backend: "cuda",
     };
   } catch (err) {
     logger.warn("nvidia-smi not available or failed:", err);
@@ -84,6 +162,38 @@ export async function detectGpu(modelSizeMb = 17920): Promise<GpuInfo> {
       hasTensorCores: false,
       tensorCoreGen: "None",
       recommendedGpuLayers: 0,
+      vendor: "unknown",
+      isIntegrated: false,
+      backend: "cpu",
     };
+  }
+}
+
+/** Returns all detected GPUs with their per-GPU best backend. */
+export async function detectAllGpus(): Promise<AllGpusInfo> {
+  try {
+    const profile = await getCachedHardwareProfile();
+    const gpus = profile.gpus.map((gpu) => ({
+      model: gpu.model,
+      vendor: gpu.vendor,
+      vramMb: gpu.vramMb,
+      isIntegrated: gpu.isIntegrated,
+      bestBackend: selectBestLlmBackend({
+        primaryGpu: gpu,
+        availableBackends: profile.availableBackends,
+        arch: profile.arch,
+      }),
+    }));
+
+    const primaryModel = profile.primaryGpu?.model;
+    const autoPrimaryIndex = Math.max(
+      0,
+      gpus.findIndex((g) => g.model === primaryModel),
+    );
+
+    return { gpus, autoPrimaryIndex };
+  } catch (err) {
+    logger.warn("detectAllGpus failed:", err);
+    return { gpus: [], autoPrimaryIndex: 0 };
   }
 }
