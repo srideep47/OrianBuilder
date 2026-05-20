@@ -37,6 +37,7 @@ export const MediaAiStatusSchema = z.object({
   outputsPath: z.string(),
   models: z.array(MediaAiModelStatusSchema),
   lastLog: z.string().optional(),
+  gpuBackendInstalled: z.string().optional(),
 });
 
 export const MediaAiOperationResultSchema = z.object({

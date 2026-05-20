@@ -53,6 +53,69 @@ function getVenvPath() {
   return path.join(getMediaAiDataPaths().root, ".venv");
 }
 
+function getGpuMarkerPath() {
+  return path.join(getMediaAiDataPaths().root, ".gpu-backend.json");
+}
+
+function readGpuMarker(): string | undefined {
+  try {
+    const raw = fs.readFileSync(getGpuMarkerPath(), "utf8");
+    const parsed = JSON.parse(raw) as { backend?: string };
+    return parsed.backend ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Probe the venv's site-packages to detect GPU-capable packages already installed.
+// Handles existing installs that pre-date the marker file.
+function detectGpuBackendFromVenv(): string | undefined {
+  const venvPath = getVenvPath();
+  // Windows: Lib/site-packages; Unix: lib/python3.x/site-packages
+  let sitePackages = path.join(venvPath, "Lib", "site-packages");
+  if (!fs.existsSync(sitePackages)) {
+    const libDir = path.join(venvPath, "lib");
+    if (fs.existsSync(libDir)) {
+      const pyDir = fs.readdirSync(libDir).find((d) => d.startsWith("python"));
+      if (pyDir) sitePackages = path.join(libDir, pyDir, "site-packages");
+    }
+  }
+  if (!fs.existsSync(sitePackages)) return undefined;
+  try {
+    const entries = fs.readdirSync(sitePackages);
+    // CUDA torch dist-info contains "+cu" in version string (e.g. torch-2.7.0+cu128.dist-info)
+    if (entries.some((e) => e.startsWith("torch-") && e.includes("+cu"))) {
+      return "cuda";
+    }
+    // DirectML: onnxruntime-directml installs an onnxruntime_directml package
+    if (entries.some((e) => e.startsWith("onnxruntime_directml"))) {
+      return "directml";
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function writeGpuMarker(backend: string): void {
+  try {
+    fs.writeFileSync(
+      getGpuMarkerPath(),
+      JSON.stringify({ backend, installedAt: new Date().toISOString() }),
+    );
+  } catch {
+    // non-fatal
+  }
+}
+
+function deleteGpuMarker(): void {
+  try {
+    if (fs.existsSync(getGpuMarkerPath())) fs.unlinkSync(getGpuMarkerPath());
+  } catch {
+    // non-fatal
+  }
+}
+
 function getVenvPythonPath() {
   const venvPath = getVenvPath();
   return process.platform === "win32"
@@ -284,6 +347,14 @@ export async function getMediaAiBackendStatus(): Promise<MediaAiStatus> {
     outputsPath,
     models,
     lastLog,
+    gpuBackendInstalled: (() => {
+      let gpu = readGpuMarker();
+      if (!gpu) {
+        gpu = detectGpuBackendFromVenv();
+        if (gpu) writeGpuMarker(gpu); // lazily persist so future reads are fast
+      }
+      return gpu;
+    })(),
   };
 }
 
@@ -431,6 +502,10 @@ export async function installMediaAiDependenciesForBackend(
   } catch (err) {
     requirementsInstall = `Warning: some packages failed to install: ${err instanceof Error ? err.message : String(err)}`;
     logger.warn("Some backend requirements failed to install:", err);
+  }
+
+  if (effectiveBackend !== "cpu") {
+    writeGpuMarker(effectiveBackend);
   }
 
   return trimOutput(
@@ -770,6 +845,7 @@ export async function resetMediaAiSetup(opts?: {
     }
   }
 
+  deleteGpuMarker();
   lastLog = undefined;
   return { removed };
 }

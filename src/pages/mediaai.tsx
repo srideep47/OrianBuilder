@@ -181,6 +181,8 @@ type SetupPhase =
   | "needs-setup" // no venv, waiting for user to click
   | "python-missing" // python not in PATH
   | "setting-up" // setup chain running (install → download → start)
+  | "starting" // backend was just started, polling until healthy
+  | "stopping" // backend stop in flight
   | "online" // backend healthy
   | "error"; // unrecoverable error
 
@@ -354,15 +356,21 @@ export default function MediaAIPage() {
       return;
     }
 
-    // Backend not online — show correct idle state
+    // Backend not online — show correct idle state.
+    // Allow from "checking" (initial load), "online" (backend just stopped/crashed),
+    // "stopping" (stop completed), or "error" (previous attempt failed).
+    // Never interrupt "setting-up" or "starting" — those manage phase themselves.
+    const canTransition =
+      setupPhase === "checking" ||
+      setupPhase === "online" ||
+      setupPhase === "stopping" ||
+      setupPhase === "error";
     if (status.venvExists) {
-      if (setupPhase === "checking") {
-        setSetupPhase("stopped");
-      }
-    } else if (setupPhase === "checking") {
+      if (canTransition) setSetupPhase("stopped");
+    } else if (canTransition) {
       setSetupPhase("needs-setup");
     }
-  }, [status]); // intentionally minimal deps — only re-run when status changes
+  }, [status]); // intentionally omits setupPhase — reads snapshot at render time
 
   const runSetupAction = async (
     actionName: string,
@@ -547,17 +555,55 @@ export default function MediaAIPage() {
       toast.success("Media AI dependencies installed");
     });
 
-  const startBackend = () =>
-    runSetupAction("start", async () => {
+  const handleStartBackend = useCallback(async () => {
+    setSetupPhase("starting");
+    setSetupError(null);
+    try {
       await ipc.mediaAi.startBackend(undefined);
-      toast.success("Media AI backend started");
-    });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setSetupError(msg);
+      setSetupPhase("error");
+      toast.error(msg);
+      return;
+    }
+    // Poll every 2s until the Python server accepts connections (max 60s).
+    const deadline = Date.now() + 60_000;
+    while (Date.now() < deadline) {
+      await new Promise<void>((r) => setTimeout(r, 2000));
+      const s = await ipc.mediaAi.getStatus(undefined).catch(() => null);
+      if (!s) continue;
+      setStatus(s);
+      if (s.healthy) {
+        const [tiers, hw, orch] = await Promise.all([
+          ipc.orchestrator.getAvailableTiers(undefined).catch(() => null),
+          ipc.hardware.getProfile(undefined).catch(() => null),
+          ipc.orchestrator.getStatus(undefined).catch(() => null),
+        ]);
+        if (tiers) setAvailTiers(tiers);
+        if (hw) setHardware(hw);
+        if (orch) setOrchStatus(orch);
+        setSetupPhase("online");
+        toast.success("Media AI backend started");
+        return;
+      }
+    }
+    setSetupPhase("stopped");
+    toast.error("Backend didn't start in time — check the activity log");
+  }, []);
 
-  const stopBackend = () =>
-    runSetupAction("stop", async () => {
+  const handleStopBackend = useCallback(async () => {
+    setSetupPhase("stopping");
+    try {
       await ipc.mediaAi.stopBackend(undefined);
-      toast.success("Media AI backend stopped");
-    });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+    // Immediately reflect stopped state — IPC already waited for health check.
+    setSetupPhase("stopped");
+    toast.success("Media AI backend stopped");
+    void refreshAll();
+  }, [refreshAll]);
 
   // Wipes the Python venv + model markers and re-runs the full setup chain.
   // Use this when a previous install picked the wrong backend (e.g. CPU torch
@@ -1029,8 +1075,8 @@ export default function MediaAIPage() {
           eventLog={eventLog}
           serverUrl={serverUrl}
           onOneClickSetup={() => void triggerOneClickSetup()}
-          onStartBackend={() => void startBackend()}
-          onStopBackend={() => void stopBackend()}
+          onStartBackend={() => void handleStartBackend()}
+          onStopBackend={() => void handleStopBackend()}
           onRefresh={() => void refreshAll()}
           onInstall={() => void installDependencies()}
           onToggleLog={() => setShowLog((v) => !v)}
@@ -2181,6 +2227,8 @@ function SetupBanner({
     | "needs-setup"
     | "python-missing"
     | "setting-up"
+    | "starting"
+    | "stopping"
     | "online"
     | "error";
   setupChainStep: string | null;
@@ -2320,12 +2368,40 @@ function SetupBanner({
     );
   }
 
+  // ── Starting (backend spawned, polling health) ────────────────────────────
+  if (phase === "starting") {
+    return (
+      <div className="mb-6 flex items-center gap-3 rounded-lg border border-blue-500/30 bg-blue-500/5 px-4 py-3">
+        <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+        <div className="flex flex-col">
+          <span className="text-sm font-medium text-blue-700">
+            Starting backend…
+          </span>
+          <span className="text-xs text-muted-foreground">
+            Python server warming up — this can take 10–30 s
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Stopping ──────────────────────────────────────────────────────────────
+  if (phase === "stopping") {
+    return (
+      <div className="mb-6 flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        <span className="text-sm text-muted-foreground">Stopping backend…</span>
+      </div>
+    );
+  }
+
   // ── Stopped (venv exists, not running) ───────────────────────────────────
   if (phase === "stopped") {
     const gpuBackend =
       hardware?.bestMediaBackend && hardware.bestMediaBackend !== "cpu"
         ? hardware.bestMediaBackend
         : null;
+    const gpuAlreadyInstalled = !!status?.gpuBackendInstalled;
     return (
       <div className="mb-6 flex flex-col gap-2">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3">
@@ -2355,7 +2431,7 @@ function SetupBanner({
             </Button>
           </div>
         </div>
-        {gpuBackend && (
+        {gpuBackend && !gpuAlreadyInstalled && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/5 px-4 py-3">
             <div className="flex items-center gap-2">
               <Zap className="h-4 w-4 text-yellow-600" />
