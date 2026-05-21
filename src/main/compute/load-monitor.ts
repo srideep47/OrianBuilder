@@ -83,6 +83,8 @@ async function _broadcast(): Promise<void> {
     // AND a model is loaded in the embedded engine. Otherwise a peer's picker
     // would let them select us → request would immediately fail.
     const canActuallyServe = _computeAvailable && models.length > 0;
+    const prevModels = _lastBroadcast.loadedModels.join(",");
+    const nextModels = models.join(",");
     _lastBroadcast = {
       loadedModels: models,
       computeAvailable: canActuallyServe,
@@ -96,6 +98,13 @@ async function _broadcast(): Promise<void> {
       computeAvailable: canActuallyServe,
       queueDepth: _queueDepth,
     });
+    // Only log when something interesting changed — keeps the log readable
+    // across the 2-second tick rate.
+    if (prevModels !== nextModels) {
+      logger.info(
+        `Broadcasting LOAD_UPDATE: share=${canActuallyServe} models=[${nextModels || "(none)"}] gpu=${_currentLoad}%`,
+      );
+    }
   } catch (err) {
     logger.warn("Broadcast pass failed:", err);
   }

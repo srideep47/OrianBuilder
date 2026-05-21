@@ -119,6 +119,18 @@ export function ModelPicker() {
     },
   });
 
+  // Live-refresh the compute nodes / network status whenever a peer broadcasts
+  // a state change (LOAD_UPDATE, METADATA, connect/disconnect). Otherwise the
+  // picker only refetches every 30 s and the user sees a stale "No model
+  // loaded" until the next poll.
+  useEffect(() => {
+    const unsub = ipc.events.network.onPeerUpdate(() => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.compute.nodes });
+      queryClient.invalidateQueries({ queryKey: queryKeys.network.status });
+    });
+    return unsub;
+  }, [queryClient]);
+
   // Cloud models from providers
   const { data: modelsByProviders, isLoading: modelsByProvidersLoading } =
     useLanguageModelsByProviders();

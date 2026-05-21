@@ -69,6 +69,35 @@ export const FriendRequestSchema = z.object({
 });
 export type FriendRequest = z.infer<typeof FriendRequestSchema>;
 
+export const NetworkDiagnosticSchema = z.object({
+  self: z.object({
+    publicKey: z.string(),
+    displayName: z.string(),
+    embeddedModelLoaded: z.boolean(),
+    embeddedModelName: z.string().nullable(),
+    shareEnabled: z.boolean(),
+    lastBroadcast: z.object({
+      timestamp: z.number(),
+      loadedModels: z.array(z.string()),
+      computeAvailable: z.boolean(),
+      gpuUtilization: z.number(),
+    }),
+  }),
+  peers: z.array(
+    z.object({
+      publicKey: z.string(),
+      displayName: z.string(),
+      isConnected: z.boolean(),
+      lastSeenAt: z.number().nullable(),
+      lastLoadUpdateAt: z.number().nullable(),
+      latencyMs: z.number().nullable(),
+      loadedModels: z.array(z.string()),
+      computeAvailable: z.boolean(),
+    }),
+  ),
+});
+export type NetworkDiagnostic = z.infer<typeof NetworkDiagnosticSchema>;
+
 export const NotificationSchema = z.object({
   id: z.string(),
   type: z.enum([
@@ -146,6 +175,11 @@ export const networkContracts = {
     channel: "network:refresh-peer",
     input: z.object({ publicKey: z.string() }),
     output: z.object({ success: z.boolean() }),
+  }),
+  getDiagnostic: defineContract({
+    channel: "network:get-diagnostic",
+    input: z.void(),
+    output: NetworkDiagnosticSchema,
   }),
   getNotifications: defineContract({
     channel: "network:get-notifications",

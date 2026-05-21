@@ -143,23 +143,47 @@ export function startProxy(): void {
         (err) => {
           if (err) {
             logger.warn(`[proxy ${shortId}] ended with error: ${err}`);
+            // Write the error as a visible SSE chat completion chunk so the
+            // user actually SEES it in the chat. Falling back to HTTP 502 only
+            // when no headers have been sent yet.
             if (!res.headersSent) {
-              res.writeHead(502, {
-                ...corsHeaders(),
-                "Content-Type": "application/json",
-              });
-              res.end(
-                JSON.stringify({
-                  error: { message: err, type: "remote_inference_failed" },
-                }),
-              );
-              return;
+              ensureSseHeaders();
             }
-            // Headers already sent (we were mid-stream) — append an SSE error
-            // event so the AI SDK surfaces something instead of a silent stop.
             if (!res.writableEnded) {
-              const safeMsg = err.replace(/"/g, '\\"').replace(/\n/g, " ");
-              res.write(`data: {"error":{"message":"${safeMsg}"}}\n\n`);
+              const safeMsg = err
+                .replace(/\\/g, "\\\\")
+                .replace(/"/g, '\\"')
+                .replace(/\n/g, " ");
+              const visibleText = `[Remote inference failed] ${err}`;
+              const created = Math.floor(Date.now() / 1000);
+              // Emit a delta with the human-readable error text so the chat
+              // shows it, then a final chunk with finish_reason and [DONE].
+              res.write(
+                `data: ${JSON.stringify({
+                  id: requestId,
+                  object: "chat.completion.chunk",
+                  created,
+                  model: "remote-peer",
+                  choices: [
+                    {
+                      index: 0,
+                      delta: { content: visibleText },
+                      finish_reason: null,
+                    },
+                  ],
+                })}\n\n`,
+              );
+              res.write(
+                `data: ${JSON.stringify({
+                  id: requestId,
+                  object: "chat.completion.chunk",
+                  created,
+                  model: "remote-peer",
+                  choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+                  error: { message: safeMsg, type: "remote_inference_failed" },
+                })}\n\n`,
+              );
+              res.write("data: [DONE]\n\n");
               res.end();
             }
             return;
@@ -170,6 +194,38 @@ export function startProxy(): void {
           );
           if (!res.writableEnded) {
             ensureSseHeaders();
+            // If the upstream produced zero bytes, emit a friendly message
+            // instead of a silent empty stream — otherwise the chat shows
+            // nothing at all and the user thinks the app is broken.
+            if (bytesStreamed === 0) {
+              const created = Math.floor(Date.now() / 1000);
+              const msg = `[Remote peer returned no output — they may need to load a model and toggle "Share my compute" on. Check Network → Diagnostics for details.]`;
+              res.write(
+                `data: ${JSON.stringify({
+                  id: requestId,
+                  object: "chat.completion.chunk",
+                  created,
+                  model: "remote-peer",
+                  choices: [
+                    {
+                      index: 0,
+                      delta: { role: "assistant", content: msg },
+                      finish_reason: null,
+                    },
+                  ],
+                })}\n\n`,
+              );
+              res.write(
+                `data: ${JSON.stringify({
+                  id: requestId,
+                  object: "chat.completion.chunk",
+                  created,
+                  model: "remote-peer",
+                  choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+                })}\n\n`,
+              );
+              res.write("data: [DONE]\n\n");
+            }
             res.end();
           }
         },

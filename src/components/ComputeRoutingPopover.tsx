@@ -111,6 +111,15 @@ export function ComputeRoutingPopover() {
     if (target) setAutoMode(target.mode === "auto");
   }, [target]);
 
+  // When any peer broadcasts new state (LOAD_UPDATE etc.), refresh the node
+  // list so we don't sit stale on the 30-second background poll interval.
+  useEffect(() => {
+    const unsub = ipc.events.network.onPeerUpdate(() => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.compute.nodes });
+    });
+    return unsub;
+  }, [queryClient]);
+
   const setTarget = useMutation({
     mutationFn: (params: { mode: ComputeMode; peerId?: string }) =>
       ipc.compute.setTarget(params),

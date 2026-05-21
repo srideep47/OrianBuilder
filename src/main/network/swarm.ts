@@ -429,6 +429,8 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
       const entry = connectedPeers.get(remoteKeyHex);
       if (entry) {
         const now = Date.now();
+        const prevModels = entry.peer.loadedModels.join(",");
+        const nextModels = msg.loadedModels.join(",");
         entry.lastLoadUpdateAt = now;
         entry.peer = {
           ...entry.peer,
@@ -438,6 +440,15 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
           lastLoadUpdateAt: now,
         };
         this.emit("peers-changed", this._getPeerList());
+        if (prevModels !== nextModels) {
+          logger.info(
+            `LOAD_UPDATE from ${entry.peer.displayName} (${remoteKeyHex.slice(0, 16)}…): share=${msg.computeAvailable} models=[${nextModels || "(none)"}]`,
+          );
+        }
+      } else {
+        logger.warn(
+          `LOAD_UPDATE from ${remoteKeyHex.slice(0, 16)}… but no peer entry — dropping`,
+        );
       }
       return;
     }
@@ -616,6 +627,24 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
   isPeerConnected(publicKey: string): boolean {
     const entry = connectedPeers.get(publicKey);
     return !!entry && !entry.channel.isClosed();
+  }
+
+  /** Returns the raw peer record (channel state + load timestamps) for
+   *  diagnostic purposes. Null if we have no record of this peer. */
+  getPeerDetail(publicKey: string): {
+    isConnected: boolean;
+    lastSeenAt: number;
+    lastLoadUpdateAt: number | null;
+    peer: Peer;
+  } | null {
+    const entry = connectedPeers.get(publicKey);
+    if (!entry) return null;
+    return {
+      isConnected: !entry.channel.isClosed(),
+      lastSeenAt: entry.lastSeenAt,
+      lastLoadUpdateAt: entry.lastLoadUpdateAt,
+      peer: entry.peer,
+    };
   }
 
   private _getPeerList(): Peer[] {

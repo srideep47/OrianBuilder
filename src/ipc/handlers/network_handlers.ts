@@ -207,6 +207,46 @@ export function registerNetworkHandlers(): void {
     },
   );
 
+  createTypedHandler(networkContracts.getDiagnostic, async (_event) => {
+    const { getCurrentBroadcastState } =
+      await import("@/main/compute/load-monitor");
+    const { getServerStatus } =
+      await import("@/ipc/utils/embedded_inference_server");
+    const identity = await getDeviceIdentity();
+    const snapshot = getCurrentBroadcastState();
+    const embedded = getServerStatus();
+    const { peers } = networkSwarm.getStatus();
+
+    return {
+      self: {
+        publicKey: identity.publicKey,
+        displayName: identity.deviceName,
+        embeddedModelLoaded: embedded.modelLoaded,
+        embeddedModelName: embedded.modelName,
+        shareEnabled: snapshot.computeAvailable,
+        lastBroadcast: {
+          timestamp: snapshot.timestamp,
+          loadedModels: snapshot.loadedModels,
+          computeAvailable: snapshot.computeAvailable,
+          gpuUtilization: snapshot.gpuUtilization,
+        },
+      },
+      peers: peers.map((p) => {
+        const detail = networkSwarm.getPeerDetail(p.publicKey);
+        return {
+          publicKey: p.publicKey,
+          displayName: p.displayName,
+          isConnected: detail?.isConnected ?? false,
+          lastSeenAt: detail?.lastSeenAt ?? null,
+          lastLoadUpdateAt: detail?.lastLoadUpdateAt ?? null,
+          latencyMs: p.latencyMs,
+          loadedModels: p.loadedModels,
+          computeAvailable: p.computeAvailable,
+        };
+      }),
+    };
+  });
+
   createTypedHandler(networkContracts.getNotifications, async (_event) => {
     return notifications;
   });

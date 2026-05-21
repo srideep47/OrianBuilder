@@ -20,6 +20,7 @@ import {
   CheckCircle2,
   RefreshCw,
   Sparkles,
+  Activity,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -549,6 +550,165 @@ function AddFriendModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+// ─── Diagnostic View (shown when no peer is selected) ───────────────────────
+function DiagnosticView() {
+  const { data, isLoading, refetch, isRefetching } = useQuery({
+    queryKey: ["network", "diagnostic"],
+    queryFn: () => ipc.network.getDiagnostic(),
+    refetchInterval: 2000,
+  });
+
+  if (isLoading || !data) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center gap-4 text-muted-foreground">
+        <Loader2 className="w-6 h-6 animate-spin" />
+      </div>
+    );
+  }
+
+  const selfOk = data.self.embeddedModelLoaded;
+  return (
+    <div className="flex flex-col gap-5 p-6 h-full overflow-y-auto">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold flex items-center gap-2">
+          <Activity className="w-5 h-5 text-primary" /> Network Diagnostics
+        </h2>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => refetch()}
+          disabled={isRefetching}
+        >
+          <RefreshCw
+            className={`w-3.5 h-3.5 mr-1.5 ${
+              isRefetching ? "animate-spin" : ""
+            }`}
+          />
+          Refresh
+        </Button>
+      </div>
+
+      {/* This device */}
+      <Card className="p-4 flex flex-col gap-3">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          This Device — what other peers see from me
+        </p>
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <div className="text-muted-foreground">Display name</div>
+          <div className="font-medium truncate">{data.self.displayName}</div>
+
+          <div className="text-muted-foreground">Embedded engine</div>
+          <div className="font-medium flex items-center gap-1.5">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                selfOk ? "bg-green-500" : "bg-red-500"
+              }`}
+            />
+            {selfOk
+              ? `Loaded: ${data.self.embeddedModelName ?? "—"}`
+              : "No model loaded"}
+          </div>
+
+          <div className="text-muted-foreground">Share enabled</div>
+          <div className="font-medium">
+            {data.self.shareEnabled ? "Yes" : "No"}
+          </div>
+
+          <div className="text-muted-foreground">Last broadcast</div>
+          <div className="font-medium">
+            {formatRelativeTime(data.self.lastBroadcast.timestamp)}
+          </div>
+
+          <div className="text-muted-foreground">Broadcasting models</div>
+          <div className="font-medium">
+            {data.self.lastBroadcast.loadedModels.length > 0
+              ? data.self.lastBroadcast.loadedModels.join(", ")
+              : "(none)"}
+          </div>
+
+          <div className="text-muted-foreground">computeAvailable</div>
+          <div className="font-medium">
+            {data.self.lastBroadcast.computeAvailable ? "Yes" : "No"}
+          </div>
+        </div>
+        {!selfOk && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-500/5 rounded p-2 leading-snug">
+            Peers see this device as "No model loaded". Open the{" "}
+            <span className="font-semibold">Engine</span> screen and load a
+            model — only then can peers route inference here.
+          </p>
+        )}
+      </Card>
+
+      {/* Peers */}
+      <Card className="p-4 flex flex-col gap-3">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          Connected peers — what I see from them
+        </p>
+        {data.peers.length === 0 ? (
+          <p className="text-xs text-muted-foreground italic py-2">
+            No peers connected.
+          </p>
+        ) : (
+          data.peers.map((p) => (
+            <div
+              key={p.publicKey}
+              className="rounded-lg border border-border p-3 flex flex-col gap-2"
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    p.isConnected ? "bg-green-500" : "bg-muted-foreground/40"
+                  }`}
+                />
+                <span className="font-medium text-sm">{p.displayName}</span>
+                {p.latencyMs !== null && (
+                  <span className="ml-auto text-xs text-muted-foreground font-mono">
+                    {p.latencyMs}ms
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 text-xs">
+                <div className="text-muted-foreground">Last LOAD_UPDATE</div>
+                <div className="font-medium">
+                  {formatRelativeTime(p.lastLoadUpdateAt)}
+                </div>
+                <div className="text-muted-foreground">Their models</div>
+                <div className="font-medium">
+                  {p.loadedModels.length > 0
+                    ? p.loadedModels.join(", ")
+                    : "(none reported)"}
+                </div>
+                <div className="text-muted-foreground">computeAvailable</div>
+                <div className="font-medium">
+                  {p.computeAvailable ? "Yes" : "No"}
+                </div>
+              </div>
+              {p.isConnected && p.lastLoadUpdateAt === null && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400 leading-snug">
+                  Connected but no LOAD_UPDATE received yet. Their device might
+                  be on an older build, or their load monitor isn't running.
+                </p>
+              )}
+              {p.isConnected && p.loadedModels.length === 0 && (
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  This peer has no model loaded in their Engine. They need to
+                  load one before you can route inference to them.
+                </p>
+              )}
+            </div>
+          ))
+        )}
+      </Card>
+
+      <p className="text-[11px] text-muted-foreground">
+        Auto-refreshes every 2 seconds. Click any peer in the list to see
+        details and remove them.
+      </p>
+    </div>
+  );
+}
+
 // ─── Main Network Hub Page ────────────────────────────────────────────────────
 export default function NetworkPage() {
   const queryClient = useQueryClient();
@@ -568,10 +728,13 @@ export default function NetworkPage() {
     refetchInterval: 3000,
   });
 
-  // Subscribe to peer update events
+  // Subscribe to peer update events — refresh both the network status and the
+  // compute node list so the CPU icon / model picker also pick up new state.
   useEffect(() => {
     const unsub = ipc.events.network.onPeerUpdate(() => {
       queryClient.invalidateQueries({ queryKey: queryKeys.network.status });
+      queryClient.invalidateQueries({ queryKey: queryKeys.compute.nodes });
+      queryClient.invalidateQueries({ queryKey: ["network", "diagnostic"] });
     });
     return unsub;
   }, [queryClient]);
@@ -814,10 +977,7 @@ export default function NetworkPage() {
             isRefreshing={refreshPeer.isPending}
           />
         ) : (
-          <div className="flex flex-col items-center justify-center h-full text-center gap-4 text-muted-foreground">
-            <Signal className="w-10 h-10 opacity-20" />
-            <p className="text-sm">Select a peer to see details</p>
-          </div>
+          <DiagnosticView />
         )}
       </div>
 
