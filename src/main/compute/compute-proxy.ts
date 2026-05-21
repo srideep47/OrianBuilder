@@ -130,6 +130,7 @@ export function startProxy(): void {
       };
 
       let bytesStreamed = 0;
+      let chunkCount = 0;
       const cleanup = networkSwarm.sendInferenceRequest(
         peerId,
         requestId,
@@ -137,7 +138,13 @@ export function startProxy(): void {
         (chunk) => {
           ensureSseHeaders();
           if (res.writableEnded) return;
+          chunkCount += 1;
           bytesStreamed += chunk.length;
+          if (chunkCount === 1) {
+            logger.info(
+              `[proxy ${shortId}] first chunk from peer (${chunk.length} bytes): ${chunk.slice(0, 200).replace(/\s+/g, " ")}…`,
+            );
+          }
           res.write(chunk);
         },
         (err) => {
@@ -190,7 +197,7 @@ export function startProxy(): void {
           }
 
           logger.info(
-            `[proxy ${shortId}] done (${bytesStreamed} bytes streamed)`,
+            `[proxy ${shortId}] done (${chunkCount} chunks, ${bytesStreamed} bytes streamed)`,
           );
           if (!res.writableEnded) {
             ensureSseHeaders();

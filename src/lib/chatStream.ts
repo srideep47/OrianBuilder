@@ -79,21 +79,28 @@ export async function consumeSSEStream(
             const json = JSON.parse(trimmed.slice(6));
             const choice = json.choices?.[0];
             const delta = choice?.delta;
-            // Standard OpenAI: delta.content. Qwen3 / DeepSeek-R1 thinking
-            // models put pre-final tokens in delta.reasoning_content. Some
-            // completion-style backends use top-level `text` instead.
-            // Surface all of them so the chat shows something useful.
-            const content: string | undefined =
-              typeof delta?.content === "string" ? delta.content : undefined;
-            const reasoning: string | undefined =
+            // llama.cpp's Qwen3 mirrors thinking text into both
+            // delta.content AND delta.reasoning_content — so we prefer
+            // content first, fall back to reasoning_content, and finally
+            // to top-level `text` (used by some completion-style backends).
+            // Concatenating both would double every thinking token.
+            const content: string | null =
+              typeof delta?.content === "string" ? delta.content : null;
+            const reasoning: string | null =
               typeof delta?.reasoning_content === "string"
                 ? delta.reasoning_content
-                : undefined;
-            const text: string | undefined =
-              typeof choice?.text === "string" ? choice.text : undefined;
-            if (content) callbacks.onChunk(content);
-            if (reasoning) callbacks.onChunk(reasoning);
-            if (text) callbacks.onChunk(text);
+                : null;
+            const text: string | null =
+              typeof choice?.text === "string" ? choice.text : null;
+            const visible =
+              content && content !== ""
+                ? content
+                : reasoning && reasoning !== ""
+                  ? reasoning
+                  : text && text !== ""
+                    ? text
+                    : null;
+            if (visible !== null) callbacks.onChunk(visible);
           } catch {
             // skip malformed SSE line
           }

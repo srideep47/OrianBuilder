@@ -231,22 +231,31 @@ function normalizeSseEvent(rawEvent: string): string {
       for (const choice of choices) {
         const delta = choice?.delta;
         if (!delta || typeof delta !== "object") continue;
-        const content = typeof delta.content === "string" ? delta.content : "";
+        const content =
+          typeof delta.content === "string" ? delta.content : null;
         const reasoning =
           typeof delta.reasoning_content === "string"
             ? delta.reasoning_content
-            : "";
-        // Strip Qwen3-style `<think>` wrappers if they leak through.
-        const merged = (reasoning + content)
-          .replace(/<\/?think>/gi, "")
-          .replace(/<\/?reasoning>/gi, "");
-        if (merged.length > 0) {
-          delta.content = merged;
+            : null;
+
+        // llama.cpp's Qwen3 + --jinja behaviour: during thinking, it MIRRORS
+        // the same tokens into both `content` and `reasoning_content`. After
+        // </think>, only `content` has the final answer. So:
+        //   - prefer `content` whenever it's a non-empty string (the live
+        //     answer, or the mirrored thinking text)
+        //   - fall back to `reasoning_content` only when `content` is null/""
+        // Concatenating both would double-print every thinking token
+        // ("ThinkingThinking Process Process").
+        let visible: string | null = null;
+        if (content !== null && content !== "") {
+          visible = content;
+        } else if (reasoning !== null && reasoning !== "") {
+          visible = reasoning;
         }
-        if (reasoning) {
-          // Keep the original field so downstream consumers that DO understand
-          // reasoning still get it, but content now has the visible text too.
-          delta.reasoning_content = reasoning;
+        if (visible !== null) {
+          delta.content = visible
+            .replace(/<\/?think>/gi, "")
+            .replace(/<\/?reasoning>/gi, "");
         }
       }
       out.push(`data: ${JSON.stringify(json)}`);

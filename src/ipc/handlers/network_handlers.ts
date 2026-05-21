@@ -277,14 +277,26 @@ export function registerNetworkHandlers(): void {
                 if (delta && typeof delta === "object") {
                   for (const k of Object.keys(delta)) seenFields.add(k);
                 }
-                // Try every known content-bearing field
-                const fromContent = delta?.content;
-                const fromReasoning = delta?.reasoning_content;
-                const fromText = json?.choices?.[0]?.text;
-                if (typeof fromContent === "string") collected += fromContent;
-                if (typeof fromReasoning === "string")
+                // llama.cpp Qwen3 mirrors the same tokens into both content
+                // and reasoning_content during thinking — prefer content,
+                // fall back to reasoning_content only when content is empty.
+                const fromContent =
+                  typeof delta?.content === "string" ? delta.content : null;
+                const fromReasoning =
+                  typeof delta?.reasoning_content === "string"
+                    ? delta.reasoning_content
+                    : null;
+                const fromText =
+                  typeof json?.choices?.[0]?.text === "string"
+                    ? json.choices[0].text
+                    : null;
+                if (fromContent !== null && fromContent !== "") {
+                  collected += fromContent;
+                } else if (fromReasoning !== null && fromReasoning !== "") {
                   collected += fromReasoning;
-                if (typeof fromText === "string") collected += fromText;
+                } else if (fromText !== null && fromText !== "") {
+                  collected += fromText;
+                }
               } catch {}
             }
           },
