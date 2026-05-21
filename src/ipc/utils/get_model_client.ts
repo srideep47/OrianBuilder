@@ -15,8 +15,10 @@ import {
   type OrianBuilderEngineProvider,
 } from "./llm_engine_provider";
 import { getModelProvider } from "./providers";
+import { remotePeerProvider } from "./providers/RemotePeerProvider";
 import type { ModelClient } from "./providers";
 import { getEnvVar } from "./read_env";
+import { getComputeTarget } from "@/main/compute/routing";
 
 export type { ModelClient } from "./providers";
 
@@ -30,6 +32,9 @@ const AUTO_MODEL_ALIASES = [
 
 const logger = log.scope("getModelClient");
 
+// Local providers that benefit from remote GPU routing
+const LOCAL_PROVIDERS = new Set(["embedded", "ollama", "lmstudio"]);
+
 export async function getModelClient(
   model: LargeLanguageModel,
   settings: UserSettings,
@@ -38,6 +43,30 @@ export async function getModelClient(
   isEngineEnabled?: boolean;
   isSmartContextEnabled?: boolean;
 }> {
+  // ── Remote Compute Routing ─────────────────────────────────────────────────
+  // When a peer's GPU is selected as the compute target and the user is running
+  // a local model, route the inference through the P2P proxy (port 11436).
+  const computeTarget = getComputeTarget();
+  if (
+    computeTarget.mode === "peer" &&
+    computeTarget.peerId &&
+    LOCAL_PROVIDERS.has(model.provider)
+  ) {
+    logger.info(
+      `[remote-compute] Routing ${model.name} → peer ${computeTarget.peerId.slice(0, 16)}…`,
+    );
+    return {
+      modelClient: remotePeerProvider.createClient({
+        model,
+        settings,
+        providerConfig: { id: "remote-peer", type: "builtin" } as any,
+        apiKey: undefined,
+        providerId: "remote-peer",
+      }),
+      isEngineEnabled: false,
+    };
+  }
+
   const allProviders = await getLanguageModelProviders();
 
   const orianbuilderApiKey = settings.providerSettings?.auto?.apiKey?.value;

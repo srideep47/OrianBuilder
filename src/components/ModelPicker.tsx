@@ -14,6 +14,7 @@ import {
   DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
 import { useCallback, useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalModels } from "@/hooks/useLocalModels";
 import { useLocalLMSModels } from "@/hooks/useLMStudioModels";
 import { useEmbeddedModelStatus } from "@/hooks/useEmbeddedModelStatus";
@@ -22,7 +23,8 @@ import {
   useEmbeddedModelSwap,
 } from "@/hooks/useEmbeddedModelSwap";
 import { useLanguageModelsByProviders } from "@/hooks/useLanguageModelsByProviders";
-import { Loader2, Zap } from "lucide-react";
+import { Loader2, Wifi, Zap } from "lucide-react";
+import { queryKeys } from "@/lib/queryKeys";
 
 import { ipc, LocalModel, type LocalModelEntry } from "@/ipc/types";
 import { useLanguageModelProviders } from "@/hooks/useLanguageModelProviders";
@@ -30,9 +32,8 @@ import { useSettings } from "@/hooks/useSettings";
 import { PriceBadge } from "@/components/PriceBadge";
 import { TURBO_MODELS } from "@/ipc/shared/language_model_constants";
 import { cn } from "@/lib/utils";
-import { useQueryClient } from "@tanstack/react-query";
-import { queryKeys } from "@/lib/queryKeys";
 import { showError } from "@/lib/toast";
+import type { ComputeNode, ComputeTarget } from "@/ipc/types/compute";
 
 export function ModelPicker() {
   const { settings, updateSettings } = useSettings();
@@ -71,6 +72,21 @@ export function ModelPicker() {
   };
 
   const [open, setOpen] = useState(false);
+
+  // Compute routing state
+  const { data: computeTarget } = useQuery<ComputeTarget>({
+    queryKey: queryKeys.compute.target,
+    queryFn: () => ipc.compute.getTarget(),
+  });
+  const { data: computeNodes = [] } = useQuery<ComputeNode[]>({
+    queryKey: queryKeys.compute.nodes,
+    queryFn: () => ipc.compute.getAvailableNodes(),
+    refetchInterval: open ? 3000 : 30000,
+  });
+  const activePeerNode =
+    computeTarget?.mode === "peer" && computeTarget.peerId
+      ? (computeNodes.find((n) => n.id === computeTarget.peerId) ?? null)
+      : null;
 
   // Cloud models from providers
   const { data: modelsByProviders, isLoading: modelsByProvidersLoading } =
@@ -252,9 +268,13 @@ export function ModelPicker() {
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger
-        className="inline-flex items-center justify-center whitespace-nowrap rounded-lg text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border-none bg-transparent shadow-none text-foreground/80 hover:text-foreground hover:bg-muted/60 h-7 max-w-[130px] px-2 gap-1.5 cursor-pointer"
+        className="inline-flex items-center justify-center whitespace-nowrap rounded-lg text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border-none bg-transparent shadow-none text-foreground/80 hover:text-foreground hover:bg-muted/60 h-7 max-w-[200px] px-2 gap-1.5 cursor-pointer"
         data-testid="model-picker"
-        title={modelDisplayName}
+        title={
+          activePeerNode
+            ? `${modelDisplayName} · on ${activePeerNode.label.split(" · ")[0]}`
+            : modelDisplayName
+        }
       >
         <span className="truncate">
           {modelDisplayName === "Auto" && (
@@ -266,6 +286,14 @@ export function ModelPicker() {
           )}
           {modelDisplayName}
         </span>
+        {activePeerNode && (
+          <span className="flex items-center gap-0.5 text-[10px] text-primary/80 shrink-0">
+            <Wifi className="w-3 h-3" />
+            <span className="max-w-[60px] truncate">
+              {activePeerNode.label.split(" · ")[0]}
+            </span>
+          </span>
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-64" align="start">
         <DropdownMenuLabel>Cloud Models</DropdownMenuLabel>
@@ -487,6 +515,40 @@ export function ModelPicker() {
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
             )}
+          </>
+        )}
+
+        {/* Remote Compute — peer models if a peer is selected */}
+        {activePeerNode && activePeerNode.loadedModels.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="flex items-center gap-1.5">
+              <Wifi className="w-3.5 h-3.5 text-primary" />
+              <span>{activePeerNode.label.split(" · ")[0]}</span>
+              <span className="text-xs text-muted-foreground font-normal">
+                (remote)
+              </span>
+            </DropdownMenuLabel>
+            {activePeerNode.loadedModels.map((modelName) => (
+              <DropdownMenuItem
+                key={`remote-${modelName}`}
+                className={
+                  selectedModel.provider === "ollama" &&
+                  selectedModel.name === modelName
+                    ? "bg-secondary"
+                    : ""
+                }
+                onClick={() => {
+                  onModelSelect({ name: modelName, provider: "ollama" });
+                  setOpen(false);
+                }}
+              >
+                <div className="flex items-center gap-2 w-full">
+                  <Wifi className="w-3 h-3 text-primary/60 shrink-0" />
+                  <span className="truncate">{modelName}</span>
+                </div>
+              </DropdownMenuItem>
+            ))}
           </>
         )}
 
