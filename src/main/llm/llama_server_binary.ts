@@ -196,52 +196,98 @@ export async function findVulkanDeviceName(
 
   const normalizedModel = norm(gpuModel);
 
-  // Extract the significant tokens from the GPU model name (skip short/generic words)
-  const SKIP = new Set(["amd", "nvidia", "intel", "arc", "the", "and"]);
+  // Extract the significant tokens from the GPU model name (skip short/generic
+  // words). "graphics" is treated as generic because both discrete and integrated
+  // AMD cards include the word, and matching on it would let an iGPU win when the
+  // user actually picked a discrete card.
+  const SKIP = new Set([
+    "amd",
+    "nvidia",
+    "intel",
+    "arc",
+    "the",
+    "and",
+    "tm",
+    "(r)",
+    "(tm)",
+    "graphics",
+    "radeon",
+    "geforce",
+  ]);
   const keywords = normalizedModel
     .split(" ")
-    .filter((w) => w.length >= 3 && !SKIP.has(w));
+    .filter((w) => w.length >= 2 && !SKIP.has(w));
+
+  // Fallback set used only for the threshold floor when the distinctive tokens
+  // above are absent (e.g. user picked plain "AMD Radeon Graphics" iGPU).
+  const fallbackKeywords = normalizedModel
+    .split(" ")
+    .filter((w) => w.length >= 3 && !["amd", "the", "and", "tm"].includes(w));
 
   logger.info(
-    `[device-match] Looking for "${gpuModel}" in --list-devices output. Keywords: [${keywords.join(", ")}]`,
+    `[device-match] Looking for "${gpuModel}" in --list-devices output. Keywords: [${keywords.join(", ")}], fallback: [${fallbackKeywords.join(", ")}]`,
   );
+
+  type Candidate = {
+    deviceId: string;
+    line: string;
+    score: number;
+    fallbackScore: number;
+  };
+
+  const candidates: Candidate[] = [];
 
   for (const line of output.split(/\r?\n/)) {
     if (!line.trim()) continue;
     const normalizedLine = norm(line);
 
-    // Score: count how many keywords appear in this line.
-    const matchCount = keywords.filter((k) =>
-      normalizedLine.includes(k),
-    ).length;
-    const threshold = Math.max(1, Math.ceil(keywords.length * 0.5));
-    if (matchCount < threshold) continue;
-
+    let deviceId: string | undefined;
     // Format A: "  Vulkan0: AMD Radeon(TM) Graphics (33608 MiB, 31927 MiB free)"
     //           "  Vulkan0 (AMD Radeon(TM) 890M, VRAM: ...)"
     //           "  CUDA0 (NVIDIA GeForce RTX 4080 Super, ...)"
-    // The colon-separated form is the live format observed from the bundled binary.
     const matchA = line.trim().match(/^([A-Za-z]+\d+)\s*[:\s(,]/);
     if (matchA) {
-      logger.info(
-        `[device-match] Matched "${line.trim()}" → device "${matchA[1]}"`,
-      );
-      return matchA[1];
+      deviceId = matchA[1];
+    } else {
+      // Format B: "ggml_vulkan: 0 = AMD Radeon(TM) 890M | ..."
+      const matchB = line.match(/:\s*(\d+)\s*=/);
+      if (matchB) deviceId = `Vulkan${matchB[1]}`;
     }
+    if (!deviceId) continue;
 
-    // Format B: "ggml_vulkan: 0 = AMD Radeon(TM) 890M | ..."
-    const matchB = line.match(/:\s*(\d+)\s*=/);
-    if (matchB) {
-      const deviceId = `Vulkan${matchB[1]}`;
-      logger.info(
-        `[device-match] Matched "${line.trim()}" → device "${deviceId}"`,
-      );
-      return deviceId;
-    }
+    const score = keywords.filter((k) => normalizedLine.includes(k)).length;
+    const fallbackScore = fallbackKeywords.filter((k) =>
+      normalizedLine.includes(k),
+    ).length;
+    candidates.push({ deviceId, line: line.trim(), score, fallbackScore });
   }
 
-  logger.warn(
-    `[device-match] No Vulkan device found matching "${gpuModel}" in --list-devices output`,
+  if (candidates.length === 0) {
+    logger.warn(
+      `[device-match] No device lines parsed from --list-devices output for "${gpuModel}"`,
+    );
+    return undefined;
+  }
+
+  // Prefer the candidate that matches the most distinctive keywords (e.g.
+  // "6500m" wins over a line that only matches "radeon"). Break ties on the
+  // broader fallback score so we still match plain "AMD Radeon Graphics" iGPUs
+  // when that's what the user picked.
+  candidates.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return b.fallbackScore - a.fallbackScore;
+  });
+  const best = candidates[0];
+
+  if (best.score === 0 && best.fallbackScore === 0) {
+    logger.warn(
+      `[device-match] No Vulkan device found matching "${gpuModel}" in --list-devices output. Candidates: ${candidates.map((c) => c.deviceId).join(", ")}`,
+    );
+    return undefined;
+  }
+
+  logger.info(
+    `[device-match] Best match for "${gpuModel}" → ${best.deviceId} (score=${best.score}, fallback=${best.fallbackScore}) "${best.line}"`,
   );
-  return undefined;
+  return best.deviceId;
 }

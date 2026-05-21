@@ -37,6 +37,10 @@ export interface LlamaServerArgInput {
     kvBytesPerTokenPerLayer: number;
     attentionSlidingWindow?: number | null;
     attentionSlidingWindowPattern?: number | null;
+    /** Estimated VRAM consumed by the multimodal projector (mmproj). When set,
+     *  the layer calculator subtracts this from the available budget so the
+     *  resolved n_gpu_layers leaves room for the projector. */
+    mmprojOverheadMb?: number;
   };
   /** Optional Jinja chat template override (relative to model's GGUF metadata default). */
   chatTemplate?: string | null;
@@ -152,5 +156,6 @@ function resolveGpuLayers(input: LlamaServerArgInput): number {
     auto.attentionSlidingWindow,
     auto.attentionSlidingWindowPattern,
     !!input.flashAttention,
+    auto.mmprojOverheadMb,
   );
 }
