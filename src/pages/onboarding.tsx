@@ -87,11 +87,14 @@ export default function OnboardingPage() {
     setStep(2);
   };
 
-  const handleFinish = async () => {
-    await ipc.settings.setUserSettings({
-      onboardingCompleted: true,
-      orionNetworkEnabled: joinNetwork,
-    } as Parameters<typeof ipc.settings.setUserSettings>[0]);
+  const handleFinish = () => {
+    // Fire-and-forget — don't block navigation on the settings write
+    ipc.settings
+      .setUserSettings({
+        onboardingCompleted: true,
+        orionNetworkEnabled: joinNetwork,
+      } as Parameters<typeof ipc.settings.setUserSettings>[0])
+      .catch(() => {});
     navigate({ to: "/" });
   };
 

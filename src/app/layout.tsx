@@ -43,14 +43,16 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   // Initialize plan events listener
   usePlanEvents();
 
-  // Redirect to onboarding on first launch
+  // Redirect to onboarding only on the very first load (no settings yet)
   useEffect(() => {
     const s = settings as typeof settings & { onboardingCompleted?: boolean };
     const pathname = routerState.location.pathname;
-    if (s && !s.onboardingCompleted && pathname !== "/onboarding") {
+    // Only redirect if settings are loaded and onboarding was never completed
+    // and we're currently on the root path (don't interrupt other navigation)
+    if (s && s.onboardingCompleted === false && pathname === "/") {
       navigate({ to: "/onboarding", replace: true });
     }
-  }, [settings, routerState.location.pathname, navigate]);
+  }, [settings]);
 
   // Zoom keyboard shortcuts (Ctrl/Cmd + =/- /0)
   useZoomShortcuts();
