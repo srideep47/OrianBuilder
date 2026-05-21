@@ -305,7 +305,9 @@ export async function downloadLlamaServerBinary(
     );
   }
 
-  const binaryName = variant.startsWith("win-") ? "llama-server.exe" : "llama-server";
+  const binaryName = variant.startsWith("win-")
+    ? "llama-server.exe"
+    : "llama-server";
   const targetDir = path.join(getTargetRoot(), variant);
   const hasCompanions = spec.companionAssets.length > 0;
 
@@ -327,7 +329,13 @@ export async function downloadLlamaServerBinary(
       archivePath,
       (bytes, total) => {
         const pct = total > 0 ? (bytes / total) * dlEnd : dlEnd * 0.5;
-        emit("downloading", `Downloading ${mainAsset.name}…`, pct, bytes, total);
+        emit(
+          "downloading",
+          `Downloading ${mainAsset.name}…`,
+          pct,
+          bytes,
+          total,
+        );
       },
       signal,
     );
@@ -380,8 +388,15 @@ export async function downloadLlamaServerBinary(
           companion.browser_download_url,
           companionArchive,
           (bytes, total) => {
-            const pct = cStart + (total > 0 ? (bytes / total) : 0.5) * (cEnd - cStart);
-            emit("companions", `Downloading ${companion.name}…`, pct, bytes, total);
+            const pct =
+              cStart + (total > 0 ? bytes / total : 0.5) * (cEnd - cStart);
+            emit(
+              "companions",
+              `Downloading ${companion.name}…`,
+              pct,
+              bytes,
+              total,
+            );
           },
           signal,
         );
@@ -394,6 +409,8 @@ export async function downloadLlamaServerBinary(
 
     emit("done", "Download complete!", 100);
   } finally {
-    await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    await fs.promises
+      .rm(tmpDir, { recursive: true, force: true })
+      .catch(() => {});
   }
 }

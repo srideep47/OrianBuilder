@@ -49,6 +49,8 @@ const DEFAULT_SETTINGS: UserSettings = {
   autoExpandPreviewPanel: true,
   enableContextCompaction: true,
   previewIdleTimeoutPolicy: "default",
+  onboardingCompleted: false,
+  orionNetworkEnabled: true,
 };
 
 const SETTINGS_FILE = "user-settings.json";

@@ -42,6 +42,7 @@ import { useSetAtom } from "jotai";
 import { activeSettingsSectionAtom } from "@/atoms/viewAtoms";
 import { SECTION_IDS, SETTING_IDS } from "@/lib/settingsSearchIndex";
 import { BraveSearchSettings } from "@/components/settings/BraveSearchSettings";
+import { AccountSettings } from "@/components/AccountSettings";
 
 export default function SettingsPage() {
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
@@ -262,6 +263,15 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Account & Identity */}
+          <div
+            id="account-settings"
+            className="bg-card border border-border/60 rounded-xl shadow-sm p-6"
+          >
+            <h2 className="text-lg font-medium mb-4">Account & Identity</h2>
+            <AccountSettings />
           </div>
 
           {/* Danger Zone */}

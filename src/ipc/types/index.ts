@@ -55,6 +55,8 @@ export { audioContracts } from "./audio";
 export { mediaContracts } from "./media";
 export { mediaAiContracts } from "./media_ai";
 export { imageGenerationContracts } from "./image_generation";
+export { identityContracts } from "./identity";
+export { networkContracts, networkEvents } from "./network";
 export {
   embeddedModelContracts,
   embeddedModelClient,
@@ -199,6 +201,8 @@ export { audioClient } from "./audio";
 export { mediaClient } from "./media";
 export { mediaAiClient } from "./media_ai";
 export { imageGenerationClient } from "./image_generation";
+export { identityClient } from "./identity";
+export { networkClient, networkEventClient } from "./network";
 
 // =============================================================================
 // Type Exports
@@ -448,6 +452,13 @@ export type {
   GenerateImageResponse,
 } from "./image_generation";
 
+// Identity types
+export type {
+  DeviceIdentity,
+  DeviceHardware,
+  UpdateDeviceInput,
+} from "./identity";
+
 // =============================================================================
 // Schema Exports (for validation in handlers/components)
 // =============================================================================
@@ -521,6 +532,8 @@ import { missionClient } from "./mission";
 import { hardwareClient } from "./hardware";
 import { orchestratorClient } from "./model_orchestrator";
 import { llamaBinaryClient, llamaBinaryEventClient } from "./llama_binary";
+import { identityClient } from "./identity";
+import { networkClient, networkEventClient } from "./network";
 
 /**
  * Unified IPC client with all domains organized by namespace.
@@ -587,6 +600,8 @@ export const ipc = {
   hardware: hardwareClient,
   orchestrator: orchestratorClient,
   llamaBinary: llamaBinaryClient,
+  identity: identityClient,
+  network: networkClient,
 
   // Event clients for main->renderer pub/sub
   events: {
@@ -598,5 +613,6 @@ export const ipc = {
     marketplace: modelMarketplaceEventClient,
     embeddedModel: embeddedModelEventClient,
     llamaBinary: llamaBinaryEventClient,
+    network: networkEventClient,
   },
 } as const;

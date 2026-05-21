@@ -8,7 +8,7 @@ import { TitleBar } from "./TitleBar";
 import { useEffect, type ReactNode } from "react";
 import { useRunApp, useAppOutputSubscription } from "@/hooks/useRunApp";
 import { useAtomValue, useSetAtom } from "jotai";
-import { useRouterState } from "@tanstack/react-router";
+import { useRouterState, useNavigate } from "@tanstack/react-router";
 import { GalaxyBackground } from "@/components/GalaxyBackground";
 import {
   appConsoleEntriesAtom,
@@ -32,6 +32,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   const previewMode = useAtomValue(previewModeAtom);
   const { settings } = useSettings();
   const routerState = useRouterState();
+  const navigate = useNavigate();
   const currentRoute = routerState.location.pathname.split("/")[1] || "home";
   const setSelectedComponentsPreview = useSetAtom(
     selectedComponentsPreviewAtom,
@@ -41,6 +42,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 
   // Initialize plan events listener
   usePlanEvents();
+
+  // Redirect to onboarding on first launch
+  useEffect(() => {
+    const s = settings as typeof settings & { onboardingCompleted?: boolean };
+    const pathname = routerState.location.pathname;
+    if (s && !s.onboardingCompleted && pathname !== "/onboarding") {
+      navigate({ to: "/onboarding", replace: true });
+    }
+  }, [settings, routerState.location.pathname, navigate]);
 
   // Zoom keyboard shortcuts (Ctrl/Cmd + =/- /0)
   useZoomShortcuts();

@@ -783,15 +783,15 @@ body.galaxy-mode {
   background: #03030a !important;
   font-family: "Inter", "Geist", system-ui, sans-serif;
   /* CSS variable overrides — match Cosmic Rays warm dark palette */
-  --background: rgba(4, 3, 10, 0.0);        /* transparent — let rays show */
-  --background-lighter: rgba(10, 6, 20, 0.0);
-  --background-lightest: rgba(16, 10, 30, 0.0);
+  --background: rgba(4, 3, 10, 0); /* transparent — let rays show */
+  --background-lighter: rgba(10, 6, 20, 0);
+  --background-lightest: rgba(16, 10, 30, 0);
   --foreground: #f3ecdf;
   --muted: rgba(243, 236, 223, 0.08);
   --muted-foreground: rgba(243, 236, 223, 0.55);
   --border: rgba(243, 236, 223, 0.12);
-  --input: rgba(243, 236, 223, 0.10);
-  --card: rgba(6, 4, 16, 0.82);           /* increased opacity for readability */
+  --input: rgba(243, 236, 223, 0.1);
+  --card: rgba(6, 4, 16, 0.82); /* increased opacity for readability */
   --card-foreground: #f3ecdf;
   --popover: rgba(10, 6, 22, 0.94);
   --popover-foreground: #f3ecdf;
@@ -806,7 +806,7 @@ body.galaxy-mode {
      fallback comes from :root (light mode): --accent ≈ oklch(0.97 0 0) which
      is near-solid-white. hover:bg-accent on outline buttons then produces a
      jarring white flash with invisible text. Glass cream matches the UI. */
-  --accent: rgba(243, 236, 223, 0.10);
+  --accent: rgba(243, 236, 223, 0.1);
   --accent-foreground: #f3ecdf;
   /* Secondary buttons — same glass treatment so they don't look washed-out */
   --secondary: rgba(243, 236, 223, 0.08);
@@ -814,7 +814,7 @@ body.galaxy-mode {
   --sidebar: rgba(6, 4, 14, 0.95);
   --sidebar-border: rgba(243, 236, 223, 0.08);
   --sidebar-foreground: rgba(243, 236, 223, 0.88);
-  --sidebar-accent: rgba(243, 236, 223, 0.10);
+  --sidebar-accent: rgba(243, 236, 223, 0.1);
   --sidebar-accent-foreground: #f3ecdf;
 }
 
@@ -827,7 +827,8 @@ body.galaxy-mode [data-slot="button"].text-primary-foreground {
   color: #f3ecdf;
   border: 1px solid rgba(168, 140, 255, 0.45);
 }
-body.galaxy-mode [data-slot="button"].text-primary-foreground:hover:not(:disabled) {
+body.galaxy-mode
+  [data-slot="button"].text-primary-foreground:hover:not(:disabled) {
   background-color: rgba(168, 140, 255, 0.38);
   border-color: rgba(168, 140, 255, 0.65);
 }
@@ -887,7 +888,7 @@ body.galaxy-mode .text-gray-400,
 body.galaxy-mode .text-gray-300,
 body.galaxy-mode .text-slate-500,
 body.galaxy-mode .text-slate-400 {
-  color: rgba(243, 236, 223, 0.50) !important;
+  color: rgba(243, 236, 223, 0.5) !important;
 }
 body.galaxy-mode .text-gray-700,
 body.galaxy-mode .text-gray-800,
@@ -921,9 +922,9 @@ body.galaxy-mode #layout-main-content-container {
   -webkit-backdrop-filter: none !important;
   border-color: rgba(243, 236, 223, 0.08) !important;
   /* Child tokens — keep cards/inputs semi-transparent */
-  --background: rgba(4, 3, 10, 0.0);
-  --background-lighter: rgba(10, 6, 20, 0.0);
-  --background-lightest: rgba(16, 10, 30, 0.0);
+  --background: rgba(4, 3, 10, 0);
+  --background-lighter: rgba(10, 6, 20, 0);
+  --background-lightest: rgba(16, 10, 30, 0);
   --card: rgba(6, 4, 16, 0.82);
   --muted: rgba(243, 236, 223, 0.04);
 }
@@ -1539,7 +1540,10 @@ body.galaxy-mode [data-sidebar="menu-button"] svg {
 }
 
 /* ── Button text: ensure foreground color across all variants ── */
-body.galaxy-mode [data-slot="button"]:not(.btn-orion):not(.btn-orion-outline):not([class*="bg-destructive"]) {
+body.galaxy-mode
+  [data-slot="button"]:not(.btn-orion):not(.btn-orion-outline):not(
+    [class*="bg-destructive"]
+  ) {
   color: #f3ecdf !important;
 }
 body.galaxy-mode [data-slot="button"].bg-primary,
@@ -1548,7 +1552,9 @@ body.galaxy-mode [data-slot="button"][class*="bg-primary"] {
 }
 
 /* ── Outline/ghost buttons in content area: dark glass bg ────── */
-body.galaxy-mode #layout-main-content-container [data-slot="button"]:not(.btn-orion):not([class*="bg-primary"]) {
+body.galaxy-mode
+  #layout-main-content-container
+  [data-slot="button"]:not(.btn-orion):not([class*="bg-primary"]) {
   background: rgba(8, 5, 18, 0.55) !important;
   border-color: rgba(243, 236, 223, 0.15) !important;
   backdrop-filter: blur(6px) !important;

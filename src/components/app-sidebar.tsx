@@ -10,6 +10,7 @@ import {
   Database,
   Sparkles,
   Newspaper,
+  Network,
 } from "lucide-react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useState, useCallback } from "react";
@@ -46,6 +47,7 @@ const items = [
     icon: Newspaper,
     hasPanel: false,
   },
+  { title: "Network", to: "/network", icon: Network, hasPanel: false },
   { title: "Settings", to: "/settings", icon: Settings, hasPanel: true },
   { title: "Library", to: "/library", icon: BookOpen, hasPanel: true },
   { title: "Hub", to: "/hub", icon: Store, hasPanel: false },

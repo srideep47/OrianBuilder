@@ -50,6 +50,8 @@ import { registerMissionHandlers } from "./handlers/mission_handlers";
 import { registerHardwareHandlers } from "./handlers/hardware_handlers";
 import { registerOrchestratorHandlers } from "./handlers/orchestrator_handlers";
 import { registerLlamaBinaryHandlers } from "./handlers/llama_binary_handler";
+import { registerIdentityHandlers } from "./handlers/identity_handlers";
+import { registerNetworkHandlers } from "./handlers/network_handlers";
 
 export function registerIpcHandlers() {
   // Register all IPC handlers by category
@@ -105,4 +107,6 @@ export function registerIpcHandlers() {
   registerHardwareHandlers();
   registerOrchestratorHandlers();
   registerLlamaBinaryHandlers();
+  registerIdentityHandlers();
+  registerNetworkHandlers();
 }

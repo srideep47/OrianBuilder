@@ -1,6 +1,9 @@
 import { app, BrowserWindow } from "electron";
 import { createTypedHandler } from "./base";
-import { llamaBinaryContracts, llamaBinaryEvents } from "@/ipc/types/llama_binary";
+import {
+  llamaBinaryContracts,
+  llamaBinaryEvents,
+} from "@/ipc/types/llama_binary";
 import {
   resolveLlamaServerBinary,
   pickLlamaServerVariant,
