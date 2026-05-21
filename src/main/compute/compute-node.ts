@@ -257,6 +257,15 @@ function normalizeSseEvent(rawEvent: string): string {
             .replace(/<\/?think>/gi, "")
             .replace(/<\/?reasoning>/gi, "");
         }
+        // CRITICAL: drop reasoning_content from the forwarded payload.
+        // @ai-sdk/openai-compatible v2+ recognizes `reasoning_content` and
+        // routes it to a separate reasoning channel that the default chat UI
+        // does NOT render — leaving the bubble blank even when content is
+        // populated. Removing the field forces the SDK to treat everything
+        // as plain assistant tokens.
+        if ("reasoning_content" in delta) {
+          delete delta.reasoning_content;
+        }
       }
       out.push(`data: ${JSON.stringify(json)}`);
     } catch {
