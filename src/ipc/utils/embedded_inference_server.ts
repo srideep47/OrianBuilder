@@ -478,11 +478,31 @@ async function loadLlamaServerModel(
 
   const mmprojPath = findCompanionMmproj(config.modelPath);
 
+  // Estimate the VRAM footprint of the multimodal projector. llama.cpp's own
+  // "estimated memory usage of mmproj" figure tracks the on-disk GGUF size
+  // very closely (the file IS the device upload — scratch buffers are tiny),
+  // so we use the file size directly. Over-reserving here pushes layers onto
+  // the CPU and tanks GPU utilization on small-VRAM cards.
+  let mmprojOverheadMb = 0;
+  if (mmprojPath) {
+    try {
+      const sizeBytes = fs.statSync(mmprojPath).size;
+      mmprojOverheadMb = Math.ceil(sizeBytes / (1024 * 1024));
+    } catch (err) {
+      logger.warn(
+        `Could not stat mmproj at ${mmprojPath}; skipping VRAM reservation:`,
+        err,
+      );
+    }
+  }
+
   logger.info(
     `Loading: ${config.modelPath} | ctx=${config.contextSize} | ` +
       `gpuLayersMode=${config.gpuLayersMode ?? "auto"}` +
       (cpuOnly ? " (forced CPU)" : "") +
-      (mmprojPath ? ` | mmproj=${path.basename(mmprojPath)}` : "") +
+      (mmprojPath
+        ? ` | mmproj=${path.basename(mmprojPath)} (~${mmprojOverheadMb} MiB reserved)`
+        : "") +
       (resolvedBackendLabel ? ` | backend=${resolvedBackendLabel}` : ""),
   );
 
@@ -505,6 +525,7 @@ async function loadLlamaServerModel(
         kvBytesPerTokenPerLayer: config._kvBytesPerTokenPerLayer ?? 4096,
         attentionSlidingWindow: config._attentionSlidingWindow,
         attentionSlidingWindowPattern: config._attentionSlidingWindowPattern,
+        mmprojOverheadMb,
       },
       // --jinja enables OpenAI-format tool calling against the model's
       // GGUF-embedded chat template. Models that don't support tool roles

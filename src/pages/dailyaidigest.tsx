@@ -1834,17 +1834,50 @@ function ReaderPane({
           // fall through to Jina
         }
       }
-      // 2) Public CORS-friendly reader: Jina Reader returns clean markdown
-      try {
-        const r = await fetch(`https://r.jina.ai/${story.link}`);
+      // 2) Public CORS-friendly reader: Jina Reader returns clean markdown.
+      // Many modern news sites (BBC, NYT, Guardian) are JS-rendered SPAs;
+      // Jina's default direct engine only gets the SSR shell (title + nav
+      // tags). Try the browser engine first, then fall back to direct.
+      const fetchJina = async (engine: "browser" | "direct") => {
+        const r = await fetch(`https://r.jina.ai/${story.link}`, {
+          headers: {
+            Accept: "text/plain",
+            "X-Return-Format": "markdown",
+            "X-Engine": engine,
+          },
+        });
         if (!r.ok) throw new Error(`Reader ${r.status}`);
-        const text = await r.text();
-        if (!cancelled) setArticleText(cleanJinaOutput(text));
-      } catch (err) {
-        if (!cancelled) {
-          const msg = err instanceof Error ? err.message : String(err);
-          setArticleError(msg);
+        return cleanJinaOutput(await r.text());
+      };
+
+      // Heuristic: a real article body has multiple paragraphs of prose, not
+      // just a heading and a handful of nav bullets. Anything short is a stub.
+      const looksLikeStub = (md: string) => {
+        const stripped = md
+          .replace(/^#{1,6}\s.*$/gm, "")
+          .replace(/^[*\-•]\s.*$/gm, "")
+          .trim();
+        return stripped.length < 300;
+      };
+
+      let lastErr: unknown = null;
+      for (const engine of ["browser", "direct"] as const) {
+        try {
+          const text = await fetchJina(engine);
+          if (cancelled) return;
+          if (!looksLikeStub(text)) {
+            setArticleText(text);
+            return;
+          }
+          lastErr = new Error("stub response");
+        } catch (err) {
+          lastErr = err;
         }
+      }
+      if (!cancelled) {
+        const msg =
+          lastErr instanceof Error ? lastErr.message : String(lastErr);
+        setArticleError(msg);
       }
     };
 
@@ -2154,12 +2187,24 @@ function ReaderPane({
               <ReactMarkdown>{articleText}</ReactMarkdown>
             </div>
           ) : (
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              {story.summary ||
-                (articleError
-                  ? `Could not load full article: ${articleError}`
-                  : "No preview available.")}
-            </p>
+            <div className="space-y-3">
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                {story.summary ||
+                  (articleError
+                    ? `Could not load the full article in-app (${articleError}).`
+                    : "No preview available.")}
+              </p>
+              {story.link && (
+                <a
+                  href={story.link}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="inline-flex items-center gap-1.5 text-xs text-sky-500 hover:underline"
+                >
+                  Open original article →
+                </a>
+              )}
+            </div>
           )}
         </div>
       </CardContent>
