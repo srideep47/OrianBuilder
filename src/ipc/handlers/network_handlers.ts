@@ -176,6 +176,20 @@ export function registerNetworkHandlers(): void {
     },
   );
 
+  createTypedHandler(
+    networkContracts.sendFriendRequest,
+    async (_event, { publicKey }) => {
+      try {
+        networkSwarm.sendFriendRequest(publicKey);
+        return { success: true };
+      } catch (err) {
+        throw new Error(
+          err instanceof Error ? err.message : "Peer not connected",
+        );
+      }
+    },
+  );
+
   createTypedHandler(networkContracts.getNotifications, async (_event) => {
     return notifications;
   });

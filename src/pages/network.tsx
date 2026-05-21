@@ -84,19 +84,21 @@ function PeerRow({
   peer,
   selected,
   onSelect,
+  onAddFriend,
 }: {
   peer: Peer;
   selected: boolean;
   onSelect: () => void;
+  onAddFriend?: () => void;
 }) {
   return (
-    <button
-      onClick={onSelect}
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors ${
+    <div
+      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors cursor-pointer group ${
         selected
           ? "bg-primary/10 border border-primary/20"
           : "hover:bg-muted/50"
       }`}
+      onClick={onSelect}
     >
       <PeerAvatar peer={peer} />
       <div className="flex-1 min-w-0">
@@ -122,8 +124,24 @@ function PeerRow({
           )}
         </div>
       </div>
-      <LatencyBadge ms={peer.latencyMs} />
-    </button>
+      {/* Show Add Friend button on hover for unknown peers */}
+      {!peer.isTrusted && onAddFriend && peer.status === "online" ? (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 px-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+          onClick={(e) => {
+            e.stopPropagation();
+            onAddFriend();
+          }}
+        >
+          <UserPlus className="w-3 h-3 mr-1" />
+          Add
+        </Button>
+      ) : (
+        <LatencyBadge ms={peer.latencyMs} />
+      )}
+    </div>
   );
 }
 
@@ -167,9 +185,11 @@ function FriendRequestRow({
 function PeerDetailPanel({
   peer,
   onRemove,
+  onAddFriend,
 }: {
   peer: Peer;
   onRemove: () => void;
+  onAddFriend: () => void;
 }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
 
@@ -289,6 +309,19 @@ function PeerDetailPanel({
           {peer.fingerprint}
         </code>
       </Card>
+
+      {/* Add Friend (for unknown / discovered peers) */}
+      {!peer.isTrusted && peer.status === "online" && (
+        <div className="mt-auto pt-2">
+          <Button className="w-full gap-2" onClick={onAddFriend}>
+            <UserPlus className="w-4 h-4" />
+            Send Friend Request
+          </Button>
+          <p className="text-xs text-muted-foreground text-center mt-2">
+            They'll get a notification to accept or decline.
+          </p>
+        </div>
+      )}
 
       {/* Remove */}
       {peer.isTrusted && (
@@ -520,6 +553,20 @@ export default function NetworkPage() {
     },
   });
 
+  const sendFriendRequest = useMutation({
+    mutationFn: (publicKey: string) =>
+      ipc.network.sendFriendRequest({ publicKey }),
+    onSuccess: () => {
+      toast.success(
+        "Friend request sent! They'll get a notification to accept.",
+      );
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof Error ? err.message : "Failed to send request",
+      ),
+  });
+
   const peers = networkStatus?.peers ?? [];
   const isOnline = networkStatus?.isOnline ?? false;
 
@@ -655,6 +702,7 @@ export default function NetworkPage() {
                   peer={p}
                   selected={selectedPeerKey === p.publicKey}
                   onSelect={() => setSelectedPeerKey(p.publicKey)}
+                  onAddFriend={() => sendFriendRequest.mutate(p.publicKey)}
                 />
               ))}
             </div>
@@ -687,6 +735,7 @@ export default function NetworkPage() {
           <PeerDetailPanel
             peer={selectedPeer}
             onRemove={() => removeFriend.mutate(selectedPeer.publicKey)}
+            onAddFriend={() => sendFriendRequest.mutate(selectedPeer.publicKey)}
           />
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-center gap-4 text-muted-foreground">

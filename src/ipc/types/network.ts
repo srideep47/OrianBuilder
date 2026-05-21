@@ -135,6 +135,11 @@ export const networkContracts = {
     input: z.object({ publicKey: z.string() }),
     output: z.object({ success: z.boolean() }),
   }),
+  sendFriendRequest: defineContract({
+    channel: "network:send-friend-request",
+    input: z.object({ publicKey: z.string() }),
+    output: z.object({ success: z.boolean() }),
+  }),
   getNotifications: defineContract({
     channel: "network:get-notifications",
     input: z.void(),
