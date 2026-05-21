@@ -57,6 +57,7 @@ export { mediaAiContracts } from "./media_ai";
 export { imageGenerationContracts } from "./image_generation";
 export { identityContracts } from "./identity";
 export { networkContracts, networkEvents } from "./network";
+export { computeContracts } from "./compute";
 export {
   embeddedModelContracts,
   embeddedModelClient,
@@ -203,6 +204,7 @@ export { mediaAiClient } from "./media_ai";
 export { imageGenerationClient } from "./image_generation";
 export { identityClient } from "./identity";
 export { networkClient, networkEventClient } from "./network";
+export { computeClient } from "./compute";
 
 // =============================================================================
 // Type Exports
@@ -534,6 +536,7 @@ import { orchestratorClient } from "./model_orchestrator";
 import { llamaBinaryClient, llamaBinaryEventClient } from "./llama_binary";
 import { identityClient } from "./identity";
 import { networkClient, networkEventClient } from "./network";
+import { computeClient } from "./compute";
 
 /**
  * Unified IPC client with all domains organized by namespace.
@@ -602,6 +605,7 @@ export const ipc = {
   llamaBinary: llamaBinaryClient,
   identity: identityClient,
   network: networkClient,
+  compute: computeClient,
 
   // Event clients for main->renderer pub/sub
   events: {

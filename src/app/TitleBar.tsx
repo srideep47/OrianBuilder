@@ -24,6 +24,7 @@ import { ChatTabs } from "@/components/chat/ChatTabs";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { Wrench, Cog, Trash2, Minus, Square, X as XIcon } from "lucide-react";
 import { NotificationsDrawer } from "@/components/network/NotificationsDrawer";
+import { ComputeRoutingPopover } from "@/components/ComputeRoutingPopover";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -112,6 +113,7 @@ export const TitleBar = () => {
           <ChatTabs selectedChatId={selectedChatId} />
         </div>
 
+        <ComputeRoutingPopover />
         <NotificationsDrawer />
         <TitleBarActions />
 

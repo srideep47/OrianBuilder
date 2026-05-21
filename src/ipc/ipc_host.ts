@@ -52,6 +52,7 @@ import { registerOrchestratorHandlers } from "./handlers/orchestrator_handlers";
 import { registerLlamaBinaryHandlers } from "./handlers/llama_binary_handler";
 import { registerIdentityHandlers } from "./handlers/identity_handlers";
 import { registerNetworkHandlers } from "./handlers/network_handlers";
+import { registerComputeHandlers } from "./handlers/compute_handlers";
 
 export function registerIpcHandlers() {
   // Register all IPC handlers by category
@@ -109,4 +110,5 @@ export function registerIpcHandlers() {
   registerLlamaBinaryHandlers();
   registerIdentityHandlers();
   registerNetworkHandlers();
+  registerComputeHandlers();
 }

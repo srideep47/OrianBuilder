@@ -58,6 +58,7 @@ import { orchestratorContracts } from "../types/model_orchestrator";
 import { llamaBinaryContracts, llamaBinaryEvents } from "../types/llama_binary";
 import { identityContracts } from "../types/identity";
 import { networkContracts, networkEvents } from "../types/network";
+import { computeContracts } from "../types/compute";
 
 // =============================================================================
 // Invoke Channels (derived from all contracts)
@@ -125,6 +126,7 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(llamaBinaryContracts),
   ...getInvokeChannels(identityContracts),
   ...getInvokeChannels(networkContracts),
+  ...getInvokeChannels(computeContracts),
 
   // Test-only channels
   ...TEST_INVOKE_CHANNELS,

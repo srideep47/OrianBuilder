@@ -15,6 +15,7 @@ import { openRouterProvider } from "./OpenRouterProvider";
 import type { ModelProvider } from "./types";
 import { vertexProvider } from "./VertexProvider";
 import { xaiProvider } from "./XaiProvider";
+import { remotePeerProvider } from "./RemotePeerProvider";
 
 const minimaxProvider = createOpenAiCompatibleModelProvider({
   id: "minimax",
@@ -41,6 +42,7 @@ const providerMap: Record<string, ModelProvider> = {
   openrouter: openRouterProvider,
   vertex: vertexProvider,
   xai: xaiProvider,
+  "remote-peer": remotePeerProvider,
 };
 
 export function getModelProvider(

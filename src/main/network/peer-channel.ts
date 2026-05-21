@@ -17,7 +17,20 @@ export type ChannelMessage =
     }
   | { type: "FRIEND_ACCEPT"; fromPublicKey: string }
   | { type: "PING" }
-  | { type: "PONG" };
+  | { type: "PONG" }
+  // ── Distributed Compute (Phase 4) ──────────────────────────────────────────
+  | { type: "INFERENCE_REQUEST"; requestId: string; body: string }
+  | { type: "INFERENCE_CHUNK"; requestId: string; data: string }
+  | { type: "INFERENCE_DONE"; requestId: string }
+  | { type: "INFERENCE_ERROR"; requestId: string; error: string }
+  | { type: "INFERENCE_CANCEL"; requestId: string }
+  | {
+      type: "LOAD_UPDATE";
+      gpuUtilization: number;
+      loadedModels: string[];
+      computeAvailable: boolean;
+      queueDepth: number;
+    };
 
 export interface PeerMetadataPayload {
   publicKey: string;

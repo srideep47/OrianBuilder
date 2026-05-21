@@ -399,6 +399,13 @@ export const queryKeys = {
     notifications: ["network", "notifications"] as const,
     friendRequests: ["network", "friendRequests"] as const,
   },
+
+  compute: {
+    all: ["compute"] as const,
+    nodes: ["compute", "nodes"] as const,
+    target: ["compute", "target"] as const,
+    shareStatus: ["compute", "shareStatus"] as const,
+  },
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────

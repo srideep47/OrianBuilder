@@ -14,6 +14,7 @@ import {
   getOrCreateKeypair,
   getPrivateKeyBytes,
 } from "@/main/identity/keypair";
+import { handleInferenceRequest } from "@/main/compute/compute-node";
 import { getDeviceIdentity } from "@/main/identity/device";
 import {
   isTrustedPeer,
@@ -235,6 +236,34 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
       );
     }
 
+    if (msg.type === "LOAD_UPDATE") {
+      const entry = connectedPeers.get(remoteKeyHex);
+      if (entry) {
+        connectedPeers.set(remoteKeyHex, {
+          ...entry,
+          peer: {
+            ...entry.peer,
+            gpuUtilization: msg.gpuUtilization,
+            loadedModels: msg.loadedModels,
+            computeAvailable: msg.computeAvailable,
+          },
+        });
+        this.emit("peers-changed", this._getPeerList());
+      }
+      return;
+    }
+
+    if (msg.type === "INFERENCE_REQUEST") {
+      void handleInferenceRequest(channel, msg.requestId, msg.body);
+      return;
+    }
+
+    if (msg.type === "INFERENCE_CANCEL") {
+      const { cancelRequest } = await import("@/main/compute/compute-node");
+      cancelRequest(msg.requestId);
+      return;
+    }
+
     if (msg.type === "FRIEND_ACCEPT") {
       addTrustedPeer({
         publicKey: msg.fromPublicKey,
@@ -282,6 +311,71 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
       });
       this.emit("peers-changed", this._getPeerList());
     });
+  }
+
+  // ── Distributed Compute ──────────────────────────────────────────────────
+
+  broadcastLoad(load: {
+    gpuUtilization: number;
+    loadedModels: string[];
+    computeAvailable: boolean;
+    queueDepth: number;
+  }): void {
+    for (const { channel } of connectedPeers.values()) {
+      try {
+        channel.send({ type: "LOAD_UPDATE", ...load });
+      } catch {}
+    }
+  }
+
+  /**
+   * Send an inference request to a specific peer. Returns a cleanup fn.
+   * onChunk receives raw SSE text chunks; onDone called on completion/error.
+   */
+  sendInferenceRequest(
+    peerId: string,
+    requestId: string,
+    bodyJson: string,
+    onChunk: (data: string) => void,
+    onDone: (err?: string) => void,
+  ): (() => void) | null {
+    const entry = connectedPeers.get(peerId);
+    if (!entry) {
+      onDone("Peer not connected");
+      return null;
+    }
+
+    // Register a one-time listener for chunks and done/error for this requestId
+    const handler = (msg: import("./peer-channel").ChannelMessage) => {
+      if (msg.type === "INFERENCE_CHUNK" && msg.requestId === requestId) {
+        onChunk(msg.data);
+      } else if (msg.type === "INFERENCE_DONE" && msg.requestId === requestId) {
+        entry.channel.off("message", handler);
+        onDone();
+      } else if (
+        msg.type === "INFERENCE_ERROR" &&
+        msg.requestId === requestId
+      ) {
+        entry.channel.off("message", handler);
+        onDone(msg.error);
+      }
+    };
+
+    entry.channel.on("message", handler);
+    entry.channel.send({
+      type: "INFERENCE_REQUEST",
+      requestId,
+      body: bodyJson,
+    });
+
+    return () => {
+      entry.channel.off("message", handler);
+    };
+  }
+
+  cancelInferenceRequest(peerId: string, requestId: string): void {
+    const entry = connectedPeers.get(peerId);
+    entry?.channel.send({ type: "INFERENCE_CANCEL", requestId });
   }
 
   getStatus() {
