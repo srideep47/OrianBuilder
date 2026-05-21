@@ -34,7 +34,13 @@ import { neonTemplateHook } from "@/client_logic/template_hook";
 import { getEffectiveDefaultChatMode } from "@/lib/schemas";
 import { useFreeAgentQuota } from "@/hooks/useFreeAgentQuota";
 import { useInitialChatMode } from "@/hooks/useInitialChatMode";
-import { streamChatResponse } from "@/lib/chatStream";
+import {
+  streamChatResponse,
+  PROXY_MODEL_URL,
+  EMBEDDED_MODEL_URL,
+} from "@/lib/chatStream";
+import { useQuery } from "@tanstack/react-query";
+import type { ComputeTarget } from "@/ipc/types/compute";
 
 interface InlineChatMessage {
   role: "user" | "assistant";
@@ -73,6 +79,14 @@ export default function HomePage() {
   const posthog = usePostHog();
   const appVersion = useAppVersion();
   const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
+
+  // Use the proxy port when a peer is the active compute target
+  const { data: computeTarget } = useQuery<ComputeTarget>({
+    queryKey: queryKeys.compute.target,
+    queryFn: () => ipc.compute.getTarget(),
+  });
+  const localModelUrl =
+    computeTarget?.mode === "peer" ? PROXY_MODEL_URL : EMBEDDED_MODEL_URL;
   const [releaseUrl, setReleaseUrl] = useState("");
   const { theme } = useTheme();
   const queryClient = useQueryClient();
@@ -221,13 +235,19 @@ export default function HomePage() {
       const openRouterKey =
         settings?.providerSettings?.openrouter?.apiKey?.value;
 
-      streamChatResponse(apiMessages, openRouterKey, {
-        onChunk: (delta) => {
-          assistantBufferRef.current += delta;
+      streamChatResponse(
+        apiMessages,
+        openRouterKey,
+        {
+          onChunk: (delta) => {
+            assistantBufferRef.current += delta;
+          },
+          onEnd: () => commitAssistant(assistantBufferRef.current),
+          onError: (msg) => commitAssistant(`⚠️ ${msg}`),
         },
-        onEnd: () => commitAssistant(assistantBufferRef.current),
-        onError: (msg) => commitAssistant(`⚠️ ${msg}`),
-      });
+        undefined,
+        localModelUrl,
+      );
 
       // Flush buffered chunks to state on a smooth interval
       flushTimerRef.current = window.setInterval(() => {

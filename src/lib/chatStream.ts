@@ -1,6 +1,7 @@
 const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
-const LOCAL_MODEL_URL = "http://127.0.0.1:11435/v1/chat/completions";
+export const EMBEDDED_MODEL_URL = "http://127.0.0.1:11435/v1/chat/completions";
+export const PROXY_MODEL_URL = "http://127.0.0.1:11436/v1/chat/completions";
 
 const FALLBACK_FREE_MODELS = [
   "meta-llama/llama-3.3-70b-instruct:free",
@@ -98,13 +99,17 @@ export async function consumeSSEStream(
 
 /**
  * Stream a chat response.
- * Priority: OpenRouter free models (discovered live) → local embedded model.
+ * Priority: OpenRouter free models (discovered live) → local/remote model.
+ *
+ * Pass localModelUrl to override the default embedded server URL — use
+ * PROXY_MODEL_URL (port 11436) when a remote peer is the compute target.
  */
 export async function streamChatResponse(
   messages: { role: string; content: string }[],
   openRouterApiKey: string | undefined,
   callbacks: StreamCallbacks,
   signal?: AbortSignal,
+  localModelUrl: string = EMBEDDED_MODEL_URL,
 ): Promise<void> {
   if (openRouterApiKey) {
     const freeModels = await getOpenRouterFreeModels(openRouterApiKey);
@@ -141,7 +146,7 @@ export async function streamChatResponse(
 
   let localResponse: Response;
   try {
-    localResponse = await fetch(LOCAL_MODEL_URL, {
+    localResponse = await fetch(localModelUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -165,7 +170,9 @@ export async function streamChatResponse(
 
   if (!localResponse.ok) {
     callbacks.onError(
-      "Local AI model is not loaded. Go to Settings → Local AI and load a model.",
+      localModelUrl === PROXY_MODEL_URL
+        ? "Remote compute device is not responding. Make sure the device is online and has a model loaded in the Engine screen."
+        : "Local AI model is not loaded. Go to Engine screen and load a model.",
     );
     return;
   }
