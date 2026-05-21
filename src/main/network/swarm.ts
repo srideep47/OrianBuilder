@@ -89,7 +89,12 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
         .digest();
       this.swarm.join(this.mainTopic, { server: true, client: true });
 
-      await this.swarm.flush();
+      // flush() can time out on slow networks — that's fine, DHT still works
+      await this.swarm
+        .flush()
+        .catch((err: unknown) =>
+          logger.warn("Swarm flush timed out (non-fatal):", err),
+        );
       this.isOnline = true;
       logger.info("Hyperswarm started, joined discovery topic");
     } catch (err) {
@@ -116,7 +121,11 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
     if (pendingInviteTopics.has(topicHex)) return;
     pendingInviteTopics.add(topicHex);
     this.swarm.join(topic, { server: true, client: true });
-    await this.swarm.flush();
+    await this.swarm
+      .flush()
+      .catch((err: unknown) =>
+        logger.warn("Invite topic flush timed out (non-fatal):", err),
+      );
 
     // Auto-leave after 60s
     setTimeout(() => {

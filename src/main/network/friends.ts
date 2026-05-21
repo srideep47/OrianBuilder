@@ -77,6 +77,21 @@ export function createFriendRequest(params: {
   return result[0]?.id ?? 0;
 }
 
+export function getFriendRequestById(
+  id: number,
+): { fromPublicKey: string; fromDisplayName: string } | null {
+  const rows = db
+    .select()
+    .from(friendRequests)
+    .where(eq(friendRequests.id, id))
+    .all();
+  if (!rows.length) return null;
+  return {
+    fromPublicKey: rows[0].fromPublicKey,
+    fromDisplayName: rows[0].fromDisplayName,
+  };
+}
+
 export function getPendingFriendRequests(): FriendRequest[] {
   const rows = db
     .select()

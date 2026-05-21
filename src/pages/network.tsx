@@ -17,6 +17,7 @@ import {
   Check,
   Loader2,
   Cpu,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -192,6 +193,7 @@ function PeerDetailPanel({
   onAddFriend: () => void;
 }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [requestSent, setRequestSent] = useState(false);
 
   return (
     <div className="flex flex-col gap-5 p-6 h-full overflow-y-auto">
@@ -313,13 +315,28 @@ function PeerDetailPanel({
       {/* Add Friend (for unknown / discovered peers) */}
       {!peer.isTrusted && peer.status === "online" && (
         <div className="mt-auto pt-2">
-          <Button className="w-full gap-2" onClick={onAddFriend}>
-            <UserPlus className="w-4 h-4" />
-            Send Friend Request
-          </Button>
-          <p className="text-xs text-muted-foreground text-center mt-2">
-            They'll get a notification to accept or decline.
-          </p>
+          {requestSent ? (
+            <div className="flex items-center justify-center gap-2 py-3 rounded-lg bg-primary/10 text-primary text-sm font-medium">
+              <CheckCircle2 className="w-4 h-4" />
+              Request sent — waiting for them to accept
+            </div>
+          ) : (
+            <>
+              <Button
+                className="w-full gap-2"
+                onClick={() => {
+                  onAddFriend();
+                  setRequestSent(true);
+                }}
+              >
+                <UserPlus className="w-4 h-4" />
+                Send Friend Request
+              </Button>
+              <p className="text-xs text-muted-foreground text-center mt-2">
+                They'll get a notification to accept or decline.
+              </p>
+            </>
+          )}
         </div>
       )}
 

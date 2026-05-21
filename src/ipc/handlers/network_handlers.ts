@@ -10,6 +10,7 @@ import { networkSwarm } from "@/main/network/swarm";
 import { generateInviteCode, parseInviteCode } from "@/main/network/invite";
 import {
   getPendingFriendRequests,
+  getFriendRequestById,
   acceptFriendRequest,
   declineFriendRequest,
   removeTrustedPeer,
@@ -153,10 +154,18 @@ export function registerNetworkHandlers(): void {
   createTypedHandler(
     networkContracts.acceptFriendRequest,
     async (_event, { requestId }) => {
+      // Get the request BEFORE accepting — status changes after accept
+      const req = getFriendRequestById(requestId);
       const ok = acceptFriendRequest(requestId);
-      const reqs = getPendingFriendRequests();
-      const req = reqs.find((r) => r.id === requestId);
-      if (req) networkSwarm.notifyFriendAccepted(req.fromPublicKey);
+      // Notify the peer that we accepted and update in-memory trusted state
+      if (req && ok) {
+        networkSwarm.notifyFriendAccepted(req.fromPublicKey);
+        addNotification(
+          "friend_accepted",
+          `You are now friends with ${req.fromDisplayName}`,
+          "They can now share compute with you",
+        );
+      }
       return { success: ok };
     },
   );
