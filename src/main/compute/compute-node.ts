@@ -132,6 +132,7 @@ export async function handleInferenceRequest(
     const decoder = new TextDecoder();
     let totalBytes = 0;
     let firstChunkLogged = false;
+    let sseBuffer = "";
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -140,26 +141,44 @@ export async function handleInferenceRequest(
         abort.abort();
         break;
       }
-      const text = decoder.decode(value, { stream: true });
-      totalBytes += text.length;
-      if (!firstChunkLogged) {
-        firstChunkLogged = true;
-        logger.info(
-          `[recv ${shortId}] first SSE chunk (${text.length} bytes): ${text.slice(0, 120).replace(/\s+/g, " ")}…`,
-        );
+      sseBuffer += decoder.decode(value, { stream: true });
+      // Process complete SSE events ("data: …\n\n" terminator). Anything
+      // partial stays in sseBuffer until the next read.
+      const events = sseBuffer.split("\n\n");
+      sseBuffer = events.pop() ?? "";
+      for (const evt of events) {
+        if (!evt) continue;
+        const normalized = normalizeSseEvent(evt) + "\n\n";
+        totalBytes += normalized.length;
+        if (!firstChunkLogged) {
+          firstChunkLogged = true;
+          logger.info(
+            `[recv ${shortId}] first SSE event (${normalized.length} bytes): ${normalized.slice(0, 200).replace(/\s+/g, " ")}…`,
+          );
+        }
+        const sent = channel.send({
+          type: "INFERENCE_CHUNK",
+          requestId,
+          data: normalized,
+        });
+        if (!sent) {
+          logger.warn(
+            `[recv ${shortId}] channel closed while streaming — aborting upstream`,
+          );
+          abort.abort();
+          break;
+        }
       }
-      const sent = channel.send({
+    }
+    // Flush any remaining buffered text
+    if (sseBuffer.length > 0 && !channel.isClosed()) {
+      const normalized = normalizeSseEvent(sseBuffer);
+      totalBytes += normalized.length;
+      channel.send({
         type: "INFERENCE_CHUNK",
         requestId,
-        data: text,
+        data: normalized,
       });
-      if (!sent) {
-        logger.warn(
-          `[recv ${shortId}] channel closed while streaming — aborting upstream`,
-        );
-        abort.abort();
-        break;
-      }
     }
 
     channel.send({ type: "INFERENCE_DONE", requestId });
@@ -180,6 +199,63 @@ export async function handleInferenceRequest(
   } finally {
     activeRequests.delete(requestId);
   }
+}
+
+/**
+ * Normalize an SSE event from the embedded engine so consumers see tokens in
+ * the `delta.content` field they expect. Qwen3 + DeepSeek-R1 with llama.cpp's
+ * `--jinja` + reasoning-format emit `delta.reasoning_content` for thinking
+ * tokens and `delta.content` only for the final answer; the AI SDK's
+ * OpenAI-compatible parser ignores `reasoning_content` entirely, so the chat
+ * shows nothing if max_tokens stops the model mid-think. We merge both fields
+ * into `delta.content` so the consumer always gets something visible.
+ *
+ * Also collapses `<think>…</think>` markers — they're noise to a chat user.
+ */
+function normalizeSseEvent(rawEvent: string): string {
+  const lines = rawEvent.split("\n");
+  const out: string[] = [];
+  for (const line of lines) {
+    if (!line.startsWith("data: ")) {
+      out.push(line);
+      continue;
+    }
+    const payload = line.slice(6);
+    if (payload === "[DONE]") {
+      out.push(line);
+      continue;
+    }
+    try {
+      const json = JSON.parse(payload);
+      const choices = Array.isArray(json?.choices) ? json.choices : [];
+      for (const choice of choices) {
+        const delta = choice?.delta;
+        if (!delta || typeof delta !== "object") continue;
+        const content = typeof delta.content === "string" ? delta.content : "";
+        const reasoning =
+          typeof delta.reasoning_content === "string"
+            ? delta.reasoning_content
+            : "";
+        // Strip Qwen3-style `<think>` wrappers if they leak through.
+        const merged = (reasoning + content)
+          .replace(/<\/?think>/gi, "")
+          .replace(/<\/?reasoning>/gi, "");
+        if (merged.length > 0) {
+          delta.content = merged;
+        }
+        if (reasoning) {
+          // Keep the original field so downstream consumers that DO understand
+          // reasoning still get it, but content now has the visible text too.
+          delta.reasoning_content = reasoning;
+        }
+      }
+      out.push(`data: ${JSON.stringify(json)}`);
+    } catch {
+      // Pass through malformed lines verbatim — better than dropping them.
+      out.push(line);
+    }
+  }
+  return out.join("\n");
 }
 
 /**

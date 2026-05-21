@@ -227,16 +227,21 @@ export function registerNetworkHandlers(): void {
         messages: [
           {
             role: "user",
-            content: "Reply with exactly: pong",
+            // Qwen3 / DeepSeek-R1 reasoning models burn 100+ tokens thinking
+            // before they answer. 256 gives them room to produce something
+            // visible; we only display the first 500 chars in the UI anyway.
+            content: "Say hi.",
           },
         ],
         stream: true,
-        max_tokens: 16,
+        max_tokens: 256,
         temperature: 0,
       });
 
       return new Promise((resolve) => {
         let collected = "";
+        let rawSample = "";
+        const seenFields = new Set<string>();
         let bytes = 0;
         let finished = false;
         const timeout = setTimeout(() => {
@@ -248,7 +253,7 @@ export function registerNetworkHandlers(): void {
             step: "stream-timeout",
             detail:
               "No response within 30 s. The peer's embedded engine may be loading or stuck.",
-            output: collected.slice(0, 500),
+            output: rawSample.slice(0, 1500),
             bytes,
             durationMs: Date.now() - start,
           });
@@ -260,13 +265,26 @@ export function registerNetworkHandlers(): void {
           testBody,
           (chunk) => {
             bytes += chunk.length;
+            if (rawSample.length < 2000) {
+              rawSample += chunk;
+            }
             for (const line of chunk.split("\n")) {
               const t = line.trim();
               if (!t.startsWith("data: ") || t === "data: [DONE]") continue;
               try {
                 const json = JSON.parse(t.slice(6));
-                const delta = json?.choices?.[0]?.delta?.content;
-                if (typeof delta === "string") collected += delta;
+                const delta = json?.choices?.[0]?.delta;
+                if (delta && typeof delta === "object") {
+                  for (const k of Object.keys(delta)) seenFields.add(k);
+                }
+                // Try every known content-bearing field
+                const fromContent = delta?.content;
+                const fromReasoning = delta?.reasoning_content;
+                const fromText = json?.choices?.[0]?.text;
+                if (typeof fromContent === "string") collected += fromContent;
+                if (typeof fromReasoning === "string")
+                  collected += fromReasoning;
+                if (typeof fromText === "string") collected += fromText;
               } catch {}
             }
           },
@@ -274,12 +292,13 @@ export function registerNetworkHandlers(): void {
             if (finished) return;
             finished = true;
             clearTimeout(timeout);
+            const fieldsSeen = Array.from(seenFields).join(", ") || "(none)";
             if (err) {
               resolve({
                 ok: false,
                 step: "remote-error",
                 detail: err,
-                output: collected.slice(0, 500),
+                output: rawSample.slice(0, 1500),
                 bytes,
                 durationMs: Date.now() - start,
               });
@@ -288,7 +307,16 @@ export function registerNetworkHandlers(): void {
                 ok: false,
                 step: "empty-stream",
                 detail:
-                  "Peer returned 0 bytes. Check electron-log on the host device — look for [recv] lines from compute:node — they show exactly what the embedded engine responded.",
+                  "Peer returned 0 bytes. Check electron-log on the host device — look for [recv] lines from compute:node.",
+                bytes,
+                durationMs: Date.now() - start,
+              });
+            } else if (collected.length === 0) {
+              resolve({
+                ok: false,
+                step: "no-content-deltas",
+                detail: `Streamed ${bytes} bytes back but no delta.content / delta.reasoning_content / text fields were populated. Delta fields seen: ${fieldsSeen}. Raw SSE is below — look for where the actual tokens are.`,
+                output: rawSample.slice(0, 1500),
                 bytes,
                 durationMs: Date.now() - start,
               });
@@ -296,8 +324,8 @@ export function registerNetworkHandlers(): void {
               resolve({
                 ok: true,
                 step: "success",
-                detail: `Round-trip successful. Received ${bytes} bytes, ${collected.length} chars of content.`,
-                output: collected.slice(0, 500),
+                detail: `Round-trip successful. ${bytes} bytes, ${collected.length} chars of content extracted from fields: ${fieldsSeen}.`,
+                output: `CONTENT: ${collected.slice(0, 500)}\n\n---RAW SSE---\n${rawSample.slice(0, 1000)}`,
                 bytes,
                 durationMs: Date.now() - start,
               });
