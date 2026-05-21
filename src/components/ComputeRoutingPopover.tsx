@@ -88,6 +88,12 @@ export function ComputeRoutingPopover() {
     queryFn: () => ipc.compute.getTarget(),
   });
 
+  const { data: shareStatus } = useQuery({
+    queryKey: queryKeys.compute.shareStatus,
+    queryFn: () => ipc.compute.getShareStatus(),
+    refetchInterval: open ? 3000 : 60000,
+  });
+
   useEffect(() => {
     if (target) setAutoMode(target.mode === "auto");
   }, [target]);
@@ -97,6 +103,17 @@ export function ComputeRoutingPopover() {
       ipc.compute.setTarget(params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.compute.target });
+    },
+  });
+
+  const toggleSharing = useMutation({
+    mutationFn: (enabled: boolean) =>
+      ipc.compute.setSharing({ enabled, maxConcurrent: 2 }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.compute.shareStatus,
+      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.compute.nodes });
     },
   });
 
@@ -207,6 +224,29 @@ export function ComputeRoutingPopover() {
                   />
                 ))
               )}
+            </div>
+
+            {/* Share my compute toggle */}
+            <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+              <div>
+                <p className="text-sm font-medium">Share my compute</p>
+                <p className="text-xs text-muted-foreground">
+                  Let trusted peers use your GPU
+                </p>
+              </div>
+              <button
+                onClick={() => toggleSharing.mutate(!shareStatus?.enabled)}
+                disabled={toggleSharing.isPending}
+                className={`relative w-10 h-5 rounded-full transition-colors ${
+                  shareStatus?.enabled ? "bg-primary" : "bg-muted-foreground/30"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
+                    shareStatus?.enabled ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </button>
             </div>
 
             {/* Footer */}
