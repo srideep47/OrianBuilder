@@ -14,7 +14,7 @@ import {
   DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
 import { useCallback, useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useLocalModels } from "@/hooks/useLocalModels";
 import { useLocalLMSModels } from "@/hooks/useLMStudioModels";
 import { useEmbeddedModelStatus } from "@/hooks/useEmbeddedModelStatus";
@@ -39,7 +39,10 @@ export function ModelPicker() {
   const { settings, updateSettings } = useSettings();
   const queryClient = useQueryClient();
   const [isModelSwitching, setIsModelSwitching] = useState(false);
-  const onModelSelect = async (model: LargeLanguageModel) => {
+  const onModelSelect = async (
+    model: LargeLanguageModel,
+    opts?: { routeToPeerId?: string },
+  ) => {
     if (
       embeddedStatus?.isInferring &&
       (model.provider === "embedded" || embeddedStatus.modelLoaded)
@@ -58,6 +61,13 @@ export function ModelPicker() {
         }
       }
 
+      // Route compute to the peer that owns this model, or reset to local
+      if (opts?.routeToPeerId) {
+        setComputeTarget.mutate({ mode: "peer", peerId: opts.routeToPeerId });
+      } else if (computeTarget?.mode === "peer") {
+        setComputeTarget.mutate({ mode: "local" });
+      }
+
       await updateSettings({ selectedModel: model });
     } catch (error) {
       showError(error instanceof Error ? error.message : String(error));
@@ -66,8 +76,6 @@ export function ModelPicker() {
       setIsModelSwitching(false);
     }
 
-    // Invalidate token count when model changes since different models have different context windows
-    // (technically they have different tokenizers, but we don't keep track of that).
     queryClient.invalidateQueries({ queryKey: queryKeys.tokenCount.all });
   };
 
@@ -83,10 +91,23 @@ export function ModelPicker() {
     queryFn: () => ipc.compute.getAvailableNodes(),
     refetchInterval: open ? 3000 : 30000,
   });
+
+  // All remote (non-local) peers — shown in dropdown regardless of model state
+  const peerNodes = computeNodes.filter((n) => !n.isLocal);
+
   const activePeerNode =
     computeTarget?.mode === "peer" && computeTarget.peerId
       ? (computeNodes.find((n) => n.id === computeTarget.peerId) ?? null)
       : null;
+
+  const setComputeTarget = useMutation({
+    mutationFn: (params: { mode: "local" | "peer"; peerId?: string }) =>
+      ipc.compute.setTarget(params),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.compute.target });
+      queryClient.invalidateQueries({ queryKey: queryKeys.compute.nodes });
+    },
+  });
 
   // Cloud models from providers
   const { data: modelsByProviders, isLoading: modelsByProvidersLoading } =
@@ -268,30 +289,34 @@ export function ModelPicker() {
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger
-        className="inline-flex items-center justify-center whitespace-nowrap rounded-lg text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border-none bg-transparent shadow-none text-foreground/80 hover:text-foreground hover:bg-muted/60 h-7 max-w-[200px] px-2 gap-1.5 cursor-pointer"
+        className={cn(
+          "inline-flex items-center justify-center whitespace-nowrap rounded-lg text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border-none shadow-none h-7 max-w-[220px] px-2 gap-1.5 cursor-pointer",
+          activePeerNode
+            ? "bg-primary/10 text-primary hover:bg-primary/20"
+            : "bg-transparent text-foreground/80 hover:text-foreground hover:bg-muted/60",
+        )}
         data-testid="model-picker"
         title={
           activePeerNode
-            ? `${modelDisplayName} · on ${activePeerNode.label.split(" · ")[0]}`
+            ? `${modelDisplayName} — running on ${activePeerNode.label.split(" · ")[0]}`
             : modelDisplayName
         }
       >
-        <span className="truncate">
-          {modelDisplayName === "Auto" && (
-            <>
-              <span className="text-xs text-muted-foreground/70">
-                Model:
-              </span>{" "}
-            </>
-          )}
-          {modelDisplayName}
-        </span>
-        {activePeerNode && (
-          <span className="flex items-center gap-0.5 text-[10px] text-primary/80 shrink-0">
-            <Wifi className="w-3 h-3" />
-            <span className="max-w-[60px] truncate">
+        {activePeerNode ? (
+          <>
+            <Wifi className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">
               {activePeerNode.label.split(" · ")[0]}
             </span>
+            <span className="text-primary/50">›</span>
+            <span className="truncate max-w-[70px]">{modelDisplayName}</span>
+          </>
+        ) : (
+          <span className="truncate">
+            {modelDisplayName === "Auto" && (
+              <span className="text-xs text-muted-foreground/70">Model: </span>
+            )}
+            {modelDisplayName}
           </span>
         )}
       </DropdownMenuTrigger>
@@ -518,37 +543,117 @@ export function ModelPicker() {
           </>
         )}
 
-        {/* Remote Compute — peer models if a peer is selected */}
-        {activePeerNode && activePeerNode.loadedModels.length > 0 && (
+        {/* Network Devices — all connected peers */}
+        {peerNodes.length > 0 && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="flex items-center gap-1.5">
-              <Wifi className="w-3.5 h-3.5 text-primary" />
-              <span>{activePeerNode.label.split(" · ")[0]}</span>
-              <span className="text-xs text-muted-foreground font-normal">
-                (remote)
-              </span>
+            <DropdownMenuLabel className="flex items-center gap-1.5 text-xs text-primary">
+              <Wifi className="w-3.5 h-3.5" />
+              Network Devices
             </DropdownMenuLabel>
-            {activePeerNode.loadedModels.map((modelName) => (
-              <DropdownMenuItem
-                key={`remote-${modelName}`}
-                className={
-                  selectedModel.provider === "ollama" &&
-                  selectedModel.name === modelName
-                    ? "bg-secondary"
-                    : ""
-                }
-                onClick={() => {
-                  onModelSelect({ name: modelName, provider: "ollama" });
-                  setOpen(false);
-                }}
-              >
-                <div className="flex items-center gap-2 w-full">
-                  <Wifi className="w-3 h-3 text-primary/60 shrink-0" />
-                  <span className="truncate">{modelName}</span>
-                </div>
-              </DropdownMenuItem>
-            ))}
+            {peerNodes.map((node) => {
+              const isActive = activePeerNode?.id === node.id;
+              const hasModels = node.loadedModels.length > 0;
+              const gpuLabel =
+                node.hardware?.gpu && node.hardware.gpu !== "Unknown"
+                  ? node.hardware.gpu
+                      .replace("NVIDIA GeForce ", "")
+                      .replace("AMD Radeon ", "")
+                  : null;
+              return (
+                <DropdownMenuSub key={`peer-${node.id}`}>
+                  <DropdownMenuSubTrigger
+                    className={cn(
+                      "w-full font-normal",
+                      isActive && "bg-primary/10",
+                    )}
+                  >
+                    <div className="flex flex-col items-start w-full gap-0.5">
+                      <div className="flex items-center gap-2 w-full">
+                        <Wifi
+                          className={cn(
+                            "w-3.5 h-3.5 shrink-0",
+                            isActive ? "text-primary" : "text-muted-foreground",
+                          )}
+                        />
+                        <span className="flex-1 truncate">
+                          {node.label.split(" · ")[0]}
+                        </span>
+                        {isActive && (
+                          <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium shrink-0">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs text-muted-foreground pl-5">
+                        {hasModels ? (
+                          <>
+                            {node.loadedModels.length} model
+                            {node.loadedModels.length !== 1 ? "s" : ""}
+                            {gpuLabel && <> · {gpuLabel}</>}
+                          </>
+                        ) : (
+                          "No Ollama models — start Ollama on that device"
+                        )}
+                      </span>
+                    </div>
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-64">
+                    <DropdownMenuLabel className="flex items-center gap-1.5 text-xs">
+                      <Wifi className="w-3.5 h-3.5 text-primary" />
+                      {node.label.split(" · ")[0]}
+                      {gpuLabel && (
+                        <span className="text-muted-foreground font-normal">
+                          · {gpuLabel}
+                        </span>
+                      )}
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {hasModels ? (
+                      node.loadedModels.map((modelName) => {
+                        const isSelectedOnThisPeer =
+                          isActive &&
+                          selectedModel.provider === "ollama" &&
+                          selectedModel.name === modelName;
+                        return (
+                          <DropdownMenuItem
+                            key={`${node.id}-${modelName}`}
+                            className={
+                              isSelectedOnThisPeer ? "bg-secondary" : ""
+                            }
+                            onClick={() => {
+                              void onModelSelect(
+                                { name: modelName, provider: "ollama" },
+                                { routeToPeerId: node.id },
+                              );
+                              setOpen(false);
+                            }}
+                          >
+                            <div className="flex items-center gap-2 w-full">
+                              <Wifi className="w-3 h-3 text-primary/60 shrink-0" />
+                              <span className="truncate">{modelName}</span>
+                            </div>
+                          </DropdownMenuItem>
+                        );
+                      })
+                    ) : (
+                      <div className="px-3 py-3 text-xs text-muted-foreground">
+                        <p className="font-medium text-foreground mb-1">
+                          No models found
+                        </p>
+                        <p>
+                          Make sure Ollama is running on that device and has at
+                          least one model pulled.
+                        </p>
+                        <p className="mt-1 font-mono text-[10px]">
+                          ollama pull llama3
+                        </p>
+                      </div>
+                    )}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              );
+            })}
           </>
         )}
 
