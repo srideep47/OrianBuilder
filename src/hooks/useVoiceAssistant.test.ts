@@ -3,16 +3,20 @@ import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { useVoiceAssistant } from "@/hooks/useVoiceAssistant";
 import { VoiceState } from "@/lib/voiceAssistant";
 
-const { transcribeAudioMock } = vi.hoisted(() => ({
-  transcribeAudioMock: vi.fn(),
+// ─── Mock the Whisper hook ────────────────────────────────────────────────────
+// Tests never touch real Transformers.js / ONNX WASM / AudioContext.
+const { transcribeMock } = vi.hoisted(() => ({
+  transcribeMock: vi.fn<(blob: Blob) => Promise<string>>(),
 }));
 
-vi.mock("@/ipc/types", () => ({
-  ipc: {
-    audio: {
-      transcribeAudio: transcribeAudioMock,
-    },
-  },
+vi.mock("@/hooks/useWhisperTranscription", () => ({
+  useWhisperTranscription: () => ({
+    modelStatus: "ready" as const,
+    modelLoadProgress: 100,
+    isTranscribing: false,
+    warmUp: vi.fn(),
+    transcribe: transcribeMock,
+  }),
 }));
 
 describe("useVoiceAssistant", () => {
@@ -34,7 +38,7 @@ describe("useVoiceAssistant", () => {
   }
 
   beforeEach(() => {
-    transcribeAudioMock.mockReset();
+    transcribeMock.mockReset();
     trackStopMock = vi.fn();
 
     const stream = {
@@ -42,9 +46,7 @@ describe("useVoiceAssistant", () => {
     } as unknown as MediaStream;
 
     Object.defineProperty(globalThis.navigator, "mediaDevices", {
-      value: {
-        getUserMedia: vi.fn().mockResolvedValue(stream),
-      },
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
       configurable: true,
     });
 
@@ -59,16 +61,11 @@ describe("useVoiceAssistant", () => {
       configurable: true,
     });
 
-    // Mock Web Speech API
     Object.defineProperty(globalThis.window, "speechSynthesis", {
-      value: {
-        speak: vi.fn(),
-        cancel: vi.fn(),
-      },
+      value: { speak: vi.fn(), cancel: vi.fn() },
       configurable: true,
     });
 
-    // Mock SpeechSynthesisUtterance
     Object.defineProperty(globalThis.window, "SpeechSynthesisUtterance", {
       value: function (text: string) {
         return {
@@ -83,7 +80,6 @@ describe("useVoiceAssistant", () => {
       configurable: true,
     });
 
-    // Store reference to trigger ondataavailable
     (globalThis as any)._currentMediaRecorder = () => mediaRecorderInstance;
   });
 
@@ -92,11 +88,7 @@ describe("useVoiceAssistant", () => {
   });
 
   it("should initialize with idle state", () => {
-    const { result } = renderHook(() =>
-      useVoiceAssistant({
-        enabled: true,
-      }),
-    );
+    const { result } = renderHook(() => useVoiceAssistant({ enabled: true }));
 
     expect(result.current.context.state).toBe(VoiceState.IDLE);
     expect(result.current.isRecording).toBe(false);
@@ -105,11 +97,7 @@ describe("useVoiceAssistant", () => {
   });
 
   it("should start recording when toggleRecording is called", async () => {
-    const { result } = renderHook(() =>
-      useVoiceAssistant({
-        enabled: true,
-      }),
-    );
+    const { result } = renderHook(() => useVoiceAssistant({ enabled: true }));
 
     await act(async () => {
       await result.current.toggleRecording();
@@ -121,22 +109,17 @@ describe("useVoiceAssistant", () => {
 
   it("should handle successful transcription", async () => {
     const onTranscription = vi.fn();
-    transcribeAudioMock.mockResolvedValue({
-      text: "hello world",
-    });
+    // transcribe() returns a plain string now
+    transcribeMock.mockResolvedValue("hello world");
 
     const { result } = renderHook(() =>
-      useVoiceAssistant({
-        enabled: true,
-        onTranscription,
-      }),
+      useVoiceAssistant({ enabled: true, onTranscription }),
     );
 
     await act(async () => {
       await result.current.toggleRecording();
     });
 
-    // Trigger ondataavailable to send mock audio data
     const recorder = (globalThis as any)._currentMediaRecorder();
     if (recorder?.ondataavailable) {
       recorder.ondataavailable({
@@ -144,12 +127,10 @@ describe("useVoiceAssistant", () => {
       });
     }
 
-    // Stop recording
     await act(async () => {
       await result.current.toggleRecording();
     });
 
-    // Wait for async operations
     await waitFor(() => {
       expect(result.current.isTranscribing).toBe(false);
     });
@@ -159,21 +140,14 @@ describe("useVoiceAssistant", () => {
   });
 
   it("should generate assistant reply after transcription", async () => {
-    transcribeAudioMock.mockResolvedValue({
-      text: "hello",
-    });
+    transcribeMock.mockResolvedValue("hello");
 
-    const { result } = renderHook(() =>
-      useVoiceAssistant({
-        enabled: true,
-      }),
-    );
+    const { result } = renderHook(() => useVoiceAssistant({ enabled: true }));
 
     await act(async () => {
       await result.current.toggleRecording();
     });
 
-    // Trigger ondataavailable to send mock audio data
     const recorder = (globalThis as any)._currentMediaRecorder();
     if (recorder?.ondataavailable) {
       recorder.ondataavailable({
@@ -193,18 +167,12 @@ describe("useVoiceAssistant", () => {
   });
 
   it("should clear conversation", async () => {
-    const { result } = renderHook(() =>
-      useVoiceAssistant({
-        enabled: true,
-      }),
-    );
+    const { result } = renderHook(() => useVoiceAssistant({ enabled: true }));
 
-    // Set some context
     await act(async () => {
       await result.current.toggleRecording();
     });
 
-    // Clear
     await act(async () => {
       result.current.clearConversation();
     });
@@ -215,11 +183,7 @@ describe("useVoiceAssistant", () => {
   });
 
   it("should stop all audio", async () => {
-    const { result } = renderHook(() =>
-      useVoiceAssistant({
-        enabled: true,
-      }),
-    );
+    const { result } = renderHook(() => useVoiceAssistant({ enabled: true }));
 
     await act(async () => {
       await result.current.toggleRecording();
@@ -237,20 +201,16 @@ describe("useVoiceAssistant", () => {
 
   it("should handle transcription errors", async () => {
     const onError = vi.fn();
-    transcribeAudioMock.mockRejectedValue(new Error("Transcription failed"));
+    transcribeMock.mockRejectedValue(new Error("Transcription failed"));
 
     const { result } = renderHook(() =>
-      useVoiceAssistant({
-        enabled: true,
-        onError,
-      }),
+      useVoiceAssistant({ enabled: true, onError }),
     );
 
     await act(async () => {
       await result.current.toggleRecording();
     });
 
-    // Trigger ondataavailable to send mock audio data
     const recorder = (globalThis as any)._currentMediaRecorder();
     if (recorder?.ondataavailable) {
       recorder.ondataavailable({
@@ -272,21 +232,14 @@ describe("useVoiceAssistant", () => {
   });
 
   it("should handle empty transcription", async () => {
-    transcribeAudioMock.mockResolvedValue({
-      text: "",
-    });
+    transcribeMock.mockResolvedValue("");
 
-    const { result } = renderHook(() =>
-      useVoiceAssistant({
-        enabled: true,
-      }),
-    );
+    const { result } = renderHook(() => useVoiceAssistant({ enabled: true }));
 
     await act(async () => {
       await result.current.toggleRecording();
     });
 
-    // Trigger ondataavailable to send mock audio data
     const recorder = (globalThis as any)._currentMediaRecorder();
     if (recorder?.ondataavailable) {
       recorder.ondataavailable({
@@ -306,11 +259,7 @@ describe("useVoiceAssistant", () => {
   });
 
   it("should not start recording if disabled", async () => {
-    const { result } = renderHook(() =>
-      useVoiceAssistant({
-        enabled: false,
-      }),
-    );
+    const { result } = renderHook(() => useVoiceAssistant({ enabled: false }));
 
     await act(async () => {
       await result.current.toggleRecording();

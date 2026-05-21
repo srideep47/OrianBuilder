@@ -4,7 +4,7 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
 
 import { formatDistanceToNow } from "date-fns";
 import { PlusCircle, MoreVertical, Trash2, Edit3, Search } from "lucide-react";
-import { useAtom, useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   selectedChatIdAtom,
   removeChatIdFromAllTrackingAtom,
@@ -35,6 +35,10 @@ import { DeleteChatDialog } from "@/components/chat/DeleteChatDialog";
 
 import { ChatSearchDialog } from "./ChatSearchDialog";
 import { useSelectChat } from "@/hooks/useSelectChat";
+import {
+  inlineChatHistoryAtom,
+  currentInlineChatIdAtom,
+} from "./chat/inlineChatAtoms";
 
 export function ChatList({ show }: { show?: boolean }) {
   const { t } = useTranslation("chat");
@@ -65,6 +69,20 @@ export function ChatList({ show }: { show?: boolean }) {
     removeChatIdFromAllTrackingAtom,
   );
   const ensureRecentViewedChatId = useSetAtom(ensureRecentViewedChatIdAtom);
+
+  const inlineChatHistory = useAtomValue(inlineChatHistoryAtom);
+  const currentInlineChatId = useAtomValue(currentInlineChatIdAtom);
+  const setInlineChatHistory = useSetAtom(inlineChatHistoryAtom);
+  const setCurrentInlineChatId = useSetAtom(currentInlineChatIdAtom);
+
+  const showInlineHistory = isChatRoute && chats.length === 0;
+
+  const handleSelectInlineChat = (id: string) => setCurrentInlineChatId(id);
+
+  const handleDeleteInlineChat = (id: string) => {
+    setInlineChatHistory((prev) => prev.filter((e) => e.id !== id));
+    if (currentInlineChatId === id) setCurrentInlineChatId(null);
+  };
 
   // Update selectedChatId when route changes and ensure chat appears in tabs.
   // Uses ensureRecentViewedChatId (not push) to avoid moving existing tabs to
@@ -209,6 +227,49 @@ export function ChatList({ show }: { show?: boolean }) {
               <div className="py-3 px-4 text-sm text-gray-500">
                 {t("loadingChats")}
               </div>
+            ) : showInlineHistory ? (
+              inlineChatHistory.length === 0 ? (
+                <div className="py-3 px-4 text-sm text-gray-500">
+                  {t("noChatsFound")}
+                </div>
+              ) : (
+                <SidebarMenu className="space-y-1">
+                  {inlineChatHistory.map((entry) => (
+                    <SidebarMenuItem key={entry.id} className="mb-1">
+                      <div className="flex w-[175px] items-center">
+                        <Button
+                          variant="ghost"
+                          onClick={() => handleSelectInlineChat(entry.id)}
+                          className={`justify-start w-full text-left py-3 pr-1 hover:bg-sidebar-accent/80 ${
+                            currentInlineChatId === entry.id
+                              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                              : ""
+                          }`}
+                        >
+                          <div className="flex flex-col w-full">
+                            <span className="truncate">{entry.title}</span>
+                            <span className="text-xs text-gray-500">
+                              {formatDistanceToNow(new Date(entry.createdAt), {
+                                addSuffix: true,
+                              })}
+                            </span>
+                          </div>
+                        </Button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteInlineChat(entry.id);
+                          }}
+                          className="ml-1 p-1 rounded-sm hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors flex-shrink-0"
+                          aria-label="Delete chat"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              )
             ) : chats.length === 0 ? (
               <div className="py-3 px-4 text-sm text-gray-500">
                 {t("noChatsFound")}

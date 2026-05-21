@@ -2,18 +2,24 @@ import { renderHook, act, waitFor } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useVoiceToText } from "@/hooks/useVoiceToText";
 
-const { transcribeAudioMock } = vi.hoisted(() => ({
-  transcribeAudioMock: vi.fn(),
+// ─── Mock the Whisper hook ────────────────────────────────────────────────────
+// We stub the entire useWhisperTranscription module so tests don't touch the
+// real Transformers.js pipeline, ONNX WASM, or AudioContext.
+const { transcribeMock } = vi.hoisted(() => ({
+  transcribeMock: vi.fn<(blob: Blob) => Promise<string>>(),
 }));
 
-vi.mock("@/ipc/types", () => ({
-  ipc: {
-    audio: {
-      transcribeAudio: transcribeAudioMock,
-    },
-  },
+vi.mock("@/hooks/useWhisperTranscription", () => ({
+  useWhisperTranscription: () => ({
+    modelStatus: "ready" as const,
+    modelLoadProgress: 100,
+    isTranscribing: false,
+    warmUp: vi.fn(),
+    transcribe: transcribeMock,
+  }),
 }));
 
+// ─── Minimal MediaRecorder stub ───────────────────────────────────────────────
 class MockMediaRecorder {
   public state: "inactive" | "recording" | "paused" = "inactive";
   public ondataavailable: ((event: { data: Blob }) => void) | null = null;
@@ -34,7 +40,7 @@ describe("useVoiceToText", () => {
   let mediaRecorderInstances: MockMediaRecorder[];
 
   beforeEach(() => {
-    transcribeAudioMock.mockReset();
+    transcribeMock.mockReset();
     mediaRecorderInstances = [];
     trackStopMock = vi.fn();
 
@@ -43,20 +49,16 @@ describe("useVoiceToText", () => {
     } as unknown as MediaStream;
 
     Object.defineProperty(globalThis.navigator, "mediaDevices", {
-      value: {
-        getUserMedia: vi.fn().mockResolvedValue(stream),
-      },
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
       configurable: true,
     });
 
-    const MediaRecorderConstructor = vi.fn(() => {
-      const instance = new MockMediaRecorder();
-      mediaRecorderInstances.push(instance);
-      return instance;
-    });
-
     Object.defineProperty(globalThis, "MediaRecorder", {
-      value: MediaRecorderConstructor,
+      value: vi.fn(() => {
+        const instance = new MockMediaRecorder();
+        mediaRecorderInstances.push(instance);
+        return instance;
+      }),
       configurable: true,
       writable: true,
     });
@@ -66,10 +68,7 @@ describe("useVoiceToText", () => {
     const onTranscription = vi.fn();
 
     const { result, unmount } = renderHook(() =>
-      useVoiceToText({
-        enabled: true,
-        onTranscription,
-      }),
+      useVoiceToText({ enabled: true, onTranscription }),
     );
 
     await act(async () => {
@@ -83,19 +82,18 @@ describe("useVoiceToText", () => {
     expect(mediaRecorderInstances).toHaveLength(1);
     expect(mediaRecorderInstances[0].stop).toHaveBeenCalledTimes(1);
     expect(trackStopMock).toHaveBeenCalledTimes(1);
-    expect(transcribeAudioMock).not.toHaveBeenCalled();
+    // transcribe() must NOT be called when recording is cancelled by unmount
+    expect(transcribeMock).not.toHaveBeenCalled();
     expect(onTranscription).not.toHaveBeenCalled();
   });
 
   it("still transcribes when recording is stopped by the user", async () => {
-    transcribeAudioMock.mockResolvedValue({ text: "  hello world  " });
+    // transcribe() now returns a plain string (not { text: string })
+    transcribeMock.mockResolvedValue("hello world");
     const onTranscription = vi.fn();
 
     const { result } = renderHook(() =>
-      useVoiceToText({
-        enabled: true,
-        onTranscription,
-      }),
+      useVoiceToText({ enabled: true, onTranscription }),
     );
 
     await act(async () => {
@@ -112,7 +110,7 @@ describe("useVoiceToText", () => {
     });
 
     await waitFor(() => {
-      expect(transcribeAudioMock).toHaveBeenCalledTimes(1);
+      expect(transcribeMock).toHaveBeenCalledTimes(1);
     });
 
     expect(onTranscription).toHaveBeenCalledWith("hello world");

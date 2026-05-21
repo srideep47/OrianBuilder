@@ -54,7 +54,7 @@ export function HomeChatInput({
   const { apps } = useLoadApps();
   const handleTranscription = useCallback(
     (text: string) => {
-      setInputValue((prev: string) => (prev.trim() ? prev + " " + text : text));
+      setInputValue(text);
     },
     [setInputValue],
   );

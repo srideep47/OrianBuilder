@@ -34,6 +34,12 @@ import { neonTemplateHook } from "@/client_logic/template_hook";
 import { getEffectiveDefaultChatMode } from "@/lib/schemas";
 import { useFreeAgentQuota } from "@/hooks/useFreeAgentQuota";
 import { useInitialChatMode } from "@/hooks/useInitialChatMode";
+import { streamChatResponse } from "@/lib/chatStream";
+
+interface InlineChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
 
 let hasCheckedReleaseNotes = false;
 
@@ -57,7 +63,12 @@ export default function HomePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMode, setLoadingMode] = useState<"new" | "existing">("new");
   const [forceCloseDialogOpen, setForceCloseDialogOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<InlineChatMessage[]>([]);
+  const [isReplying, setIsReplying] = useState(false);
   const [performanceData, setPerformanceData] = useState<any>(undefined);
+  const assistantBufferRef = useRef("");
+  const flushTimerRef = useRef<number | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const { streamMessage } = useStreamChat({ hasChatId: false });
   const posthog = usePostHog();
   const appVersion = useAppVersion();
@@ -132,11 +143,116 @@ export default function HomePage() {
     }
   }, [settings, updateSettings, isQuotaExceeded, isQuotaLoading, envVars]);
 
+  // Auto-scroll to latest message
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  // Clean up streaming interval on unmount
+  useEffect(() => {
+    return () => {
+      if (flushTimerRef.current) window.clearInterval(flushTimerRef.current);
+    };
+  }, []);
+
   const handleSubmit = async (options?: HomeSubmitOptions) => {
     const attachments = options?.attachments || [];
     const selectedApp = options?.selectedApp;
 
     if (!inputValue.trim() && attachments.length === 0) return;
+
+    // Only invoke the app builder when the message contains a build intent.
+    // Typo variant "bulid" is also accepted. Messages without "build" get a
+    // plain conversational reply — no createApp, no git init, no builder panel.
+    const isBuildRequest = /build|bulid/i.test(inputValue);
+
+    if (!selectedApp && !isBuildRequest) {
+      if (isReplying) return;
+
+      const userText = inputValue.trim();
+
+      // Build the full conversation for the local model (history + new turn).
+      // chatMessages here is the current state — the new user message hasn't
+      // been appended yet, so this is safe to use synchronously.
+      const apiMessages: { role: string; content: string }[] = [
+        {
+          role: "system",
+          content:
+            "You are OrianBuilder Assistant, a helpful AI. Answer questions clearly and concisely.",
+        },
+        ...chatMessages.map((m) => ({ role: m.role, content: m.content })),
+        { role: "user", content: userText },
+      ];
+
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "user", content: userText },
+        { role: "assistant", content: "" },
+      ]);
+      setInputValue("");
+      setIsReplying(true);
+      assistantBufferRef.current = "";
+
+      if (flushTimerRef.current) {
+        window.clearInterval(flushTimerRef.current);
+        flushTimerRef.current = null;
+      }
+
+      const stopFlush = () => {
+        if (flushTimerRef.current) {
+          window.clearInterval(flushTimerRef.current);
+          flushTimerRef.current = null;
+        }
+      };
+
+      const commitAssistant = (content: string) => {
+        setChatMessages((prev) => {
+          const next = [...prev];
+          const last = next[next.length - 1];
+          if (last?.role === "assistant") {
+            next[next.length - 1] = { ...last, content };
+          }
+          return next;
+        });
+        setIsReplying(false);
+        stopFlush();
+      };
+
+      const openRouterKey =
+        settings?.providerSettings?.openrouter?.apiKey?.value;
+
+      streamChatResponse(apiMessages, openRouterKey, {
+        onChunk: (delta) => {
+          assistantBufferRef.current += delta;
+        },
+        onEnd: () => commitAssistant(assistantBufferRef.current),
+        onError: (msg) => commitAssistant(`⚠️ ${msg}`),
+      });
+
+      // Flush buffered chunks to state on a smooth interval
+      flushTimerRef.current = window.setInterval(() => {
+        setChatMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (
+            last?.role === "assistant" &&
+            last.content !== assistantBufferRef.current
+          ) {
+            const next = [...prev];
+            next[next.length - 1] = {
+              ...last,
+              content: assistantBufferRef.current,
+            };
+            return next;
+          }
+          return prev;
+        });
+      }, 80);
+
+      return;
+    }
+
+    // Clear any previous inline chat before starting a real build.
+    setChatMessages([]);
 
     try {
       setLoadingMode(selectedApp ? "existing" : "new");
@@ -233,52 +349,107 @@ export default function HomePage() {
     );
   }
 
-  return (
-    <div className="flex flex-col h-full w-full items-center justify-center">
-      <ForceCloseDialog
-        isOpen={forceCloseDialogOpen}
-        onClose={() => setForceCloseDialogOpen(false)}
-        performanceData={performanceData}
-      />
+  const releaseNotesDialog = (
+    <Dialog open={releaseNotesOpen} onOpenChange={setReleaseNotesOpen}>
+      <DialogContent className="max-w-4xl bg-(--docs-bg) pr-0 pt-4 pl-4 gap-1">
+        <DialogHeader>
+          <DialogTitle>{t("whatsNew", { version: appVersion })}</DialogTitle>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="absolute right-10 top-2 focus-visible:ring-0 focus-visible:ring-offset-0"
+            onClick={() =>
+              window.open(
+                releaseUrl.replace("?hideHeader=true&theme=" + theme, ""),
+                "_blank",
+              )
+            }
+          >
+            <ExternalLink className="w-4 h-4" />
+          </Button>
+        </DialogHeader>
+        <div className="overflow-auto h-[70vh] flex flex-col">
+          {releaseUrl && (
+            <div className="flex-1">
+              <iframe
+                src={releaseUrl}
+                className="w-full h-full border-0 rounded-lg"
+                title={t("releaseNotesTitle", { version: appVersion })}
+              />
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 
-      {/* Centered input — the only persistent UI on the home page */}
-      <div className="w-full max-w-4xl px-3 sm:px-6 lg:px-8">
-        <HomeChatInput onSubmit={handleSubmit} />
+  const forceCloseDialog = (
+    <ForceCloseDialog
+      isOpen={forceCloseDialogOpen}
+      onClose={() => setForceCloseDialogOpen(false)}
+      performanceData={performanceData}
+    />
+  );
+
+  // Landing state — no messages yet: keep the original centered layout
+  if (chatMessages.length === 0) {
+    return (
+      <div className="flex flex-col h-full w-full items-center justify-center">
+        {forceCloseDialog}
+        <div className="w-full max-w-4xl px-3 sm:px-6 lg:px-8">
+          <HomeChatInput onSubmit={handleSubmit} />
+        </div>
+        <PrivacyBanner />
+        {releaseNotesDialog}
+      </div>
+    );
+  }
+
+  // Chat state — messages exist: standard chat-app layout
+  return (
+    <div className="flex flex-col h-full w-full overflow-hidden">
+      {forceCloseDialog}
+      {releaseNotesDialog}
+
+      {/* Scrollable message history */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="w-full max-w-4xl mx-auto px-3 sm:px-6 lg:px-8 py-6 flex flex-col gap-4">
+          {chatMessages.map((msg, i) =>
+            msg.role === "user" ? (
+              <div key={i} className="flex justify-end">
+                <div className="bg-primary/15 border border-primary/25 text-white rounded-2xl px-4 py-2.5 max-w-[72%] text-sm whitespace-pre-wrap">
+                  {msg.content}
+                </div>
+              </div>
+            ) : (
+              <div key={i} className="flex gap-3 items-start">
+                <div className="w-7 h-7 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center flex-shrink-0 mt-0.5 text-xs text-primary font-bold select-none">
+                  O
+                </div>
+                <div className="bg-white/[0.04] border border-white/10 text-white/85 rounded-2xl px-4 py-3 max-w-[72%] text-sm leading-relaxed whitespace-pre-wrap min-h-[2.5rem]">
+                  {msg.content ||
+                    (isReplying && i === chatMessages.length - 1 ? (
+                      <span className="flex gap-1 items-center h-5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-bounce [animation-delay:0ms]" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-bounce [animation-delay:150ms]" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-bounce [animation-delay:300ms]" />
+                      </span>
+                    ) : null)}
+                </div>
+              </div>
+            ),
+          )}
+          {/* Scroll anchor */}
+          <div ref={messagesEndRef} />
+        </div>
       </div>
 
-      <PrivacyBanner />
-
-      <Dialog open={releaseNotesOpen} onOpenChange={setReleaseNotesOpen}>
-        <DialogContent className="max-w-4xl bg-(--docs-bg) pr-0 pt-4 pl-4 gap-1">
-          <DialogHeader>
-            <DialogTitle>{t("whatsNew", { version: appVersion })}</DialogTitle>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="absolute right-10 top-2 focus-visible:ring-0 focus-visible:ring-offset-0"
-              onClick={() =>
-                window.open(
-                  releaseUrl.replace("?hideHeader=true&theme=" + theme, ""),
-                  "_blank",
-                )
-              }
-            >
-              <ExternalLink className="w-4 h-4" />
-            </Button>
-          </DialogHeader>
-          <div className="overflow-auto h-[70vh] flex flex-col">
-            {releaseUrl && (
-              <div className="flex-1">
-                <iframe
-                  src={releaseUrl}
-                  className="w-full h-full border-0 rounded-lg"
-                  title={t("releaseNotesTitle", { version: appVersion })}
-                />
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Input pinned to bottom */}
+      <div className="shrink-0 border-t border-white/[0.08] bg-background/80 backdrop-blur-sm">
+        <div className="w-full max-w-4xl mx-auto px-3 sm:px-6 lg:px-8 py-3">
+          <HomeChatInput onSubmit={handleSubmit} />
+        </div>
+      </div>
     </div>
   );
 }

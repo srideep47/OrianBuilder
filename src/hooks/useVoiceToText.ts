@@ -1,6 +1,16 @@
+/**
+ * useVoiceToText
+ *
+ * Records microphone audio and transcribes it locally using Transformers.js
+ * (Whisper tiny.en).  No IPC calls, no cloud API keys, no Electron backend.
+ *
+ * The hook exposes the same { isRecording, isTranscribing, toggleRecording }
+ * interface as before so callers (ChatInput, HomeChatInput) need no changes.
+ * Extra fields (modelStatus, modelLoadProgress) are available for richer UI.
+ */
+
 import { useState, useRef, useCallback, useEffect } from "react";
-import { ipc } from "@/ipc/types";
-import { v4 as uuidv4 } from "uuid";
+import { useWhisperTranscription } from "./useWhisperTranscription";
 
 interface UseVoiceToTextOptions {
   enabled?: boolean;
@@ -14,17 +24,22 @@ export function useVoiceToText({
   onError,
 }: UseVoiceToTextOptions) {
   const [isRecording, setIsRecording] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+  // Set to true on unmount so a pending onstop callback is skipped.
   const skipProcessingRef = useRef(false);
+
+  const { modelStatus, modelLoadProgress, isTranscribing, warmUp, transcribe } =
+    useWhisperTranscription();
 
   const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
   }, []);
 
+  // Cleanup on unmount: stop any active recording and release the mic.
   useEffect(() => {
     return () => {
       skipProcessingRef.current = true;
@@ -37,8 +52,10 @@ export function useVoiceToText({
   }, [stopStream]);
 
   const toggleRecording = useCallback(async () => {
+    // Block new recordings while Whisper is working.
     if (isTranscribing) return;
 
+    // Second click while recording → stop and transcribe.
     if (isRecording) {
       mediaRecorderRef.current?.stop();
       return;
@@ -46,10 +63,15 @@ export function useVoiceToText({
 
     if (!enabled) return;
 
+    // Kick off model download in the background the moment the user taps the
+    // mic so that by the time they finish speaking it may already be cached.
+    warmUp();
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
+      // audio/webm is universally supported in Chromium (Electron's renderer).
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: "audio/webm",
       });
@@ -66,6 +88,7 @@ export function useVoiceToText({
         stopStream();
         setIsRecording(false);
 
+        // Bail out if the component unmounted while we were recording.
         if (skipProcessingRef.current) {
           chunksRef.current = [];
           return;
@@ -75,23 +98,21 @@ export function useVoiceToText({
         chunksRef.current = [];
         if (blob.size === 0) return;
 
-        setIsTranscribing(true);
         try {
-          const arrayBuffer = await blob.arrayBuffer();
-          const result = await ipc.audio.transcribeAudio({
-            audioData: Array.from(new Uint8Array(arrayBuffer)),
-            filename: "recording.webm",
-            requestId: uuidv4(),
-          });
-          const text = result.text.trim();
-          if (text) onTranscription(text);
-          else onError?.("No speech detected. Please try again.");
+          // transcribe() handles: model loading → audio decode → Whisper inference.
+          // isTranscribing from the hook flips to true for the entire duration,
+          // giving callers a single boolean to drive their loading UI.
+          const text = await transcribe(blob);
+
+          if (text) {
+            onTranscription(text);
+          } else {
+            onError?.("No speech detected. Please try again.");
+          }
         } catch (err) {
           onError?.(
             err instanceof Error ? err.message : "Transcription failed",
           );
-        } finally {
-          setIsTranscribing(false);
         }
       };
 
@@ -110,7 +131,18 @@ export function useVoiceToText({
     onTranscription,
     onError,
     stopStream,
+    warmUp,
+    transcribe,
   ]);
 
-  return { isRecording, isTranscribing, toggleRecording };
+  return {
+    isRecording,
+    // Expose combined loading state: model loading counts as "transcribing"
+    // from the caller's perspective so the spinner appears immediately.
+    isTranscribing: isTranscribing || modelStatus === "loading",
+    // Extra fields for richer UIs (tooltip text, progress bar, etc.)
+    modelStatus,
+    modelLoadProgress,
+    toggleRecording,
+  };
 }

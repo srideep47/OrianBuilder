@@ -27,6 +27,13 @@ import { useSettings } from "@/hooks/useSettings";
 import { useFreeAgentQuota } from "@/hooks/useFreeAgentQuota";
 import { useChatMode } from "@/hooks/useChatMode";
 import { isOrianBuilderProEnabled } from "@/lib/schemas";
+import { streamChatResponse } from "@/lib/chatStream";
+
+import {
+  inlineChatHistoryAtom,
+  currentInlineChatIdAtom,
+  type InlineChatMessage,
+} from "./chat/inlineChatAtoms";
 
 interface ChatPanelProps {
   chatId?: number;
@@ -54,6 +61,159 @@ export function ChatPanel({
     !isOrianBuilderProEnabled(settings) &&
     selectedMode === "local-agent" &&
     isQuotaExceeded;
+
+  // ── No-app inline chat (used when chatId is undefined) ──────────────────────
+  const [inlineMessages, setInlineMessages] = useState<InlineChatMessage[]>([]);
+  const [isInlineReplying, setIsInlineReplying] = useState(false);
+  const inlineBufferRef = useRef("");
+  const inlineFlushTimerRef = useRef<number | null>(null);
+  const inlineIdCounterRef = useRef(0);
+  const inlineMessagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  // ── Inline chat history ────────────────────────────────────────────────────
+  const setInlineChatHistory = useSetAtom(inlineChatHistoryAtom);
+  const setCurrentInlineChatId = useSetAtom(currentInlineChatIdAtom);
+  const currentInlineChatId = useAtomValue(currentInlineChatIdAtom);
+
+  // Ref so callbacks always see the latest chat id without stale closures.
+  const currentInlineChatIdRef = useRef(currentInlineChatId);
+  useEffect(() => {
+    currentInlineChatIdRef.current = currentInlineChatId;
+  });
+
+  // When the sidebar switches the active chat, load that chat's messages.
+  const prevInlineChatIdRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (prevInlineChatIdRef.current === currentInlineChatId) return;
+    prevInlineChatIdRef.current = currentInlineChatId;
+    if (currentInlineChatId === null) {
+      setInlineMessages([]);
+      return;
+    }
+    // Restore messages from history — only when the entry already has content
+    // (avoids wiping messages that handleNoAppSubmit just added to a new entry).
+    setInlineChatHistory((prev) => {
+      const entry = prev.find((e) => e.id === currentInlineChatId);
+      if (entry && entry.messages.length > 0) setInlineMessages(entry.messages);
+      return prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentInlineChatId]);
+
+  // Keep the active history entry up to date as messages arrive.
+  useEffect(() => {
+    const chatId = currentInlineChatIdRef.current;
+    if (!chatId || inlineMessages.length === 0) return;
+    setInlineChatHistory((prev) =>
+      prev.map((e) =>
+        e.id === chatId ? { ...e, messages: inlineMessages } : e,
+      ),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inlineMessages]);
+  // ──────────────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    inlineMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [inlineMessages]);
+
+  useEffect(() => {
+    return () => {
+      if (inlineFlushTimerRef.current)
+        window.clearInterval(inlineFlushTimerRef.current);
+    };
+  }, []);
+
+  const handleNoAppSubmit = useCallback(
+    (text: string) => {
+      if (!text.trim() || isInlineReplying) return;
+
+      // Create a history entry the first time a message is sent in a new session.
+      if (!currentInlineChatIdRef.current) {
+        const newId = crypto.randomUUID();
+        setInlineChatHistory((prev) => [
+          {
+            id: newId,
+            title: text.length > 60 ? text.slice(0, 60) + "…" : text,
+            messages: [],
+            createdAt: new Date().toISOString(),
+          },
+          ...prev,
+        ]);
+        setCurrentInlineChatId(newId);
+        currentInlineChatIdRef.current = newId;
+      }
+
+      const userId = --inlineIdCounterRef.current;
+      const assistantId = --inlineIdCounterRef.current;
+
+      const apiMessages = [
+        {
+          role: "system",
+          content:
+            "You are OrianBuilder Assistant, a helpful AI. Answer questions clearly and concisely.",
+        },
+        ...inlineMessages.map((m) => ({ role: m.role, content: m.content })),
+        { role: "user", content: text },
+      ];
+
+      setInlineMessages((prev) => [
+        ...prev,
+        { id: userId, role: "user", content: text },
+        { id: assistantId, role: "assistant", content: "" },
+      ]);
+      setIsInlineReplying(true);
+      inlineBufferRef.current = "";
+
+      if (inlineFlushTimerRef.current) {
+        window.clearInterval(inlineFlushTimerRef.current);
+        inlineFlushTimerRef.current = null;
+      }
+
+      const openRouterKey =
+        settings?.providerSettings?.openrouter?.apiKey?.value;
+
+      const commitAssistant = (content: string) => {
+        setInlineMessages((prev) =>
+          prev.map((m) => (m.id === assistantId ? { ...m, content } : m)),
+        );
+        setIsInlineReplying(false);
+        if (inlineFlushTimerRef.current) {
+          window.clearInterval(inlineFlushTimerRef.current);
+          inlineFlushTimerRef.current = null;
+        }
+      };
+
+      streamChatResponse(apiMessages, openRouterKey, {
+        onChunk: (delta) => {
+          inlineBufferRef.current += delta;
+        },
+        onEnd: () => commitAssistant(inlineBufferRef.current),
+        onError: (msg) => commitAssistant(`⚠️ ${msg}`),
+      });
+
+      inlineFlushTimerRef.current = window.setInterval(() => {
+        const buf = inlineBufferRef.current;
+        setInlineMessages((prev) => {
+          const last = prev.at(-1);
+          if (last?.id === assistantId && last.content !== buf) {
+            return prev.map((m) =>
+              m.id === assistantId ? { ...m, content: buf } : m,
+            );
+          }
+          return prev;
+        });
+      }, 80);
+    },
+    [
+      inlineMessages,
+      isInlineReplying,
+      settings,
+      setInlineChatHistory,
+      setCurrentInlineChatId,
+    ],
+  );
+  // ─────────────────────────────────────────────────────────────────────────────
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -240,31 +400,72 @@ export function ChatPanel({
         {!isVersionPaneOpen && (
           <div className="flex-1 flex flex-col min-w-0">
             <div className="flex-1 relative overflow-hidden">
-              <MessagesList
-                messages={messages}
-                messagesEndRef={messagesEndRef}
-                ref={messagesContainerRef}
-                onAtBottomChange={handleAtBottomChange}
-              />
-
-              {/* Scroll to bottom button */}
-              {showScrollButton && (
-                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10">
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <Button
-                          onClick={handleScrollButtonClick}
-                          size="icon"
-                          className="rounded-full shadow-lg hover:shadow-xl transition-all border border-border/50 backdrop-blur-sm bg-background/95 hover:bg-accent"
-                          variant="outline"
-                        />
-                      }
-                    >
-                      <ArrowDown className="h-4 w-4" />
-                    </TooltipTrigger>
-                    <TooltipContent>{t("scrollToBottom")}</TooltipContent>
-                  </Tooltip>
+              {chatId !== undefined ? (
+                <>
+                  <MessagesList
+                    messages={messages}
+                    messagesEndRef={messagesEndRef}
+                    ref={messagesContainerRef}
+                    onAtBottomChange={handleAtBottomChange}
+                  />
+                  {showScrollButton && (
+                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10">
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              onClick={handleScrollButtonClick}
+                              size="icon"
+                              className="rounded-full shadow-lg hover:shadow-xl transition-all border border-border/50 backdrop-blur-sm bg-background/95 hover:bg-accent"
+                              variant="outline"
+                            />
+                          }
+                        >
+                          <ArrowDown className="h-4 w-4" />
+                        </TooltipTrigger>
+                        <TooltipContent>{t("scrollToBottom")}</TooltipContent>
+                      </Tooltip>
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* No app selected — home-page-style inline chat feed */
+                <div className="absolute inset-0 overflow-y-auto">
+                  <div className="w-full max-w-3xl mx-auto px-4 py-6 flex flex-col gap-4 h-full">
+                    {inlineMessages.length === 0 ? (
+                      <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">
+                        Start the conversation — type a message below
+                      </div>
+                    ) : (
+                      inlineMessages.map((msg, i) =>
+                        msg.role === "user" ? (
+                          <div key={msg.id} className="flex justify-end">
+                            <div className="bg-primary/15 border border-primary/25 text-white rounded-2xl px-4 py-2.5 max-w-[72%] text-sm whitespace-pre-wrap">
+                              {msg.content}
+                            </div>
+                          </div>
+                        ) : (
+                          <div key={msg.id} className="flex gap-3 items-start">
+                            <div className="w-7 h-7 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center flex-shrink-0 mt-0.5 text-xs text-primary font-bold select-none">
+                              O
+                            </div>
+                            <div className="bg-white/[0.04] border border-white/10 text-white/85 rounded-2xl px-4 py-3 max-w-[72%] text-sm leading-relaxed whitespace-pre-wrap min-h-[2.5rem]">
+                              {msg.content ||
+                                (isInlineReplying &&
+                                i === inlineMessages.length - 1 ? (
+                                  <span className="flex gap-1 items-center h-5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-bounce [animation-delay:0ms]" />
+                                    <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-bounce [animation-delay:150ms]" />
+                                    <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-bounce [animation-delay:300ms]" />
+                                  </span>
+                                ) : null)}
+                            </div>
+                          </div>
+                        ),
+                      )
+                    )}
+                    <div ref={inlineMessagesEndRef} />
+                  </div>
                 </div>
               )}
             </div>
@@ -281,7 +482,7 @@ export function ChatPanel({
                 <NotificationBanner />
               </div>
             </div>
-            <ChatInput chatId={chatId} />
+            <ChatInput chatId={chatId} onNoAppSubmit={handleNoAppSubmit} />
           </div>
         )}
         <VersionPane

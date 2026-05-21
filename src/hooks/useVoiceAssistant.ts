@@ -1,13 +1,20 @@
+/**
+ * useVoiceAssistant
+ *
+ * Full voice-assistant loop:
+ *   record → Whisper transcription (local, via Transformers.js) → pattern-matched reply → TTS
+ *
+ * No IPC, no Electron main-process, no cloud API calls for transcription.
+ */
+
 import { useState, useRef, useCallback, useEffect } from "react";
-import { ipc } from "@/ipc/types";
-import { v4 as uuidv4 } from "uuid";
 import {
   buildAssistantReply,
   VoiceState,
   getInitialVoiceContext,
   type VoiceAssistantContext,
 } from "@/lib/voiceAssistant";
-import { useSettings } from "@/hooks/useSettings";
+import { useWhisperTranscription } from "./useWhisperTranscription";
 
 interface UseVoiceAssistantOptions {
   enabled: boolean;
@@ -27,17 +34,18 @@ export function useVoiceAssistant({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
-  const skipOnStopProcessingRef = useRef(false);
+  const skipOnStopRef = useRef(false);
+  // Marks an intentional stop so onstop still runs transcription.
   const isStoppingRef = useRef(false);
-  const synthRef = useRef<SpeechSynthesisUtterance | null>(null);
-  const { settings } = useSettings();
-  const recognitionRef = useRef<any>(null);
+
+  const { modelStatus, modelLoadProgress, warmUp, transcribe } =
+    useWhisperTranscription();
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
 
   const stopMediaStream = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
   }, []);
 
   const stopSpeech = useCallback(() => {
@@ -49,23 +57,36 @@ export function useVoiceAssistant({
     }));
   }, []);
 
+  // ─── Lifecycle ────────────────────────────────────────────────────────────
+
   useEffect(() => {
     return () => {
-      skipOnStopProcessingRef.current = true;
-      const mediaRecorder = mediaRecorderRef.current;
-      if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop();
-      }
+      skipOnStopRef.current = true;
+      const rec = mediaRecorderRef.current;
+      if (rec && rec.state !== "inactive") rec.stop();
       mediaRecorderRef.current = null;
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-        recognitionRef.current = null;
-      }
       stopMediaStream();
       stopSpeech();
       chunksRef.current = [];
     };
   }, [stopMediaStream, stopSpeech]);
+
+  // Keep the status message in sync with the Whisper model loading progress
+  // so the modal's status area gives live feedback during the first download.
+  useEffect(() => {
+    if (modelStatus === "loading") {
+      setContext((prev) =>
+        prev.state === VoiceState.PROCESSING
+          ? {
+              ...prev,
+              statusMessage: `Loading Whisper model… ${modelLoadProgress}%`,
+            }
+          : prev,
+      );
+    }
+  }, [modelStatus, modelLoadProgress]);
+
+  // ─── Recording ────────────────────────────────────────────────────────────
 
   const startListening = useCallback(async () => {
     if (
@@ -74,7 +95,6 @@ export function useVoiceAssistant({
     ) {
       return;
     }
-
     if (!enabled) return;
 
     try {
@@ -83,8 +103,12 @@ export function useVoiceAssistant({
         userText: "",
         assistantText: "",
         state: VoiceState.IDLE,
-        statusMessage: "Starting microphone...",
+        statusMessage: "Starting microphone…",
       }));
+
+      // Pre-warm the Whisper model while the user is still about to speak —
+      // this way the first-time download often finishes before recording ends.
+      warmUp();
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -95,10 +119,8 @@ export function useVoiceAssistant({
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
 
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunksRef.current.push(event.data);
-        }
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
       };
 
       mediaRecorder.onstop = async () => {
@@ -108,56 +130,47 @@ export function useVoiceAssistant({
         const wasStopping = isStoppingRef.current;
         isStoppingRef.current = false;
 
-        if (skipOnStopProcessingRef.current) {
+        if (skipOnStopRef.current) {
           chunksRef.current = [];
           return;
-        }
-
-        // If we stopped intentionally, we may still want to run transcription
-        // so the recognized speech can be inserted by callers.
-        // (Previously we discarded transcription here, which broke mic toggle.)
-        if (wasStopping) {
-          // keep chunks for transcription; just normalize UI status
-          setContext((prev) => ({
-            ...prev,
-            state: VoiceState.PROCESSING,
-            statusMessage: "Processing speech...",
-          }));
         }
 
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
         chunksRef.current = [];
 
         if (blob.size === 0) {
+          // Nothing recorded — reset to IDLE whether it was an intentional stop or not.
+          setContext((prev) =>
+            prev.state !== VoiceState.IDLE
+              ? {
+                  ...prev,
+                  state: VoiceState.IDLE,
+                  statusMessage: "Stopped. Ready when you are.",
+                }
+              : prev,
+          );
           return;
         }
 
+        // Mark as processing AFTER confirming there is audio to transcribe.
+        void wasStopping; // acknowledged; same code path regardless
         setContext((prev) => ({
           ...prev,
           state: VoiceState.PROCESSING,
-          statusMessage: "Processing speech...",
+          statusMessage:
+            modelStatus === "loading"
+              ? `Loading Whisper model… ${modelLoadProgress}%`
+              : "Transcribing speech…",
         }));
 
         try {
-          const arrayBuffer = await blob.arrayBuffer();
-          let transcribedText = "";
-          const audioData = Array.from(new Uint8Array(arrayBuffer));
-          const result = await ipc.audio.transcribeAudio({
-            audioData,
-            filename: "recording.webm",
-            requestId: uuidv4(),
-          });
-          transcribedText = result.text.trim();
+          // All-in-one: load model (if needed) + decode audio + run Whisper.
+          const transcribedText = await transcribe(blob);
 
           if (transcribedText) {
-            setContext((prev) => ({
-              ...prev,
-              userText: transcribedText,
-            }));
-
+            setContext((prev) => ({ ...prev, userText: transcribedText }));
             onTranscription?.(transcribedText);
 
-            // Generate assistant reply
             const assistantReply = buildAssistantReply(transcribedText);
             setContext((prev) => ({
               ...prev,
@@ -188,7 +201,7 @@ export function useVoiceAssistant({
       setContext((prev) => ({
         ...prev,
         state: VoiceState.LISTENING,
-        statusMessage: "Listening...",
+        statusMessage: "Listening… speak now.",
       }));
     } catch (err) {
       stopMediaStream();
@@ -201,31 +214,30 @@ export function useVoiceAssistant({
       }));
       onError?.(message);
     }
+    // NOTE: modelStatus / modelLoadProgress are read inside the onstop closure
+    // via the snapshot captured at call time; they are intentionally omitted
+    // from this dep array to avoid re-creating the callback on every progress tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     enabled,
     context.state,
     onTranscription,
     onError,
     stopMediaStream,
-    settings,
+    warmUp,
+    transcribe,
   ]);
 
   const stopListening = useCallback(() => {
     isStoppingRef.current = true;
 
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
+    const rec = mediaRecorderRef.current;
+    if (rec && rec.state !== "inactive") {
+      rec.stop(); // triggers onstop → transcription
       return;
     }
 
-    const mediaRecorder = mediaRecorderRef.current;
-    if (mediaRecorder && mediaRecorder.state !== "inactive") {
-      isStoppingRef.current = true;
-      mediaRecorder.stop();
-      return;
-    }
-
-    // If there's no recorder / it's already inactive, just normalize UI.
+    // Nothing was recording; just reset UI.
     isStoppingRef.current = false;
     setContext((prev) => ({
       ...prev,
@@ -239,17 +251,17 @@ export function useVoiceAssistant({
       if (!isStoppingRef.current) stopListening();
       return;
     }
-
     if (
       context.state === VoiceState.PROCESSING ||
       context.state === VoiceState.SPEAKING
     ) {
       return;
     }
-
     if (isStoppingRef.current) return;
     await startListening();
   }, [context.state, startListening, stopListening]);
+
+  // ─── TTS ──────────────────────────────────────────────────────────────────
 
   const speakReply = useCallback(async () => {
     if (!context.assistantText.trim()) {
@@ -261,13 +273,12 @@ export function useVoiceAssistant({
     }
 
     try {
-      // Stop any ongoing speech
       window.speechSynthesis.cancel();
 
       setContext((prev) => ({
         ...prev,
         state: VoiceState.SPEAKING,
-        statusMessage: "Speaking response...",
+        statusMessage: "Speaking response…",
       }));
 
       const utterance = new SpeechSynthesisUtterance(context.assistantText);
@@ -293,7 +304,6 @@ export function useVoiceAssistant({
         onError?.(errorMsg);
       };
 
-      synthRef.current = utterance;
       window.speechSynthesis.speak(utterance);
     } catch (err) {
       const message =
@@ -307,6 +317,8 @@ export function useVoiceAssistant({
     }
   }, [context.assistantText, onError]);
 
+  // ─── Controls ─────────────────────────────────────────────────────────────
+
   const clearConversation = useCallback(() => {
     window.speechSynthesis.cancel();
     setContext(getInitialVoiceContext());
@@ -317,9 +329,12 @@ export function useVoiceAssistant({
     stopSpeech();
   }, [stopListening, stopSpeech]);
 
+  // ─── Return ───────────────────────────────────────────────────────────────
+
   return {
     context,
     isRecording: context.state === VoiceState.LISTENING,
+    // PROCESSING covers both Whisper model loading and actual inference.
     isTranscribing: context.state === VoiceState.PROCESSING,
     isSpeaking: context.state === VoiceState.SPEAKING,
     toggleRecording,

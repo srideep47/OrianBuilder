@@ -16,6 +16,7 @@ export default defineConfig({
         "node-llama-cpp",
         "playwright",
         "playwright-core",
+        "dugite",
         /^chromium-bidi(\/.*)?$/,
         /^node:/,
         /^@node-llama-cpp\//,

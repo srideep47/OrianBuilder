@@ -10,7 +10,6 @@ import { transcribeWithOrianBuilderEngine } from "../utils/llm_engine_provider";
 import {
   MEDIA_AI_SERVER_URL,
   isMediaAiBackendHealthy,
-  startMediaAiBackend,
 } from "../utils/media_ai_backend";
 
 const logger = log.scope("pro_handlers");
@@ -18,23 +17,13 @@ const typedHandle = createLoggedTypedHandler(logger);
 
 const orianbuilderEngineUrl = process.env.ORIANBUILDER_ENGINE_URL;
 
-async function waitForLocalBackend(timeoutSec: number): Promise<boolean> {
-  for (let i = 0; i < timeoutSec; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-    if (await isMediaAiBackendHealthy()) return true;
-  }
-  return false;
-}
-
 async function transcribeViaLocalBackend(
   audioBuffer: Buffer,
   filename: string,
 ): Promise<string | null> {
+  // Backend is started at app launch; just check current health — no blocking wait.
   if (!(await isMediaAiBackendHealthy())) {
-    // Try to auto-start the local AI backend (no-op if already running or not installed)
-    startMediaAiBackend();
-    const started = await waitForLocalBackend(15);
-    if (!started) return null;
+    return null;
   }
 
   // Backend needs a real file path — write to temp, POST path, clean up.

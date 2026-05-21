@@ -41,6 +41,7 @@ import {
   agentTodosByChatIdAtom,
   needsFreshPlanChatAtom,
   activeMissionByChatIdAtom,
+  homeChatInputValueAtom,
 } from "@/atoms/chatAtoms";
 import { atom, useAtom, useSetAtom, useAtomValue } from "jotai";
 import { useStreamChat } from "@/hooks/useStreamChat";
@@ -121,13 +122,19 @@ import { useRouter } from "@tanstack/react-router";
 import { showError as showErrorToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { useVoiceToText } from "@/hooks/useVoiceToText";
-import { VoiceAssistantModal } from "@/components/chat/VoiceAssistantModal";
 import { useChatMode } from "@/hooks/useChatMode";
 import { useInitialChatMode } from "@/hooks/useInitialChatMode";
+import { streamChatResponse } from "@/lib/chatStream";
 
 const showTokenBarAtom = atom(false);
 
-export function ChatInput({ chatId }: { chatId?: number }) {
+export function ChatInput({
+  chatId,
+  onNoAppSubmit,
+}: {
+  chatId?: number;
+  onNoAppSubmit?: (text: string) => void;
+}) {
   const { t } = useTranslation("chat");
   const posthog = usePostHog();
   const [inputValue, setInputValue] = useAtom(chatInputValueAtom);
@@ -207,6 +214,15 @@ export function ChatInput({ chatId }: { chatId?: number }) {
   const { refreshAppIframe } = useRunApp();
   const { navigate } = useRouter();
   const setSelectedChatId = useSetAtom(selectedChatIdAtom);
+  const setHomeChatInputValue = useSetAtom(homeChatInputValueAtom);
+
+  // Safety net: keep selectedChatIdAtom in sync with the chatId prop so that
+  // setInputValue (which reads selectedChatIdAtom internally) is never a no-op
+  // due to a render-cycle gap between chat.tsx's useEffect and voice callbacks.
+  useEffect(() => {
+    setSelectedChatId(chatId ?? null);
+  }, [chatId, setSelectedChatId]);
+
   const { invalidateChats } = useChats(appId);
   const [imageGeneratorOpen, setImageGeneratorOpen] = useState(false);
   const handleOpenImageGenerator = useCallback(() => {
@@ -281,12 +297,40 @@ export function ChatInput({ chatId }: { chatId?: number }) {
 
   const { userBudget } = useUserBudgetInfo();
 
+  // When no chat is selected the chatInputValueAtom setter is a no-op, so
+  // transcription text would be silently dropped. Keep a local draft for
+  // that state so the Lexical editor still updates visually.
+  const [pendingTranscription, setPendingTranscription] = useState("");
+
   const handleTranscription = useCallback(
     (text: string) => {
-      setInputValue((prev: string) => (prev.trim() ? prev + " " + text : text));
+      if (chatId != null) {
+        setInputValue(text);
+      } else {
+        setPendingTranscription(text);
+      }
     },
-    [setInputValue],
+    [chatId, setInputValue],
   );
+
+  // Routes keyboard typing to the right store depending on whether a chat is active.
+  // (setInputValue is a no-op when selectedChatIdAtom is null, so we fall back to
+  // pendingTranscription which drives the LexicalChatInput value in that case.)
+  const handleInputChange = useCallback(
+    (text: string) => {
+      if (chatId != null) {
+        setInputValue(text);
+      } else {
+        setPendingTranscription(text);
+      }
+    },
+    [chatId, setInputValue],
+  );
+
+  // Single source of truth for "what is currently in the text box" regardless
+  // of whether a chat ID exists.
+  const effectiveInputValue =
+    chatId != null ? inputValue : pendingTranscription;
 
   const { isRecording, isTranscribing, toggleRecording } = useVoiceToText({
     enabled: true,
@@ -294,7 +338,10 @@ export function ChatInput({ chatId }: { chatId?: number }) {
     onError: (message) => showErrorToast(message),
   });
 
-  const [voiceModalOpen, setVoiceModalOpen] = useState(false);
+  const [isInlineReplying, setIsInlineReplying] = useState(false);
+  const inlineBufferRef = useRef("");
+  const inlineFlushTimerRef = useRef<number | null>(null);
+  const inlineIdCounterRef = useRef(0);
 
   const [needsFreshPlanChat, setNeedsFreshPlanChat] = useAtom(
     needsFreshPlanChatAtom,
@@ -409,6 +456,9 @@ export function ChatInput({ chatId }: { chatId?: number }) {
         clearAttachments();
         setSelectedComponents([]);
         setVisualEditingSelectedComponent(null);
+      }
+      if (inlineFlushTimerRef.current) {
+        window.clearInterval(inlineFlushTimerRef.current);
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -730,12 +780,25 @@ export function ChatInput({ chatId }: { chatId?: number }) {
 
   const handleSubmit = async () => {
     if (
-      (!inputValue.trim() &&
+      (!effectiveInputValue.trim() &&
         attachments.length === 0 &&
         !hasSuccessfulImageJobs) ||
-      !chatId ||
       pendingFiles
     ) {
+      return;
+    }
+
+    // No active chat — build messages route to home; others go to inline handler.
+    if (!chatId) {
+      const text = effectiveInputValue.trim();
+      if (text && /build|bulid/i.test(text)) {
+        setHomeChatInputValue(text);
+        navigate({ to: "/" });
+        setPendingTranscription("");
+      } else if (text) {
+        onNoAppSubmit?.(text);
+        setPendingTranscription("");
+      }
       return;
     }
 
@@ -844,6 +907,100 @@ export function ChatInput({ chatId }: { chatId?: number }) {
     }
 
     // Not streaming - send immediately
+
+    // Non-build messages get a conversational reply instead of going to the builder.
+    const isBuildRequest =
+      /build|bulid/i.test(currentInput) || attachments.length > 0;
+
+    if (!isBuildRequest && chatId) {
+      if (isInlineReplying) return;
+
+      const userId = --inlineIdCounterRef.current;
+      const assistantId = --inlineIdCounterRef.current;
+
+      const existingMsgs = messagesById.get(chatId) ?? [];
+      const apiMessages = [
+        {
+          role: "system",
+          content:
+            "You are OrianBuilder Assistant, a helpful AI. Answer questions clearly and concisely.",
+        },
+        ...existingMsgs.map((m) => ({ role: m.role, content: m.content })),
+        { role: "user", content: currentInput },
+      ];
+
+      setMessagesById((prev) => {
+        const next = new Map(prev);
+        next.set(chatId, [
+          ...(next.get(chatId) ?? []),
+          { id: userId, role: "user" as const, content: currentInput },
+          { id: assistantId, role: "assistant" as const, content: "" },
+        ]);
+        return next;
+      });
+
+      setInputValue("");
+      clearAttachments();
+      setSelectedComponents([]);
+      setVisualEditingSelectedComponent(null);
+      setIsInlineReplying(true);
+      inlineBufferRef.current = "";
+
+      if (inlineFlushTimerRef.current) {
+        window.clearInterval(inlineFlushTimerRef.current);
+        inlineFlushTimerRef.current = null;
+      }
+
+      const openRouterKey =
+        settings?.providerSettings?.openrouter?.apiKey?.value;
+
+      const commitAssistant = (content: string) => {
+        setMessagesById((prev) => {
+          const next = new Map(prev);
+          const msgs = next.get(chatId) ?? [];
+          next.set(
+            chatId,
+            msgs.map((m) => (m.id === assistantId ? { ...m, content } : m)),
+          );
+          return next;
+        });
+        setIsInlineReplying(false);
+        if (inlineFlushTimerRef.current) {
+          window.clearInterval(inlineFlushTimerRef.current);
+          inlineFlushTimerRef.current = null;
+        }
+      };
+
+      streamChatResponse(apiMessages, openRouterKey, {
+        onChunk: (delta) => {
+          inlineBufferRef.current += delta;
+        },
+        onEnd: () => commitAssistant(inlineBufferRef.current),
+        onError: (msg) => commitAssistant(`⚠️ ${msg}`),
+      });
+
+      inlineFlushTimerRef.current = window.setInterval(() => {
+        const buf = inlineBufferRef.current;
+        setMessagesById((prev) => {
+          const msgs = prev.get(chatId) ?? [];
+          const last = msgs.at(-1);
+          if (last?.id === assistantId && last.content !== buf) {
+            const next = new Map(prev);
+            next.set(
+              chatId,
+              msgs.map((m) =>
+                m.id === assistantId ? { ...m, content: buf } : m,
+              ),
+            );
+            return next;
+          }
+          return prev;
+        });
+      }, 80);
+
+      return;
+    }
+
     // Clear input and components before sending
     setInputValue("");
     setSelectedComponents([]);
@@ -1204,8 +1361,8 @@ export function ChatInput({ chatId }: { chatId?: number }) {
 
           <div className="flex items-end gap-1">
             <LexicalChatInput
-              value={inputValue}
-              onChange={setInputValue}
+              value={chatId != null ? inputValue : pendingTranscription}
+              onChange={handleInputChange}
               onSubmit={handleSubmit}
               onPaste={handlePaste}
               placeholder={t("askOrianBuilderToBuild")}
@@ -1220,10 +1377,10 @@ export function ChatInput({ chatId }: { chatId?: number }) {
               <TooltipTrigger
                 render={
                   <button
-                    onClick={() => setVoiceModalOpen((prev) => !prev)}
+                    onClick={toggleRecording}
                     disabled={isTranscribing}
                     aria-label={
-                      voiceModalOpen
+                      isRecording
                         ? t("stopRecording", "Stop recording")
                         : isTranscribing
                           ? t("transcribing", "Transcribing...")
@@ -1231,37 +1388,29 @@ export function ChatInput({ chatId }: { chatId?: number }) {
                     }
                     className={cn(
                       "px-2 py-2 mb-0.5 text-muted-foreground rounded-lg transition-colors duration-150 cursor-pointer disabled:cursor-default disabled:opacity-30",
-                      voiceModalOpen &&
+                      isRecording &&
                         "text-red-500 hover:text-red-600 animate-pulse",
-                      !voiceModalOpen &&
-                        !isTranscribing &&
-                        "hover:text-primary",
+                      !isRecording && !isTranscribing && "hover:text-primary",
                     )}
                   />
                 }
               >
                 {isTranscribing ? (
                   <Loader2 size={20} className="animate-spin" />
-                ) : voiceModalOpen ? (
+                ) : isRecording ? (
                   <MicOff size={20} />
                 ) : (
                   <Mic size={20} />
                 )}
               </TooltipTrigger>
               <TooltipContent>
-                {voiceModalOpen
+                {isRecording
                   ? t("stopRecording", "Stop recording")
                   : isTranscribing
                     ? t("transcribing", "Transcribing...")
                     : t("voiceToText", "Voice to text")}
               </TooltipContent>
             </Tooltip>
-
-            <VoiceAssistantModal
-              open={voiceModalOpen}
-              onOpenChange={setVoiceModalOpen}
-              onTranscription={handleTranscription}
-            />
 
             {isStreaming ? (
               <Tooltip>
@@ -1285,7 +1434,7 @@ export function ChatInput({ chatId }: { chatId?: number }) {
                     <button
                       onClick={handleSubmit}
                       disabled={
-                        (!inputValue.trim() &&
+                        (!effectiveInputValue.trim() &&
                           attachments.length === 0 &&
                           !hasSuccessfulImageJobs) ||
                         disableSendButton
