@@ -40,13 +40,20 @@ export async function handleInferenceRequest(
   bodyJson: string,
 ): Promise<void> {
   const shortId = requestId.slice(0, 8);
-  logger.info(`[recv ${shortId}] inference request from peer`);
+  const bodyPreview = bodyJson.slice(0, 200).replace(/\s+/g, " ");
+  logger.info(
+    `[recv ${shortId}] inference request from peer (${bodyJson.length} bytes)`,
+  );
+  logger.info(`[recv ${shortId}] body preview: ${bodyPreview}…`);
 
   const abort = new AbortController();
   activeRequests.set(requestId, abort);
 
   try {
     const status = getServerStatus();
+    logger.info(
+      `[recv ${shortId}] embedded status: backend=${status.backend} modelLoaded=${status.modelLoaded} modelName=${status.modelName ?? "-"} isInferring=${status.isInferring}`,
+    );
     if (!status.modelLoaded) {
       logger.warn(
         `[recv ${shortId}] no model loaded in embedded engine — rejecting`,
@@ -61,6 +68,9 @@ export async function handleInferenceRequest(
     }
 
     const adjusted = adjustBodyForEmbeddedServer(bodyJson);
+    logger.info(
+      `[recv ${shortId}] forwarding to ${EMBEDDED_ENDPOINT} (model rewritten to "${status.modelName}")`,
+    );
     const res = await fetchEmbedded(adjusted, abort.signal);
     if (!res) {
       channel.send({
@@ -71,6 +81,11 @@ export async function handleInferenceRequest(
       });
       return;
     }
+
+    const ct = res.headers.get("content-type") ?? "";
+    logger.info(
+      `[recv ${shortId}] embedded responded HTTP ${res.status} content-type=${ct}`,
+    );
 
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
@@ -85,10 +100,6 @@ export async function handleInferenceRequest(
       return;
     }
 
-    logger.info(
-      `[recv ${shortId}] streaming from embedded engine (HTTP ${res.status})`,
-    );
-
     if (!res.body) {
       channel.send({
         type: "INFERENCE_ERROR",
@@ -98,9 +109,29 @@ export async function handleInferenceRequest(
       return;
     }
 
+    // If the response isn't an SSE stream (e.g. llama-server returned a single
+    // JSON object because stream:true was dropped), normalize it into a
+    // synthetic SSE stream so the consumer's AI SDK still sees something.
+    const isStream = ct.includes("text/event-stream");
+
+    if (!isStream) {
+      logger.warn(
+        `[recv ${shortId}] non-SSE response (${ct}) — converting JSON to a single SSE delta`,
+      );
+      const json = await res.text();
+      const synth = jsonToSyntheticSse(json, requestId);
+      channel.send({ type: "INFERENCE_CHUNK", requestId, data: synth });
+      channel.send({ type: "INFERENCE_DONE", requestId });
+      logger.info(
+        `[recv ${shortId}] completed (synthetic SSE from JSON, ${synth.length} bytes)`,
+      );
+      return;
+    }
+
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let totalBytes = 0;
+    let firstChunkLogged = false;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -111,12 +142,21 @@ export async function handleInferenceRequest(
       }
       const text = decoder.decode(value, { stream: true });
       totalBytes += text.length;
+      if (!firstChunkLogged) {
+        firstChunkLogged = true;
+        logger.info(
+          `[recv ${shortId}] first SSE chunk (${text.length} bytes): ${text.slice(0, 120).replace(/\s+/g, " ")}…`,
+        );
+      }
       const sent = channel.send({
         type: "INFERENCE_CHUNK",
         requestId,
         data: text,
       });
       if (!sent) {
+        logger.warn(
+          `[recv ${shortId}] channel closed while streaming — aborting upstream`,
+        );
         abort.abort();
         break;
       }
@@ -139,6 +179,42 @@ export async function handleInferenceRequest(
     }
   } finally {
     activeRequests.delete(requestId);
+  }
+}
+
+/**
+ * Wrap a non-streaming JSON chat completion response into a single SSE event
+ * + [DONE], so consumers that only know how to parse SSE still get content.
+ */
+function jsonToSyntheticSse(jsonText: string, requestId: string): string {
+  try {
+    const parsed = JSON.parse(jsonText);
+    const content: string =
+      parsed?.choices?.[0]?.message?.content ??
+      parsed?.choices?.[0]?.delta?.content ??
+      "";
+    const chunk = {
+      id: requestId,
+      object: "chat.completion.chunk",
+      created: Math.floor(Date.now() / 1000),
+      model: parsed?.model ?? "embedded",
+      choices: [
+        {
+          index: 0,
+          delta: { role: "assistant", content },
+          finish_reason: null,
+        },
+      ],
+    };
+    const final = {
+      ...chunk,
+      choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+    };
+    return `data: ${JSON.stringify(chunk)}\n\ndata: ${JSON.stringify(final)}\n\ndata: [DONE]\n\n`;
+  } catch {
+    return `data: {"error":{"message":"Embedded server returned non-JSON: ${jsonText
+      .slice(0, 100)
+      .replace(/"/g, '\\"')}"}}\n\ndata: [DONE]\n\n`;
   }
 }
 
@@ -185,6 +261,10 @@ function adjustBodyForEmbeddedServer(bodyJson: string): string {
     if (embedded.modelLoaded && embedded.modelName) {
       parsed.model = embedded.modelName;
     }
+    // Force streaming. Llama-server's default with stream omitted is a single
+    // JSON response — we want SSE so the consumer's chat UI shows tokens as
+    // they come back over the P2P channel.
+    parsed.stream = true;
     return JSON.stringify(parsed);
   } catch {
     return bodyJson;

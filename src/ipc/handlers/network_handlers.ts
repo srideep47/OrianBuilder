@@ -207,6 +207,117 @@ export function registerNetworkHandlers(): void {
     },
   );
 
+  createTypedHandler(
+    networkContracts.testPeer,
+    async (_event, { publicKey }) => {
+      const start = Date.now();
+      if (!networkSwarm.isPeerConnected(publicKey)) {
+        return {
+          ok: false,
+          step: "connection",
+          detail: `Peer ${publicKey.slice(0, 16)}… is not connected. Go to Network and verify both devices show as online.`,
+        };
+      }
+
+      networkSwarm.requestPeerRefresh(publicKey);
+
+      const requestId = crypto.randomUUID();
+      const testBody = JSON.stringify({
+        model: "test",
+        messages: [
+          {
+            role: "user",
+            content: "Reply with exactly: pong",
+          },
+        ],
+        stream: true,
+        max_tokens: 16,
+        temperature: 0,
+      });
+
+      return new Promise((resolve) => {
+        let collected = "";
+        let bytes = 0;
+        let finished = false;
+        const timeout = setTimeout(() => {
+          if (finished) return;
+          finished = true;
+          cleanup?.();
+          resolve({
+            ok: false,
+            step: "stream-timeout",
+            detail:
+              "No response within 30 s. The peer's embedded engine may be loading or stuck.",
+            output: collected.slice(0, 500),
+            bytes,
+            durationMs: Date.now() - start,
+          });
+        }, 30_000);
+
+        const cleanup = networkSwarm.sendInferenceRequest(
+          publicKey,
+          requestId,
+          testBody,
+          (chunk) => {
+            bytes += chunk.length;
+            for (const line of chunk.split("\n")) {
+              const t = line.trim();
+              if (!t.startsWith("data: ") || t === "data: [DONE]") continue;
+              try {
+                const json = JSON.parse(t.slice(6));
+                const delta = json?.choices?.[0]?.delta?.content;
+                if (typeof delta === "string") collected += delta;
+              } catch {}
+            }
+          },
+          (err) => {
+            if (finished) return;
+            finished = true;
+            clearTimeout(timeout);
+            if (err) {
+              resolve({
+                ok: false,
+                step: "remote-error",
+                detail: err,
+                output: collected.slice(0, 500),
+                bytes,
+                durationMs: Date.now() - start,
+              });
+            } else if (bytes === 0) {
+              resolve({
+                ok: false,
+                step: "empty-stream",
+                detail:
+                  "Peer returned 0 bytes. Check electron-log on the host device — look for [recv] lines from compute:node — they show exactly what the embedded engine responded.",
+                bytes,
+                durationMs: Date.now() - start,
+              });
+            } else {
+              resolve({
+                ok: true,
+                step: "success",
+                detail: `Round-trip successful. Received ${bytes} bytes, ${collected.length} chars of content.`,
+                output: collected.slice(0, 500),
+                bytes,
+                durationMs: Date.now() - start,
+              });
+            }
+          },
+        );
+
+        if (!cleanup) {
+          finished = true;
+          clearTimeout(timeout);
+          resolve({
+            ok: false,
+            step: "send-failed",
+            detail: "Failed to send request — peer channel closed.",
+          });
+        }
+      });
+    },
+  );
+
   createTypedHandler(networkContracts.getDiagnostic, async (_event) => {
     const { getCurrentBroadcastState } =
       await import("@/main/compute/load-monitor");

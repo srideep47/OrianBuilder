@@ -558,6 +558,40 @@ function DiagnosticView() {
     refetchInterval: 2000,
   });
 
+  const [testResults, setTestResults] = useState<
+    Record<
+      string,
+      {
+        ok: boolean;
+        step: string;
+        detail: string;
+        output?: string;
+        bytes?: number;
+        durationMs?: number;
+      }
+    >
+  >({});
+  const [testingPeer, setTestingPeer] = useState<string | null>(null);
+
+  const runTest = async (publicKey: string) => {
+    setTestingPeer(publicKey);
+    try {
+      const result = await ipc.network.testPeer({ publicKey });
+      setTestResults((prev) => ({ ...prev, [publicKey]: result }));
+    } catch (err) {
+      setTestResults((prev) => ({
+        ...prev,
+        [publicKey]: {
+          ok: false,
+          step: "ipc-error",
+          detail: err instanceof Error ? err.message : String(err),
+        },
+      }));
+    } finally {
+      setTestingPeer(null);
+    }
+  };
+
   if (isLoading || !data) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center gap-4 text-muted-foreground">
@@ -650,54 +684,106 @@ function DiagnosticView() {
             No peers connected.
           </p>
         ) : (
-          data.peers.map((p) => (
-            <div
-              key={p.publicKey}
-              className="rounded-lg border border-border p-3 flex flex-col gap-2"
-            >
-              <div className="flex items-center gap-2">
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    p.isConnected ? "bg-green-500" : "bg-muted-foreground/40"
-                  }`}
-                />
-                <span className="font-medium text-sm">{p.displayName}</span>
-                {p.latencyMs !== null && (
-                  <span className="ml-auto text-xs text-muted-foreground font-mono">
-                    {p.latencyMs}ms
-                  </span>
+          data.peers.map((p) => {
+            const result = testResults[p.publicKey];
+            const isTesting = testingPeer === p.publicKey;
+            return (
+              <div
+                key={p.publicKey}
+                className="rounded-lg border border-border p-3 flex flex-col gap-2"
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      p.isConnected ? "bg-green-500" : "bg-muted-foreground/40"
+                    }`}
+                  />
+                  <span className="font-medium text-sm">{p.displayName}</span>
+                  {p.latencyMs !== null && (
+                    <span className="ml-auto text-xs text-muted-foreground font-mono">
+                      {p.latencyMs}ms
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 text-xs">
+                  <div className="text-muted-foreground">Last LOAD_UPDATE</div>
+                  <div className="font-medium">
+                    {formatRelativeTime(p.lastLoadUpdateAt)}
+                  </div>
+                  <div className="text-muted-foreground">Their models</div>
+                  <div className="font-medium">
+                    {p.loadedModels.length > 0
+                      ? p.loadedModels.join(", ")
+                      : "(none reported)"}
+                  </div>
+                  <div className="text-muted-foreground">computeAvailable</div>
+                  <div className="font-medium">
+                    {p.computeAvailable ? "Yes" : "No"}
+                  </div>
+                </div>
+                {p.isConnected && p.lastLoadUpdateAt === null && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400 leading-snug">
+                    Connected but no LOAD_UPDATE received yet. Their device
+                    might be on an older build, or their load monitor isn't
+                    running.
+                  </p>
+                )}
+                {p.isConnected && p.loadedModels.length === 0 && (
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    This peer has no model loaded in their Engine. They need to
+                    load one before you can route inference to them.
+                  </p>
+                )}
+                {p.isConnected && p.computeAvailable && (
+                  <div className="flex flex-col gap-1.5 pt-1 border-t border-border/50">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => runTest(p.publicKey)}
+                      disabled={isTesting}
+                      className="w-full h-7 text-xs"
+                    >
+                      {isTesting ? (
+                        <>
+                          <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />
+                          Testing round-trip…
+                        </>
+                      ) : (
+                        <>
+                          <Activity className="w-3 h-3 mr-1.5" />
+                          Test inference round-trip
+                        </>
+                      )}
+                    </Button>
+                    {result && (
+                      <div
+                        className={`rounded p-2 text-[11px] leading-snug ${
+                          result.ok
+                            ? "bg-green-500/5 text-green-700 dark:text-green-400 border border-green-500/20"
+                            : "bg-red-500/5 text-red-700 dark:text-red-400 border border-red-500/20"
+                        }`}
+                      >
+                        <p className="font-medium">
+                          {result.ok ? "✓" : "✗"} Step: {result.step}
+                          {result.durationMs !== undefined && (
+                            <span className="ml-2 font-mono">
+                              ({result.durationMs}ms, {result.bytes ?? 0} bytes)
+                            </span>
+                          )}
+                        </p>
+                        <p className="mt-0.5">{result.detail}</p>
+                        {result.output && (
+                          <pre className="mt-1 p-1.5 rounded bg-background/50 font-mono text-[10px] whitespace-pre-wrap break-all max-h-32 overflow-auto">
+                            {result.output}
+                          </pre>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-1.5 text-xs">
-                <div className="text-muted-foreground">Last LOAD_UPDATE</div>
-                <div className="font-medium">
-                  {formatRelativeTime(p.lastLoadUpdateAt)}
-                </div>
-                <div className="text-muted-foreground">Their models</div>
-                <div className="font-medium">
-                  {p.loadedModels.length > 0
-                    ? p.loadedModels.join(", ")
-                    : "(none reported)"}
-                </div>
-                <div className="text-muted-foreground">computeAvailable</div>
-                <div className="font-medium">
-                  {p.computeAvailable ? "Yes" : "No"}
-                </div>
-              </div>
-              {p.isConnected && p.lastLoadUpdateAt === null && (
-                <p className="text-[11px] text-amber-600 dark:text-amber-400 leading-snug">
-                  Connected but no LOAD_UPDATE received yet. Their device might
-                  be on an older build, or their load monitor isn't running.
-                </p>
-              )}
-              {p.isConnected && p.loadedModels.length === 0 && (
-                <p className="text-[11px] text-muted-foreground leading-snug">
-                  This peer has no model loaded in their Engine. They need to
-                  load one before you can route inference to them.
-                </p>
-              )}
-            </div>
-          ))
+            );
+          })
         )}
       </Card>
 

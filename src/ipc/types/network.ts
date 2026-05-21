@@ -181,6 +181,18 @@ export const networkContracts = {
     input: z.void(),
     output: NetworkDiagnosticSchema,
   }),
+  testPeer: defineContract({
+    channel: "network:test-peer",
+    input: z.object({ publicKey: z.string() }),
+    output: z.object({
+      ok: z.boolean(),
+      step: z.string(),
+      detail: z.string(),
+      output: z.string().optional(),
+      bytes: z.number().optional(),
+      durationMs: z.number().optional(),
+    }),
+  }),
   getNotifications: defineContract({
     channel: "network:get-notifications",
     input: z.void(),
