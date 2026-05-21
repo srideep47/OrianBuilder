@@ -144,18 +144,30 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
 
     logger.info(`New connection from ${remoteKeyHex.slice(0, 16)}…`);
 
-    // Send our HELLO
-    const identity = await getDeviceIdentity();
-    channel.send({
-      type: "HELLO",
-      publicKey: identity.publicKey,
-      displayName: identity.deviceName,
-    });
+    // Send our HELLO then full metadata
+    try {
+      const identity = await getDeviceIdentity();
+      channel.send({
+        type: "HELLO",
+        publicKey: identity.publicKey,
+        displayName: identity.deviceName,
+      });
+      channel.send({
+        type: "METADATA",
+        payload: await this._buildMetadata(),
+      });
+    } catch (err) {
+      logger.warn(
+        `Failed to send handshake to ${remoteKeyHex.slice(0, 16)}…:`,
+        err,
+      );
+      return;
+    }
 
-    // Then send full metadata
-    channel.send({
-      type: "METADATA",
-      payload: await this._buildMetadata(),
+    channel.on("error", (err: Error) => {
+      logger.warn(
+        `Socket error from ${remoteKeyHex.slice(0, 16)}… : ${err.message}`,
+      );
     });
 
     channel.on("message", (msg: ChannelMessage) => {
@@ -292,34 +304,42 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
   sendFriendRequest(targetPublicKey: string): void {
     const entry = connectedPeers.get(targetPublicKey);
     if (!entry) throw new Error("Peer not connected");
-    getDeviceIdentity().then((identity) => {
-      entry.channel.send({
-        type: "FRIEND_REQUEST",
-        fromPublicKey: identity.publicKey,
-        fromDisplayName: identity.deviceName,
-        fromDeviceName: identity.deviceName,
-      });
-    });
+    getDeviceIdentity()
+      .then((identity) => {
+        entry.channel.send({
+          type: "FRIEND_REQUEST",
+          fromPublicKey: identity.publicKey,
+          fromDisplayName: identity.deviceName,
+          fromDeviceName: identity.deviceName,
+        });
+      })
+      .catch((err) => logger.warn("sendFriendRequest failed:", err));
   }
 
   notifyFriendAccepted(targetPublicKey: string): void {
     const entry = connectedPeers.get(targetPublicKey);
     if (!entry) return;
-    getDeviceIdentity().then((identity) => {
-      entry.channel.send({
-        type: "FRIEND_ACCEPT",
-        fromPublicKey: identity.publicKey,
-      });
-      addTrustedPeer({
-        publicKey: targetPublicKey,
-        displayName: entry.peer.displayName,
-      });
-      connectedPeers.set(targetPublicKey, {
-        ...entry,
-        peer: { ...entry.peer, isTrusted: true },
-      });
-      this.emit("peers-changed", this._getPeerList());
-    });
+    getDeviceIdentity()
+      .then((identity) => {
+        try {
+          entry.channel.send({
+            type: "FRIEND_ACCEPT",
+            fromPublicKey: identity.publicKey,
+          });
+        } catch (err) {
+          logger.warn("notifyFriendAccepted send failed:", err);
+        }
+        addTrustedPeer({
+          publicKey: targetPublicKey,
+          displayName: entry.peer.displayName,
+        });
+        connectedPeers.set(targetPublicKey, {
+          ...entry,
+          peer: { ...entry.peer, isTrusted: true },
+        });
+        this.emit("peers-changed", this._getPeerList());
+      })
+      .catch((err) => logger.warn("notifyFriendAccepted failed:", err));
   }
 
   // ── Distributed Compute ──────────────────────────────────────────────────
