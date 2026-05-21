@@ -13,7 +13,6 @@ import {
 import {
   setComputeAvailable,
   startLoadMonitor,
-  stopLoadMonitor,
 } from "@/main/compute/load-monitor";
 import { getActiveRequestCount } from "@/main/compute/compute-node";
 import { getCachedHardwareProfile } from "@/main/hardware/detect";
@@ -63,13 +62,9 @@ export function registerComputeHandlers(): void {
     _shareEnabled = input.enabled;
     _maxConcurrent = input.maxConcurrent;
     setComputeAvailable(input.enabled);
-
-    if (input.enabled) {
-      startLoadMonitor();
-    } else {
-      stopLoadMonitor();
-    }
-
+    // Load monitor always runs — computeAvailable flag controls whether peers
+    // actually route inference here. Stopping the monitor would hide our models
+    // from other devices' pickers even when we just want to disable serving.
     logger.info(`Compute sharing ${input.enabled ? "enabled" : "disabled"}`);
     return { success: true };
   });
