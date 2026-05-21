@@ -43,7 +43,11 @@ export function ModelPicker() {
     model: LargeLanguageModel,
     opts?: { routeToPeerId?: string },
   ) => {
+    // Routing to a peer doesn't touch our local embedded engine, so a busy
+    // local engine shouldn't block selecting a remote model.
+    const willUseLocalEmbedded = !opts?.routeToPeerId;
     if (
+      willUseLocalEmbedded &&
       embeddedStatus?.isInferring &&
       (model.provider === "embedded" || embeddedStatus.modelLoaded)
     ) {
@@ -53,7 +57,13 @@ export function ModelPicker() {
 
     setIsModelSwitching(true);
     try {
-      if (model.provider !== "embedded" && embeddedStatus?.modelLoaded) {
+      // Only unload our local embedded model when the new selection will
+      // actually run locally and isn't itself embedded.
+      if (
+        willUseLocalEmbedded &&
+        model.provider !== "embedded" &&
+        embeddedStatus?.modelLoaded
+      ) {
         const result = await unloadModel();
         if (!result.success) {
           showError(result.error ?? "Failed to unload embedded model");
@@ -593,7 +603,7 @@ export function ModelPicker() {
                             {gpuLabel && <> · {gpuLabel}</>}
                           </>
                         ) : (
-                          "No Ollama models — start Ollama on that device"
+                          "No model loaded on that device's Engine"
                         )}
                       </span>
                     </div>
@@ -613,7 +623,7 @@ export function ModelPicker() {
                       node.loadedModels.map((modelName) => {
                         const isSelectedOnThisPeer =
                           isActive &&
-                          selectedModel.provider === "ollama" &&
+                          selectedModel.provider === "embedded" &&
                           selectedModel.name === modelName;
                         return (
                           <DropdownMenuItem
@@ -623,7 +633,7 @@ export function ModelPicker() {
                             }
                             onClick={() => {
                               void onModelSelect(
-                                { name: modelName, provider: "ollama" },
+                                { name: modelName, provider: "embedded" },
                                 { routeToPeerId: node.id },
                               );
                               setOpen(false);
@@ -639,14 +649,11 @@ export function ModelPicker() {
                     ) : (
                       <div className="px-3 py-3 text-xs text-muted-foreground">
                         <p className="font-medium text-foreground mb-1">
-                          No models found
+                          No model loaded
                         </p>
                         <p>
-                          Make sure Ollama is running on that device and has at
-                          least one model pulled.
-                        </p>
-                        <p className="mt-1 font-mono text-[10px]">
-                          ollama pull llama3
+                          Open the OrianBuilder Engine on that device and load a
+                          model so it can be shared over the network.
                         </p>
                       </div>
                     )}

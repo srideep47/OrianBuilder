@@ -46,25 +46,33 @@ export async function getModelClient(
   // ── Remote Compute Routing ─────────────────────────────────────────────────
   // When a peer's GPU is selected as the compute target and the user is running
   // a local model, route the inference through the P2P proxy (port 11436).
+  // For any local provider (embedded / Ollama / LM Studio) we redirect.
   const computeTarget = getComputeTarget();
   if (
     computeTarget.mode === "peer" &&
     computeTarget.peerId &&
     LOCAL_PROVIDERS.has(model.provider)
   ) {
-    logger.info(
-      `[remote-compute] Routing ${model.name} → peer ${computeTarget.peerId.slice(0, 16)}…`,
-    );
-    return {
-      modelClient: remotePeerProvider.createClient({
-        model,
-        settings,
-        providerConfig: { id: "remote-peer", type: "builtin" } as any,
-        apiKey: undefined,
-        providerId: "remote-peer",
-      }),
-      isEngineEnabled: false,
-    };
+    const { networkSwarm } = await import("@/main/network/swarm");
+    if (!networkSwarm.isPeerConnected(computeTarget.peerId)) {
+      logger.warn(
+        `[remote-compute] Selected peer ${computeTarget.peerId.slice(0, 16)}… is offline — falling back to local inference`,
+      );
+    } else {
+      logger.info(
+        `\x1b[1;30;46m[remote-compute] Routing ${model.provider}:${model.name} → peer ${computeTarget.peerId.slice(0, 16)}… via proxy:11436 \x1b[0m`,
+      );
+      return {
+        modelClient: remotePeerProvider.createClient({
+          model,
+          settings,
+          providerConfig: { id: "remote-peer", type: "builtin" } as any,
+          apiKey: undefined,
+          providerId: "remote-peer",
+        }),
+        isEngineEnabled: false,
+      };
+    }
   }
 
   const allProviders = await getLanguageModelProviders();

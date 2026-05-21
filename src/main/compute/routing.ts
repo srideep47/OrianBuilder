@@ -3,6 +3,7 @@
  */
 
 import { networkSwarm } from "@/main/network/swarm";
+import { listTrustedPeers } from "@/main/network/friends";
 import type { Peer } from "@/ipc/types/network";
 
 export type ComputeMode = "auto" | "local" | "peer";
@@ -51,17 +52,42 @@ export function getAvailableNodes(
   ];
 
   const { peers } = networkSwarm.getStatus();
+  const livePeerKeys = new Set<string>();
+
+  // 1. Trusted peers currently online & sharing compute → first-class nodes.
+  // 2. Trusted peers we can SEE but who haven't enabled "Share my compute" yet
+  //    → still show them with computeAvailable=false so they don't flicker out
+  //    of the picker while waiting for a LOAD_UPDATE that flips the flag.
   for (const peer of peers) {
-    if (peer.status !== "online" || !peer.isTrusted) continue;
+    if (!peer.isTrusted) continue;
+    livePeerKeys.add(peer.publicKey);
+    const suffix = peer.isLan ? " · LAN" : "";
     nodes.push({
       id: peer.publicKey,
-      label: `${peer.displayName} · ${peer.deviceName}`,
+      label: `${peer.displayName} · ${peer.deviceName}${suffix}`,
       isLocal: false,
       gpuUtilization: peer.gpuUtilization,
       loadedModels: peer.loadedModels,
-      computeAvailable: peer.computeAvailable,
+      computeAvailable: peer.status === "online" && peer.computeAvailable,
       latencyMs: peer.latencyMs,
       hardware: peer.hardware,
+    });
+  }
+
+  // 3. Trusted peers we know about but haven't connected to in this session
+  //    → show as disabled placeholders so the user still sees them in the list
+  //    and isn't confused when they briefly drop off and reconnect.
+  for (const trusted of listTrustedPeers()) {
+    if (livePeerKeys.has(trusted.publicKey)) continue;
+    nodes.push({
+      id: trusted.publicKey,
+      label: `${trusted.displayName} · (offline)`,
+      isLocal: false,
+      gpuUtilization: 0,
+      loadedModels: [],
+      computeAvailable: false,
+      latencyMs: null,
+      hardware: null,
     });
   }
 

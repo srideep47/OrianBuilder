@@ -24,6 +24,11 @@ let _server: http.Server | null = null;
 let _activePeerId: string | null = null;
 
 export function setProxyTarget(peerId: string | null): void {
+  if (_activePeerId !== peerId) {
+    logger.info(
+      `Proxy target ${peerId ? `→ ${peerId.slice(0, 16)}…` : "cleared"}`,
+    );
+  }
   _activePeerId = peerId;
 }
 
@@ -41,43 +46,130 @@ export function startProxy(): void {
       return;
     }
 
+    // /v1/models is what the AI SDK probes to validate the endpoint.
+    if (req.url?.includes("/models") && req.method === "GET") {
+      res.writeHead(200, {
+        ...corsHeaders(),
+        "Content-Type": "application/json",
+      });
+      res.end(
+        JSON.stringify({
+          object: "list",
+          data: [{ id: "remote-peer", object: "model", owned_by: "orion" }],
+        }),
+      );
+      return;
+    }
+
     if (!req.url?.includes("/chat/completions")) {
-      res.writeHead(404);
+      res.writeHead(404, corsHeaders());
       res.end("Not found");
       return;
     }
 
     const peerId = _activePeerId;
     if (!peerId) {
-      res.writeHead(503);
-      res.end(JSON.stringify({ error: "No peer target set" }));
+      logger.warn("[proxy] request arrived but no peer target is set");
+      res.writeHead(503, {
+        ...corsHeaders(),
+        "Content-Type": "application/json",
+      });
+      res.end(
+        JSON.stringify({
+          error: {
+            message:
+              "No remote compute target selected. Open the CPU picker in the top bar and choose a peer.",
+            type: "no_peer_selected",
+          },
+        }),
+      );
       return;
     }
 
-    let body = "";
-    req.on("data", (d: Buffer) => (body += d.toString()));
-    req.on("end", () => {
-      const requestId = crypto.randomUUID();
-
-      res.writeHead(200, {
+    if (!networkSwarm.isPeerConnected(peerId)) {
+      logger.warn(
+        `[proxy] selected peer ${peerId.slice(0, 16)}… is not connected`,
+      );
+      res.writeHead(503, {
         ...corsHeaders(),
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
+        "Content-Type": "application/json",
       });
+      res.end(
+        JSON.stringify({
+          error: {
+            message:
+              "Selected peer is not connected. Wait for them to come online or pick a different device.",
+            type: "peer_disconnected",
+          },
+        }),
+      );
+      return;
+    }
 
+    const chunks: Buffer[] = [];
+    req.on("data", (d: Buffer) => chunks.push(d));
+    req.on("end", () => {
+      const body = Buffer.concat(chunks).toString("utf-8");
+      const requestId = crypto.randomUUID();
+      const shortId = requestId.slice(0, 8);
+      logger.info(
+        `[proxy ${shortId}] forwarding to peer ${peerId.slice(0, 16)}… (${body.length} bytes)`,
+      );
+
+      let headersSent = false;
+      const ensureSseHeaders = () => {
+        if (headersSent || res.headersSent) return;
+        headersSent = true;
+        res.writeHead(200, {
+          ...corsHeaders(),
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
+        });
+      };
+
+      let bytesStreamed = 0;
       const cleanup = networkSwarm.sendInferenceRequest(
         peerId,
         requestId,
         body,
         (chunk) => {
+          ensureSseHeaders();
+          if (res.writableEnded) return;
+          bytesStreamed += chunk.length;
           res.write(chunk);
         },
         (err) => {
-          if (!res.writableEnded) {
-            if (err) {
-              res.write(`data: {"error":"${err}"}\n\n`);
+          if (err) {
+            logger.warn(`[proxy ${shortId}] ended with error: ${err}`);
+            if (!res.headersSent) {
+              res.writeHead(502, {
+                ...corsHeaders(),
+                "Content-Type": "application/json",
+              });
+              res.end(
+                JSON.stringify({
+                  error: { message: err, type: "remote_inference_failed" },
+                }),
+              );
+              return;
             }
+            // Headers already sent (we were mid-stream) — append an SSE error
+            // event so the AI SDK surfaces something instead of a silent stop.
+            if (!res.writableEnded) {
+              const safeMsg = err.replace(/"/g, '\\"').replace(/\n/g, " ");
+              res.write(`data: {"error":{"message":"${safeMsg}"}}\n\n`);
+              res.end();
+            }
+            return;
+          }
+
+          logger.info(
+            `[proxy ${shortId}] done (${bytesStreamed} bytes streamed)`,
+          );
+          if (!res.writableEnded) {
+            ensureSseHeaders();
             res.end();
           }
         },
@@ -88,14 +180,24 @@ export function startProxy(): void {
         networkSwarm.cancelInferenceRequest(peerId, requestId);
       });
     });
+
+    req.on("error", (err) => {
+      logger.warn("[proxy] request error:", err);
+    });
   });
 
   _server.listen(PROXY_PORT, "127.0.0.1", () => {
     logger.info(`Compute proxy listening on port ${PROXY_PORT}`);
   });
 
-  _server.on("error", (err) => {
-    logger.error("Proxy server error:", err);
+  _server.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      logger.error(
+        `Compute proxy port ${PROXY_PORT} is already in use — remote compute will not work until the port is freed.`,
+      );
+    } else {
+      logger.error("Proxy server error:", err);
+    }
   });
 }
 

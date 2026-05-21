@@ -16,8 +16,8 @@ export type ChannelMessage =
       inviteToken?: string;
     }
   | { type: "FRIEND_ACCEPT"; fromPublicKey: string }
-  | { type: "PING" }
-  | { type: "PONG" }
+  | { type: "PING"; nonce: number }
+  | { type: "PONG"; nonce: number }
   // ── Distributed Compute (Phase 4) ──────────────────────────────────────────
   | { type: "INFERENCE_REQUEST"; requestId: string; body: string }
   | { type: "INFERENCE_CHUNK"; requestId: string; data: string }
@@ -46,20 +46,48 @@ export interface PeerMetadataPayload {
 
 export class PeerChannel extends EventEmitter {
   private buf = Buffer.alloc(0);
+  private closed = false;
 
   constructor(private socket: NodeJS.ReadWriteStream) {
     super();
     socket.on("data", (chunk: Buffer) => this._onData(chunk));
     socket.on("error", (err) => this.emit("error", err));
-    socket.on("close", () => this.emit("close"));
-    socket.on("end", () => this.emit("close"));
+    // Both "end" and "close" can fire — guard so consumers only see one "close".
+    socket.on("close", () => this._onClose());
+    socket.on("end", () => this._onClose());
   }
 
-  send(msg: ChannelMessage): void {
-    const json = Buffer.from(JSON.stringify(msg), "utf-8");
-    const header = Buffer.allocUnsafe(4);
-    header.writeUInt32BE(json.length, 0);
-    this.socket.write(Buffer.concat([header, json]));
+  send(msg: ChannelMessage): boolean {
+    if (this.closed) return false;
+    try {
+      const json = Buffer.from(JSON.stringify(msg), "utf-8");
+      const header = Buffer.allocUnsafe(4);
+      header.writeUInt32BE(json.length, 0);
+      this.socket.write(Buffer.concat([header, json]));
+      return true;
+    } catch {
+      this._onClose();
+      return false;
+    }
+  }
+
+  isClosed(): boolean {
+    return this.closed;
+  }
+
+  close(): void {
+    if (this.closed) return;
+    try {
+      (this.socket as any).end?.();
+      (this.socket as any).destroy?.();
+    } catch {}
+    this._onClose();
+  }
+
+  private _onClose(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.emit("close");
   }
 
   private _onData(chunk: Buffer) {

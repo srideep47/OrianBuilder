@@ -1,11 +1,11 @@
 /**
- * Polls loaded models and GPU utilization, then broadcasts live load stats
- * to all connected peers every 2 seconds.
+ * Polls loaded models and GPU utilization for the OrianBuilder embedded
+ * inference engine (the one driven by the Engine screen) and broadcasts live
+ * load stats to all connected peers every 2 seconds.
  *
- * Sources (checked in priority order):
- *  1. OrianBuilder embedded llama-server (port 11435) — no install needed
- *  2. Ollama (port 11434) — if running
- *  3. LM Studio (port 1234) — if running
+ * We only surface the embedded engine. The shared-compute path is locked to
+ * the embedded engine in compute-node.ts, so advertising Ollama / LM Studio
+ * models here would just tell peers about models we can't actually serve.
  *
  * The monitor always runs so peers can see what models are available.
  * computeAvailable is set separately via setComputeAvailable() when the user
@@ -59,10 +59,14 @@ async function _broadcast(): Promise<void> {
       _collectLoadedModels(),
     ]);
     _currentLoad = load;
+    // We only advertise compute as actually available when sharing is enabled
+    // AND a model is loaded in the embedded engine. Otherwise a peer's picker
+    // would let them select us → request would immediately fail.
+    const canActuallyServe = _computeAvailable && models.length > 0;
     networkSwarm.broadcastLoad({
       gpuUtilization: _currentLoad,
       loadedModels: models,
-      computeAvailable: _computeAvailable,
+      computeAvailable: canActuallyServe,
       queueDepth: _queueDepth,
     });
   } catch {
@@ -89,42 +93,13 @@ async function _pollGpuUtilization(): Promise<number> {
 }
 
 async function _collectLoadedModels(): Promise<string[]> {
-  const models: string[] = [];
-
-  // ── 1. Embedded llama-server (OrianBuilder Engine screen) ────────────────
-  // Read directly from the in-process state — no HTTP round-trip needed.
+  // Only report the model currently loaded in OrianBuilder's embedded engine.
+  // That's the only model we'll actually serve over the P2P channel.
   try {
     const embedded = getServerStatus();
     if (embedded.modelLoaded && embedded.modelName) {
-      models.push(embedded.modelName);
+      return [embedded.modelName];
     }
   } catch {}
-
-  // ── 2. Ollama ─────────────────────────────────────────────────────────────
-  try {
-    const res = await fetch("http://127.0.0.1:11434/api/tags", {
-      signal: AbortSignal.timeout(800),
-    });
-    if (res.ok) {
-      const data = (await res.json()) as { models?: { name: string }[] };
-      for (const m of data.models ?? []) {
-        if (m.name && !models.includes(m.name)) models.push(m.name);
-      }
-    }
-  } catch {}
-
-  // ── 3. LM Studio ──────────────────────────────────────────────────────────
-  try {
-    const res = await fetch("http://127.0.0.1:1234/v1/models", {
-      signal: AbortSignal.timeout(800),
-    });
-    if (res.ok) {
-      const data = (await res.json()) as { data?: { id: string }[] };
-      for (const m of data.data ?? []) {
-        if (m.id && !models.includes(m.id)) models.push(m.id);
-      }
-    }
-  } catch {}
-
-  return models;
+  return [];
 }

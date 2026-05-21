@@ -1,10 +1,13 @@
 /**
  * Hyperswarm P2P networking core.
  *
- * - Joins DHT topic = SHA256("orionbuilder-v1") for peer discovery
- * - Each connection uses Noise protocol (encrypted automatically by Hyperswarm)
- * - Exchanges peer metadata on connect
- * - Tracks trusted vs unknown peers
+ * - Joins DHT topic = SHA256("orionbuilder-v1") for global peer discovery.
+ * - Each Hyperswarm connection is Noise-encrypted automatically.
+ * - On connect, both sides exchange HELLO + METADATA.
+ * - Keep-alive pings every 10s measure latency and detect dead connections.
+ * - Duplicate connections to the same peer are deduplicated.
+ * - A UDP LAN broadcaster (see lan-discovery.ts) runs in parallel so devices
+ *   on the same network find each other instantly without depending on DHT.
  */
 
 import crypto from "node:crypto";
@@ -29,14 +32,32 @@ import {
 } from "./peer-channel";
 import type { Peer } from "@/ipc/types/network";
 import { app } from "electron";
+import { lanDiscovery, type LanPeer } from "./lan-discovery";
 
 const logger = log.scope("network:swarm");
 
-// Live connected peers indexed by hex public key
-const connectedPeers = new Map<string, { channel: PeerChannel; peer: Peer }>();
+interface ConnectedPeerEntry {
+  channel: PeerChannel;
+  peer: Peer;
+  /** Timestamp ms of last successful read from the socket (data or pong). */
+  lastSeenAt: number;
+  /** Outstanding ping nonce → sentAt ms. */
+  pings: Map<number, number>;
+  /** Whether we've received METADATA from this peer yet. */
+  metadataReceived: boolean;
+}
+
+const connectedPeers = new Map<string, ConnectedPeerEntry>();
 
 // Pending invite lookups (code → waiting for peer)
 const pendingInviteTopics = new Set<string>(); // hex topics
+
+// LAN topics we've already joined (publicKey hex of LAN peer)
+const lanJoinedTopics = new Set<string>();
+
+const KEEPALIVE_INTERVAL_MS = 10_000;
+const KEEPALIVE_TIMEOUT_MS = 25_000;
+const REFLUSH_INTERVAL_MS = 60_000;
 
 type SwarmEvents = {
   "peers-changed": [peers: Peer[]];
@@ -59,6 +80,9 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
   private swarm: any = null;
   private isOnline = false;
   private mainTopic: Buffer | null = null;
+  private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
+  private reflushTimer: ReturnType<typeof setInterval> | null = null;
+  private pingNonceCounter = 1;
 
   async start(): Promise<void> {
     if (this.isOnline) return;
@@ -96,6 +120,33 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
           logger.warn("Swarm flush timed out (non-fatal):", err),
         );
       this.isOnline = true;
+
+      // Start LAN broadcast discovery in parallel with the DHT join.
+      try {
+        const identity = await getDeviceIdentity();
+        await lanDiscovery.start({
+          publicKey: identity.publicKey,
+          displayName: identity.deviceName,
+          deviceName: identity.deviceName,
+          appVersion: app.getVersion(),
+        });
+        lanDiscovery.on("peer-seen", (lanPeer) => this._onLanPeer(lanPeer));
+      } catch (err) {
+        logger.warn("LAN discovery failed to start (non-fatal):", err);
+      }
+
+      // Periodic keep-alive pings + dead-connection cleanup
+      this.keepaliveTimer = setInterval(
+        () => this._keepalivePass(),
+        KEEPALIVE_INTERVAL_MS,
+      );
+      // Re-flush the DHT periodically — peers that came online after our
+      // initial flush sometimes only become routable on the next gossip cycle.
+      this.reflushTimer = setInterval(
+        () => this._reflushPass(),
+        REFLUSH_INTERVAL_MS,
+      );
+
       logger.info("Hyperswarm started, joined discovery topic");
     } catch (err) {
       logger.error("Failed to start swarm:", err);
@@ -104,13 +155,22 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
   }
 
   async stop(): Promise<void> {
+    if (this.keepaliveTimer) clearInterval(this.keepaliveTimer);
+    if (this.reflushTimer) clearInterval(this.reflushTimer);
+    this.keepaliveTimer = null;
+    this.reflushTimer = null;
+    await lanDiscovery.stop().catch(() => undefined);
     if (!this.swarm) return;
     try {
       await this.swarm.destroy();
     } catch {}
     this.swarm = null;
     this.isOnline = false;
+    for (const { channel } of connectedPeers.values()) {
+      channel.close();
+    }
     connectedPeers.clear();
+    lanJoinedTopics.clear();
     this.emit("peers-changed", []);
     logger.info("Hyperswarm stopped");
   }
@@ -136,13 +196,68 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
     }, 60_000);
   }
 
+  /**
+   * When LAN discovery sees a peer, derive a per-peer rendezvous topic from
+   * sorted (selfPublicKey, peerPublicKey) so both sides compute the same hash,
+   * then join it. The DHT topic still runs in parallel; this just gives us a
+   * faster path for devices that share a network.
+   */
+  private _onLanPeer(lanPeer: LanPeer): void {
+    if (!this.swarm) return;
+    if (lanJoinedTopics.has(lanPeer.publicKey)) return;
+    void this._joinLanRendezvous(lanPeer);
+  }
+
+  private async _joinLanRendezvous(lanPeer: LanPeer): Promise<void> {
+    try {
+      const identity = await getDeviceIdentity();
+      const [a, b] = [identity.publicKey, lanPeer.publicKey].sort();
+      const topic = crypto
+        .createHash("sha256")
+        .update("orion-lan-pair-")
+        .update(a)
+        .update(b)
+        .digest();
+      lanJoinedTopics.add(lanPeer.publicKey);
+      this.swarm.join(topic, { server: true, client: true });
+      await this.swarm.flush().catch(() => undefined);
+      logger.info(
+        `Joined LAN rendezvous topic for ${lanPeer.displayName} (${lanPeer.publicKey.slice(0, 16)}…)`,
+      );
+    } catch (err) {
+      logger.warn("LAN rendezvous join failed:", err);
+    }
+  }
+
   private async _handleConnection(socket: any, _info: any) {
     const remoteKeyHex: string = Buffer.from(socket.remotePublicKey).toString(
       "hex",
     );
-    const channel = new PeerChannel(socket);
 
+    // Dedup: if we already have a healthy channel to this peer, drop the new
+    // socket. Hyperswarm can race client/server connections under the hood.
+    const existing = connectedPeers.get(remoteKeyHex);
+    if (existing && !existing.channel.isClosed()) {
+      logger.info(
+        `Duplicate connection from ${remoteKeyHex.slice(0, 16)}… — closing new socket`,
+      );
+      try {
+        socket.destroy?.();
+      } catch {}
+      return;
+    }
+
+    const channel = new PeerChannel(socket);
     logger.info(`New connection from ${remoteKeyHex.slice(0, 16)}…`);
+
+    // Initialize a placeholder entry — gets enriched on METADATA.
+    connectedPeers.set(remoteKeyHex, {
+      channel,
+      peer: this._placeholderPeer(remoteKeyHex),
+      lastSeenAt: Date.now(),
+      pings: new Map(),
+      metadataReceived: false,
+    });
 
     // Send our HELLO then full metadata
     try {
@@ -161,6 +276,7 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
         `Failed to send handshake to ${remoteKeyHex.slice(0, 16)}…:`,
         err,
       );
+      channel.close();
       return;
     }
 
@@ -171,24 +287,25 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
     });
 
     channel.on("message", (msg: ChannelMessage) => {
+      const entry = connectedPeers.get(remoteKeyHex);
+      if (entry) entry.lastSeenAt = Date.now();
       this._handleMessage(remoteKeyHex, channel, msg);
     });
 
     channel.on("close", () => {
       const entry = connectedPeers.get(remoteKeyHex);
-      if (entry) {
-        connectedPeers.set(remoteKeyHex, {
-          ...entry,
-          peer: { ...entry.peer, status: "offline" },
-        });
-      }
+      if (entry?.channel !== channel) return; // already replaced
+      const displayName = entry.peer.displayName;
+      connectedPeers.delete(remoteKeyHex);
       this.emit("peers-changed", this._getPeerList());
+      logger.info(
+        `Peer ${displayName} (${remoteKeyHex.slice(0, 16)}…) disconnected`,
+      );
       this.emit(
         "notification",
         "peer_offline",
-        `${connectedPeers.get(remoteKeyHex)?.peer.displayName ?? "Peer"} disconnected`,
+        `${displayName} disconnected`,
         "",
-        {},
       );
     });
   }
@@ -199,13 +316,31 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
     msg: ChannelMessage,
   ) {
     if (msg.type === "PING") {
-      channel.send({ type: "PONG" });
+      channel.send({ type: "PONG", nonce: msg.nonce });
+      return;
+    }
+
+    if (msg.type === "PONG") {
+      const entry = connectedPeers.get(remoteKeyHex);
+      if (!entry) return;
+      const sentAt = entry.pings.get(msg.nonce);
+      if (sentAt !== undefined) {
+        const latency = Date.now() - sentAt;
+        entry.pings.delete(msg.nonce);
+        entry.peer = {
+          ...entry.peer,
+          latencyMs: latency,
+          status: "online",
+        };
+        this.emit("peers-changed", this._getPeerList());
+      }
       return;
     }
 
     if (msg.type === "METADATA") {
       const p = msg.payload;
       const trusted = isTrustedPeer(p.publicKey);
+      const lanAddr = lanDiscovery.getAddress(p.publicKey);
       const peer: Peer = {
         publicKey: p.publicKey,
         fingerprint: p.publicKey.slice(0, 16).toUpperCase(),
@@ -215,8 +350,8 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
         hardware: p.hardware,
         status: "online",
         isTrusted: trusted,
-        isLan: false,
-        latencyMs: null,
+        isLan: lanAddr !== null,
+        latencyMs: connectedPeers.get(remoteKeyHex)?.peer.latencyMs ?? null,
         lastSeenAt: Date.now(),
         loadedModels: p.loadedModels,
         gpuUtilization: p.gpuUtilization,
@@ -224,17 +359,28 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
         appVersion: p.appVersion,
       };
 
-      connectedPeers.set(p.publicKey, { channel, peer });
+      const existing = connectedPeers.get(remoteKeyHex);
+      const wasNew = !existing || !existing.metadataReceived;
+      connectedPeers.set(remoteKeyHex, {
+        channel,
+        peer,
+        lastSeenAt: Date.now(),
+        pings: existing?.pings ?? new Map(),
+        metadataReceived: true,
+      });
       if (trusted) updatePeerLastSeen(p.publicKey);
 
       this.emit("peers-changed", this._getPeerList());
-      this.emit(
-        "notification",
-        "peer_online",
-        `${peer.displayName} came online`,
-        `${peer.deviceName} · ${peer.hardware?.gpu ?? ""}`,
-        { publicKey: peer.publicKey },
-      );
+      if (wasNew) {
+        this.emit(
+          "notification",
+          "peer_online",
+          `${peer.displayName} came online`,
+          `${peer.deviceName} · ${peer.hardware?.gpu ?? ""}`,
+          { publicKey: peer.publicKey },
+        );
+      }
+      return;
     }
 
     if (msg.type === "FRIEND_REQUEST") {
@@ -255,26 +401,37 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
         "Tap to accept or decline",
         { requestId: reqId },
       );
+      return;
     }
 
     if (msg.type === "LOAD_UPDATE") {
       const entry = connectedPeers.get(remoteKeyHex);
       if (entry) {
-        connectedPeers.set(remoteKeyHex, {
-          ...entry,
-          peer: {
-            ...entry.peer,
-            gpuUtilization: msg.gpuUtilization,
-            loadedModels: msg.loadedModels,
-            computeAvailable: msg.computeAvailable,
-          },
-        });
+        entry.peer = {
+          ...entry.peer,
+          gpuUtilization: msg.gpuUtilization,
+          loadedModels: msg.loadedModels,
+          computeAvailable: msg.computeAvailable,
+        };
         this.emit("peers-changed", this._getPeerList());
       }
       return;
     }
 
     if (msg.type === "INFERENCE_REQUEST") {
+      // Trust gate: only serve inference for trusted peers. Anyone else gets
+      // an explicit denial back so they don't sit waiting for chunks.
+      if (!isTrustedPeer(remoteKeyHex)) {
+        logger.warn(
+          `Rejecting INFERENCE_REQUEST from untrusted ${remoteKeyHex.slice(0, 16)}…`,
+        );
+        channel.send({
+          type: "INFERENCE_ERROR",
+          requestId: msg.requestId,
+          error: "Peer is not in your trusted list",
+        });
+        return;
+      }
       void handleInferenceRequest(channel, msg.requestId, msg.body);
       return;
     }
@@ -292,12 +449,10 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
       });
       const entry = connectedPeers.get(msg.fromPublicKey);
       if (entry) {
-        connectedPeers.set(msg.fromPublicKey, {
-          ...entry,
-          peer: { ...entry.peer, isTrusted: true },
-        });
+        entry.peer = { ...entry.peer, isTrusted: true };
         this.emit("peers-changed", this._getPeerList());
       }
+      return;
     }
   }
 
@@ -333,10 +488,7 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
           publicKey: targetPublicKey,
           displayName: entry.peer.displayName,
         });
-        connectedPeers.set(targetPublicKey, {
-          ...entry,
-          peer: { ...entry.peer, isTrusted: true },
-        });
+        entry.peer = { ...entry.peer, isTrusted: true };
         this.emit("peers-changed", this._getPeerList());
       })
       .catch((err) => logger.warn("notifyFriendAccepted failed:", err));
@@ -369,37 +521,53 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
     onDone: (err?: string) => void,
   ): (() => void) | null {
     const entry = connectedPeers.get(peerId);
-    if (!entry) {
-      onDone("Peer not connected");
+    if (!entry || entry.channel.isClosed()) {
+      onDone(
+        entry
+          ? "Peer connection closed"
+          : "Peer not connected — try selecting a different device",
+      );
       return null;
     }
 
-    // Register a one-time listener for chunks and done/error for this requestId
+    let finished = false;
+    const finish = (err?: string) => {
+      if (finished) return;
+      finished = true;
+      entry.channel.off("message", handler);
+      entry.channel.off("close", onClose);
+      onDone(err);
+    };
+
+    const onClose = () => finish("Peer disconnected during inference");
+
     const handler = (msg: import("./peer-channel").ChannelMessage) => {
       if (msg.type === "INFERENCE_CHUNK" && msg.requestId === requestId) {
         onChunk(msg.data);
       } else if (msg.type === "INFERENCE_DONE" && msg.requestId === requestId) {
-        entry.channel.off("message", handler);
-        onDone();
+        finish();
       } else if (
         msg.type === "INFERENCE_ERROR" &&
         msg.requestId === requestId
       ) {
-        entry.channel.off("message", handler);
-        onDone(msg.error);
+        finish(msg.error);
       }
     };
 
     entry.channel.on("message", handler);
-    entry.channel.send({
+    entry.channel.on("close", onClose);
+
+    const sent = entry.channel.send({
       type: "INFERENCE_REQUEST",
       requestId,
       body: bodyJson,
     });
+    if (!sent) {
+      finish("Failed to send request — peer channel closed");
+      return null;
+    }
 
-    return () => {
-      entry.channel.off("message", handler);
-    };
+    return () => finish();
   }
 
   cancelInferenceRequest(peerId: string, requestId: string): void {
@@ -414,8 +582,69 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
     };
   }
 
+  /** Public accessor — true if we have an open channel to this peer. */
+  isPeerConnected(publicKey: string): boolean {
+    const entry = connectedPeers.get(publicKey);
+    return !!entry && !entry.channel.isClosed();
+  }
+
   private _getPeerList(): Peer[] {
     return Array.from(connectedPeers.values()).map((e) => e.peer);
+  }
+
+  private _placeholderPeer(remoteKeyHex: string): Peer {
+    const trusted = isTrustedPeer(remoteKeyHex);
+    return {
+      publicKey: remoteKeyHex,
+      fingerprint: remoteKeyHex.slice(0, 16).toUpperCase(),
+      displayName: trusted
+        ? remoteKeyHex.slice(0, 8)
+        : `Unknown ${remoteKeyHex.slice(0, 6)}`,
+      deviceName: "—",
+      deviceType: "desktop",
+      hardware: null,
+      status: "connecting",
+      isTrusted: trusted,
+      isLan: lanDiscovery.getAddress(remoteKeyHex) !== null,
+      latencyMs: null,
+      lastSeenAt: Date.now(),
+      loadedModels: [],
+      gpuUtilization: 0,
+      computeAvailable: false,
+      appVersion: "",
+    };
+  }
+
+  /** Send a PING to every connected peer; close anything that hasn't been heard
+   *  from in KEEPALIVE_TIMEOUT_MS. */
+  private _keepalivePass(): void {
+    const now = Date.now();
+    for (const [key, entry] of connectedPeers) {
+      if (entry.channel.isClosed()) continue;
+      if (now - entry.lastSeenAt > KEEPALIVE_TIMEOUT_MS) {
+        logger.warn(
+          `Peer ${key.slice(0, 16)}… is dead (no traffic in ${Math.round((now - entry.lastSeenAt) / 1000)}s) — closing`,
+        );
+        entry.channel.close();
+        continue;
+      }
+      const nonce = this.pingNonceCounter++;
+      entry.pings.set(nonce, now);
+      // Drop pings older than 30s so the map doesn't grow unbounded.
+      for (const [n, t] of entry.pings) {
+        if (now - t > 30_000) entry.pings.delete(n);
+      }
+      entry.channel.send({ type: "PING", nonce });
+    }
+  }
+
+  private _reflushPass(): void {
+    if (!this.swarm) return;
+    void this.swarm
+      .flush()
+      .catch((err: unknown) =>
+        logger.debug("Periodic swarm flush failed (non-fatal):", err),
+      );
   }
 
   private async _buildMetadata(): Promise<PeerMetadataPayload> {
