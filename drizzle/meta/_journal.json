@@ -267,6 +267,13 @@
       "when": 1778704210060,
       "tag": "0037_wide_proteus",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1779362470994,
+      "tag": "0038_violet_bucky",
+      "breakpoints": true
     }
   ]
 }

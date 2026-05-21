@@ -709,6 +709,63 @@ export const mcpToolConsents = sqliteTable(
   (table) => [unique("uniq_mcp_consent").on(table.serverId, table.toolName)],
 );
 
+// --- Orion Network: Device Identity ---
+export const deviceIdentity = sqliteTable("device_identity", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  publicKey: text("public_key").notNull(),
+  privateKeyEncrypted: text("private_key_encrypted").notNull(),
+  deviceName: text("device_name").notNull(),
+  deviceType: text("device_type", {
+    enum: ["desktop", "laptop", "server"],
+  })
+    .notNull()
+    .default("desktop"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+// --- Orion Network: Trusted Peers ---
+export const trustedPeers = sqliteTable("trusted_peers", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  publicKey: text("public_key").notNull().unique(),
+  fingerprint: text("fingerprint").notNull(),
+  displayName: text("display_name").notNull(),
+  addedAt: integer("added_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  lastSeenAt: integer("last_seen_at", { mode: "timestamp" }),
+  addedVia: text("added_via", { enum: ["invite", "manual"] })
+    .notNull()
+    .default("invite"),
+  sharedComputeEnabled: integer("shared_compute_enabled", { mode: "boolean" })
+    .notNull()
+    .default(sql`0`),
+  allowedModels: text("allowed_models", { mode: "json" }).$type<
+    string[] | null
+  >(),
+  permissions: text("permissions", { mode: "json" }).$type<Record<
+    string,
+    unknown
+  > | null>(),
+});
+
+// --- Orion Network: Friend Requests ---
+export const friendRequests = sqliteTable("friend_requests", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  fromPublicKey: text("from_public_key").notNull(),
+  fromDisplayName: text("from_display_name").notNull(),
+  inviteCode: text("invite_code").notNull(),
+  status: text("status", {
+    enum: ["pending", "accepted", "declined"],
+  })
+    .notNull()
+    .default("pending"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
 // --- Custom Themes table ---
 export const customThemes = sqliteTable("custom_themes", {
   id: integer("id").primaryKey({ autoIncrement: true }),

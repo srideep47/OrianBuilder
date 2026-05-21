@@ -389,6 +389,12 @@ const BaseUserSettingsFields = {
   enableSelectAppFromHomeChatInput: z.boolean().optional(),
   previewIdleTimeoutPolicy: z.enum(["default", "never"]).optional(),
   braveSearchApiKey: SecretSchema.optional(),
+
+  // Orion Network
+  onboardingCompleted: z.boolean().optional(),
+  orionDeviceName: z.string().optional(),
+  orionDeviceType: z.enum(["desktop", "laptop", "server"]).optional(),
+  orionNetworkEnabled: z.boolean().optional(),
 };
 
 /**

@@ -17,7 +17,13 @@ export const LlamaBinaryCheckResultSchema = z.object({
 });
 
 export const LlamaBinaryDownloadProgressSchema = z.object({
-  stage: z.enum(["resolving", "downloading", "extracting", "companions", "done"]),
+  stage: z.enum([
+    "resolving",
+    "downloading",
+    "extracting",
+    "companions",
+    "done",
+  ]),
   label: z.string(),
   percent: z.number(),
   bytesDownloaded: z.number(),
@@ -78,6 +84,12 @@ export const llamaBinaryEventClient = createEventClient(llamaBinaryEvents);
 // Type Exports
 // =============================================================================
 
-export type LlamaBinaryCheckResult = z.infer<typeof LlamaBinaryCheckResultSchema>;
-export type LlamaBinaryDownloadProgress = z.infer<typeof LlamaBinaryDownloadProgressSchema>;
-export type LlamaBinaryDownloadResult = z.infer<typeof LlamaBinaryDownloadResultSchema>;
+export type LlamaBinaryCheckResult = z.infer<
+  typeof LlamaBinaryCheckResultSchema
+>;
+export type LlamaBinaryDownloadProgress = z.infer<
+  typeof LlamaBinaryDownloadProgressSchema
+>;
+export type LlamaBinaryDownloadResult = z.infer<
+  typeof LlamaBinaryDownloadResultSchema
+>;

@@ -15,6 +15,8 @@ import { mediaAiRoute } from "./routes/mediaai";
 import { dailyAiDigestRoute } from "./routes/dailyaidigest";
 import { inferenceRoute } from "./routes/inference";
 import { marketplaceRoute, modelsLibraryRoute } from "./routes/marketplace";
+import { onboardingRoute } from "./routes/onboarding";
+import { networkRoute } from "./routes/network";
 
 const routeTree = rootRoute.addChildren([
   homeRoute,
@@ -32,6 +34,8 @@ const routeTree = rootRoute.addChildren([
   inferenceRoute,
   marketplaceRoute,
   modelsLibraryRoute,
+  onboardingRoute,
+  networkRoute,
 ]);
 
 // src/components/NotFoundRedirect.tsx

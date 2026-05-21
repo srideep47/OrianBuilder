@@ -4,31 +4,38 @@ import { useEffect, useRef } from "react";
 // RGB triplets weighted by their real frequency:
 // warm orange/ember dominate bottom-left → violet/steel top-right
 const PALETTE = [
-  { r: 200, g: 95,  b: 55,  w: 14, group: 0 },
-  { r: 220, g: 130, b: 70,  w: 12, group: 0 },
-  { r: 245, g: 175, b: 100, w:  9, group: 0 },
-  { r: 160, g: 70,  b: 50,  w: 11, group: 0 },
-  { r: 120, g: 55,  b: 50,  w:  8, group: 0 },
-  { r: 255, g: 215, b: 145, w:  4, group: 0 },
-  { r: 130, g: 72,  b: 82,  w:  4, group: 1 },
-  { r: 150, g: 85,  b: 100, w:  3, group: 1 },
-  { r: 180, g: 110, b: 130, w:  2, group: 1 },
-  { r: 110, g: 70,  b: 130, w:  4, group: 2 },
-  { r: 135, g: 85,  b: 150, w:  3, group: 2 },
-  { r: 80,  g: 60,  b: 120, w:  4, group: 2 },
-  { r: 165, g: 100, b: 175, w:  2, group: 2 },
-  { r: 60,  g: 75,  b: 125, w:  4, group: 3 },
-  { r: 80,  g: 100, b: 145, w:  3, group: 3 },
-  { r: 55,  g: 85,  b: 115, w:  2, group: 3 },
-  { r: 45,  g: 110, b: 75,  w:  1, group: 4 },
-  { r: 60,  g: 140, b: 90,  w:  1, group: 4 },
+  { r: 200, g: 95, b: 55, w: 14, group: 0 },
+  { r: 220, g: 130, b: 70, w: 12, group: 0 },
+  { r: 245, g: 175, b: 100, w: 9, group: 0 },
+  { r: 160, g: 70, b: 50, w: 11, group: 0 },
+  { r: 120, g: 55, b: 50, w: 8, group: 0 },
+  { r: 255, g: 215, b: 145, w: 4, group: 0 },
+  { r: 130, g: 72, b: 82, w: 4, group: 1 },
+  { r: 150, g: 85, b: 100, w: 3, group: 1 },
+  { r: 180, g: 110, b: 130, w: 2, group: 1 },
+  { r: 110, g: 70, b: 130, w: 4, group: 2 },
+  { r: 135, g: 85, b: 150, w: 3, group: 2 },
+  { r: 80, g: 60, b: 120, w: 4, group: 2 },
+  { r: 165, g: 100, b: 175, w: 2, group: 2 },
+  { r: 60, g: 75, b: 125, w: 4, group: 3 },
+  { r: 80, g: 100, b: 145, w: 3, group: 3 },
+  { r: 55, g: 85, b: 115, w: 2, group: 3 },
+  { r: 45, g: 110, b: 75, w: 1, group: 4 },
+  { r: 60, g: 140, b: 90, w: 1, group: 4 },
 ] as const;
 
-type PaletteEntry = { r: number; g: number; b: number; w: number; group: number };
+type PaletteEntry = {
+  r: number;
+  g: number;
+  b: number;
+  w: number;
+  group: number;
+};
 
 const PALETTE_BY_GROUP: PaletteEntry[][] = [[], [], [], [], []];
 PALETTE.forEach((c) => {
-  for (let i = 0; i < c.w; i++) PALETTE_BY_GROUP[c.group].push(c as PaletteEntry);
+  for (let i = 0; i < c.w; i++)
+    PALETTE_BY_GROUP[c.group].push(c as PaletteEntry);
 });
 
 function pickColor(x: number, y: number, w: number, h: number): PaletteEntry {
@@ -51,7 +58,7 @@ function pickColor(x: number, y: number, w: number, h: number): PaletteEntry {
     if (r < 0.93) return pick(2);
     return pick(3);
   }
-  if (r < 0.40) return pick(2);
+  if (r < 0.4) return pick(2);
   if (r < 0.78) return pick(3);
   if (r < 0.92) return pick(0);
   if (r < 0.98) return pick(1);
@@ -89,14 +96,16 @@ function makeRay(W: number, H: number): Ray {
   const x = Math.random() * W * 1.4 - W * 0.2;
   const y = Math.random() * H * 1.4 - H * 0.2;
   const rnd = Math.random();
-  const lenBase = rnd < 0.7 ? 30 + Math.random() * 90 : 140 + Math.random() * 280;
+  const lenBase =
+    rnd < 0.7 ? 30 + Math.random() * 90 : 140 + Math.random() * 280;
   return {
     x,
     y,
     len: lenBase * FLOW.length,
     thick:
-      (Math.random() < 0.85 ? 0.6 + Math.random() * 0.9 : 1.6 + Math.random() * 1.6) *
-      FLOW.width,
+      (Math.random() < 0.85
+        ? 0.6 + Math.random() * 0.9
+        : 1.6 + Math.random() * 1.6) * FLOW.width,
     color: pickColor(x, y, W, H),
     sp: 0.4 + Math.random() * 1.4,
     ao: (Math.random() - 0.5) * 0.05,
@@ -142,7 +151,9 @@ export function GalaxyBackground() {
       rays = Array.from({ length: targetCount(W, H) }, () => makeRay(W, H));
     };
 
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reduce = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
     const speedScale = reduce ? 0.12 : 1;
 
     const loop = (now: number) => {
@@ -188,11 +199,26 @@ export function GalaxyBackground() {
         const alpha = ray.br * tw * 0.9;
 
         const grad = ctx.createLinearGradient(ray.x, ray.y, ex, ey);
-        grad.addColorStop(0.0,  `rgba(${col.r|0},${col.g|0},${col.b|0},0)`);
-        grad.addColorStop(0.3,  `rgba(${col.r|0},${col.g|0},${col.b|0},${alpha * 0.5})`);
-        grad.addColorStop(0.6,  `rgba(${core.r|0},${core.g|0},${core.b|0},${alpha})`);
-        grad.addColorStop(0.85, `rgba(${col.r|0},${col.g|0},${col.b|0},${alpha * 0.6})`);
-        grad.addColorStop(1.0,  `rgba(${col.r|0},${col.g|0},${col.b|0},0)`);
+        grad.addColorStop(
+          0.0,
+          `rgba(${col.r | 0},${col.g | 0},${col.b | 0},0)`,
+        );
+        grad.addColorStop(
+          0.3,
+          `rgba(${col.r | 0},${col.g | 0},${col.b | 0},${alpha * 0.5})`,
+        );
+        grad.addColorStop(
+          0.6,
+          `rgba(${core.r | 0},${core.g | 0},${core.b | 0},${alpha})`,
+        );
+        grad.addColorStop(
+          0.85,
+          `rgba(${col.r | 0},${col.g | 0},${col.b | 0},${alpha * 0.6})`,
+        );
+        grad.addColorStop(
+          1.0,
+          `rgba(${col.r | 0},${col.g | 0},${col.b | 0},0)`,
+        );
 
         ctx.strokeStyle = grad;
         ctx.lineWidth = ray.thick;
@@ -208,9 +234,15 @@ export function GalaxyBackground() {
           const hot = brighten(col, 0.7);
           const radius = 5 * ray.thick;
           const rg = ctx.createRadialGradient(hx, hy, 0, hx, hy, radius);
-          rg.addColorStop(0,   `rgba(${hot.r|0},${hot.g|0},${hot.b|0},${0.85 * tw})`);
-          rg.addColorStop(0.4, `rgba(${core.r|0},${core.g|0},${core.b|0},${0.45 * tw})`);
-          rg.addColorStop(1,   `rgba(${col.r|0},${col.g|0},${col.b|0},0)`);
+          rg.addColorStop(
+            0,
+            `rgba(${hot.r | 0},${hot.g | 0},${hot.b | 0},${0.85 * tw})`,
+          );
+          rg.addColorStop(
+            0.4,
+            `rgba(${core.r | 0},${core.g | 0},${core.b | 0},${0.45 * tw})`,
+          );
+          rg.addColorStop(1, `rgba(${col.r | 0},${col.g | 0},${col.b | 0},0)`);
           ctx.fillStyle = rg;
           ctx.beginPath();
           ctx.arc(hx, hy, radius, 0, Math.PI * 2);

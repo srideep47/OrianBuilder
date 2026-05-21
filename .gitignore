@@ -195,3 +195,4 @@ bootstrap.log
 *.pem
 *.key
 *.crt
+src/main/auth/_credentials.gen.ts

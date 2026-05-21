@@ -2,15 +2,7 @@ import { useState, useEffect } from "react";
 import { ipc } from "@/ipc/types";
 import type { LlamaBinaryDownloadProgress } from "@/ipc/types/llama_binary";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import {
-  Download,
-  Cpu,
-  CheckCircle2,
-  XCircle,
-  RotateCcw,
-  Loader2,
-} from "lucide-react";
+import { Download, Cpu, CheckCircle2, XCircle, RotateCcw } from "lucide-react";
 
 type Phase = "idle" | "downloading" | "done" | "error";
 
@@ -22,7 +14,9 @@ function formatBytes(bytes: number): string {
 
 export function LlamaBinaryDownloader() {
   const [phase, setPhase] = useState<Phase>("idle");
-  const [progress, setProgress] = useState<LlamaBinaryDownloadProgress | null>(null);
+  const [progress, setProgress] = useState<LlamaBinaryDownloadProgress | null>(
+    null,
+  );
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(5);
 
@@ -82,14 +76,9 @@ export function LlamaBinaryDownloader() {
     setProgress(null);
   };
 
-  const variantLabel = progress
-    ? ""
-    : "CUDA · Vulkan · CPU fallback will be auto-detected";
-
   return (
     <div className="w-full max-w-lg mx-auto">
       <div className="rounded-2xl border border-white/10 bg-[oklch(0.10_0.018_280/0.88)] backdrop-filter backdrop-blur-2xl shadow-2xl p-8 space-y-6">
-
         {/* Header */}
         <div className="flex items-start gap-4">
           <div className="flex-shrink-0 w-11 h-11 rounded-xl bg-violet-500/15 border border-violet-400/20 flex items-center justify-center">
@@ -109,8 +98,8 @@ export function LlamaBinaryDownloader() {
         {phase === "idle" && (
           <p className="text-sm text-white/60 leading-relaxed">
             OrianBuilder runs local AI models using{" "}
-            <span className="text-white/80 font-medium">llama.cpp</span> — a fast
-            open-source inference engine. The binary ({" "}
+            <span className="text-white/80 font-medium">llama.cpp</span> — a
+            fast open-source inference engine. The binary ({" "}
             <span className="font-mono text-[11px] text-violet-300">
               llama-server.exe
             </span>
@@ -119,29 +108,32 @@ export function LlamaBinaryDownloader() {
         )}
 
         {/* Progress section */}
-        {(phase === "downloading" || progress) && phase !== "done" && phase !== "error" && (
-          <div className="space-y-3">
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-white/60">
-                {progress?.label ?? "Preparing…"}
-              </span>
-              <span className="text-white/80 font-medium tabular-nums">
-                {progress ? `${Math.round(progress.percent)}%` : "0%"}
-              </span>
+        {(phase === "downloading" || progress) &&
+          phase !== "done" &&
+          phase !== "error" && (
+            <div className="space-y-3">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-white/60">
+                  {progress?.label ?? "Preparing…"}
+                </span>
+                <span className="text-white/80 font-medium tabular-nums">
+                  {progress ? `${Math.round(progress.percent)}%` : "0%"}
+                </span>
+              </div>
+              <div className="h-2 rounded-full bg-white/8 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-violet-500 to-purple-400 transition-all duration-300 ease-out"
+                  style={{ width: `${progress?.percent ?? 0}%` }}
+                />
+              </div>
+              {progress && progress.totalBytes > 0 && (
+                <p className="text-[11px] text-white/40 tabular-nums">
+                  {formatBytes(progress.bytesDownloaded)} /{" "}
+                  {formatBytes(progress.totalBytes)}
+                </p>
+              )}
             </div>
-            <div className="h-2 rounded-full bg-white/8 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-violet-500 to-purple-400 transition-all duration-300 ease-out"
-                style={{ width: `${progress?.percent ?? 0}%` }}
-              />
-            </div>
-            {progress && progress.totalBytes > 0 && (
-              <p className="text-[11px] text-white/40 tabular-nums">
-                {formatBytes(progress.bytesDownloaded)} / {formatBytes(progress.totalBytes)}
-              </p>
-            )}
-          </div>
-        )}
+          )}
 
         {/* Done state */}
         {phase === "done" && (
@@ -154,8 +146,8 @@ export function LlamaBinaryDownloader() {
               <div className="h-full w-full rounded-full bg-gradient-to-r from-emerald-500 to-green-400" />
             </div>
             <p className="text-xs text-white/50">
-              A restart is required to load the inference engine. Auto-restarting
-              in{" "}
+              A restart is required to load the inference engine.
+              Auto-restarting in{" "}
               <span className="text-white/80 font-medium tabular-nums">
                 {countdown}s
               </span>

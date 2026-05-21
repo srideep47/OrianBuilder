@@ -384,6 +384,21 @@ export const queryKeys = {
   media: {
     all: ["media"] as const,
   },
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Orion Identity + Auth
+  // ─────────────────────────────────────────────────────────────────────────────
+  identity: {
+    all: ["identity"] as const,
+    device: ["identity", "device"] as const,
+  },
+
+  network: {
+    all: ["network"] as const,
+    status: ["network", "status"] as const,
+    notifications: ["network", "notifications"] as const,
+    friendRequests: ["network", "friendRequests"] as const,
+  },
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
