@@ -149,6 +149,7 @@ const config: ForgeConfig = {
       "native/trt-llm-runner",
       "mediaai-backend",
       "resources/llama-server",
+      "resources/watchdog",
       "scripts/build-tensorrt-engine.ps1",
       "scripts/build-trt-llm-engine.ps1",
     ],

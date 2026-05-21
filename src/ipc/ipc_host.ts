@@ -53,6 +53,7 @@ import { registerLlamaBinaryHandlers } from "./handlers/llama_binary_handler";
 import { registerIdentityHandlers } from "./handlers/identity_handlers";
 import { registerNetworkHandlers } from "./handlers/network_handlers";
 import { registerComputeHandlers } from "./handlers/compute_handlers";
+import { registerWatchdogHandlers } from "./handlers/watchdog_handlers";
 
 export function registerIpcHandlers() {
   // Register all IPC handlers by category
@@ -111,4 +112,5 @@ export function registerIpcHandlers() {
   registerIdentityHandlers();
   registerNetworkHandlers();
   registerComputeHandlers();
+  registerWatchdogHandlers();
 }

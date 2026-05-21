@@ -17,6 +17,7 @@ import { inferenceRoute } from "./routes/inference";
 import { marketplaceRoute, modelsLibraryRoute } from "./routes/marketplace";
 import { onboardingRoute } from "./routes/onboarding";
 import { networkRoute } from "./routes/network";
+import { watchdogRoute } from "./routes/watchdog";
 
 const routeTree = rootRoute.addChildren([
   homeRoute,
@@ -36,6 +37,7 @@ const routeTree = rootRoute.addChildren([
   modelsLibraryRoute,
   onboardingRoute,
   networkRoute,
+  watchdogRoute,
 ]);
 
 // src/components/NotFoundRedirect.tsx

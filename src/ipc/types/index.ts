@@ -59,6 +59,20 @@ export { identityContracts } from "./identity";
 export { networkContracts, networkEvents } from "./network";
 export { computeContracts } from "./compute";
 export {
+  watchdogContracts,
+  watchdogClient,
+  watchdogEvents,
+  watchdogEventClient,
+} from "./watchdog";
+export type {
+  WatchdogStatus,
+  WatchdogSetupParams,
+  WatchdogSetupResult,
+  WatchdogSetupPhase,
+  WatchdogSetupProgress,
+  WatchdogStartResult,
+} from "./watchdog";
+export {
   embeddedModelContracts,
   embeddedModelClient,
   embeddedModelEvents,
@@ -537,6 +551,7 @@ import { llamaBinaryClient, llamaBinaryEventClient } from "./llama_binary";
 import { identityClient } from "./identity";
 import { networkClient, networkEventClient } from "./network";
 import { computeClient } from "./compute";
+import { watchdogClient, watchdogEventClient } from "./watchdog";
 
 /**
  * Unified IPC client with all domains organized by namespace.
@@ -606,6 +621,7 @@ export const ipc = {
   identity: identityClient,
   network: networkClient,
   compute: computeClient,
+  watchdog: watchdogClient,
 
   // Event clients for main->renderer pub/sub
   events: {
@@ -618,5 +634,6 @@ export const ipc = {
     embeddedModel: embeddedModelEventClient,
     llamaBinary: llamaBinaryEventClient,
     network: networkEventClient,
+    watchdog: watchdogEventClient,
   },
 } as const;

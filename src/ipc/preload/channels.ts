@@ -59,6 +59,7 @@ import { llamaBinaryContracts, llamaBinaryEvents } from "../types/llama_binary";
 import { identityContracts } from "../types/identity";
 import { networkContracts, networkEvents } from "../types/network";
 import { computeContracts } from "../types/compute";
+import { watchdogContracts, watchdogEvents } from "../types/watchdog";
 
 // =============================================================================
 // Invoke Channels (derived from all contracts)
@@ -127,6 +128,7 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(identityContracts),
   ...getInvokeChannels(networkContracts),
   ...getInvokeChannels(computeContracts),
+  ...getInvokeChannels(watchdogContracts),
 
   // Test-only channels
   ...TEST_INVOKE_CHANNELS,
@@ -156,6 +158,7 @@ export const VALID_RECEIVE_CHANNELS = [
   ...getReceiveChannels(embeddedModelEvents),
   ...getReceiveChannels(llamaBinaryEvents),
   ...getReceiveChannels(networkEvents),
+  ...getReceiveChannels(watchdogEvents),
 ] as const;
 
 // =============================================================================

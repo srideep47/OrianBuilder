@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+beautifulsoup4
+apscheduler
+cloudscraper
+pydantic
+requests
+
