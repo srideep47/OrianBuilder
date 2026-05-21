@@ -51,7 +51,7 @@ describe("useVoiceAssistant", () => {
     let mediaRecorderInstance: MockMediaRecorder | null = null;
 
     Object.defineProperty(globalThis, "MediaRecorder", {
-      value: function(stream: MediaStream) {
+      value: function (_stream: MediaStream) {
         const instance = new MockMediaRecorder();
         mediaRecorderInstance = instance;
         return instance;
@@ -139,7 +139,9 @@ describe("useVoiceAssistant", () => {
     // Trigger ondataavailable to send mock audio data
     const recorder = (globalThis as any)._currentMediaRecorder();
     if (recorder?.ondataavailable) {
-      recorder.ondataavailable({ data: new Blob(["audio"], { type: "audio/webm" }) });
+      recorder.ondataavailable({
+        data: new Blob(["audio"], { type: "audio/webm" }),
+      });
     }
 
     // Stop recording
@@ -174,7 +176,9 @@ describe("useVoiceAssistant", () => {
     // Trigger ondataavailable to send mock audio data
     const recorder = (globalThis as any)._currentMediaRecorder();
     if (recorder?.ondataavailable) {
-      recorder.ondataavailable({ data: new Blob(["audio"], { type: "audio/webm" }) });
+      recorder.ondataavailable({
+        data: new Blob(["audio"], { type: "audio/webm" }),
+      });
     }
 
     await act(async () => {
@@ -249,7 +253,9 @@ describe("useVoiceAssistant", () => {
     // Trigger ondataavailable to send mock audio data
     const recorder = (globalThis as any)._currentMediaRecorder();
     if (recorder?.ondataavailable) {
-      recorder.ondataavailable({ data: new Blob(["audio"], { type: "audio/webm" }) });
+      recorder.ondataavailable({
+        data: new Blob(["audio"], { type: "audio/webm" }),
+      });
     }
 
     await act(async () => {
@@ -260,7 +266,9 @@ describe("useVoiceAssistant", () => {
       expect(result.current.isTranscribing).toBe(false);
     });
 
-    expect(onError).toHaveBeenCalledWith(expect.stringContaining("Transcription"));
+    expect(onError).toHaveBeenCalledWith(
+      expect.stringContaining("Transcription"),
+    );
   });
 
   it("should handle empty transcription", async () => {
@@ -281,7 +289,9 @@ describe("useVoiceAssistant", () => {
     // Trigger ondataavailable to send mock audio data
     const recorder = (globalThis as any)._currentMediaRecorder();
     if (recorder?.ondataavailable) {
-      recorder.ondataavailable({ data: new Blob(["audio"], { type: "audio/webm" }) });
+      recorder.ondataavailable({
+        data: new Blob(["audio"], { type: "audio/webm" }),
+      });
     }
 
     await act(async () => {

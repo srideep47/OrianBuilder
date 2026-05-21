@@ -50,6 +50,15 @@ export interface LlamaServerArgInput {
   noMmap?: boolean;
   /** Mlock model into RAM (Linux/macOS; ignored on Windows). */
   mlock?: boolean;
+  /**
+   * Vulkan/ROCm device selection hint. Passed as `--device <overrideDevice>` to
+   * llama-server so the correct physical device is chosen when multiple Vulkan
+   * devices are present (e.g. NVIDIA + AMD iGPU on the same system).
+   * llama.cpp accepts a partial name like "AMD", "Intel", or the full device
+   * name. Leave undefined when using CUDA (device selection is handled by
+   * CUDA_VISIBLE_DEVICES or driver default).
+   */
+  overrideDevice?: string;
 }
 
 export interface LlamaServerArgs {
@@ -110,6 +119,10 @@ export function buildLlamaServerArgs(
 
   if (input.chatTemplate) {
     flags.push("--chat-template", input.chatTemplate);
+  }
+
+  if (input.overrideDevice) {
+    flags.push("--device", input.overrideDevice);
   }
 
   return { flags, resolvedGpuLayers };

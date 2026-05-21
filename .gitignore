@@ -107,6 +107,7 @@ userData/
 
 # Claude Code
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Python
 __pycache__/
@@ -141,3 +142,56 @@ run-voice-setup.bat
 
 # Temp/fixed test files
 *.spec.ts.fixed
+
+# IDE-specific cache and settings
+.vscode/
+.vscode-*
+*.swp
+*.swo
+*~
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+*.bak
+*.orig
+*.tmp
+
+# Temporary build/automation artifacts
+*.temp
+.temp/
+.automation/
+setup-artifacts/
+deploy-artifacts/
+
+# Media AI automation references (local setup/testing)
+.mediaai-setup/
+mediaai-local-config/
+
+# Python/Backend automation
+mediaai-backend/.venv/
+mediaai-backend/venv/
+mediaai-backend/__pycache__/
+mediaai-backend/*.egg-info/
+
+# Lock files for package managers (uncomment if needed)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Misc automation/setup files
+.setup-done
+.initialized
+setup.log
+bootstrap.log
+
+# SSH keys, certs, and credentials (if any local testing)
+*.pem
+*.key
+*.crt

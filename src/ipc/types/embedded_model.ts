@@ -18,8 +18,27 @@ export const GpuInfoSchema = z.object({
   hasTensorCores: z.boolean(),
   tensorCoreGen: z.string(),
   recommendedGpuLayers: z.number(),
+  // Extended fields for AMD/Intel/multi-GPU support (optional for back-compat)
+  vendor: z.enum(["nvidia", "amd", "intel", "apple", "unknown"]).optional(),
+  isIntegrated: z.boolean().optional(),
+  backend: z.enum(["cuda", "vulkan", "rocm", "metal", "cpu"]).optional(),
 });
 export type GpuInfo = z.infer<typeof GpuInfoSchema>;
+
+export const AllGpuEntrySchema = z.object({
+  model: z.string(),
+  vendor: z.enum(["nvidia", "amd", "intel", "apple", "unknown"]),
+  vramMb: z.number(),
+  isIntegrated: z.boolean(),
+  bestBackend: z.enum(["cuda", "vulkan", "rocm", "metal", "cpu"]),
+});
+export type AllGpuEntry = z.infer<typeof AllGpuEntrySchema>;
+
+export const AllGpusInfoSchema = z.object({
+  gpus: z.array(AllGpuEntrySchema),
+  autoPrimaryIndex: z.number(),
+});
+export type AllGpusInfo = z.infer<typeof AllGpusInfoSchema>;
 
 export const GpuStatsSchema = z.object({
   utilizationPercent: z.number(),
@@ -88,6 +107,9 @@ export const EmbeddedModelConfigSchema = z.object({
   cacheTypeV: z
     .enum(["f32", "f16", "bf16", "q8_0", "q5_0", "q5_1", "q4_0", "q4_1"])
     .optional(),
+  // User-selected GPU model name (null = auto-select primary GPU).
+  // When set, the inference engine picks the backend that matches this GPU.
+  selectedGpuModel: z.string().nullable().optional(),
   // Internal: populated by model-info scan, used by the loader
   _estimatedLayers: z.number().optional(),
   _layerSizeMb: z.number().optional(),
@@ -220,6 +242,12 @@ export const embeddedModelContracts = {
     channel: "embedded-model:detect-gpu",
     input: z.number().optional(),
     output: GpuInfoSchema,
+  }),
+
+  detectAllGpus: defineContract({
+    channel: "embedded-model:detect-all-gpus",
+    input: z.void(),
+    output: AllGpusInfoSchema,
   }),
 
   getGpuStats: defineContract({

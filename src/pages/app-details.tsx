@@ -37,6 +37,7 @@ import { GitHubConnector } from "@/components/GitHubConnector";
 import { SupabaseConnector } from "@/components/SupabaseConnector";
 import { NeonConnector } from "@/components/NeonConnector";
 import { showError, showSuccess } from "@/lib/toast";
+import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Label } from "@/components/ui/label";
 import { Info, Loader2 } from "lucide-react";
@@ -882,8 +883,13 @@ export default function AppDetailsPage() {
               </Button>
               <Button
                 onClick={handleChangeLocation}
-                disabled={changeLocationMutation.isPending}
+                disabled={false}
+                aria-busy={changeLocationMutation.isPending}
                 size="sm"
+                className={cn(
+                  changeLocationMutation.isPending &&
+                    "pointer-events-none cursor-wait",
+                )}
               >
                 {changeLocationMutation.isPending ? (
                   <>

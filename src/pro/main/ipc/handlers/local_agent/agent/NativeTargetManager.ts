@@ -256,7 +256,7 @@ export async function runNativeAutofinishSequence(params: {
       packageNativeArtifactTool,
       {
         target: nativeTargetIntent.target,
-        variant: "debug",
+        variant: "release",
         create_download_site: true,
         initialize_capacitor_if_missing: true,
       },

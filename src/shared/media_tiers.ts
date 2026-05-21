@@ -24,17 +24,103 @@ export interface MediaTier {
   approxSecondsPerGen?: number;
 }
 
-// ─── Image generation tiers (text → 1024×1024 image) ─────────────────────────
+export interface ImageTierUiConfig {
+  tierId: string;
+  downloadId: string;
+  shortName: string;
+  description: string;
+  vramGb: number;
+  downloadGb: number;
+  defaultSteps: number;
+  minSteps: number;
+  maxSteps: number;
+  /** Whether guidance scale is meaningful for this model (turbo = no). */
+  supportsGuidance: boolean;
+  defaultGuidance: number;
+  defaultWidth: number;
+  defaultHeight: number;
+  allowedResolutions: { width: number; height: number; label: string }[];
+  qualityPresets: { label: string; steps: number; guidance: number }[];
+}
+
+export const USER_FACING_IMAGE_TIERS: readonly ImageTierUiConfig[] = [
+  {
+    tierId: "sd-turbo",
+    downloadId: "image-sd-turbo",
+    shortName: "SD Turbo",
+    description:
+      "1-step turbo model. ~3 GB VRAM · 1.7 GB download. Best for low-VRAM machines and fast iteration.",
+    vramGb: 3,
+    downloadGb: 1.7,
+    defaultSteps: 1,
+    minSteps: 1,
+    maxSteps: 4,
+    supportsGuidance: false,
+    defaultGuidance: 0,
+    defaultWidth: 512,
+    defaultHeight: 512,
+    allowedResolutions: [
+      { width: 512, height: 512, label: "512 × 512" },
+      { width: 768, height: 768, label: "768 × 768" },
+    ],
+    qualityPresets: [
+      { label: "Fast (1 step)", steps: 1, guidance: 0 },
+      { label: "Balanced (2 steps)", steps: 2, guidance: 0 },
+      { label: "Quality (4 steps)", steps: 4, guidance: 0 },
+    ],
+  },
+  {
+    tierId: "z-image-turbo",
+    downloadId: "image-z-image-turbo",
+    shortName: "Z Image Turbo",
+    description:
+      "8-step model with high quality. ~8 GB VRAM · 12 GB download. Recommended for dedicated GPUs.",
+    vramGb: 8,
+    downloadGb: 12,
+    defaultSteps: 4,
+    minSteps: 4,
+    maxSteps: 8,
+    supportsGuidance: true,
+    defaultGuidance: 4.0,
+    defaultWidth: 768,
+    defaultHeight: 768,
+    allowedResolutions: [
+      { width: 512, height: 512, label: "512 × 512" },
+      { width: 768, height: 768, label: "768 × 768" },
+      { width: 1024, height: 1024, label: "1024 × 1024" },
+    ],
+    qualityPresets: [
+      { label: "Draft (4 steps)", steps: 4, guidance: 2.0 },
+      { label: "Balanced (6 steps)", steps: 6, guidance: 4.0 },
+      { label: "Quality (8 steps)", steps: 8, guidance: 6.0 },
+    ],
+  },
+] as const;
+
+// ─── Image generation tiers (text → 512×512 image) ───────────────────────────
 //
-// Modern lineup — late 2025 / early 2026:
-//   • flux-dev: SOTA quality, slow, needs 24GB+
-//   • flux-schnell: 4-step, very high quality, 12GB
-//   • z-image-turbo: 8-step Tencent model, excellent quality, 6GB ← NEW
-//   • sdxl-turbo: 1-step, fast, 6GB
-//   • sd-1.5: classic 4GB fallback
-//   • sd-1.5-onnx-cpu: last-resort CPU path
+// Tier order: first match by VRAM wins, so fastest-download / fastest-gen
+// models are placed first within each VRAM bracket.
+//
+//   • flux-dev:      SOTA quality, 24GB VRAM, 24GB download
+//   • flux-schnell:  4-step, very high quality, 12GB VRAM, 24GB download
+//   • sd-turbo:      1-step, 2 seconds, 3GB VRAM, 1.7GB download  ← FAST DEFAULT
+//   • z-image-turbo: 8-step, excellent quality, 6GB VRAM, 12GB download
+//   • sdxl-turbo:    1-step, fast, 6GB VRAM, 7GB download
+//   • sd-1.5:        classic 20-step, 4GB VRAM, 4GB download
+//   • sd-1.5-onnx-cpu: CPU fallback, 2.5GB download
 
 export const IMAGE_MODEL_TIERS: readonly MediaTier[] = [
+  {
+    // Local GGUF file — auto-selected on any backend when the file exists.
+    // No download needed; file placed at $userData/mediaai/models/z-image-turbo-Q4_1.gguf
+    id: "z-image-turbo-gguf",
+    label: "Z Image Turbo Q4_1 (GGUF)",
+    vramRequiredMb: 0,
+    downloadSizeMb: 0,
+    quality: "best",
+    approxSecondsPerGen: 6,
+  },
   {
     id: "flux-dev",
     label: "FLUX.1 dev (24GB)",
@@ -54,15 +140,6 @@ export const IMAGE_MODEL_TIERS: readonly MediaTier[] = [
     approxSecondsPerGen: 6,
   },
   {
-    id: "z-image-turbo",
-    label: "Z Image Turbo (6GB)",
-    vramRequiredMb: 6000,
-    downloadSizeMb: 12000,
-    quality: "best",
-    hfRepo: "Tongyi-MAI/Z-Image-Turbo",
-    approxSecondsPerGen: 4,
-  },
-  {
     id: "sdxl-turbo",
     label: "SDXL Turbo (6GB)",
     vramRequiredMb: 6000,
@@ -70,6 +147,24 @@ export const IMAGE_MODEL_TIERS: readonly MediaTier[] = [
     quality: "good",
     hfRepo: "stabilityai/sdxl-turbo",
     approxSecondsPerGen: 2,
+  },
+  {
+    id: "sd-turbo",
+    label: "SD Turbo (3GB)",
+    vramRequiredMb: 3000,
+    downloadSizeMb: 1700,
+    quality: "good",
+    hfRepo: "stabilityai/sd-turbo",
+    approxSecondsPerGen: 2,
+  },
+  {
+    id: "z-image-turbo",
+    label: "Z Image Turbo (8GB)",
+    vramRequiredMb: 8000,
+    downloadSizeMb: 12000,
+    quality: "best",
+    hfRepo: "Tongyi-MAI/Z-Image-Turbo",
+    approxSecondsPerGen: 4,
   },
   {
     id: "sd-1.5",
@@ -120,15 +215,6 @@ export const VIDEO_TIERS: readonly MediaTier[] = [
     approxSecondsPerGen: 25,
   },
   {
-    id: "cogvideox-2b",
-    label: "CogVideoX 2B (6GB)",
-    vramRequiredMb: 6000,
-    downloadSizeMb: 11000,
-    quality: "good",
-    hfRepo: "THUDM/CogVideoX-2b",
-    approxSecondsPerGen: 90,
-  },
-  {
     id: "animatediff-sd15",
     label: "AnimateDiff + SD 1.5 (4GB)",
     vramRequiredMb: 4000,
@@ -136,6 +222,15 @@ export const VIDEO_TIERS: readonly MediaTier[] = [
     quality: "basic",
     hfRepo: "guoyww/animatediff-motion-adapter-v1-5-3",
     approxSecondsPerGen: 45,
+  },
+  {
+    id: "cogvideox-2b",
+    label: "CogVideoX 2B (7GB)",
+    vramRequiredMb: 7000,
+    downloadSizeMb: 11000,
+    quality: "good",
+    hfRepo: "THUDM/CogVideoX-2b",
+    approxSecondsPerGen: 90,
   },
   {
     id: "text-to-video-cpu",

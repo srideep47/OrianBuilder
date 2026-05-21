@@ -12,12 +12,16 @@ describe("voiceAssistant utilities", () => {
   describe("buildAssistantReply", () => {
     it("should handle empty input", () => {
       const result = buildAssistantReply("");
-      expect(result).toBe("I did not catch anything yet. Try asking a short question.");
+      expect(result).toBe(
+        "I did not catch anything yet. Try asking a short question.",
+      );
     });
 
     it("should handle whitespace-only input", () => {
       const result = buildAssistantReply("   ");
-      expect(result).toBe("I did not catch anything yet. Try asking a short question.");
+      expect(result).toBe(
+        "I did not catch anything yet. Try asking a short question.",
+      );
     });
 
     it("should respond to weather queries", () => {

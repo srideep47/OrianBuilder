@@ -55,6 +55,7 @@ import {
 import { missionContracts } from "../types/mission";
 import { hardwareContracts } from "../types/hardware";
 import { orchestratorContracts } from "../types/model_orchestrator";
+import { llamaBinaryContracts, llamaBinaryEvents } from "../types/llama_binary";
 
 // =============================================================================
 // Invoke Channels (derived from all contracts)
@@ -119,6 +120,7 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(missionContracts),
   ...getInvokeChannels(hardwareContracts),
   ...getInvokeChannels(orchestratorContracts),
+  ...getInvokeChannels(llamaBinaryContracts),
 
   // Test-only channels
   ...TEST_INVOKE_CHANNELS,
@@ -146,6 +148,7 @@ export const VALID_RECEIVE_CHANNELS = [
   ...getReceiveChannels(planEvents),
   ...getReceiveChannels(modelMarketplaceEvents),
   ...getReceiveChannels(embeddedModelEvents),
+  ...getReceiveChannels(llamaBinaryEvents),
 ] as const;
 
 // =============================================================================

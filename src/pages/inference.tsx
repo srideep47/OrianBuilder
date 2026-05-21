@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ipc } from "@/ipc/types";
 import { HardwareCard } from "@/components/HardwareCard";
+import { LlamaBinaryDownloader } from "@/components/LlamaBinaryDownloader";
 import type {
   GpuInfo,
   GpuStats,
@@ -11,6 +12,7 @@ import type {
   InferenceStats,
   InferenceLogEntry,
   TensorRtEngineBuildStatus,
+  AllGpuEntry,
 } from "@/ipc/types";
 import { showError, showSuccess } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
@@ -313,6 +315,67 @@ function Section({
   );
 }
 
+// ─── GPU selector helpers ─────────────────────────────────────────────────────
+
+const BACKEND_LABELS: Record<string, { label: string; color: string }> = {
+  cuda: { label: "CUDA", color: "text-green-600 dark:text-green-400" },
+  vulkan: { label: "Vulkan", color: "text-red-500 dark:text-red-400" },
+  rocm: { label: "ROCm", color: "text-orange-500 dark:text-orange-400" },
+  metal: { label: "Metal", color: "text-purple-600 dark:text-purple-400" },
+  cpu: { label: "CPU", color: "text-muted-foreground" },
+};
+
+const VENDOR_COLORS: Record<string, string> = {
+  nvidia: "border-green-500/40 bg-green-500/5",
+  amd: "border-red-500/40 bg-red-500/5",
+  intel: "border-blue-500/40 bg-blue-500/5",
+  apple: "border-purple-500/40 bg-purple-500/5",
+  unknown: "border-border bg-muted/20",
+};
+
+function GpuBadge({ gpu }: { gpu: AllGpuEntry }) {
+  const backendInfo = BACKEND_LABELS[gpu.bestBackend] ?? BACKEND_LABELS.cpu;
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <span
+        className={cn(
+          "text-[10px] font-bold uppercase tracking-wider",
+          backendInfo.color,
+        )}
+      >
+        {backendInfo.label}
+      </span>
+      {gpu.isIntegrated && (
+        <span className="text-[10px] bg-muted px-1 rounded text-muted-foreground">
+          iGPU
+        </span>
+      )}
+      <span className="text-[10px] text-muted-foreground">
+        {gpu.vramMb > 0 ? `${(gpu.vramMb / 1024).toFixed(1)} GB` : "shared RAM"}
+      </span>
+    </div>
+  );
+}
+
+function getLlmBackendDisplayLabel(
+  selectedGpuModel: string | null | undefined,
+  allGpus: AllGpuEntry[],
+  status: EmbeddedServerStatus | null,
+): string {
+  if (status?.backend === "tensorrt-native") return "Native TensorRT";
+  if (status?.backend === "llama-cpp") {
+    if (selectedGpuModel) {
+      const gpu = allGpus.find((g) => g.model === selectedGpuModel);
+      if (gpu) {
+        const b = BACKEND_LABELS[gpu.bestBackend];
+        return `llama.cpp ${b?.label ?? gpu.bestBackend.toUpperCase()}`;
+      }
+    }
+    return "llama.cpp";
+  }
+  return "No backend";
+}
+
 // ─── inference monitor (left panel) ──────────────────────────────────────────
 
 type InferenceState = InferenceStats["state"];
@@ -406,10 +469,13 @@ function InferenceMonitor({
   stats: InferenceStats | null;
   logs: InferenceLogEntry[];
 }) {
-  const logsEndRef = useRef<HTMLDivElement>(null);
+  const logsContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = logsContainerRef.current;
+    if (!el) return;
+    // Scroll only the log container itself — never the page scroll parent
+    el.scrollTop = el.scrollHeight;
   }, [logs]);
 
   const state = stats?.state ?? "idle";
@@ -419,7 +485,7 @@ function InferenceMonitor({
     stats?.backend === "tensorrt-native"
       ? "Native TensorRT"
       : stats?.backend === "llama-cpp"
-        ? "llama.cpp CUDA"
+        ? "llama.cpp"
         : "No backend";
 
   return (
@@ -517,6 +583,7 @@ function InferenceMonitor({
           </span>
         </div>
         <div
+          ref={logsContainerRef}
           className="overflow-y-auto p-2 space-y-0.5 font-mono text-[10px]"
           style={{ maxHeight: 240 }}
         >
@@ -549,7 +616,6 @@ function InferenceMonitor({
               </div>
             ))
           )}
-          <div ref={logsEndRef} />
         </div>
       </div>
     </div>
@@ -575,12 +641,15 @@ const DEFAULT_CONFIG: EmbeddedModelConfig = {
   aggressiveMemory: true,
   gpuLayersMode: "auto",
   manualGpuLayers: null,
+  selectedGpuModel: null,
 };
 
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 export default function InferencePage() {
+  const [binaryExists, setBinaryExists] = useState<boolean | null>(null);
   const [gpuInfo, setGpuInfo] = useState<GpuInfo | null>(null);
+  const [allGpus, setAllGpus] = useState<AllGpuEntry[]>([]);
   const [gpuStats, setGpuStats] = useState<GpuStats | null>(null);
   const [status, setStatus] = useState<EmbeddedServerStatus | null>(null);
   const [modelInfo, setModelInfo] = useState<ModelInfo | null>(null);
@@ -642,20 +711,38 @@ export default function InferencePage() {
     }
   }, []);
 
+  // Check whether the llama-server binary is present
+  useEffect(() => {
+    ipc.llamaBinary
+      .check()
+      .then((r) => setBinaryExists(r.exists))
+      .catch(() => setBinaryExists(false));
+  }, []);
+
   // Initial data load
   useEffect(() => {
     (async () => {
-      const [gpu, s, cfg, lib, recentLogs, currentStats, buildStatus] =
-        await Promise.all([
-          ipc.embeddedModel.detectGpu(undefined),
-          ipc.embeddedModel.getStatus(),
-          ipc.embeddedModel.getSavedConfig(),
-          ipc.marketplace.listLocalModels(),
-          ipc.embeddedModel.getRecentLogs(),
-          ipc.embeddedModel.getStats(),
-          ipc.embeddedModel.getTensorRtEngineBuildStatus(undefined),
-        ]);
+      const [
+        gpu,
+        allGpusInfo,
+        s,
+        cfg,
+        lib,
+        recentLogs,
+        currentStats,
+        buildStatus,
+      ] = await Promise.all([
+        ipc.embeddedModel.detectGpu(undefined),
+        ipc.embeddedModel.detectAllGpus(),
+        ipc.embeddedModel.getStatus(),
+        ipc.embeddedModel.getSavedConfig(),
+        ipc.marketplace.listLocalModels(),
+        ipc.embeddedModel.getRecentLogs(),
+        ipc.embeddedModel.getStats(),
+        ipc.embeddedModel.getTensorRtEngineBuildStatus(undefined),
+      ]);
       setGpuInfo(gpu);
+      setAllGpus(allGpusInfo.gpus);
       setStatus(s);
       setLibrary(lib);
       setLogs(recentLogs);
@@ -719,6 +806,31 @@ export default function InferencePage() {
       patch({ contextSize: maxContext });
     }
   }, [config.contextSize, modelInfo?.contextLengthTrained, patch]);
+
+  // Sync gpuInfo to whichever GPU is currently selected so VRAM calculations stay accurate
+  useEffect(() => {
+    if (!allGpus.length) return;
+    if (config.selectedGpuModel) {
+      const gpu = allGpus.find((g) => g.model === config.selectedGpuModel);
+      if (gpu) {
+        setGpuInfo({
+          available: true,
+          name: gpu.model,
+          vramMb: gpu.vramMb,
+          computeCapability: 0,
+          hasTensorCores: false,
+          tensorCoreGen: "None",
+          recommendedGpuLayers: 0,
+          vendor: gpu.vendor,
+          isIntegrated: gpu.isIntegrated,
+          backend: gpu.bestBackend,
+        });
+      }
+    } else {
+      // Auto mode — re-fetch primary GPU from main process
+      void ipc.embeddedModel.detectGpu(undefined).then(setGpuInfo);
+    }
+  }, [config.selectedGpuModel, allGpus]);
 
   const handleBrowse = async () => {
     const path = await ipc.embeddedModel.selectGguf();
@@ -838,12 +950,11 @@ export default function InferencePage() {
     ? Math.max(0, loadedTotalLayers - loadedGpuLayers)
     : 0;
   const actualCtx = status?.actualContextSize ?? 0;
-  const loadedBackendLabel =
-    status?.backend === "tensorrt-native"
-      ? "Native TensorRT"
-      : status?.backend === "llama-cpp"
-        ? "llama.cpp CUDA"
-        : "No backend";
+  const loadedBackendLabel = getLlmBackendDisplayLabel(
+    config.selectedGpuModel,
+    allGpus,
+    status,
+  );
   const tensorCoreReady = Boolean(
     gpuInfo?.hasTensorCores && config.flashAttention,
   );
@@ -969,7 +1080,13 @@ export default function InferencePage() {
   };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-transparent">
+    <div className="flex flex-col h-full overflow-hidden bg-transparent relative">
+      {/* Binary not installed — show downloader overlay */}
+      {binaryExists === false && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <LlamaBinaryDownloader />
+        </div>
+      )}
       <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-xl border-b border-border/50 px-6 py-4 flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2 page-title">
@@ -977,8 +1094,13 @@ export default function InferencePage() {
             Inference Engine
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Embedded tensor inference · llama-server · CUDA{" "}
-            {gpuInfo?.tensorCoreGen ?? "—"}
+            Embedded tensor inference · llama-server ·{" "}
+            {gpuInfo?.backend
+              ? (BACKEND_LABELS[gpuInfo.backend]?.label ??
+                gpuInfo.backend.toUpperCase())
+              : gpuInfo?.tensorCoreGen
+                ? `CUDA ${gpuInfo.tensorCoreGen}`
+                : "—"}
           </p>
         </div>
         {modelLoaded ? (
@@ -1006,6 +1128,82 @@ export default function InferencePage() {
           <div className="space-y-5 min-w-0">
             <Section title="Runtime" icon={Zap}>
               <div className="space-y-4">
+                {/* GPU Selector */}
+                {allGpus.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium mb-2 flex items-center gap-1.5">
+                      <Cpu className="w-3.5 h-3.5 text-primary" />
+                      Select GPU
+                    </p>
+                    <div className="grid gap-2">
+                      {/* Auto option */}
+                      <button
+                        onClick={() => patch({ selectedGpuModel: null })}
+                        className={cn(
+                          "rounded-lg border px-3 py-2.5 text-left transition-colors flex items-start gap-3",
+                          !config.selectedGpuModel
+                            ? "border-primary bg-primary/10"
+                            : "bg-background hover:bg-muted/50",
+                        )}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold">
+                            Auto (recommended)
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Always picks the highest-performance GPU
+                          </p>
+                        </div>
+                        {!config.selectedGpuModel && (
+                          <span className="text-[10px] bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full shrink-0 mt-0.5">
+                            active
+                          </span>
+                        )}
+                      </button>
+
+                      {/* Individual GPU cards */}
+                      {allGpus.map((gpu) => {
+                        const isSelected =
+                          config.selectedGpuModel === gpu.model;
+                        const vendorStyle =
+                          VENDOR_COLORS[gpu.vendor] ?? VENDOR_COLORS.unknown;
+                        return (
+                          <button
+                            key={gpu.model}
+                            onClick={() =>
+                              patch({ selectedGpuModel: gpu.model })
+                            }
+                            className={cn(
+                              "rounded-lg border px-3 py-2.5 text-left transition-colors flex items-start gap-3",
+                              isSelected
+                                ? cn(
+                                    "border-primary bg-primary/10",
+                                    vendorStyle,
+                                  )
+                                : cn(
+                                    "bg-background hover:bg-muted/50",
+                                    vendorStyle,
+                                  ),
+                            )}
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold truncate">
+                                {gpu.model}
+                              </p>
+                              <GpuBadge gpu={gpu} />
+                            </div>
+                            {isSelected && (
+                              <span className="text-[10px] bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full shrink-0 mt-0.5">
+                                active
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid gap-3 sm:grid-cols-2">
                   <button
                     onClick={() => patch({ inferenceBackend: "llama-cpp" })}
@@ -1016,7 +1214,18 @@ export default function InferencePage() {
                         : "bg-background hover:bg-muted/50",
                     )}
                   >
-                    <p className="text-sm font-semibold">llama.cpp CUDA</p>
+                    <p className="text-sm font-semibold">
+                      llama.cpp{" "}
+                      {config.selectedGpuModel
+                        ? (BACKEND_LABELS[
+                            allGpus.find(
+                              (g) => g.model === config.selectedGpuModel,
+                            )?.bestBackend ?? "cpu"
+                          ]?.label ?? "")
+                        : gpuInfo?.backend
+                          ? (BACKEND_LABELS[gpuInfo.backend]?.label ?? "")
+                          : "CUDA"}
+                    </p>
                     <p className="text-xs text-muted-foreground mt-1">
                       GGUF models with GPU layer offload, Flash Attention, and
                       CPU fallback.
@@ -1383,13 +1592,22 @@ export default function InferencePage() {
                 )}
 
                 <div className="flex gap-2 pt-1">
+                  {/* When `isLoading`, we don't pass `disabled` here: the
+                      Button variant's `disabled:opacity-50` makes the cream
+                      background + dark text fade to the same mid-grey in
+                      galaxy mode, hiding the spinner. `pointer-events-none`
+                      blocks clicks while keeping full contrast. */}
                   <Button
                     onClick={handleLoad}
                     disabled={
-                      isLoading ||
+                      !isLoading &&
                       (usingTensorRt ? !tensorRtEngineDir : !config.modelPath)
                     }
-                    className="flex-1"
+                    aria-busy={isLoading}
+                    className={cn(
+                      "flex-1",
+                      isLoading && "pointer-events-none cursor-wait",
+                    )}
                   >
                     {isLoading ? (
                       <>
@@ -1845,7 +2063,14 @@ export default function InferencePage() {
                   label="Flash Attention"
                   checked={config.flashAttention}
                   onChange={(v) => patch({ flashAttention: v })}
-                  hint="Fused attention — saves ~30% VRAM and speeds up long contexts. Requires CC ≥ 8.0 (your RTX 4080 Super = CC 8.9 ✓)."
+                  hint={
+                    gpuInfo?.vendor === "nvidia" &&
+                    gpuInfo.computeCapability > 0
+                      ? `Fused attention — saves ~30% VRAM on long contexts. Requires CC ≥ 8.0 (your GPU = CC ${gpuInfo.computeCapability.toFixed(1)} ${gpuInfo.computeCapability >= 8.0 ? "✓" : "✗"}).`
+                      : gpuInfo?.vendor === "amd"
+                        ? "Fused attention — saves ~30% VRAM on long contexts. Supported on RDNA 2+ GPUs via Vulkan."
+                        : "Fused attention — saves ~30% VRAM and speeds up long contexts."
+                  }
                 />
               </div>
             </Section>
@@ -1934,7 +2159,9 @@ export default function InferencePage() {
                   />
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    nvidia-smi not detected; live GPU stats are unavailable
+                    {gpuInfo?.vendor === "nvidia"
+                      ? "nvidia-smi not detected; live GPU stats unavailable"
+                      : "Live GPU stats require nvidia-smi (NVIDIA) — unavailable for this GPU"}
                   </p>
                 )}
                 <div className="grid grid-cols-2 gap-2">
@@ -2013,27 +2240,45 @@ export default function InferencePage() {
                         {loadedBackendLabel}
                       </span>
                     </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-muted-foreground">
-                        Tensor Cores
-                      </span>
-                      <span
-                        className={cn(
-                          "font-medium text-right",
-                          tensorCoreActive
-                            ? "text-green-600 dark:text-green-400"
+                    {/* Tensor Cores — NVIDIA only */}
+                    {gpuInfo.vendor === "nvidia" && (
+                      <div className="flex justify-between gap-4">
+                        <span className="text-muted-foreground">
+                          Tensor Cores
+                        </span>
+                        <span
+                          className={cn(
+                            "font-medium text-right",
+                            tensorCoreActive
+                              ? "text-green-600 dark:text-green-400"
+                              : tensorCoreReady
+                                ? "text-yellow-600 dark:text-yellow-400"
+                                : "",
+                          )}
+                        >
+                          {tensorCoreActive
+                            ? "Active"
                             : tensorCoreReady
-                              ? "text-yellow-600 dark:text-yellow-400"
-                              : "",
-                        )}
-                      >
-                        {tensorCoreActive
-                          ? "Active"
-                          : tensorCoreReady
-                            ? "Ready after GPU load"
-                            : "Unavailable"}
-                      </span>
-                    </div>
+                              ? "Ready after GPU load"
+                              : "Unavailable"}
+                        </span>
+                      </div>
+                    )}
+                    {/* Compute Units — AMD */}
+                    {gpuInfo.vendor === "amd" && (
+                      <div className="flex justify-between gap-4">
+                        <span className="text-muted-foreground">Type</span>
+                        <span className="font-medium text-right">
+                          {gpuInfo.isIntegrated
+                            ? "Integrated (iGPU)"
+                            : "Discrete"}
+                          {" · "}
+                          {BACKEND_LABELS[gpuInfo.backend ?? "vulkan"]?.label ??
+                            "Vulkan"}{" "}
+                          ready
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between gap-4">
                       <span className="text-muted-foreground">GPU</span>
                       <span className="font-medium text-right">
@@ -2043,16 +2288,22 @@ export default function InferencePage() {
                     <div className="flex justify-between gap-4">
                       <span className="text-muted-foreground">VRAM</span>
                       <span className="font-medium">
-                        {(gpuInfo.vramMb / 1024).toFixed(1)} GB
+                        {gpuInfo.vramMb > 0
+                          ? `${(gpuInfo.vramMb / 1024).toFixed(1)} GB${gpuInfo.isIntegrated ? " (shared est.)" : ""}`
+                          : "unknown"}
                       </span>
                     </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-muted-foreground">Compute</span>
-                      <span className="font-medium">
-                        CC {gpuInfo.computeCapability.toFixed(1)} ·{" "}
-                        {gpuInfo.tensorCoreGen}
-                      </span>
-                    </div>
+                    {/* Compute Capability — NVIDIA only */}
+                    {gpuInfo.vendor === "nvidia" &&
+                      gpuInfo.computeCapability > 0 && (
+                        <div className="flex justify-between gap-4">
+                          <span className="text-muted-foreground">Compute</span>
+                          <span className="font-medium">
+                            CC {gpuInfo.computeCapability.toFixed(1)} ·{" "}
+                            {gpuInfo.tensorCoreGen}
+                          </span>
+                        </div>
+                      )}
                   </div>
                 )}
               </div>

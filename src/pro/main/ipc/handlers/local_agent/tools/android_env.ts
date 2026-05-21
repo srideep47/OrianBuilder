@@ -84,6 +84,31 @@ export async function findUsableNdkVersion(
   return valid.sort(compareAndroidVersionNames).at(-1) ?? null;
 }
 
+export async function findAndroidSdkCMakeDir(
+  sdkDir: string,
+): Promise<string | null> {
+  const cmakeRoot = path.join(sdkDir, "cmake");
+  let entries: Array<{ name: string; isDirectory: () => boolean }>;
+  try {
+    entries = await fs.readdir(cmakeRoot, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const versions = entries
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .filter((name) => /^\d/.test(name))
+    .sort(compareAndroidVersionNames);
+  const chosen = versions.at(-1);
+  if (!chosen) return null;
+  const dir = path.join(cmakeRoot, chosen);
+  const bin =
+    process.platform === "win32"
+      ? path.join(dir, "bin", "cmake.exe")
+      : path.join(dir, "bin", "cmake");
+  return (await exists(bin)) ? dir : null;
+}
+
 export async function checkAndroidEnv(): Promise<AndroidEnvStatus> {
   const issues: string[] = [];
   const sdkRoot = await resolveAndroidSdkRoot();

@@ -205,6 +205,15 @@ body[data-scroll-locked] .app-region-drag {
   -webkit-backdrop-filter: blur(14px) saturate(160%);
 }
 
+/* Galaxy mode — card glass (stronger blur + ensure above cosmos canvas) */
+body.galaxy-mode [data-slot="card"],
+body.galaxy-mode .bg-card {
+  backdrop-filter: blur(18px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(180%) !important;
+  position: relative;
+  z-index: 2;
+}
+
 /* Dark glass for the main content container */
 .dark #layout-main-content-container {
   background: oklch(0.13 0.015 265 / 0.75);
@@ -771,58 +780,152 @@ body[data-scroll-locked] .app-region-drag {
    ════════════════════════════════════════════════════════════════ */
 
 body.galaxy-mode {
-  background: #000000 !important;
-  /* CSS variable overrides so all Tailwind color tokens go dark-glass */
-  --background: oklch(0.08 0.018 292);
-  --background-lighter: oklch(0.1 0.018 292);
-  --background-lightest: oklch(0.12 0.018 292);
-  --foreground: rgba(220, 212, 255, 0.9);
-  --muted: rgba(255, 255, 255, 0.05);
-  --muted-foreground: rgba(180, 172, 225, 0.6);
-  --border: rgba(255, 255, 255, 0.1);
-  --input: rgba(255, 255, 255, 0.08);
-  --card: rgba(10, 6, 25, 0.55);
-  --card-foreground: rgba(220, 212, 255, 0.9);
-  --popover: rgba(12, 8, 30, 0.85);
-  --popover-foreground: rgba(220, 212, 255, 0.9);
-  /* Opaque sidebar so it visually merges with the titlebar + panel without seams */
-  --sidebar: oklch(0.11 0.018 292);
-  --sidebar-border: rgba(255, 255, 255, 0.06);
-  --sidebar-foreground: rgba(243, 236, 223, 0.8);
-  --sidebar-accent: rgba(139, 127, 255, 0.18);
-  --sidebar-accent-foreground: rgba(243, 236, 223, 1);
+  background: #03030a !important;
+  font-family: "Inter", "Geist", system-ui, sans-serif;
+  /* CSS variable overrides — match Cosmic Rays warm dark palette */
+  --background: rgba(4, 3, 10, 0.0);        /* transparent — let rays show */
+  --background-lighter: rgba(10, 6, 20, 0.0);
+  --background-lightest: rgba(16, 10, 30, 0.0);
+  --foreground: #f3ecdf;
+  --muted: rgba(243, 236, 223, 0.08);
+  --muted-foreground: rgba(243, 236, 223, 0.55);
+  --border: rgba(243, 236, 223, 0.12);
+  --input: rgba(243, 236, 223, 0.10);
+  --card: rgba(6, 4, 16, 0.82);           /* increased opacity for readability */
+  --card-foreground: #f3ecdf;
+  --popover: rgba(10, 6, 22, 0.94);
+  --popover-foreground: #f3ecdf;
+  /* Primary buttons: violet-glass matches the galaxy accent palette and
+     guarantees cream text is always readable regardless of how Tailwind v4
+     resolves --primary-foreground through @theme inline. Cream-on-cream
+     (the old cream-bg + baked near-white text from :root) is never an
+     issue here because both bg and text are light-on-dark. */
+  --primary: rgba(168, 140, 255, 0.28);
+  --primary-foreground: #f3ecdf;
+  /* --accent / --accent-foreground MUST be set here. Without overrides the
+     fallback comes from :root (light mode): --accent ≈ oklch(0.97 0 0) which
+     is near-solid-white. hover:bg-accent on outline buttons then produces a
+     jarring white flash with invisible text. Glass cream matches the UI. */
+  --accent: rgba(243, 236, 223, 0.10);
+  --accent-foreground: #f3ecdf;
+  /* Secondary buttons — same glass treatment so they don't look washed-out */
+  --secondary: rgba(243, 236, 223, 0.08);
+  --secondary-foreground: #f3ecdf;
+  --sidebar: rgba(6, 4, 14, 0.95);
+  --sidebar-border: rgba(243, 236, 223, 0.08);
+  --sidebar-foreground: rgba(243, 236, 223, 0.88);
+  --sidebar-accent: rgba(243, 236, 223, 0.10);
+  --sidebar-accent-foreground: #f3ecdf;
 }
 
-/* Sidebar is fully opaque so the GalaxyBackground does not bleed through */
+/* Galaxy mode: primary (default) buttons — violet-glass background with
+   cream text. The border adds the subtle glow that ties them to the
+   galaxy accent colour. Hover brightens the violet layer slightly.
+   Using explicit color here because Tailwind v4 @theme inline may bake
+   the :root near-white into .text-primary-foreground at build time. */
+body.galaxy-mode [data-slot="button"].text-primary-foreground {
+  color: #f3ecdf;
+  border: 1px solid rgba(168, 140, 255, 0.45);
+}
+body.galaxy-mode [data-slot="button"].text-primary-foreground:hover:not(:disabled) {
+  background-color: rgba(168, 140, 255, 0.38);
+  border-color: rgba(168, 140, 255, 0.65);
+}
+body.galaxy-mode [data-slot="button"].text-primary-foreground svg {
+  color: #f3ecdf;
+}
+
+/* ── Layout above cosmos: renders all app content above the fixed canvas ── */
+body.galaxy-mode [data-slot="sidebar-wrapper"] {
+  position: relative;
+  z-index: 1;
+}
+
+/* Sidebar — opaque dark so sidebar chrome doesn't compete with rays */
 body.galaxy-mode [data-sidebar="sidebar"] {
-  background: oklch(0.11 0.018 292) !important;
+  background: rgba(6, 4, 14, 0.95) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
 }
 
-/* Title bar — solid dark surface, no backdrop blur (user feedback) */
+/* ── Sidebar: force cream text on ALL children ────────────────── */
+body.galaxy-mode [data-slot="sidebar-container"],
+body.galaxy-mode [data-slot="sidebar-container"] * {
+  color: rgba(243, 236, 223, 0.85) !important;
+}
+/* Active/hover items: full brightness */
+body.galaxy-mode [data-sidebar="menu-button"]:hover *,
+body.galaxy-mode [data-sidebar="menu-button"][data-active="true"] * {
+  color: #f3ecdf !important;
+}
+/* Subtle muted labels inside sidebar (group labels, timestamps) */
+body.galaxy-mode [data-sidebar="group-label"],
+body.galaxy-mode [data-sidebar="group-label"] * {
+  color: rgba(243, 236, 223, 0.5) !important;
+}
+
+/* ── Sidebar panel (Recent Chats / App List / etc.) ───────────── */
+body.galaxy-mode [data-panel="sidebar-panel"] {
+  backdrop-filter: blur(20px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(160%) !important;
+}
+body.galaxy-mode [data-panel="sidebar-panel"],
+body.galaxy-mode [data-panel="sidebar-panel"] span,
+body.galaxy-mode [data-panel="sidebar-panel"] p,
+body.galaxy-mode [data-panel="sidebar-panel"] label,
+body.galaxy-mode [data-panel="sidebar-panel"] [data-slot="sidebar-group-label"],
+body.galaxy-mode [data-panel="sidebar-panel"] [data-slot="button"] {
+  color: rgba(243, 236, 223, 0.85) !important;
+}
+body.galaxy-mode [data-panel="sidebar-panel"] svg {
+  color: rgba(243, 236, 223, 0.7) !important;
+}
+
+/* ── text-gray-* overrides: readable on dark bg ──────────────── */
+body.galaxy-mode .text-gray-500,
+body.galaxy-mode .text-gray-400,
+body.galaxy-mode .text-gray-300,
+body.galaxy-mode .text-slate-500,
+body.galaxy-mode .text-slate-400 {
+  color: rgba(243, 236, 223, 0.50) !important;
+}
+body.galaxy-mode .text-gray-700,
+body.galaxy-mode .text-gray-800,
+body.galaxy-mode .text-gray-900,
+body.galaxy-mode .text-slate-700,
+body.galaxy-mode .text-slate-800,
+body.galaxy-mode .text-slate-900 {
+  color: rgba(243, 236, 223, 0.85) !important;
+}
+
+/* Title bar — solid dark, no blur */
 body.galaxy-mode .app-region-drag {
-  background: oklch(0.11 0.018 292) !important;
+  background: rgba(6, 4, 14, 0.95) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+  border-bottom: 1px solid rgba(243, 236, 223, 0.06) !important;
+  color: #f3ecdf !important;
+}
+body.galaxy-mode .app-region-drag * {
+  color: inherit !important;
 }
 
-/* Window control icons now use lucide with currentColor — no override needed.
-   Tailwind utilities (text-foreground/80) handle their color. */
-
-/* Main layout container — frosted glass over the galaxy background.
-   Subtle white tint + backdrop blur creates a "lighter glass" feel while
-   still letting the nebula/starfield bleed through.
-   Scoped --background variables make child containers (message bubbles, cards)
-   semi-transparent so the blurred galaxy shows through them too. */
+/* ── MAIN CONTENT CONTAINER — NO GLASS ────────────────────────
+   The cosmic rays background should be fully visible through the
+   content area. NO backdrop-filter, NO tinted background.
+   Glass is reserved for individual UI elements (cards, inputs, buttons).
+   ──────────────────────────────────────────────────────────── */
 body.galaxy-mode #layout-main-content-container {
-  background: rgba(255, 255, 255, 0.04) !important;
-  backdrop-filter: blur(14px) brightness(1.1) !important;
-  -webkit-backdrop-filter: blur(14px) brightness(1.1) !important;
-  --background: oklch(0.08 0.018 292 / 0.72);
-  --background-lighter: oklch(0.1 0.018 292 / 0.72);
-  --background-lightest: oklch(0.12 0.018 292 / 0.72);
-  --card: rgba(10, 6, 25, 0.5);
-  --muted: rgba(255, 255, 255, 0.04);
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-color: rgba(243, 236, 223, 0.08) !important;
+  /* Child tokens — keep cards/inputs semi-transparent */
+  --background: rgba(4, 3, 10, 0.0);
+  --background-lighter: rgba(10, 6, 20, 0.0);
+  --background-lightest: rgba(16, 10, 30, 0.0);
+  --card: rgba(6, 4, 16, 0.82);
+  --muted: rgba(243, 236, 223, 0.04);
 }
 
 /* ── Glass setup step cards ────────────────────────────────────
@@ -1411,34 +1514,45 @@ body.galaxy-mode *::-webkit-scrollbar-thumb:hover {
   }
 }
 
-/* ── Content container: subtle glass tint per route ─────────── */
-body.galaxy-mode #layout-main-content-container {
-  backdrop-filter: blur(2px) !important;
-  -webkit-backdrop-filter: blur(2px) !important;
+/* ── Tooltip: dark glass with cream text ─────────────────────── */
+body.galaxy-mode [data-slot="tooltip-content"] {
+  background: rgba(10, 6, 24, 0.95) !important;
+  color: #f3ecdf !important;
+  border: 1px solid rgba(243, 236, 223, 0.14) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
 }
-body[data-route="chat"] #layout-main-content-container {
-  background: rgba(3, 7, 26, 0.36) !important;
+body.galaxy-mode [data-slot="tooltip-content"] [class*="bg-foreground"] {
+  background: rgba(10, 6, 24, 0.95) !important;
 }
-body[data-route="inference"] #layout-main-content-container {
-  background: rgba(20, 8, 2, 0.36) !important;
+
+/* ── Sidebar menu buttons: always readable ───────────────────── */
+body.galaxy-mode [data-sidebar="menu-button"] {
+  color: rgba(243, 236, 223, 0.72) !important;
 }
-body[data-route="models"] #layout-main-content-container {
-  background: rgba(2, 5, 20, 0.36) !important;
+body.galaxy-mode [data-sidebar="menu-button"]:hover,
+body.galaxy-mode [data-sidebar="menu-button"][data-active="true"] {
+  color: #f3ecdf !important;
 }
-body[data-route="marketplace"] #layout-main-content-container {
-  background: rgba(2, 10, 7, 0.36) !important;
+body.galaxy-mode [data-sidebar="menu-button"] svg {
+  color: inherit !important;
 }
-body[data-route="mediaai"] #layout-main-content-container {
-  background: rgba(2, 14, 10, 0.36) !important;
+
+/* ── Button text: ensure foreground color across all variants ── */
+body.galaxy-mode [data-slot="button"]:not(.btn-orion):not(.btn-orion-outline):not([class*="bg-destructive"]) {
+  color: #f3ecdf !important;
 }
-body[data-route="settings"] #layout-main-content-container {
-  background: rgba(8, 4, 24, 0.36) !important;
+body.galaxy-mode [data-slot="button"].bg-primary,
+body.galaxy-mode [data-slot="button"][class*="bg-primary"] {
+  color: #0a0612 !important;
 }
-body[data-route="library"] #layout-main-content-container {
-  background: rgba(16, 8, 2, 0.36) !important;
-}
-body[data-route="hub"] #layout-main-content-container {
-  background: rgba(2, 6, 20, 0.36) !important;
+
+/* ── Outline/ghost buttons in content area: dark glass bg ────── */
+body.galaxy-mode #layout-main-content-container [data-slot="button"]:not(.btn-orion):not([class*="bg-primary"]) {
+  background: rgba(8, 5, 18, 0.55) !important;
+  border-color: rgba(243, 236, 223, 0.15) !important;
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -2132,4 +2246,106 @@ body[data-route="app-details"] .galaxy-bg-core {
 }
 body[data-route="app-details"] .galaxy-bg-nebula {
   filter: hue-rotate(-28deg) saturate(112%) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PROJECT ORION — Responsive + reduced-motion safety
+   ══════════════════════════════════════════════════════════════ */
+
+/* Tighten the main content frame on narrow viewports so it doesn't
+   crowd against the title bar / sidebar gutter on phones & tablets. */
+@media (max-width: 640px) {
+  #layout-main-content-container {
+    margin-right: 0.375rem !important;
+    margin-bottom: 0.375rem !important;
+    border-radius: 0.5rem !important;
+  }
+  .h-screenish {
+    height: calc(100vh - 56px);
+  }
+}
+
+/* iPad / small laptop tweak — keep some breathing room but
+   shrink horizontal page paddings used by .lib-content, .models-page,
+   .hub-page, .media-page, .market-page, .settings-content. */
+@media (max-width: 1024px) {
+  .lib-content,
+  .models-page,
+  .hub-page,
+  .media-page,
+  .settings-content {
+    padding-left: clamp(14px, 3vw, 22px) !important;
+    padding-right: clamp(14px, 3vw, 22px) !important;
+  }
+  .market-page,
+  .cockpit {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+    padding: clamp(12px, 2.4vw, 18px) !important;
+  }
+  .market-r {
+    border-radius: 12px;
+    max-height: 320px;
+  }
+  .modality-tabs {
+    grid-template-columns: repeat(2, 1fr) !important;
+    max-width: 100% !important;
+  }
+  .studio {
+    grid-template-columns: 1fr !important;
+    max-width: 100% !important;
+  }
+  .stat-trio {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .chat-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .chat-aside {
+    display: none;
+  }
+  .settings-shell,
+  .lib-shell {
+    grid-template-columns: 1fr !important;
+  }
+  .settings-aside,
+  .lib-aside {
+    display: none;
+  }
+  .api-row,
+  .runtime-grid,
+  .tel-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .speeds {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .orion-display {
+    letter-spacing: 0.04em;
+  }
+}
+
+/* Make Orion display + telemetry chunks always readable when wrapping */
+.orion-display,
+.orion-subtitle,
+.orion-title,
+.orion-telemetry,
+.eyebrow {
+  word-break: break-word;
+}
+
+/* Respect user's reduced-motion preference for ambient animations */
+@media (prefers-reduced-motion: reduce) {
+  .orion-glow,
+  .galaxy-bg-core,
+  .galaxy-bg-nebula,
+  .galaxy-bg-stars,
+  .galaxy-bg-stars2,
+  .galaxy-bg-particles,
+  .galaxy-bg-twinkle {
+    animation: none !important;
+  }
 }

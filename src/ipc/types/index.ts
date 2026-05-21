@@ -73,6 +73,8 @@ export type {
   TensorRtEngineBuildStatus,
   TensorRtEngineBuildRequest,
   SwapEmbeddedModelParams,
+  AllGpuEntry,
+  AllGpusInfo,
 } from "./embedded_model";
 export {
   modelMarketplaceContracts,
@@ -88,6 +90,17 @@ export {
   HardwareGpuInfoSchema,
 } from "./hardware";
 export type { HardwareGpuInfo, HardwareProfile } from "./hardware";
+export {
+  llamaBinaryContracts,
+  llamaBinaryClient,
+  llamaBinaryEvents,
+  llamaBinaryEventClient,
+} from "./llama_binary";
+export type {
+  LlamaBinaryCheckResult,
+  LlamaBinaryDownloadProgress,
+  LlamaBinaryDownloadResult,
+} from "./llama_binary";
 export {
   orchestratorContracts,
   orchestratorClient,
@@ -507,6 +520,7 @@ import {
 import { missionClient } from "./mission";
 import { hardwareClient } from "./hardware";
 import { orchestratorClient } from "./model_orchestrator";
+import { llamaBinaryClient, llamaBinaryEventClient } from "./llama_binary";
 
 /**
  * Unified IPC client with all domains organized by namespace.
@@ -572,6 +586,7 @@ export const ipc = {
   mission: missionClient,
   hardware: hardwareClient,
   orchestrator: orchestratorClient,
+  llamaBinary: llamaBinaryClient,
 
   // Event clients for main->renderer pub/sub
   events: {
@@ -582,5 +597,6 @@ export const ipc = {
     misc: miscEventClient,
     marketplace: modelMarketplaceEventClient,
     embeddedModel: embeddedModelEventClient,
+    llamaBinary: llamaBinaryEventClient,
   },
 } as const;

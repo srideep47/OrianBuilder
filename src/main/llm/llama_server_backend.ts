@@ -16,7 +16,11 @@ import { ChildProcess, spawn } from "node:child_process";
 import http from "node:http";
 import log from "electron-log";
 
-import { resolveLlamaServerBinary } from "./llama_server_binary";
+import {
+  resolveLlamaServerBinary,
+  resolveLlamaServerBinaryByVariant,
+  type LlamaServerVariant,
+} from "./llama_server_binary";
 import {
   buildLlamaServerArgs,
   type LlamaServerArgInput,
@@ -37,6 +41,13 @@ export interface LlamaServerStartConfig extends Omit<
   port?: number;
   /** Max ms to wait for the /health endpoint to report ready. */
   readyTimeoutMs?: number;
+  /**
+   * When set, bypasses hardware-profile auto-detection and loads the specified
+   * llama-server variant directly. Use this when the user has manually selected
+   * a GPU that differs from the auto-detected primary GPU (e.g. AMD iGPU on a
+   * system that also has an NVIDIA discrete GPU).
+   */
+  variantOverride?: LlamaServerVariant;
 }
 
 export interface LlamaServerStatus {
@@ -100,7 +111,9 @@ export class LlamaServerBackend {
     }
 
     const profile = await getCachedHardwareProfile();
-    const binary = resolveLlamaServerBinary(profile);
+    const binary = config.variantOverride
+      ? resolveLlamaServerBinaryByVariant(config.variantOverride)
+      : resolveLlamaServerBinary(profile);
 
     const host = config.host ?? DEFAULT_HOST;
     const port = config.port ?? DEFAULT_PORT;

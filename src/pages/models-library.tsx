@@ -316,8 +316,10 @@ function ModelRow({
           <Button
             size="sm"
             variant={isLoaded ? "outline" : "default"}
-            disabled={isLoading || isLoaded}
+            disabled={isLoaded}
+            aria-busy={isLoading}
             onClick={onLoad}
+            className={cn(isLoading && "pointer-events-none cursor-wait")}
           >
             {isLoading ? (
               <>

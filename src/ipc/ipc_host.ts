@@ -49,6 +49,7 @@ import { registerMarketplaceHandlers } from "./handlers/model_marketplace_handle
 import { registerMissionHandlers } from "./handlers/mission_handlers";
 import { registerHardwareHandlers } from "./handlers/hardware_handlers";
 import { registerOrchestratorHandlers } from "./handlers/orchestrator_handlers";
+import { registerLlamaBinaryHandlers } from "./handlers/llama_binary_handler";
 
 export function registerIpcHandlers() {
   // Register all IPC handlers by category
@@ -103,4 +104,5 @@ export function registerIpcHandlers() {
   registerMissionHandlers();
   registerHardwareHandlers();
   registerOrchestratorHandlers();
+  registerLlamaBinaryHandlers();
 }

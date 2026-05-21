@@ -1,7 +1,19 @@
 import { z } from "zod";
 import { createClient, defineContract } from "../contracts/core";
 
-export const MediaAiModelIdSchema = z.enum(["text", "image", "audio", "video"]);
+// Coarse model groups + specific image tier IDs that the user can download
+// individually from the Media AI page dropdown. Adding a new tier here means
+// also updating MODEL_LABELS (utils/media_ai_backend.ts) and the
+// IMAGE_TIER_REPOS table (scripts/download_models.py).
+export const MediaAiModelIdSchema = z.enum([
+  "text",
+  "image",
+  "audio",
+  "video",
+  "image-sd-turbo",
+  "image-z-image-turbo",
+  "whisper",
+]);
 
 export const MediaAiModelStatusSchema = z.object({
   id: MediaAiModelIdSchema,
@@ -25,6 +37,7 @@ export const MediaAiStatusSchema = z.object({
   outputsPath: z.string(),
   models: z.array(MediaAiModelStatusSchema),
   lastLog: z.string().optional(),
+  gpuBackendInstalled: z.string().optional(),
 });
 
 export const MediaAiOperationResultSchema = z.object({
@@ -97,10 +110,25 @@ export const mediaAiContracts = {
     input: z.void(),
     output: MediaAiStatusSchema,
   }),
+  cancelDownload: defineContract({
+    channel: "media-ai:cancel-download",
+    input: z.void(),
+    output: z.object({ cancelled: z.boolean() }),
+  }),
   fetchCloudImage: defineContract({
     channel: "media-ai:fetch-cloud-image",
     input: FetchCloudImageParamsSchema,
     output: FetchCloudImageResultSchema,
+  }),
+  deleteModel: defineContract({
+    channel: "media-ai:delete-model",
+    input: z.object({ modelId: MediaAiModelIdSchema }),
+    output: z.object({ deleted: z.boolean() }),
+  }),
+  resetSetup: defineContract({
+    channel: "media-ai:reset-setup",
+    input: z.object({ alsoDeleteModels: z.boolean().default(false) }),
+    output: z.object({ removed: z.array(z.string()) }),
   }),
 } as const;
 
