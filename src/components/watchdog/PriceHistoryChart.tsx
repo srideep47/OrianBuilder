@@ -61,10 +61,7 @@ export function PriceHistoryChart({
                 <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid
-              stroke="hsl(var(--border))"
-              strokeDasharray="3 3"
-            />
+            <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" />
             <XAxis
               dataKey="timestamp"
               tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
@@ -104,9 +101,9 @@ export function PriceHistoryChart({
                   minute: "2-digit",
                 })
               }
-              formatter={(v: number, name: string) => [
-                `${symbol}${v.toLocaleString()}`,
-                name,
+              formatter={(v, name) => [
+                `${symbol}${Number(v ?? 0).toLocaleString()}`,
+                String(name ?? ""),
               ]}
             />
             <Legend

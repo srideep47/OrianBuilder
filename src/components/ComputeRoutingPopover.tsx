@@ -1,10 +1,19 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Cpu, Monitor, X, CheckCircle2, Wifi, Zap } from "lucide-react";
+import {
+  Cpu,
+  Monitor,
+  X,
+  CheckCircle2,
+  Wifi,
+  Zap,
+  AlertTriangle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ipc } from "@/ipc/types";
 import { queryKeys } from "@/lib/queryKeys";
 import type { ComputeNode, ComputeMode } from "@/ipc/types/compute";
+import { useEmbeddedModelStatus } from "@/hooks/useEmbeddedModelStatus";
 
 function LoadBar({ pct }: { pct: number }) {
   const color =
@@ -93,6 +102,10 @@ export function ComputeRoutingPopover() {
     queryFn: () => ipc.compute.getShareStatus(),
     refetchInterval: open ? 3000 : 60000,
   });
+
+  const { data: embeddedStatus } = useEmbeddedModelStatus();
+  const sharingButNoModel =
+    shareStatus?.enabled && !embeddedStatus?.modelLoaded;
 
   useEffect(() => {
     if (target) setAutoMode(target.mode === "auto");
@@ -248,6 +261,23 @@ export function ComputeRoutingPopover() {
                 />
               </button>
             </div>
+
+            {/* Warning when sharing is on but no model is loaded */}
+            {sharingButNoModel && (
+              <div className="flex items-start gap-2 px-4 py-3 border-t border-border bg-amber-500/5">
+                <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                <div className="flex flex-col gap-0.5">
+                  <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                    No model loaded
+                  </p>
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    Peers won't see anything to use. Open the{" "}
+                    <span className="font-medium text-foreground">Engine</span>{" "}
+                    screen and load a model.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Footer */}
             <div className="px-4 py-2.5 border-t border-border">

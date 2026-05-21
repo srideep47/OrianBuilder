@@ -199,6 +199,14 @@ export function registerNetworkHandlers(): void {
     },
   );
 
+  createTypedHandler(
+    networkContracts.refreshPeer,
+    async (_event, { publicKey }) => {
+      const ok = networkSwarm.requestPeerRefresh(publicKey);
+      return { success: ok };
+    },
+  );
+
   createTypedHandler(networkContracts.getNotifications, async (_event) => {
     return notifications;
   });

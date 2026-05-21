@@ -33,6 +33,10 @@ import {
 import type { Peer } from "@/ipc/types/network";
 import { app } from "electron";
 import { lanDiscovery, type LanPeer } from "./lan-discovery";
+import {
+  getCurrentBroadcastState,
+  broadcastNow,
+} from "@/main/compute/load-monitor";
 
 const logger = log.scope("network:swarm");
 
@@ -45,6 +49,8 @@ interface ConnectedPeerEntry {
   pings: Map<number, number>;
   /** Whether we've received METADATA from this peer yet. */
   metadataReceived: boolean;
+  /** Wall-clock ms of the last LOAD_UPDATE we received from this peer. */
+  lastLoadUpdateAt: number | null;
 }
 
 const connectedPeers = new Map<string, ConnectedPeerEntry>();
@@ -257,6 +263,7 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
       lastSeenAt: Date.now(),
       pings: new Map(),
       metadataReceived: false,
+      lastLoadUpdateAt: null,
     });
 
     // Send our HELLO then full metadata
@@ -271,6 +278,10 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
         type: "METADATA",
         payload: await this._buildMetadata(),
       });
+      // Don't wait the full 2 s for the next load-monitor tick — push our
+      // current load/models immediately and request the peer's too.
+      void broadcastNow().catch(() => undefined);
+      channel.send({ type: "REQUEST_LOAD" });
     } catch (err) {
       logger.warn(
         `Failed to send handshake to ${remoteKeyHex.slice(0, 16)}…:`,
@@ -341,6 +352,13 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
       const p = msg.payload;
       const trusted = isTrustedPeer(p.publicKey);
       const lanAddr = lanDiscovery.getAddress(p.publicKey);
+      const existing = connectedPeers.get(remoteKeyHex);
+      // If the peer's METADATA carried real model info (new builds), keep that
+      // as the initial load timestamp so we don't show stale "never updated".
+      const initialHasLoadInfo =
+        p.loadedModels.length > 0 ||
+        p.computeAvailable === true ||
+        p.gpuUtilization > 0;
       const peer: Peer = {
         publicKey: p.publicKey,
         fingerprint: p.publicKey.slice(0, 16).toUpperCase(),
@@ -351,15 +369,17 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
         status: "online",
         isTrusted: trusted,
         isLan: lanAddr !== null,
-        latencyMs: connectedPeers.get(remoteKeyHex)?.peer.latencyMs ?? null,
+        latencyMs: existing?.peer.latencyMs ?? null,
         lastSeenAt: Date.now(),
+        lastLoadUpdateAt:
+          existing?.lastLoadUpdateAt ??
+          (initialHasLoadInfo ? Date.now() : null),
         loadedModels: p.loadedModels,
         gpuUtilization: p.gpuUtilization,
         computeAvailable: p.computeAvailable,
         appVersion: p.appVersion,
       };
 
-      const existing = connectedPeers.get(remoteKeyHex);
       const wasNew = !existing || !existing.metadataReceived;
       connectedPeers.set(remoteKeyHex, {
         channel,
@@ -367,6 +387,7 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
         lastSeenAt: Date.now(),
         pings: existing?.pings ?? new Map(),
         metadataReceived: true,
+        lastLoadUpdateAt: peer.lastLoadUpdateAt,
       });
       if (trusted) updatePeerLastSeen(p.publicKey);
 
@@ -407,14 +428,23 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
     if (msg.type === "LOAD_UPDATE") {
       const entry = connectedPeers.get(remoteKeyHex);
       if (entry) {
+        const now = Date.now();
+        entry.lastLoadUpdateAt = now;
         entry.peer = {
           ...entry.peer,
           gpuUtilization: msg.gpuUtilization,
           loadedModels: msg.loadedModels,
           computeAvailable: msg.computeAvailable,
+          lastLoadUpdateAt: now,
         };
         this.emit("peers-changed", this._getPeerList());
       }
+      return;
+    }
+
+    if (msg.type === "REQUEST_LOAD") {
+      // Peer wants a fresh broadcast — push immediately.
+      void broadcastNow().catch(() => undefined);
       return;
     }
 
@@ -608,11 +638,20 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
       isLan: lanDiscovery.getAddress(remoteKeyHex) !== null,
       latencyMs: null,
       lastSeenAt: Date.now(),
+      lastLoadUpdateAt: null,
       loadedModels: [],
       gpuUtilization: 0,
       computeAvailable: false,
       appVersion: "",
     };
+  }
+
+  /** Ask a specific connected peer to push a fresh LOAD_UPDATE. Returns true
+   *  if the request was sent (peer connected), false otherwise. */
+  requestPeerRefresh(publicKey: string): boolean {
+    const entry = connectedPeers.get(publicKey);
+    if (!entry || entry.channel.isClosed()) return false;
+    return entry.channel.send({ type: "REQUEST_LOAD" });
   }
 
   /** Send a PING to every connected peer; close anything that hasn't been heard
@@ -649,15 +688,19 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
 
   private async _buildMetadata(): Promise<PeerMetadataPayload> {
     const identity = await getDeviceIdentity();
+    // Seed METADATA with our real current load state so the peer doesn't see
+    // a stale "no models / not sharing" snapshot for the 2s window before the
+    // next LOAD_UPDATE tick.
+    const snapshot = getCurrentBroadcastState();
     return {
       publicKey: identity.publicKey,
       displayName: identity.deviceName,
       deviceName: identity.deviceName,
       deviceType: identity.deviceType,
       hardware: identity.hardware,
-      loadedModels: [],
-      gpuUtilization: 0,
-      computeAvailable: false,
+      loadedModels: snapshot.loadedModels,
+      gpuUtilization: snapshot.gpuUtilization,
+      computeAvailable: snapshot.computeAvailable,
       appVersion: app.getVersion(),
     };
   }

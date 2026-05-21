@@ -24,6 +24,8 @@ export type ChannelMessage =
   | { type: "INFERENCE_DONE"; requestId: string }
   | { type: "INFERENCE_ERROR"; requestId: string; error: string }
   | { type: "INFERENCE_CANCEL"; requestId: string }
+  /** Ask the remote side to send a fresh LOAD_UPDATE right now. */
+  | { type: "REQUEST_LOAD" }
   | {
       type: "LOAD_UPDATE";
       gpuUtilization: number;

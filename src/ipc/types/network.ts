@@ -31,6 +31,8 @@ export const PeerSchema = z.object({
   isLan: z.boolean(),
   latencyMs: z.number().nullable(),
   lastSeenAt: z.number().nullable(),
+  /** Wall-clock ms of the last LOAD_UPDATE we received from this peer. */
+  lastLoadUpdateAt: z.number().nullable(),
   loadedModels: z.array(z.string()),
   gpuUtilization: z.number(),
   computeAvailable: z.boolean(),
@@ -137,6 +139,11 @@ export const networkContracts = {
   }),
   sendFriendRequest: defineContract({
     channel: "network:send-friend-request",
+    input: z.object({ publicKey: z.string() }),
+    output: z.object({ success: z.boolean() }),
+  }),
+  refreshPeer: defineContract({
+    channel: "network:refresh-peer",
     input: z.object({ publicKey: z.string() }),
     output: z.object({ success: z.boolean() }),
   }),

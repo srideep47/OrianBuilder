@@ -18,6 +18,8 @@ import {
   Loader2,
   Cpu,
   CheckCircle2,
+  RefreshCw,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -182,15 +184,29 @@ function FriendRequestRow({
   );
 }
 
+function formatRelativeTime(ms: number | null): string {
+  if (ms === null || ms === 0) return "never";
+  const diff = Date.now() - ms;
+  if (diff < 0) return "just now";
+  if (diff < 1500) return "just now";
+  if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`;
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  return `${Math.floor(diff / 3_600_000)}h ago`;
+}
+
 // ─── Peer Detail Panel ────────────────────────────────────────────────────────
 function PeerDetailPanel({
   peer,
   onRemove,
   onAddFriend,
+  onRefresh,
+  isRefreshing,
 }: {
   peer: Peer;
   onRemove: () => void;
   onAddFriend: () => void;
+  onRefresh: () => void;
+  isRefreshing: boolean;
 }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [requestSent, setRequestSent] = useState(false);
@@ -254,13 +270,29 @@ function PeerDetailPanel({
       {/* Compute */}
       {peer.status === "online" && (
         <Card className="p-4 flex flex-col gap-2">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-            Compute
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Compute
+            </p>
+            <button
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-60"
+              title="Ask this peer to re-send their loaded model + GPU status"
+            >
+              <RefreshCw
+                className={`w-3 h-3 ${isRefreshing ? "animate-spin" : ""}`}
+              />
+              Refresh
+            </button>
+          </div>
           <div className="flex items-center gap-2">
             <Cpu className="w-4 h-4 text-muted-foreground" />
             <span className="text-sm">
               {peer.computeAvailable ? "Sharing compute" : "Not sharing"}
+            </span>
+            <span className="text-xs text-muted-foreground ml-auto">
+              updated {formatRelativeTime(peer.lastLoadUpdateAt)}
             </span>
           </div>
           {peer.gpuUtilization > 0 && (
@@ -277,18 +309,28 @@ function PeerDetailPanel({
               </div>
             </div>
           )}
-          {peer.loadedModels.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-1">
-              {peer.loadedModels.map((m) => (
-                <span
-                  key={m}
-                  className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary"
-                >
-                  {m}
-                </span>
-              ))}
-            </div>
-          )}
+          <div className="mt-1">
+            <p className="text-[11px] text-muted-foreground mb-1.5 flex items-center gap-1">
+              <Sparkles className="w-3 h-3" />
+              Loaded models
+            </p>
+            {peer.loadedModels.length > 0 ? (
+              <div className="flex flex-wrap gap-1">
+                {peer.loadedModels.map((m) => (
+                  <span
+                    key={m}
+                    className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary"
+                  >
+                    {m}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground italic">
+                No model loaded in their OrianBuilder Engine yet.
+              </p>
+            )}
+          </div>
         </Card>
       )}
 
@@ -584,6 +626,21 @@ export default function NetworkPage() {
       ),
   });
 
+  const refreshPeer = useMutation({
+    mutationFn: (publicKey: string) => ipc.network.refreshPeer({ publicKey }),
+    onSuccess: (result) => {
+      if (result.success) {
+        toast.success("Refresh requested — waiting for peer to respond…");
+        // The LOAD_UPDATE arrives over the wire; query gets invalidated by
+        // the peer-update event listener already wired up below.
+      } else {
+        toast.error("Peer isn't connected right now.");
+      }
+    },
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : "Refresh failed"),
+  });
+
   const peers = networkStatus?.peers ?? [];
   const isOnline = networkStatus?.isOnline ?? false;
 
@@ -753,6 +810,8 @@ export default function NetworkPage() {
             peer={selectedPeer}
             onRemove={() => removeFriend.mutate(selectedPeer.publicKey)}
             onAddFriend={() => sendFriendRequest.mutate(selectedPeer.publicKey)}
+            onRefresh={() => refreshPeer.mutate(selectedPeer.publicKey)}
+            isRefreshing={refreshPeer.isPending}
           />
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-center gap-4 text-muted-foreground">

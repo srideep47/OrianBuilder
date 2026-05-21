@@ -23,7 +23,7 @@ import {
   useEmbeddedModelSwap,
 } from "@/hooks/useEmbeddedModelSwap";
 import { useLanguageModelsByProviders } from "@/hooks/useLanguageModelsByProviders";
-import { Loader2, Wifi, Zap } from "lucide-react";
+import { Loader2, Wifi, Zap, RefreshCw } from "lucide-react";
 import { queryKeys } from "@/lib/queryKeys";
 
 import { ipc, LocalModel, type LocalModelEntry } from "@/ipc/types";
@@ -608,7 +608,7 @@ export function ModelPicker() {
                       </span>
                     </div>
                   </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="w-64">
+                  <DropdownMenuSubContent className="w-72">
                     <DropdownMenuLabel className="flex items-center gap-1.5 text-xs">
                       <Wifi className="w-3.5 h-3.5 text-primary" />
                       {node.label.split(" · ")[0]}
@@ -617,6 +617,25 @@ export function ModelPicker() {
                           · {gpuLabel}
                         </span>
                       )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void ipc.network
+                            .refreshPeer({ publicKey: node.id })
+                            .then((r) => {
+                              if (r.success) {
+                                queryClient.invalidateQueries({
+                                  queryKey: queryKeys.compute.nodes,
+                                });
+                              }
+                            })
+                            .catch(() => undefined);
+                        }}
+                        className="ml-auto text-muted-foreground hover:text-foreground"
+                        title="Ask peer to re-report loaded models"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                      </button>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     {hasModels ? (
@@ -647,14 +666,22 @@ export function ModelPicker() {
                         );
                       })
                     ) : (
-                      <div className="px-3 py-3 text-xs text-muted-foreground">
-                        <p className="font-medium text-foreground mb-1">
+                      <div className="px-3 py-3 text-xs text-muted-foreground space-y-2">
+                        <p className="font-medium text-foreground">
                           No model loaded
                         </p>
                         <p>
-                          Open the OrianBuilder Engine on that device and load a
-                          model so it can be shared over the network.
+                          On that device, open{" "}
+                          <span className="font-semibold text-foreground">
+                            Engine
+                          </span>{" "}
+                          → load a model → in the top-bar CPU icon, toggle{" "}
+                          <span className="font-semibold text-foreground">
+                            Share my compute
+                          </span>{" "}
+                          on.
                         </p>
+                        <p>Then click the refresh icon ↺ above to re-check.</p>
                       </div>
                     )}
                   </DropdownMenuSubContent>

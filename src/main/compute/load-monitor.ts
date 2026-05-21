@@ -22,11 +22,31 @@ let _interval: ReturnType<typeof setInterval> | null = null;
 let _currentLoad = 0;
 let _computeAvailable = false;
 let _queueDepth = 0;
+/** Last values that went out in a LOAD_UPDATE — used to seed METADATA on new
+ *  connections so peers don't see a stale "no models" payload for the 2s
+ *  window between connect and the next broadcast. */
+let _lastBroadcast = {
+  loadedModels: [] as string[],
+  computeAvailable: false,
+  gpuUtilization: 0,
+  queueDepth: 0,
+  timestamp: 0,
+};
 
 export function setComputeAvailable(enabled: boolean): void {
   _computeAvailable = enabled;
   // Trigger an immediate broadcast so peers see the change right away
   void _broadcast();
+}
+
+/** Snapshot of the last broadcast — read by swarm.ts to seed METADATA. */
+export function getCurrentBroadcastState() {
+  return { ..._lastBroadcast };
+}
+
+/** Force-broadcast immediately (e.g. when a new peer connects). */
+export function broadcastNow(): Promise<void> {
+  return _broadcast();
 }
 
 export function setQueueDepth(depth: number): void {
@@ -63,14 +83,21 @@ async function _broadcast(): Promise<void> {
     // AND a model is loaded in the embedded engine. Otherwise a peer's picker
     // would let them select us → request would immediately fail.
     const canActuallyServe = _computeAvailable && models.length > 0;
+    _lastBroadcast = {
+      loadedModels: models,
+      computeAvailable: canActuallyServe,
+      gpuUtilization: _currentLoad,
+      queueDepth: _queueDepth,
+      timestamp: Date.now(),
+    };
     networkSwarm.broadcastLoad({
       gpuUtilization: _currentLoad,
       loadedModels: models,
       computeAvailable: canActuallyServe,
       queueDepth: _queueDepth,
     });
-  } catch {
-    // non-critical
+  } catch (err) {
+    logger.warn("Broadcast pass failed:", err);
   }
 }
 
