@@ -5,6 +5,14 @@ import {
   previewPanelKeyAtom,
   selectedAppIdAtom,
 } from "../../atoms/appAtoms";
+import {
+  pdfPreviewDataAtom,
+  PDF_GENERATING_SENTINEL,
+} from "@/lib/pdfGenerator";
+import {
+  PdfPreviewMessage,
+  PdfGeneratingMessage,
+} from "@/components/chat/PdfPreviewMessage";
 
 import { CodeView } from "./CodeView";
 import { ElectronPreviewPanel } from "./ElectronPreviewPanel";
@@ -67,6 +75,7 @@ export function PreviewPanel() {
   const { runApp, loading, app } = useRunApp();
   const key = useAtomValue(previewPanelKeyAtom);
   const consoleEntries = useAtomValue(appConsoleEntriesAtom);
+  const [pdfPreviewData, setPdfPreviewData] = useAtom(pdfPreviewDataAtom);
 
   const latestMessage =
     consoleEntries.length > 0
@@ -134,7 +143,37 @@ export function PreviewPanel() {
         <PanelGroup direction="vertical">
           <Panel id="content" minSize={30}>
             <div className="h-full overflow-y-auto">
-              {previewMode === "preview" ? (
+              {pdfPreviewData ? (
+                <div className="h-full flex flex-col">
+                  <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30 shrink-0">
+                    <span className="text-sm font-medium truncate">
+                      {pdfPreviewData.topic === PDF_GENERATING_SENTINEL
+                        ? "Generating PDF…"
+                        : pdfPreviewData.topic}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPdfPreviewData(null)}
+                      aria-label="Close PDF preview"
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer ml-3 shrink-0"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-hidden">
+                    {pdfPreviewData.topic === PDF_GENERATING_SENTINEL ? (
+                      <div className="p-6">
+                        <PdfGeneratingMessage />
+                      </div>
+                    ) : (
+                      <PdfPreviewMessage
+                        topic={pdfPreviewData.topic}
+                        dataUri={pdfPreviewData.dataUri}
+                      />
+                    )}
+                  </div>
+                </div>
+              ) : previewMode === "preview" ? (
                 app?.frameworkType === "expo" && app.id ? (
                   <ExpoPreviewPanel appId={app.id} />
                 ) : app?.frameworkType === "electron" && app.id ? (

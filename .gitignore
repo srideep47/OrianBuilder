@@ -101,6 +101,8 @@ typings/
 out/
 
 sqlite.db
+sqlite.db-shm
+sqlite.db-wal
 userData/
 .env.local
 .idea/
@@ -146,6 +148,7 @@ run-voice-setup.bat
 # IDE-specific cache and settings
 .vscode/
 .vscode-*
+.codex/
 *.swp
 *.swo
 *~

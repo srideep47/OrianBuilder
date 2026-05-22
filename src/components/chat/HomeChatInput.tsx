@@ -17,7 +17,7 @@ import { Switch } from "@/components/ui/switch";
 
 import { useSettings } from "@/hooks/useSettings";
 import { homeChatInputValueAtom, homeSelectedAppAtom } from "@/atoms/chatAtoms";
-import { useAtom } from "jotai";
+import { useAtom, useSetAtom } from "jotai";
 import { useState, useEffect, useCallback } from "react";
 import { useAttachments } from "@/hooks/useAttachments";
 import { useVoiceToText } from "@/hooks/useVoiceToText";
@@ -35,6 +35,15 @@ import { AuxiliaryActionsMenu } from "./AuxiliaryActionsMenu";
 import { cn } from "@/lib/utils";
 import { useLoadApps } from "@/hooks/useLoadApps";
 import { AppSearchDialog } from "../AppSearchDialog";
+import {
+  extractPdfTopic,
+  generatePdfContent,
+  buildPdf,
+  pdfPreviewDataAtom,
+} from "@/lib/pdfGenerator";
+import { PdfGeneratingMessage } from "./PdfPreviewMessage";
+import { isPreviewOpenAtom } from "@/atoms/viewAtoms";
+import { useRouter } from "@tanstack/react-router";
 
 export function HomeChatInput({
   onSubmit,
@@ -54,6 +63,10 @@ export function HomeChatInput({
 
   const [appSearchOpen, setAppSearchOpen] = useState(false);
   const { apps } = useLoadApps();
+  const [isHomePdfGenerating, setIsHomePdfGenerating] = useState(false);
+  const setPdfPreviewData = useSetAtom(pdfPreviewDataAtom);
+  const setIsPreviewOpen = useSetAtom(isPreviewOpenAtom);
+  const { navigate } = useRouter();
   const handleTranscription = useCallback(
     (text: string) => {
       setInputValue(text);
@@ -112,6 +125,26 @@ export function HomeChatInput({
       return;
     }
 
+    // PDF generation: "create a pdf on <topic>" or "create a pdf on a topic like <topic>"
+    const pdfTopic = extractPdfTopic(inputValue.trim());
+    if (pdfTopic && !isHomePdfGenerating) {
+      setInputValue("");
+      setIsHomePdfGenerating(true);
+
+      const openRouterKey =
+        settings?.providerSettings?.openrouter?.apiKey?.value;
+
+      generatePdfContent(pdfTopic, openRouterKey).then((content) => {
+        const dataUri = buildPdf(pdfTopic, content);
+        setPdfPreviewData({ topic: pdfTopic, dataUri });
+        setIsPreviewOpen(true);
+        setIsHomePdfGenerating(false);
+        navigate({ to: "/chat" });
+      });
+
+      return;
+    }
+
     onSubmit({ attachments, selectedApp: selectedApp ?? undefined });
     clearAttachments();
     setSelectedApp(null);
@@ -125,6 +158,11 @@ export function HomeChatInput({
 
   return (
     <>
+      {isHomePdfGenerating && (
+        <div className="mb-3 px-3 py-2 rounded-xl border border-border bg-muted/20">
+          <PdfGeneratingMessage />
+        </div>
+      )}
       <div className="p-2" data-testid="home-chat-input-container">
         <div
           className={cn(

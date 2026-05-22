@@ -36,6 +36,8 @@ import {
   isCancelledResponseContent,
   stripCancelledResponseNotice,
 } from "@/shared/chatCancellation";
+import { PDF_GENERATING_SENTINEL } from "@/lib/pdfGenerator";
+import { PdfGeneratingMessage } from "./PdfPreviewMessage";
 
 /** Extract <orianbuilder-attachment> tags from message content and return parsed attachment data. */
 function extractAttachments(content: string): {
@@ -186,10 +188,12 @@ const ChatMessage = ({
               message.role === "assistant" ? "" : "ml-24 bg-(--sidebar-accent)"
             }`}
           >
-            {message.role === "assistant" &&
-            !hasAssistantText &&
-            isStreaming &&
-            isLastMessage ? (
+            {message.content === PDF_GENERATING_SENTINEL ? (
+              <PdfGeneratingMessage />
+            ) : message.role === "assistant" &&
+              !hasAssistantText &&
+              isStreaming &&
+              isLastMessage ? (
               <StreamingLoadingAnimation variant="initial" />
             ) : message.role === "assistant" &&
               !hasAssistantText &&

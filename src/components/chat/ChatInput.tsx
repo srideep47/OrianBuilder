@@ -125,6 +125,13 @@ import { useVoiceToText } from "@/hooks/useVoiceToText";
 import { useChatMode } from "@/hooks/useChatMode";
 import { useInitialChatMode } from "@/hooks/useInitialChatMode";
 import { streamChatResponse } from "@/lib/chatStream";
+import {
+  extractPdfTopic,
+  generatePdfContent,
+  buildPdf,
+  pdfPreviewDataAtom,
+  PDF_GENERATING_SENTINEL,
+} from "@/lib/pdfGenerator";
 
 const showTokenBarAtom = atom(false);
 
@@ -176,6 +183,7 @@ export function ChatInput({
   const messagesById = useAtomValue(chatMessagesByIdAtom);
   const setMessagesById = useSetAtom(chatMessagesByIdAtom);
   const setIsPreviewOpen = useSetAtom(isPreviewOpenAtom);
+  const setPdfPreviewData = useSetAtom(pdfPreviewDataAtom);
   const [showTokenBar, setShowTokenBar] = useAtom(showTokenBarAtom);
   const queryClient = useQueryClient();
   const toggleShowTokenBar = useCallback(() => {
@@ -917,6 +925,61 @@ export function ChatInput({
     }
 
     // Not streaming - send immediately
+
+    // PDF generation: "create a pdf on <topic>" or "create a pdf on a topic like <topic>"
+    const pdfTopic = extractPdfTopic(currentInput);
+    if (pdfTopic && chatId && !isInlineReplying) {
+      const userId = --inlineIdCounterRef.current;
+      const assistantId = --inlineIdCounterRef.current;
+
+      setMessagesById((prev) => {
+        const next = new Map(prev);
+        next.set(chatId, [
+          ...(next.get(chatId) ?? []),
+          { id: userId, role: "user" as const, content: currentInput },
+          {
+            id: assistantId,
+            role: "assistant" as const,
+            content: PDF_GENERATING_SENTINEL,
+          },
+        ]);
+        return next;
+      });
+
+      setInputValue("");
+      clearAttachments();
+      setSelectedComponents([]);
+      setVisualEditingSelectedComponent(null);
+      setIsInlineReplying(true);
+
+      const openRouterKey =
+        settings?.providerSettings?.openrouter?.apiKey?.value;
+
+      generatePdfContent(pdfTopic, openRouterKey).then((content) => {
+        const dataUri = buildPdf(pdfTopic, content);
+        setPdfPreviewData({ topic: pdfTopic, dataUri });
+        setIsPreviewOpen(true);
+        setMessagesById((prev) => {
+          const next = new Map(prev);
+          const msgs = next.get(chatId) ?? [];
+          next.set(
+            chatId,
+            msgs.map((m) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    content: `PDF for **${pdfTopic}** is ready — view it in the Preview panel.`,
+                  }
+                : m,
+            ),
+          );
+          return next;
+        });
+        setIsInlineReplying(false);
+      });
+
+      return;
+    }
 
     // Non-build messages get a conversational reply instead of going to the builder.
     const isBuildRequest =
