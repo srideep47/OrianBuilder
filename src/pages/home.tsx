@@ -41,6 +41,7 @@ import {
 } from "@/lib/chatStream";
 import { useQuery } from "@tanstack/react-query";
 import type { ComputeTarget } from "@/ipc/types/compute";
+import { OrianBuilderMarkdownParser } from "@/components/chat/OrianBuilderMarkdownParser";
 
 interface InlineChatMessage {
   role: "user" | "assistant";
@@ -73,6 +74,8 @@ export default function HomePage() {
   const [isReplying, setIsReplying] = useState(false);
   const [performanceData, setPerformanceData] = useState<any>(undefined);
   const assistantBufferRef = useRef("");
+  const replyAbortRef = useRef<AbortController | null>(null);
+  const replyCancelledRef = useRef(false);
   const flushTimerRef = useRef<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { streamMessage } = useStreamChat({ hasChatId: false });
@@ -166,8 +169,43 @@ export default function HomePage() {
   useEffect(() => {
     return () => {
       if (flushTimerRef.current) window.clearInterval(flushTimerRef.current);
+      replyAbortRef.current?.abort();
     };
   }, []);
+
+  const stopReplyFlush = () => {
+    if (flushTimerRef.current) {
+      window.clearInterval(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+  };
+
+  const updateLastAssistantContent = (content: string) => {
+    setChatMessages((prev) => {
+      const next = [...prev];
+      const last = next[next.length - 1];
+      if (last?.role === "assistant") {
+        next[next.length - 1] = { ...last, content };
+      }
+      return next;
+    });
+  };
+
+  const handleCancelReply = () => {
+    if (!isReplying) return;
+    replyCancelledRef.current = true;
+    replyAbortRef.current?.abort();
+    replyAbortRef.current = null;
+    stopReplyFlush();
+
+    const current = assistantBufferRef.current;
+    const stoppedContent = current.trim()
+      ? `${current}\n\n_Generation stopped._`
+      : "_Generation stopped._";
+    assistantBufferRef.current = stoppedContent;
+    updateLastAssistantContent(stoppedContent);
+    setIsReplying(false);
+  };
 
   const handleSubmit = async (options?: HomeSubmitOptions) => {
     const attachments = options?.attachments || [];
@@ -212,42 +250,40 @@ export default function HomePage() {
         flushTimerRef.current = null;
       }
 
-      const stopFlush = () => {
-        if (flushTimerRef.current) {
-          window.clearInterval(flushTimerRef.current);
-          flushTimerRef.current = null;
-        }
-      };
-
       const commitAssistant = (content: string) => {
-        setChatMessages((prev) => {
-          const next = [...prev];
-          const last = next[next.length - 1];
-          if (last?.role === "assistant") {
-            next[next.length - 1] = { ...last, content };
-          }
-          return next;
-        });
+        if (replyCancelledRef.current) return;
+        updateLastAssistantContent(content);
         setIsReplying(false);
-        stopFlush();
+        replyAbortRef.current = null;
+        stopReplyFlush();
       };
 
       const openRouterKey =
         settings?.providerSettings?.openrouter?.apiKey?.value;
 
-      streamChatResponse(
+      const abortController = new AbortController();
+      replyAbortRef.current = abortController;
+      replyCancelledRef.current = false;
+
+      void streamChatResponse(
         apiMessages,
         openRouterKey,
         {
           onChunk: (delta) => {
+            if (replyCancelledRef.current) return;
             assistantBufferRef.current += delta;
           },
           onEnd: () => commitAssistant(assistantBufferRef.current),
-          onError: (msg) => commitAssistant(`⚠️ ${msg}`),
+          onError: (msg) => commitAssistant(`[Error] ${msg}`),
         },
-        undefined,
+        abortController.signal,
         localModelUrl,
-      );
+      ).catch((err: unknown) => {
+        if (replyCancelledRef.current) return;
+        commitAssistant(
+          `[Error] ${(err as { message?: string })?.message ?? "Stream failed."}`,
+        );
+      });
 
       // Flush buffered chunks to state on a smooth interval
       flushTimerRef.current = window.setInterval(() => {
@@ -417,7 +453,11 @@ export default function HomePage() {
       <div className="flex flex-col h-full w-full items-center justify-center">
         {forceCloseDialog}
         <div className="w-full max-w-4xl px-3 sm:px-6 lg:px-8">
-          <HomeChatInput onSubmit={handleSubmit} />
+          <HomeChatInput
+            onSubmit={handleSubmit}
+            isStreaming={isReplying}
+            onCancel={handleCancelReply}
+          />
         </div>
         <PrivacyBanner />
         {releaseNotesDialog}
@@ -446,15 +486,20 @@ export default function HomePage() {
                 <div className="w-7 h-7 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center flex-shrink-0 mt-0.5 text-xs text-primary font-bold select-none">
                   O
                 </div>
-                <div className="bg-white/[0.04] border border-white/10 text-white/85 rounded-2xl px-4 py-3 max-w-[72%] text-sm leading-relaxed whitespace-pre-wrap min-h-[2.5rem]">
-                  {msg.content ||
-                    (isReplying && i === chatMessages.length - 1 ? (
-                      <span className="flex gap-1 items-center h-5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-bounce [animation-delay:0ms]" />
-                        <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-bounce [animation-delay:150ms]" />
-                        <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-bounce [animation-delay:300ms]" />
-                      </span>
-                    ) : null)}
+                <div className="bg-white/[0.04] border border-white/10 text-white/85 rounded-2xl px-4 py-3 max-w-[72%] text-sm leading-relaxed min-h-[2.5rem] prose dark:prose-invert prose-headings:mb-2 prose-p:my-1 prose-pre:my-2 prose-ol:my-2 prose-ul:my-2 prose-li:my-0.5 prose-strong:text-white/95 prose-code:text-white/90">
+                  {msg.content ? (
+                    <OrianBuilderMarkdownParser
+                      content={msg.content}
+                      chatId={null}
+                      isStreaming={isReplying && i === chatMessages.length - 1}
+                    />
+                  ) : isReplying && i === chatMessages.length - 1 ? (
+                    <span className="flex gap-1 items-center h-5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-bounce [animation-delay:0ms]" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-bounce [animation-delay:150ms]" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-bounce [animation-delay:300ms]" />
+                    </span>
+                  ) : null}
                 </div>
               </div>
             ),
@@ -467,7 +512,11 @@ export default function HomePage() {
       {/* Input pinned to bottom */}
       <div className="shrink-0 border-t border-white/[0.08] bg-background/80 backdrop-blur-sm">
         <div className="w-full max-w-4xl mx-auto px-3 sm:px-6 lg:px-8 py-3">
-          <HomeChatInput onSubmit={handleSubmit} />
+          <HomeChatInput
+            onSubmit={handleSubmit}
+            isStreaming={isReplying}
+            onCancel={handleCancelReply}
+          />
         </div>
       </div>
     </div>

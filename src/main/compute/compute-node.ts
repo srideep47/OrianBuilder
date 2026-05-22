@@ -240,30 +240,27 @@ function normalizeSseEvent(rawEvent: string): string {
 
         // llama.cpp's Qwen3 + --jinja behaviour: during thinking, it MIRRORS
         // the same tokens into both `content` and `reasoning_content`. After
-        // </think>, only `content` has the final answer. So:
-        //   - prefer `content` whenever it's a non-empty string (the live
-        //     answer, or the mirrored thinking text)
-        //   - fall back to `reasoning_content` only when `content` is null/""
-        // Concatenating both would double-print every thinking token
-        // ("ThinkingThinking Process Process").
-        let visible: string | null = null;
-        if (content !== null && content !== "") {
-          visible = content;
-        } else if (reasoning !== null && reasoning !== "") {
-          visible = reasoning;
-        }
-        if (visible !== null) {
-          delta.content = visible
-            .replace(/<\/?think>/gi, "")
-            .replace(/<\/?reasoning>/gi, "");
-        }
-        // CRITICAL: drop reasoning_content from the forwarded payload.
-        // @ai-sdk/openai-compatible v2+ recognizes `reasoning_content` and
-        // routes it to a separate reasoning channel that the default chat UI
-        // does NOT render — leaving the bubble blank even when content is
-        // populated. Removing the field forces the SDK to treat everything
-        // as plain assistant tokens.
-        if ("reasoning_content" in delta) {
+        // </think>, only `content` has the final answer. Route mirrored tokens
+        // into the AI SDK reasoning channel and keep final-answer tokens in
+        // content, so the renderer can show a collapsible Thought block instead
+        // of dumping chain-of-thought-looking text into the answer.
+        const clean = (text: string) =>
+          text.replace(/<\/?think>/gi, "").replace(/<\/?reasoning>/gi, "");
+        if (reasoning !== null && reasoning !== "") {
+          delta.reasoning_content = clean(reasoning);
+          if (content !== null && content !== "" && content === reasoning) {
+            delete delta.content;
+          } else if (content !== null && content !== "") {
+            delta.content = clean(content);
+          } else {
+            delete delta.content;
+          }
+        } else if (content !== null && content !== "") {
+          delta.content = clean(content);
+          if ("reasoning_content" in delta) {
+            delete delta.reasoning_content;
+          }
+        } else if ("reasoning_content" in delta) {
           delete delta.reasoning_content;
         }
       }

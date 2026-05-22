@@ -64,6 +64,26 @@ export async function consumeSSEStream(
   }
   const decoder = new TextDecoder();
   let buffer = "";
+  let inReasoningBlock = false;
+  const emitReasoning = (text: string) => {
+    if (!inReasoningBlock) {
+      callbacks.onChunk("<think>");
+      inReasoningBlock = true;
+    }
+    callbacks.onChunk(text);
+  };
+  const emitVisible = (text: string) => {
+    if (inReasoningBlock) {
+      callbacks.onChunk("</think>\n\n");
+      inReasoningBlock = false;
+    }
+    callbacks.onChunk(text);
+  };
+  const closeReasoning = () => {
+    if (!inReasoningBlock) return;
+    callbacks.onChunk("</think>\n\n");
+    inReasoningBlock = false;
+  };
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -73,17 +93,19 @@ export async function consumeSSEStream(
       buffer = lines.pop() ?? "";
       for (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed || trimmed === "data: [DONE]") continue;
+        if (!trimmed) continue;
+        if (trimmed === "data: [DONE]") {
+          closeReasoning();
+          continue;
+        }
         if (trimmed.startsWith("data: ")) {
           try {
             const json = JSON.parse(trimmed.slice(6));
             const choice = json.choices?.[0];
             const delta = choice?.delta;
-            // llama.cpp's Qwen3 mirrors thinking text into both
-            // delta.content AND delta.reasoning_content — so we prefer
-            // content first, fall back to reasoning_content, and finally
-            // to top-level `text` (used by some completion-style backends).
-            // Concatenating both would double every thinking token.
+            // llama.cpp's Qwen3 can mirror thinking text into both content
+            // and reasoning_content. Treat mirrored tokens as reasoning, then
+            // close the block when normal answer text starts.
             const content: string | null =
               typeof delta?.content === "string" ? delta.content : null;
             const reasoning: string | null =
@@ -92,24 +114,30 @@ export async function consumeSSEStream(
                 : null;
             const text: string | null =
               typeof choice?.text === "string" ? choice.text : null;
-            const visible =
-              content && content !== ""
-                ? content
-                : reasoning && reasoning !== ""
-                  ? reasoning
-                  : text && text !== ""
-                    ? text
-                    : null;
-            if (visible !== null) callbacks.onChunk(visible);
+            if (
+              reasoning &&
+              reasoning !== "" &&
+              (!content || content === reasoning)
+            ) {
+              emitReasoning(reasoning);
+            } else if (content && content !== "") {
+              emitVisible(content);
+            } else if (reasoning && reasoning !== "") {
+              emitReasoning(reasoning);
+            } else if (text && text !== "") {
+              emitVisible(text);
+            }
           } catch {
             // skip malformed SSE line
           }
         }
       }
     }
+    closeReasoning();
     callbacks.onEnd();
   } catch (err: unknown) {
     if ((err as { name?: string })?.name !== "AbortError") {
+      closeReasoning();
       callbacks.onError(
         (err as { message?: string })?.message ?? "Stream read error.",
       );

@@ -136,6 +136,8 @@ const ORIANBUILDER_CUSTOM_TAGS = [
 
 interface OrianBuilderMarkdownParserProps {
   content: string;
+  chatId?: number | null;
+  isStreaming?: boolean;
 }
 
 type CustomTagInfo = {
@@ -290,9 +292,13 @@ function OrianBuilderProjectCheck({
  */
 export const OrianBuilderMarkdownParser: React.FC<
   OrianBuilderMarkdownParserProps
-> = ({ content }) => {
-  const chatId = useAtomValue(selectedChatIdAtom);
-  const isStreaming = useAtomValue(isStreamingByIdAtom).get(chatId!) ?? false;
+> = ({ content, chatId: chatIdOverride, isStreaming: isStreamingOverride }) => {
+  const selectedChatId = useAtomValue(selectedChatIdAtom);
+  const chatId = chatIdOverride === undefined ? selectedChatId : chatIdOverride;
+  const isStreamingById = useAtomValue(isStreamingByIdAtom);
+  const isStreaming =
+    isStreamingOverride ??
+    (chatId ? (isStreamingById.get(chatId) ?? false) : false);
   const deferredContent = useDeferredValue(content);
   const contentToParse = isStreaming ? deferredContent : content;
 

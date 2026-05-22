@@ -19,7 +19,6 @@ import { useSettings } from "@/hooks/useSettings";
 import { homeChatInputValueAtom, homeSelectedAppAtom } from "@/atoms/chatAtoms";
 import { useAtom } from "jotai";
 import { useState, useEffect, useCallback } from "react";
-import { useStreamChat } from "@/hooks/useStreamChat";
 import { useAttachments } from "@/hooks/useAttachments";
 import { useVoiceToText } from "@/hooks/useVoiceToText";
 import { showError } from "@/lib/toast";
@@ -39,15 +38,18 @@ import { AppSearchDialog } from "../AppSearchDialog";
 
 export function HomeChatInput({
   onSubmit,
+  isStreaming = false,
+  onCancel,
 }: {
   onSubmit: (options?: HomeSubmitOptions) => void;
+  isStreaming?: boolean;
+  onCancel?: () => void;
 }) {
   const posthog = usePostHog();
   const [inputValue, setInputValue] = useAtom(homeChatInputValueAtom);
   const [selectedApp, setSelectedApp] = useAtom(homeSelectedAppAtom);
   const { settings, updateSettings } = useSettings();
   const isAutoPublishEnabled = !!settings?.autoPublishAfterChecks;
-  const { isStreaming } = useStreamChat({ hasChatId: false });
   useChatModeToggle();
 
   const [appSearchOpen, setAppSearchOpen] = useState(false);
@@ -205,16 +207,15 @@ export function HomeChatInput({
                 <TooltipTrigger
                   render={
                     <button
-                      aria-label="Cancel generation (unavailable here)"
-                      className="px-2 py-2 mb-0.5 mr-1 text-muted-foreground rounded-lg opacity-50 cursor-not-allowed transition-colors duration-150"
+                      onClick={onCancel}
+                      aria-label="Cancel generation"
+                      className="px-2 py-2 mb-0.5 mr-1 text-muted-foreground hover:text-destructive rounded-lg transition-colors duration-150 cursor-pointer"
                     />
                   }
                 >
                   <StopCircleIcon size={22} />
                 </TooltipTrigger>
-                <TooltipContent>
-                  Cancel generation (unavailable here)
-                </TooltipContent>
+                <TooltipContent>Cancel generation</TooltipContent>
               </Tooltip>
             ) : (
               <Tooltip>

@@ -194,6 +194,47 @@ function ClearEditorPlugin({
   return null;
 }
 
+function FocusEditorPlugin({
+  focusSignal,
+  disabled,
+}: {
+  focusSignal?: number;
+  disabled: boolean;
+}) {
+  const [editor] = useLexicalComposerContext();
+  const lastFocusSignalRef = useRef(focusSignal);
+
+  useEffect(() => {
+    if (
+      focusSignal === undefined ||
+      focusSignal === lastFocusSignalRef.current
+    ) {
+      return;
+    }
+    lastFocusSignalRef.current = focusSignal;
+    if (disabled) return;
+
+    window.setTimeout(() => {
+      editor.focus(() => {
+        const root = $getRoot();
+        root.selectEnd();
+      });
+    }, 0);
+  }, [disabled, editor, focusSignal]);
+
+  return null;
+}
+
+function EditableStatePlugin({ disabled }: { disabled: boolean }) {
+  const [editor] = useLexicalComposerContext();
+
+  useEffect(() => {
+    editor.setEditable(!disabled);
+  }, [disabled, editor]);
+
+  return null;
+}
+
 // Plugin to sync external value prop into the editor
 function ExternalValueSyncPlugin({
   value,
@@ -296,6 +337,7 @@ interface LexicalChatInputProps {
   excludeCurrentApp: boolean;
   disableSendButton: boolean;
   inputClassName?: string;
+  focusSignal?: number;
 }
 
 function onError(error: Error) {
@@ -313,6 +355,7 @@ export function LexicalChatInput({
   disableSendButton,
   messageHistory = [],
   inputClassName,
+  focusSignal,
 }: LexicalChatInputProps) {
   const { apps } = useLoadApps();
   const { prompts } = usePrompts();
@@ -577,6 +620,8 @@ export function LexicalChatInput({
           shouldClear={shouldClear}
           onCleared={handleCleared}
         />
+        <EditableStatePlugin disabled={disabled} />
+        <FocusEditorPlugin focusSignal={focusSignal} disabled={disabled} />
         <HistoryNavigation
           messageHistory={messageHistory}
           onTriggerInserted={() => {

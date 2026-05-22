@@ -168,6 +168,8 @@ export function ChatInput({
   const [showError, setShowError] = useState(true);
   const [isApproving, setIsApproving] = useState(false); // State for approving
   const [isRejecting, setIsRejecting] = useState(false); // State for rejecting
+  const [editorFocusSignal, setEditorFocusSignal] = useState(0);
+  const wasStreamingRef = useRef(isStreaming);
   const [editingQueuedMessageId, setEditingQueuedMessageId] = useState<
     string | null
   >(null);
@@ -331,6 +333,14 @@ export function ChatInput({
   // of whether a chat ID exists.
   const effectiveInputValue =
     chatId != null ? inputValue : pendingTranscription;
+
+  useEffect(() => {
+    const wasStreaming = wasStreamingRef.current;
+    wasStreamingRef.current = isStreaming;
+    if (chatId != null && wasStreaming && !isStreaming) {
+      setEditorFocusSignal((value) => value + 1);
+    }
+  }, [chatId, isStreaming]);
 
   const { isRecording, isTranscribing, toggleRecording } = useVoiceToText({
     enabled: true,
@@ -1370,6 +1380,7 @@ export function ChatInput({
               disableSendButton={disableSendButton}
               messageHistory={userMessageHistory}
               inputClassName="min-h-[60px] text-[16px]"
+              focusSignal={editorFocusSignal}
             />
 
             {/* Voice-to-text button */}
