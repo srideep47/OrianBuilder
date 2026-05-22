@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 
@@ -9,9 +9,15 @@ import {
   selectedChatIdAtom,
   removeChatIdFromAllTrackingAtom,
   ensureRecentViewedChatIdAtom,
+  homeChatMessagesAtom,
+  homeChatHistoryAtom,
+  currentHomePdfTopicAtom,
+  type HomeChatHistoryEntry,
 } from "@/atoms/chatAtoms";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { dropdownOpenAtom } from "@/atoms/uiAtoms";
+import { pdfPreviewDataAtom } from "@/lib/pdfGenerator";
+import { isPreviewOpenAtom } from "@/atoms/viewAtoms";
 import { ipc } from "@/ipc/types";
 import { showError, showSuccess } from "@/lib/toast";
 import { useInitialChatMode } from "@/hooks/useInitialChatMode";
@@ -75,7 +81,87 @@ export function ChatList({ show }: { show?: boolean }) {
   const setInlineChatHistory = useSetAtom(inlineChatHistoryAtom);
   const setCurrentInlineChatId = useSetAtom(currentInlineChatIdAtom);
 
-  const showInlineHistory = isChatRoute && chats.length === 0;
+  // Home chat history (same data shown in AppList)
+  const [homeChatMessages, setHomeChatMessages] = useAtom(homeChatMessagesAtom);
+  const [homeChatHistory, setHomeChatHistory] = useAtom(homeChatHistoryAtom);
+  const [currentPdfTopic] = useAtom(currentHomePdfTopicAtom);
+  const setPdfPreviewData = useSetAtom(pdfPreviewDataAtom);
+  const setIsPreviewOpen = useSetAtom(isPreviewOpenAtom);
+
+  const inlineChatTitle =
+    homeChatMessages.find((m) => m.role === "user")?.content?.slice(0, 60) ??
+    currentPdfTopic ??
+    null;
+
+  const handleHistoryClick = useCallback(
+    (entry: HomeChatHistoryEntry) => {
+      if (entry.pdfData) {
+        setPdfPreviewData(entry.pdfData);
+        setIsPreviewOpen(true);
+        navigate({ to: "/chat" });
+      } else {
+        setHomeChatMessages(entry.messages);
+        setHomeChatHistory((prev) => prev.filter((e) => e.id !== entry.id));
+        navigate({ to: "/" });
+      }
+    },
+    [
+      setPdfPreviewData,
+      setIsPreviewOpen,
+      setHomeChatMessages,
+      setHomeChatHistory,
+      navigate,
+    ],
+  );
+
+  const showInlineHistory = chats.length === 0;
+
+  const hasHomeHistory = inlineChatTitle || homeChatHistory.length > 0;
+
+  const allChatsForSearch = useMemo(
+    () => [
+      ...homeChatHistory.map((e, i) => ({
+        id: -(i + 1),
+        appId: 0,
+        title: e.title,
+        createdAt: new Date(e.createdAt),
+        chatMode: null as null,
+      })),
+      ...chats,
+    ],
+    [homeChatHistory, chats],
+  );
+
+  const handleSearchSelect = useCallback(
+    ({ chatId, appId }: { chatId: number; appId: number }) => {
+      setIsSearchDialogOpen(false);
+      if (chatId < 0) {
+        const idx = -(chatId + 1);
+        const entry = homeChatHistory[idx];
+        if (!entry) return;
+        if (entry.pdfData) {
+          setPdfPreviewData(entry.pdfData);
+          setIsPreviewOpen(true);
+          navigate({ to: "/chat" });
+        } else {
+          setHomeChatMessages(entry.messages);
+          setHomeChatHistory((prev) => prev.filter((e) => e.id !== entry.id));
+          navigate({ to: "/" });
+        }
+      } else {
+        selectChat({ chatId, appId });
+      }
+    },
+    [
+      homeChatHistory,
+      selectChat,
+      navigate,
+      setPdfPreviewData,
+      setIsPreviewOpen,
+      setHomeChatMessages,
+      setHomeChatHistory,
+    ],
+  );
 
   const handleSelectInlineChat = (id: string) => setCurrentInlineChatId(id);
 
@@ -120,29 +206,40 @@ export function ChatList({ show }: { show?: boolean }) {
   };
 
   const handleNewChat = async () => {
-    // Only create a new chat if an app is selected
     if (selectedAppId) {
       try {
-        // Create a new chat with an empty title for now
         const chatId = await ipc.chat.createChat({
           appId: selectedAppId,
           initialChatMode,
         });
-
-        // Refresh the chat list first so the new chat is in the cache
-        // before selectChat adds it to the tab bar
         await invalidateChats();
-
-        // Navigate to the new chat (use selectChat so it appears at front of tab bar)
         selectChat({ chatId, appId: selectedAppId });
+        return; // success — don't fall through to no-app flow
       } catch (error) {
-        // DO A TOAST
-        showError(t("failedCreateChat", { error: (error as any).toString() }));
+        const msg = (error as any)?.toString() ?? "";
+        if (!msg.toLowerCase().includes("app not found")) {
+          showError(t("failedCreateChat", { error: msg }));
+          return;
+        }
+        // App not found (stale id) — fall through to no-app flow
       }
-    } else {
-      // If no app is selected, navigate to home page
-      navigate({ to: "/" });
     }
+    // No app selected or stale app id: save current home chat then start fresh
+    if (homeChatMessages.length > 0) {
+      const title =
+        homeChatMessages
+          .find((m) => m.role === "user")
+          ?.content?.slice(0, 60) ?? "Chat";
+      const entry: HomeChatHistoryEntry = {
+        id: crypto.randomUUID(),
+        title,
+        messages: [...homeChatMessages],
+        createdAt: new Date().toISOString(),
+      };
+      setHomeChatHistory((prev) => [entry, ...prev]);
+    }
+    setHomeChatMessages([]);
+    navigate({ to: "/" });
   };
 
   const handleDeleteChat = async (chatId: number) => {
@@ -197,10 +294,7 @@ export function ChatList({ show }: { show?: boolean }) {
 
   return (
     <>
-      <SidebarGroup
-        className="overflow-y-auto h-[calc(100vh-112px)]"
-        data-testid="chat-list-container"
-      >
+      <SidebarGroup className="" data-testid="chat-list-container">
         <SidebarGroupLabel>{t("recentChats")}</SidebarGroupLabel>
         <SidebarGroupContent>
           <div className="flex flex-col space-y-4">
@@ -228,19 +322,114 @@ export function ChatList({ show }: { show?: boolean }) {
                 {t("loadingChats")}
               </div>
             ) : showInlineHistory ? (
-              inlineChatHistory.length === 0 ? (
+              !hasHomeHistory && inlineChatHistory.length === 0 ? (
                 <div className="py-3 px-4 text-sm text-gray-500">
                   {t("noChatsFound")}
                 </div>
               ) : (
-                <SidebarMenu className="space-y-1">
+                <SidebarMenu className="space-y-1 px-2">
+                  {/* Current in-progress home chat */}
+                  {inlineChatTitle && (
+                    <SidebarMenuItem className="mb-1">
+                      <div className="flex w-full items-center">
+                        <Button
+                          variant="ghost"
+                          onClick={() => navigate({ to: "/" })}
+                          className="justify-start flex-1 text-left py-3 pr-1 hover:bg-sidebar-accent/80 bg-sidebar-accent text-sidebar-accent-foreground"
+                        >
+                          <div className="flex flex-col w-full">
+                            <span className="truncate">{inlineChatTitle}</span>
+                            <span className="text-xs text-gray-500">
+                              Current chat
+                            </span>
+                          </div>
+                        </Button>
+                        <DropdownMenu modal={false}>
+                          <DropdownMenuTrigger
+                            className={buttonVariants({
+                              variant: "ghost",
+                              size: "icon",
+                              className: "ml-1",
+                            })}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="end"
+                            className="space-y-1 p-2"
+                          >
+                            <DropdownMenuItem
+                              onClick={() => setHomeChatMessages([])}
+                              className="px-3 py-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 focus:bg-red-50 dark:focus:bg-red-950/50"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              <span>Delete Chat</span>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </SidebarMenuItem>
+                  )}
+
+                  {/* Home chat history entries */}
+                  {homeChatHistory.map((entry) => (
+                    <SidebarMenuItem key={entry.id} className="mb-1">
+                      <div className="flex w-full items-center">
+                        <Button
+                          variant="ghost"
+                          onClick={() => handleHistoryClick(entry)}
+                          className="justify-start flex-1 text-left py-3 pr-1 hover:bg-sidebar-accent/80"
+                        >
+                          <div className="flex flex-col w-full">
+                            <span className="truncate">{entry.title}</span>
+                            <span className="text-xs text-gray-500">
+                              {formatDistanceToNow(new Date(entry.createdAt), {
+                                addSuffix: true,
+                              })}
+                            </span>
+                          </div>
+                        </Button>
+                        <DropdownMenu modal={false}>
+                          <DropdownMenuTrigger
+                            className={buttonVariants({
+                              variant: "ghost",
+                              size: "icon",
+                              className: "ml-1",
+                            })}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="end"
+                            className="space-y-1 p-2"
+                          >
+                            <DropdownMenuItem
+                              onClick={() =>
+                                setHomeChatHistory((prev) =>
+                                  prev.filter((e) => e.id !== entry.id),
+                                )
+                              }
+                              className="px-3 py-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 focus:bg-red-50 dark:focus:bg-red-950/50"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              <span>Delete Chat</span>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </SidebarMenuItem>
+                  ))}
+
+                  {/* Inline chat history from ChatPanel (no-app chat) */}
                   {inlineChatHistory.map((entry) => (
                     <SidebarMenuItem key={entry.id} className="mb-1">
-                      <div className="flex w-[175px] items-center">
+                      <div className="flex w-full items-center">
                         <Button
                           variant="ghost"
                           onClick={() => handleSelectInlineChat(entry.id)}
-                          className={`justify-start w-full text-left py-3 pr-1 hover:bg-sidebar-accent/80 ${
+                          className={`justify-start flex-1 text-left py-3 pr-1 hover:bg-sidebar-accent/80 ${
                             currentInlineChatId === entry.id
                               ? "bg-sidebar-accent text-sidebar-accent-foreground"
                               : ""
@@ -255,16 +444,33 @@ export function ChatList({ show }: { show?: boolean }) {
                             </span>
                           </div>
                         </Button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteInlineChat(entry.id);
-                          }}
-                          className="ml-1 p-1 rounded-sm hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors flex-shrink-0"
-                          aria-label="Delete chat"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        <DropdownMenu modal={false}>
+                          <DropdownMenuTrigger
+                            className={buttonVariants({
+                              variant: "ghost",
+                              size: "icon",
+                              className: "ml-1",
+                            })}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="end"
+                            className="space-y-1 p-2"
+                          >
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteInlineChat(entry.id);
+                              }}
+                              className="px-3 py-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 focus:bg-red-50 dark:focus:bg-red-950/50"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              <span>Delete Chat</span>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </SidebarMenuItem>
                   ))}
@@ -380,9 +586,9 @@ export function ChatList({ show }: { show?: boolean }) {
       <ChatSearchDialog
         open={isSearchDialogOpen}
         onOpenChange={setIsSearchDialogOpen}
-        onSelectChat={handleChatClick}
+        onSelectChat={selectedAppId ? handleChatClick : handleSearchSelect}
         appId={selectedAppId}
-        allChats={chats}
+        allChats={selectedAppId ? chats : allChatsForSearch}
       />
     </>
   );

@@ -38,8 +38,18 @@ export function ChatSearchDialog({
   const debouncedQuery = useDebouncedValue(searchQuery, 150);
   const { chats: searchResults } = useSearchChats(appId, debouncedQuery);
 
-  // Show all chats if search is empty, otherwise show search results
-  const chatsToShow = debouncedQuery.trim() === "" ? allChats : searchResults;
+  // Show all chats if search is empty; otherwise use DB results when available,
+  // falling back to client-side filtering of allChats (needed when appId=null disables DB search)
+  const chatsToShow =
+    debouncedQuery.trim() === ""
+      ? allChats
+      : searchResults.length > 0
+        ? searchResults
+        : allChats.filter((c) =>
+            (c.title || "")
+              .toLowerCase()
+              .includes(debouncedQuery.trim().toLowerCase()),
+          );
 
   const commandFilter = (
     value: string,

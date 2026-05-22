@@ -16,7 +16,13 @@ import {
 import { Switch } from "@/components/ui/switch";
 
 import { useSettings } from "@/hooks/useSettings";
-import { homeChatInputValueAtom, homeSelectedAppAtom } from "@/atoms/chatAtoms";
+import {
+  homeChatInputValueAtom,
+  homeSelectedAppAtom,
+  currentHomePdfTopicAtom,
+  homeChatHistoryAtom,
+  type HomeChatHistoryEntry,
+} from "@/atoms/chatAtoms";
 import { useAtom, useSetAtom } from "jotai";
 import { useState, useEffect, useCallback } from "react";
 import { useAttachments } from "@/hooks/useAttachments";
@@ -65,6 +71,8 @@ export function HomeChatInput({
   const { apps } = useLoadApps();
   const [isHomePdfGenerating, setIsHomePdfGenerating] = useState(false);
   const setPdfPreviewData = useSetAtom(pdfPreviewDataAtom);
+  const setCurrentHomePdfTopic = useSetAtom(currentHomePdfTopicAtom);
+  const setHomeChatHistory = useSetAtom(homeChatHistoryAtom);
   const setIsPreviewOpen = useSetAtom(isPreviewOpenAtom);
   const { navigate } = useRouter();
   const handleTranscription = useCallback(
@@ -130,6 +138,7 @@ export function HomeChatInput({
     if (pdfTopic && !isHomePdfGenerating) {
       setInputValue("");
       setIsHomePdfGenerating(true);
+      setCurrentHomePdfTopic(pdfTopic);
 
       const openRouterKey =
         settings?.providerSettings?.openrouter?.apiKey?.value;
@@ -139,6 +148,15 @@ export function HomeChatInput({
         setPdfPreviewData({ topic: pdfTopic, dataUri });
         setIsPreviewOpen(true);
         setIsHomePdfGenerating(false);
+        setCurrentHomePdfTopic(null);
+        const entry: HomeChatHistoryEntry = {
+          id: crypto.randomUUID(),
+          title: pdfTopic,
+          messages: [],
+          createdAt: new Date().toISOString(),
+          pdfData: { topic: pdfTopic, dataUri },
+        };
+        setHomeChatHistory((prev) => [entry, ...prev]);
         navigate({ to: "/chat" });
       });
 

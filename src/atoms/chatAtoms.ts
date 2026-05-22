@@ -41,6 +41,22 @@ export const chatInputValueAtom = atom(
 export const homeChatInputValueAtom = atom<string>("");
 export const homeSelectedAppAtom = atom<ListedApp | null>(null);
 
+export interface HomeChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+export const homeChatMessagesAtom = atom<HomeChatMessage[]>([]);
+export const currentHomePdfTopicAtom = atom<string | null>(null);
+
+export interface HomeChatHistoryEntry {
+  id: string;
+  title: string;
+  messages: HomeChatMessage[];
+  createdAt: string;
+  pdfData?: { topic: string; dataUri: string };
+}
+export const homeChatHistoryAtom = atom<HomeChatHistoryEntry[]>([]);
+
 // Used for scrolling to the bottom of the chat messages (per chat)
 export const chatStreamCountByIdAtom = atom<Map<number, number>>(new Map());
 export const recentStreamChatIdsAtom = atom<Set<number>>(new Set<number>());

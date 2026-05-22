@@ -177,6 +177,12 @@ deploy-artifacts/
 .mediaai-setup/
 mediaai-local-config/
 
+# Husky internal files
+.husky/_/
+
+# Worker build output
+workers/tsc/dist/
+
 # Python/Backend automation
 mediaai-backend/.venv/
 mediaai-backend/venv/

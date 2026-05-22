@@ -113,11 +113,12 @@ export const TitleBar = () => {
           <ChatTabs selectedChatId={selectedChatId} />
         </div>
 
-        <ComputeRoutingPopover />
-        <NotificationsDrawer />
-        <TitleBarActions />
-
-        {showWindowControls && <WindowsControls />}
+        <div className="ml-auto flex items-center -mt-3 no-app-region-drag">
+          <ComputeRoutingPopover />
+          <NotificationsDrawer />
+          <TitleBarActions />
+          {showWindowControls && <WindowsControls />}
+        </div>
       </div>
 
       <OrianBuilderProSuccessDialog
@@ -142,7 +143,7 @@ function WindowsControls() {
   };
 
   return (
-    <div className="ml-auto flex -mt-3 no-app-region-drag">
+    <div className="flex no-app-region-drag">
       <button
         className="w-11 h-11 m-0 p-0 flex items-center justify-center hover:bg-white/[0.08] transition-colors text-foreground/80 hover:text-foreground"
         onClick={minimizeWindow}
@@ -170,7 +171,6 @@ function WindowsControls() {
 
 function TitleBarActions() {
   const { t } = useTranslation("home");
-  const selectedAppId = useAtomValue(selectedAppIdAtom);
   const { restartApp, refreshAppIframe } = useRunApp();
   const { settings } = useSettings();
   const isCloudSandboxMode = settings?.runtimeMode2 === "cloud";
@@ -205,10 +205,7 @@ function TitleBarActions() {
   }, [restartApp]);
 
   return (
-    <div
-      className="flex items-center gap-0.5 no-app-region-drag mr-2 -mt-3"
-      style={{ visibility: selectedAppId ? "visible" : "hidden" }}
-    >
+    <div className="flex items-center gap-0.5 no-app-region-drag mr-2">
       <DropdownMenu>
         <DropdownMenuTrigger
           data-testid="preview-more-options-button"

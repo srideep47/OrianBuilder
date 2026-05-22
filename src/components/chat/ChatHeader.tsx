@@ -7,8 +7,13 @@ import {
 } from "lucide-react";
 import { PanelRightClose } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
+import {
+  homeChatMessagesAtom,
+  homeChatHistoryAtom,
+  type HomeChatHistoryEntry,
+} from "@/atoms/chatAtoms";
 import { useVersions } from "@/hooks/useVersions";
 import { Button } from "../ui/button";
 import {
@@ -55,6 +60,8 @@ export function ChatHeader({
   const { selectChat } = useSelectChat();
   const { isStreaming } = useStreamChat();
   const initialChatMode = useInitialChatMode();
+  const [homeChatMessages, setHomeChatMessages] = useAtom(homeChatMessagesAtom);
+  const setHomeChatHistory = useSetAtom(homeChatHistoryAtom);
   const isAnyCheckoutVersionInProgress = useAtomValue(
     isAnyCheckoutVersionInProgressAtom,
   );
@@ -100,6 +107,21 @@ export function ChatHeader({
         showError(t("failedCreateChat", { error: (error as any).toString() }));
       }
     } else {
+      // Save current home chat to history, then start fresh
+      if (homeChatMessages.length > 0) {
+        const title =
+          homeChatMessages
+            .find((m) => m.role === "user")
+            ?.content?.slice(0, 60) ?? "Chat";
+        const entry: HomeChatHistoryEntry = {
+          id: crypto.randomUUID(),
+          title,
+          messages: [...homeChatMessages],
+          createdAt: new Date().toISOString(),
+        };
+        setHomeChatHistory((prev) => [entry, ...prev]);
+      }
+      setHomeChatMessages([]);
       navigate({ to: "/" });
     }
   };

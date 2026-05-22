@@ -1,7 +1,10 @@
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useAtom, useSetAtom } from "jotai";
-import { homeChatInputValueAtom } from "../atoms/chatAtoms";
+import {
+  homeChatInputValueAtom,
+  homeChatMessagesAtom,
+} from "../atoms/chatAtoms";
 import { ipc } from "@/ipc/types";
 import { useLoadApps } from "@/hooks/useLoadApps";
 import { useSettings } from "@/hooks/useSettings";
@@ -43,11 +46,6 @@ import { useQuery } from "@tanstack/react-query";
 import type { ComputeTarget } from "@/ipc/types/compute";
 import { OrianBuilderMarkdownParser } from "@/components/chat/OrianBuilderMarkdownParser";
 
-interface InlineChatMessage {
-  role: "user" | "assistant";
-  content: string;
-}
-
 let hasCheckedReleaseNotes = false;
 
 export interface HomeSubmitOptions {
@@ -70,7 +68,7 @@ export default function HomePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMode, setLoadingMode] = useState<"new" | "existing">("new");
   const [forceCloseDialogOpen, setForceCloseDialogOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState<InlineChatMessage[]>([]);
+  const [chatMessages, setChatMessages] = useAtom(homeChatMessagesAtom);
   const [isReplying, setIsReplying] = useState(false);
   const [performanceData, setPerformanceData] = useState<any>(undefined);
   const assistantBufferRef = useRef("");
@@ -510,7 +508,7 @@ export default function HomePage() {
       </div>
 
       {/* Input pinned to bottom */}
-      <div className="shrink-0 border-t border-white/[0.08] bg-background/80 backdrop-blur-sm">
+      <div className="shrink-0 bg-background/80 backdrop-blur-sm">
         <div className="w-full max-w-4xl mx-auto px-3 sm:px-6 lg:px-8 py-3">
           <HomeChatInput
             onSubmit={handleSubmit}
