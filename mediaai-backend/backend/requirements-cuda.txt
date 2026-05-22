@@ -23,3 +23,20 @@ kokoro>=0.7.0         # Kokoro 82M
 # Install with `pip install f5-tts` if you want the F5-TTS tier.
 # STT
 librosa>=0.10.0
+# ACE-Step 1.5 is installed by the Electron setup helper with --no-deps after
+# these runtime dependencies are in place. Installing it directly from this
+# file lets pip try to resolve its CUDA-pinned torch wheel too early.
+loguru>=0.7.3
+einops>=0.8.1
+numba>=0.63.1
+vector-quantize-pytorch>=1.27.15
+torchao>=0.16.0,<0.17.0
+toml>=0.10.2
+diskcache>=5.6.3
+typer-slim>=0.21.1
+pytorch-wavelets>=1.3.0
+PyWavelets>=1.9.0
+torchcodec>=0.9.1
+peft>=0.18.0
+lycoris-lora
+lightning>=2.0.0

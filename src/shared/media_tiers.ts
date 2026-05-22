@@ -195,16 +195,9 @@ export const IMAGE_MODEL_TIERS: readonly MediaTier[] = [
 //   • animatediff-sd15: SD 1.5 + AnimateDiff motion module, 4GB
 //   • text-to-video-cpu: CPU fallback (8 frames, 256x256)
 
+// Ordered highest VRAM → lowest so pickBestTier selects the best model that
+// fits in available VRAM (it walks top-to-bottom and returns the first match).
 export const VIDEO_TIERS: readonly MediaTier[] = [
-  {
-    id: "wan-2.1-1.3b",
-    label: "Wan 2.1 (1.3B, 8GB)",
-    vramRequiredMb: 8000,
-    downloadSizeMb: 14000,
-    quality: "best",
-    hfRepo: "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
-    approxSecondsPerGen: 60,
-  },
   {
     id: "ltx-video",
     label: "LTX Video (12GB)",
@@ -215,13 +208,13 @@ export const VIDEO_TIERS: readonly MediaTier[] = [
     approxSecondsPerGen: 25,
   },
   {
-    id: "animatediff-sd15",
-    label: "AnimateDiff + SD 1.5 (4GB)",
-    vramRequiredMb: 4000,
-    downloadSizeMb: 6000,
-    quality: "basic",
-    hfRepo: "guoyww/animatediff-motion-adapter-v1-5-3",
-    approxSecondsPerGen: 45,
+    id: "wan-2.1-1.3b",
+    label: "Wan 2.1 (1.3B, 8GB)",
+    vramRequiredMb: 8000,
+    downloadSizeMb: 14000,
+    quality: "best",
+    hfRepo: "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+    approxSecondsPerGen: 60,
   },
   {
     id: "cogvideox-2b",
@@ -231,6 +224,15 @@ export const VIDEO_TIERS: readonly MediaTier[] = [
     quality: "good",
     hfRepo: "THUDM/CogVideoX-2b",
     approxSecondsPerGen: 90,
+  },
+  {
+    id: "animatediff-sd15",
+    label: "AnimateDiff + SD 1.5 (4GB)",
+    vramRequiredMb: 4000,
+    downloadSizeMb: 6000,
+    quality: "basic",
+    hfRepo: "guoyww/animatediff-motion-adapter-v1-5-3",
+    approxSecondsPerGen: 45,
   },
   {
     id: "text-to-video-cpu",

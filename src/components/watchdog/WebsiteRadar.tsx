@@ -18,12 +18,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import type {
-  WatchdogApi,
-  Website,
-  WebsiteItem,
-  WebsiteUpdate,
-} from "./api";
+import type { WatchdogApi, Website, WebsiteItem, WebsiteUpdate } from "./api";
 
 type ItemsState = WebsiteItem[] | "loading" | "error" | undefined;
 
@@ -235,7 +230,9 @@ function WebsiteRow({
             <div className="truncate text-xs text-muted-foreground font-mono">
               {site.url}
             </div>
-            <div className="mt-1 text-sm">{site.summary ?? "No summary yet."}</div>
+            <div className="mt-1 text-sm">
+              {site.summary ?? "No summary yet."}
+            </div>
           </div>
         </button>
         <div className="flex items-center gap-1 shrink-0">

@@ -40,20 +40,9 @@ class VideoTier(TypedDict):
 
 
 # Mirrors src/shared/media_tiers.ts VIDEO_TIERS.
+# Order is highest VRAM → lowest so pick_best_video_tier selects the best
+# model that actually fits in available VRAM.
 VIDEO_TIERS: list[VideoTier] = [
-    {
-        "id": "wan-2.1-1.3b",
-        "label": "Wan 2.1 (1.3B)",
-        "repo": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
-        "vram_mb": 8000,
-        "download_size_mb": 14000,
-        "backends": ["cuda", "rocm", "metal", "mps"],
-        "default_frames": 81,
-        "default_fps": 16,
-        "default_width": 832,
-        "default_height": 480,
-        "default_steps": 25,
-    },
     {
         "id": "ltx-video",
         "label": "LTX Video",
@@ -68,17 +57,16 @@ VIDEO_TIERS: list[VideoTier] = [
         "default_steps": 30,
     },
     {
-        # 4 GB VRAM — fits cleanly on RTX 3060 6GB, runs fully on GPU.
-        "id": "animatediff-sd15",
-        "label": "AnimateDiff + SD 1.5",
-        "repo": "guoyww/animatediff-motion-adapter-v1-5-3",
-        "vram_mb": 4000,
-        "download_size_mb": 6000,
-        "backends": ["cuda", "rocm", "metal", "mps", "directml"],
-        "default_frames": 16,
-        "default_fps": 8,
-        "default_width": 512,
-        "default_height": 512,
+        "id": "wan-2.1-1.3b",
+        "label": "Wan 2.1 (1.3B)",
+        "repo": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+        "vram_mb": 8000,
+        "download_size_mb": 14000,
+        "backends": ["cuda", "rocm", "metal", "mps"],
+        "default_frames": 81,
+        "default_fps": 16,
+        "default_width": 832,
+        "default_height": 480,
         "default_steps": 25,
     },
     {
@@ -93,6 +81,19 @@ VIDEO_TIERS: list[VideoTier] = [
         "default_width": 720,
         "default_height": 480,
         "default_steps": 50,
+    },
+    {
+        "id": "animatediff-sd15",
+        "label": "AnimateDiff + SD 1.5",
+        "repo": "guoyww/animatediff-motion-adapter-v1-5-3",
+        "vram_mb": 4000,
+        "download_size_mb": 6000,
+        "backends": ["cuda", "rocm", "metal", "mps", "directml"],
+        "default_frames": 16,
+        "default_fps": 8,
+        "default_width": 512,
+        "default_height": 512,
+        "default_steps": 25,
     },
     {
         "id": "text-to-video-cpu",

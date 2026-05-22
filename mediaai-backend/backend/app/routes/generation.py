@@ -27,7 +27,7 @@ from app.services.text_generation import (
 from app.services.audio_generation import (
     AudioGenerationDependencyError,
     AudioGenerationError,
-    audio_generation_service,
+    tiered_audio_generation_service,
 )
 from app.services.video_generation import (
     VideoGenerationDependencyError,
@@ -101,7 +101,7 @@ async def generate_image(request: ImageGenerationRequest) -> ImageGenerationResp
 @router.post("/audio", response_model=AudioGenerationResponse)
 async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResponse:
     try:
-        generated = await run_in_threadpool(audio_generation_service.generate, request)
+        generated = await run_in_threadpool(tiered_audio_generation_service.generate, request)
     except AudioGenerationDependencyError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except AudioGenerationError as exc:

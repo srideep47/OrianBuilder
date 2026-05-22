@@ -15,6 +15,7 @@ from app.models import image as image_model
 from app.models import tts as tts_model
 from app.models import stt as stt_model
 from app.models import video as video_model
+from app.models import music as music_model
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 STATIC_DIR = BACKEND_DIR / "static"
@@ -187,6 +188,116 @@ async def v1_generate_tts(req: V1TtsRequest) -> V1TtsResponse:
     return V1TtsResponse(audio_url=_outputs_url(filename), tier=tier["id"])
 
 
+# ─── v1 Music generation (ACE-Step 1.5) ──────────────────────────────────────
+
+
+class V1MusicTierInfo(BaseModel):
+    id: str
+    label: str
+    description: str
+    vram_mb: int
+    download_size_mb: int
+    backends: list[str]
+    uses_lm: bool
+    repo_url: str
+    available_for_backend: bool
+    status: str  # "downloaded" | "downloading" | "not_downloaded"
+    download_progress: float | None = None
+    selected: bool
+
+
+class V1MusicTiersResponse(BaseModel):
+    tiers: list[V1MusicTierInfo]
+    selected_tier_id: str
+
+
+@app.get("/v1/generate/music/tiers", response_model=V1MusicTiersResponse)
+async def v1_music_tiers() -> V1MusicTiersResponse:
+    """Return all music tiers with download status and which one is selected."""
+    best = music_model.pick_best_music_tier()
+    backend = hardware.get_backend()
+    normalized_backend = "mps" if backend == "metal" else backend
+    tiers = [
+        V1MusicTierInfo(
+            id=t["id"],
+            label=t["label"],
+            description=t["description"],
+            vram_mb=t["vram_mb"],
+            download_size_mb=t["download_size_mb"],
+            backends=t["backends"],
+            uses_lm=t["uses_lm"],
+            repo_url=t["repo_url"],
+            available_for_backend=normalized_backend in t["backends"],
+            status=music_model.tier_status(t["id"]),
+            download_progress=music_model._download_progress.get(t["id"]) if music_model.tier_status(t["id"]) == "downloading" else None,
+            selected=(t["id"] == best["id"]),
+        )
+        for t in music_model.MUSIC_TIERS
+    ]
+    return V1MusicTiersResponse(tiers=tiers, selected_tier_id=best["id"])
+
+
+class V1MusicDownloadRequest(BaseModel):
+    tier_id: str
+
+
+class V1MusicDownloadResponse(BaseModel):
+    ok: bool
+    tier_id: str
+    status: str
+
+
+@app.post("/v1/generate/music/download", response_model=V1MusicDownloadResponse)
+async def v1_music_download(req: V1MusicDownloadRequest) -> V1MusicDownloadResponse:
+    """Trigger a background download of the model weights for the given tier."""
+    import asyncio
+
+    # Validate before we hand work to a background thread, otherwise bad tier
+    # names only fail in the server log while the renderer keeps polling.
+    music_model.pick_best_music_tier(req.tier_id)
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, music_model.download_tier, req.tier_id)
+    return V1MusicDownloadResponse(
+        ok=True,
+        tier_id=req.tier_id,
+        status=music_model.tier_status(req.tier_id),
+    )
+
+
+class V1MusicRequest(BaseModel):
+    prompt: str
+    duration_seconds: float = 15.0
+    tier: str | None = None
+
+
+class V1MusicResponse(BaseModel):
+    audio_url: str
+    tier: str
+    duration_seconds: float
+
+
+@app.post("/v1/generate/music", response_model=V1MusicResponse)
+async def v1_generate_music(req: V1MusicRequest) -> V1MusicResponse:
+    try:
+        data = await run_in_threadpool(
+            music_model.generate_music,
+            req.prompt,
+            req.duration_seconds,
+            req.tier,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"music generation failed: {exc}") from exc
+    filename = _unique_filename("wav", req.prompt[:40])
+    out_path = OUTPUTS_DIR / filename
+    out_path.write_bytes(data)
+    tier = music_model.pick_best_music_tier(req.tier)
+    return V1MusicResponse(
+        audio_url=_outputs_url(filename),
+        tier=tier["id"],
+        duration_seconds=req.duration_seconds,
+    )
+
+
 # ─── v1 STT (Whisper) ─────────────────────────────────────────────────────────
 
 class V1TranscribeResponse(BaseModel):
@@ -310,11 +421,14 @@ async def v1_unload(req: V1UnloadRequest) -> V1UnloadResponse:
         tts_model.unload()
     elif req.model_type == "stt":
         stt_model.unload()
+    elif req.model_type == "music":
+        music_model.unload()
     elif req.model_type == "all":
         image_model.unload_pipeline()
         video_model.unload_pipeline()
         tts_model.unload()
         stt_model.unload()
+        music_model.unload()
     else:
         raise HTTPException(status_code=400, detail=f"unknown model_type: {req.model_type}")
     return V1UnloadResponse(ok=True)

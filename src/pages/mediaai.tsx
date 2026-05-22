@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type React from "react";
 import {
+  CheckCircle2,
   ChevronDown,
   Cpu,
   Download,
   FileAudio,
+  HardDrive,
   Image,
   Loader2,
   Mic,
   Music,
+  Pause,
   Play,
   RefreshCw,
+  Search,
   Send,
   Server,
   ServerOff,
@@ -57,7 +61,63 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-type MediaTab = "image" | "audio" | "transcribe" | "video";
+type MediaTab = "image" | "audio" | "transcribe" | "video" | "music";
+
+interface ItunesTrack {
+  trackId: number;
+  trackName: string;
+  artistName: string;
+  collectionName: string;
+  artworkUrl100: string;
+  previewUrl: string;
+  primaryGenreName: string;
+}
+
+interface MusicTierInfo {
+  id: string;
+  label: string;
+  description: string;
+  vram_mb: number;
+  download_size_mb: number;
+  backends: string[];
+  uses_lm: boolean;
+  repo_url: string;
+  available_for_backend: boolean;
+  status: "downloaded" | "downloading" | "not_downloaded";
+  download_progress?: number;
+  selected: boolean;
+}
+
+const MUSIC_TIER_CATALOG: MusicTierInfo[] = [
+  {
+    id: "ace-step-turbo-4gb",
+    label: "ACE-Step 1.5 Turbo (4 GB)",
+    description:
+      "Low-VRAM DiT-only model for full songs with vocals and instruments. Best first download for testing on 4 GB GPUs.",
+    vram_mb: 4000,
+    download_size_mb: 8500,
+    backends: ["cuda", "rocm", "mps", "metal", "cpu"],
+    uses_lm: false,
+    repo_url: "https://github.com/ace-step/ACE-Step-1.5",
+    available_for_backend: true,
+    status: "not_downloaded",
+    selected: true,
+  },
+  {
+    id: "ace-step-xl-turbo-12gb",
+    label: "ACE-Step 1.5 XL Turbo (12 GB)",
+    description:
+      "Higher fidelity 4B DiT tier with the 0.6B planner enabled for stronger structure and prompt adherence.",
+    vram_mb: 12000,
+    download_size_mb: 14000,
+    backends: ["cuda", "rocm", "mps", "metal", "cpu"],
+    uses_lm: true,
+    repo_url: "https://github.com/ace-step/ACE-Step-1.5",
+    available_for_backend: true,
+    status: "not_downloaded",
+    selected: false,
+  },
+];
 
 interface GenerationResult {
   tab: MediaTab;
@@ -144,6 +204,15 @@ function TierBadge({ tier }: { tier: MediaTier | null }) {
 const POLLINATIONS_BASE = "https://image.pollinations.ai/prompt";
 const POLLINATIONS_REFERRER = "orianbuilder";
 
+function assertMediaAiOperationSucceeded(
+  result: { success: boolean; output?: string },
+  fallbackMessage: string,
+): void {
+  if (result.success) return;
+  const details = result.output?.trim();
+  throw new Error(details || fallbackMessage);
+}
+
 function pollinationsUrl(
   prompt: string,
   opts: { width?: number; height?: number; seed?: number; model?: string } = {},
@@ -188,12 +257,22 @@ type SetupPhase =
 
 const TIER_PREF_KEY = "mediaai:image:tier";
 const SETTINGS_KEY = "mediaai:image:settings-by-tier";
+const MUSIC_TIER_PREF_KEY = "mediaai:music:tier";
 
 function loadStoredTierId(): string {
   if (typeof window === "undefined") return USER_FACING_IMAGE_TIERS[0].tierId;
   const v = window.localStorage.getItem(TIER_PREF_KEY);
   if (v && USER_FACING_IMAGE_TIERS.some((t) => t.tierId === v)) return v;
   return USER_FACING_IMAGE_TIERS[0].tierId;
+}
+
+function loadStoredMusicTierId(): string {
+  if (typeof window === "undefined") return "ace-step-turbo-4gb";
+  const value = window.localStorage.getItem(MUSIC_TIER_PREF_KEY);
+  if (value && MUSIC_TIER_CATALOG.some((tier) => tier.id === value)) {
+    return value;
+  }
+  return "ace-step-turbo-4gb";
 }
 
 function loadStoredSettings(): Record<string, ImageSettings> {
@@ -255,6 +334,44 @@ export default function MediaAIPage() {
   const eventLogIdRef = useRef(0);
   const [eventLog, setEventLog] = useState<EventLogEntry[]>([]);
 
+  // Abort controller for in-flight generation fetches (used by Stop button)
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Music tab sub-mode
+  const [musicMode, setMusicMode] = useState<"generate" | "search">("generate");
+
+  // AI music generation state
+  const [musicGenPrompt, setMusicGenPrompt] = useState("");
+  const [musicGenDuration, setMusicGenDuration] = useState(15);
+  const [musicGenStatus, setMusicGenStatus] = useState<
+    "idle" | "generating" | "done" | "error"
+  >("idle");
+  const [musicGenError, setMusicGenError] = useState("");
+  const [musicGenAudioUrl, setMusicGenAudioUrl] = useState<string | null>(null);
+  const musicGenAbortRef = useRef<AbortController | null>(null);
+
+  const [musicTiers, setMusicTiers] = useState<MusicTierInfo[]>([]);
+  const [musicTiersLoading, setMusicTiersLoading] = useState(false);
+  const [selectedMusicTierId, setSelectedMusicTierId] = useState<string | null>(
+    () => loadStoredMusicTierId(),
+  );
+  const [musicSetupRunning, setMusicSetupRunning] = useState(false);
+  const [musicDownloadTierId, setMusicDownloadTierId] = useState<string | null>(
+    null,
+  );
+  const [musicGeneratedTier, setMusicGeneratedTier] = useState<string | null>(
+    null,
+  );
+  const musicDownloadPollRef = useRef<number | null>(null);
+
+  // Music search state
+  const [musicQuery, setMusicQuery] = useState("");
+  const [musicResults, setMusicResults] = useState<ItunesTrack[]>([]);
+  const [musicSearching, setMusicSearching] = useState(false);
+  const [musicSearchError, setMusicSearchError] = useState("");
+  const [playingTrackId, setPlayingTrackId] = useState<number | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
   const selectedImageTier =
     USER_FACING_IMAGE_TIERS.find((t) => t.tierId === selectedImageTierId) ??
     USER_FACING_IMAGE_TIERS[0];
@@ -291,6 +408,15 @@ export default function MediaAIPage() {
     }
   }, [selectedImageTierId]);
 
+  useEffect(() => {
+    if (!selectedMusicTierId) return;
+    try {
+      window.localStorage.setItem(MUSIC_TIER_PREF_KEY, selectedMusicTierId);
+    } catch {
+      // non-fatal
+    }
+  }, [selectedMusicTierId]);
+
   const appendLog = useCallback(
     (message: string, level: EventLogEntry["level"] = "info") => {
       eventLogIdRef.current += 1;
@@ -311,6 +437,19 @@ export default function MediaAIPage() {
 
   const serverUrl = status?.serverUrl ?? "http://127.0.0.1:8000";
   const isBackendOnline = status?.healthy === true;
+  const musicModelTiers =
+    musicTiers.length > 0
+      ? MUSIC_TIER_CATALOG.map(
+          (catalogTier) =>
+            musicTiers.find((tier) => tier.id === catalogTier.id) ??
+            catalogTier,
+        )
+      : MUSIC_TIER_CATALOG;
+  const selectedMusicTier =
+    musicModelTiers.find((tier) => tier.id === selectedMusicTierId) ??
+    musicModelTiers.find((tier) => tier.selected) ??
+    musicModelTiers[0] ??
+    null;
 
   const refreshAll = useCallback(async () => {
     const [nextStatus, nextHardware, nextOrch] = await Promise.all([
@@ -347,6 +486,15 @@ export default function MediaAIPage() {
     const interval = setInterval(() => void refreshAll(), 30000);
     return () => clearInterval(interval);
   }, [refreshAll]);
+
+  useEffect(() => {
+    return () => {
+      if (musicDownloadPollRef.current !== null) {
+        window.clearInterval(musicDownloadPollRef.current);
+        musicDownloadPollRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!status) return;
@@ -401,6 +549,28 @@ export default function MediaAIPage() {
     appendLog("Download cancelled.", "info");
     toast.info("Download cancelled");
   }, [appendLog]);
+
+  const waitForBackendHealthy = useCallback(
+    async (timeoutMs = 60_000): Promise<MediaAiStatus | null> => {
+      const deadline = Date.now() + timeoutMs;
+      let latestStatus: MediaAiStatus | null = null;
+
+      while (Date.now() < deadline) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+        const nextStatus = await ipc.mediaAi
+          .getStatus(undefined)
+          .catch(() => null);
+        if (!nextStatus) continue;
+        latestStatus = nextStatus;
+        setStatus(nextStatus);
+        if (nextStatus.healthy) return nextStatus;
+        if (!nextStatus.running && nextStatus.lastLog) break;
+      }
+
+      return latestStatus;
+    },
+    [],
+  );
 
   const downloadTier = useCallback(
     async (tier: ImageTierUiConfig) => {
@@ -471,9 +641,13 @@ export default function MediaAIPage() {
         appendLog(
           `Installing Python dependencies (${backend} backend${freshHw?.primaryGpu?.model ? ` · ${freshHw.primaryGpu.model}` : ""})…`,
         );
-        await ipc.mediaAi.installDependenciesForBackend({
+        const installResult = await ipc.mediaAi.installDependenciesForBackend({
           backend: backend === "cpu" ? undefined : backend,
         });
+        assertMediaAiOperationSucceeded(
+          installResult,
+          "Media AI dependency install failed.",
+        );
         appendLog("Dependencies installed.", "success");
       }
 
@@ -490,7 +664,7 @@ export default function MediaAIPage() {
       } else {
         const totalGb = pending.reduce((acc, c) => acc + c.sizeGb, 0);
         appendLog(
-          `Downloading ${pending.length} model${pending.length === 1 ? "" : "s"} (~${totalGb.toFixed(1)} GB total)…`,
+          `Downloading ${pending.length} model${pending.length === 1 ? "" : "s"} (~${totalGb.toFixed(2)} GB total)…`,
         );
         setIsDownloading(true);
         try {
@@ -520,7 +694,17 @@ export default function MediaAIPage() {
       if (!isBackendOnline) {
         setSetupChainStep("start");
         appendLog("Starting backend…");
-        await ipc.mediaAi.startBackend(undefined);
+        const startStatus = await ipc.mediaAi.startBackend(undefined);
+        setStatus(startStatus);
+        const healthyStatus = startStatus.healthy
+          ? startStatus
+          : await waitForBackendHealthy();
+        if (!healthyStatus?.healthy) {
+          const logTail = healthyStatus?.lastLog?.trim().slice(-1200);
+          throw new Error(
+            `Backend did not come online.${logTail ? ` Last log: ${logTail}` : " Check the activity log."}`,
+          );
+        }
         appendLog("Backend online.", "success");
       }
       toast.success("Media AI ready");
@@ -534,7 +718,14 @@ export default function MediaAIPage() {
       setSetupChainModelId(null);
       await refreshAll();
     }
-  }, [status, hardware, isBackendOnline, appendLog, refreshAll]);
+  }, [
+    status,
+    hardware,
+    isBackendOnline,
+    appendLog,
+    refreshAll,
+    waitForBackendHealthy,
+  ]);
 
   const triggerOneClickSetup = useCallback(async () => {
     setSetupPhase("setting-up");
@@ -551,7 +742,13 @@ export default function MediaAIPage() {
   const installDependencies = () =>
     runSetupAction("install", async () => {
       const backend = hardware?.bestMediaBackend ?? undefined;
-      await ipc.mediaAi.installDependenciesForBackend({ backend });
+      const installResult = await ipc.mediaAi.installDependenciesForBackend({
+        backend,
+      });
+      assertMediaAiOperationSucceeded(
+        installResult,
+        "Media AI dependency install failed.",
+      );
       toast.success("Media AI dependencies installed");
     });
 
@@ -559,7 +756,27 @@ export default function MediaAIPage() {
     setSetupPhase("starting");
     setSetupError(null);
     try {
-      await ipc.mediaAi.startBackend(undefined);
+      const startStatus = await ipc.mediaAi.startBackend(undefined);
+      setStatus(startStatus);
+      const healthyStatus = startStatus.healthy
+        ? startStatus
+        : await waitForBackendHealthy();
+      if (!healthyStatus?.healthy) {
+        const logTail = healthyStatus?.lastLog?.trim().slice(-1200);
+        throw new Error(
+          `Backend did not start in time.${logTail ? ` Last log: ${logTail}` : " Check the activity log."}`,
+        );
+      }
+      const [tiers, hw, orch] = await Promise.all([
+        ipc.orchestrator.getAvailableTiers(undefined).catch(() => null),
+        ipc.hardware.getProfile(undefined).catch(() => null),
+        ipc.orchestrator.getStatus(undefined).catch(() => null),
+      ]);
+      if (tiers) setAvailTiers(tiers);
+      if (hw) setHardware(hw);
+      if (orch) setOrchStatus(orch);
+      setSetupPhase("online");
+      toast.success("Media AI backend started");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setSetupError(msg);
@@ -567,30 +784,7 @@ export default function MediaAIPage() {
       toast.error(msg);
       return;
     }
-    // Poll every 2s until the Python server accepts connections (max 60s).
-    const deadline = Date.now() + 60_000;
-    while (Date.now() < deadline) {
-      await new Promise<void>((r) => setTimeout(r, 2000));
-      const s = await ipc.mediaAi.getStatus(undefined).catch(() => null);
-      if (!s) continue;
-      setStatus(s);
-      if (s.healthy) {
-        const [tiers, hw, orch] = await Promise.all([
-          ipc.orchestrator.getAvailableTiers(undefined).catch(() => null),
-          ipc.hardware.getProfile(undefined).catch(() => null),
-          ipc.orchestrator.getStatus(undefined).catch(() => null),
-        ]);
-        if (tiers) setAvailTiers(tiers);
-        if (hw) setHardware(hw);
-        if (orch) setOrchStatus(orch);
-        setSetupPhase("online");
-        toast.success("Media AI backend started");
-        return;
-      }
-    }
-    setSetupPhase("stopped");
-    toast.error("Backend didn't start in time — check the activity log");
-  }, []);
+  }, [waitForBackendHealthy]);
 
   const handleStopBackend = useCallback(async () => {
     setSetupPhase("stopping");
@@ -640,9 +834,25 @@ export default function MediaAIPage() {
       await ipc.mediaAi.stopBackend(undefined);
       appendLog("Installing GPU dependencies…");
       const backend = hardware?.bestMediaBackend ?? undefined;
-      await ipc.mediaAi.installDependenciesForBackend({ backend });
+      const installResult = await ipc.mediaAi.installDependenciesForBackend({
+        backend,
+      });
+      assertMediaAiOperationSucceeded(
+        installResult,
+        "GPU dependency install failed.",
+      );
       appendLog("Restarting backend…");
-      await ipc.mediaAi.startBackend(undefined);
+      const startStatus = await ipc.mediaAi.startBackend(undefined);
+      setStatus(startStatus);
+      const healthyStatus = startStatus.healthy
+        ? startStatus
+        : await waitForBackendHealthy();
+      if (!healthyStatus?.healthy) {
+        const logTail = healthyStatus?.lastLog?.trim().slice(-1200);
+        throw new Error(
+          `Backend did not restart in time.${logTail ? ` Last log: ${logTail}` : " Check the activity log."}`,
+        );
+      }
       toast.success("GPU dependencies installed — backend restarted");
       void refreshAll();
     } catch (e) {
@@ -650,7 +860,371 @@ export default function MediaAIPage() {
       setSetupError(msg);
       setSetupPhase("error");
     }
-  }, [hardware, appendLog, refreshAll]);
+  }, [hardware, appendLog, refreshAll, waitForBackendHealthy]);
+
+  const handleStop = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setIsGenerating(false);
+  };
+
+  const fetchMusicTiers = useCallback(
+    async (allowBackendProbe = false): Promise<MusicTierInfo[] | null> => {
+      if (!isBackendOnline && !allowBackendProbe) return null;
+      setMusicTiersLoading(true);
+      try {
+        const res = await fetch(`${serverUrl}/v1/generate/music/tiers`);
+        if (res.ok) {
+          const data = (await res.json()) as {
+            tiers: MusicTierInfo[];
+            selected_tier_id: string;
+          };
+          setMusicTiers(data.tiers);
+          setSelectedMusicTierId((prev) => {
+            if (prev && data.tiers.some((tier) => tier.id === prev))
+              return prev;
+            return data.selected_tier_id;
+          });
+          return data.tiers;
+        }
+      } catch {
+        // Backend may not be running yet — silent fail
+      } finally {
+        setMusicTiersLoading(false);
+      }
+      return null;
+    },
+    [isBackendOnline, serverUrl],
+  );
+
+  useEffect(() => {
+    if (activeTab !== "music" || !isBackendOnline) return;
+    void fetchMusicTiers(true);
+  }, [activeTab, fetchMusicTiers, isBackendOnline]);
+
+  const runMusicSetup = useCallback(async () => {
+    appendLog("Setting up Music AI runtime...");
+    const freshHw = await ipc.hardware
+      .refreshProfile(undefined)
+      .catch(() => null);
+    const backend =
+      freshHw?.bestMediaBackend ?? hardware?.bestMediaBackend ?? "cpu";
+    if (freshHw) setHardware(freshHw);
+    appendLog(`Installing Music AI dependencies (${backend})...`);
+    const installResult = await ipc.mediaAi.installDependenciesForBackend({
+      backend: backend === "cpu" ? undefined : backend,
+    });
+    assertMediaAiOperationSucceeded(
+      installResult,
+      "Music AI dependency install failed.",
+    );
+    appendLog("Music AI dependencies installed.", "success");
+
+    const currentStatus = await ipc.mediaAi
+      .getStatus(undefined)
+      .catch(() => null);
+    if (currentStatus) setStatus(currentStatus);
+    if (!currentStatus?.healthy) {
+      appendLog("Starting Media AI backend for music...");
+      const startStatus = await ipc.mediaAi.startBackend(undefined);
+      setStatus(startStatus);
+      const healthyStatus = startStatus.healthy
+        ? startStatus
+        : await waitForBackendHealthy(90_000);
+      if (!healthyStatus?.healthy) {
+        const logTail = healthyStatus?.lastLog?.trim().slice(-1200);
+        throw new Error(
+          `Music backend did not come online.${logTail ? ` Last log: ${logTail}` : " Check the activity log."}`,
+        );
+      }
+    }
+
+    await refreshAll();
+    const tiers = await fetchMusicTiers(true);
+    if (!tiers?.length) {
+      throw new Error(
+        "Music backend is online, but it did not return any music model tiers.",
+      );
+    }
+    setSetupPhase("online");
+    appendLog("Music AI runtime is ready.", "success");
+    toast.success("Music AI ready");
+  }, [appendLog, fetchMusicTiers, hardware, refreshAll, waitForBackendHealthy]);
+
+  // Fast path: venv already installed — just start the backend and fetch tiers.
+  const startMusicBackendOnly = useCallback(async () => {
+    const currentStatus = await ipc.mediaAi.getStatus(undefined).catch(() => null);
+    if (currentStatus?.healthy) {
+      setSetupPhase("online");
+      await fetchMusicTiers(true);
+      return;
+    }
+    appendLog("Starting Music AI backend...");
+    const startStatus = await ipc.mediaAi.startBackend(undefined);
+    setStatus(startStatus);
+    const healthyStatus = startStatus.healthy
+      ? startStatus
+      : await waitForBackendHealthy(90_000);
+    if (!healthyStatus?.healthy) {
+      const logTail = healthyStatus?.lastLog?.trim().slice(-1200);
+      throw new Error(
+        `Music backend did not come online.${logTail ? ` Last log: ${logTail}` : " Check the activity log."}`,
+      );
+    }
+    await refreshAll();
+    const tiers = await fetchMusicTiers(true);
+    if (!tiers?.length) {
+      throw new Error(
+        "Music backend is online but did not return any music model tiers.",
+      );
+    }
+    setSetupPhase("online");
+    appendLog("Music AI backend started.", "success");
+    toast.success("Music AI ready");
+  }, [appendLog, fetchMusicTiers, refreshAll, waitForBackendHealthy]);
+
+  const handleSetupMusicAi = async () => {
+    if (musicSetupRunning) return;
+    setMusicSetupRunning(true);
+    setSetupError(null);
+    // If the runtime is already installed, skip dependency reinstall — just start.
+    const venvReady = status?.venvExists ?? false;
+    setSetupPhase(venvReady ? "starting" : "setting-up");
+    try {
+      if (venvReady) {
+        await startMusicBackendOnly();
+      } else {
+        await runMusicSetup();
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      setSetupError(msg);
+      setSetupPhase("error");
+      appendLog(`Music AI setup failed: ${msg}`, "error");
+      toast.error(msg);
+    } finally {
+      setMusicSetupRunning(false);
+    }
+  };
+
+  const handleResetMusicAi = async () => {
+    if (musicSetupRunning) return;
+    const ok = window.confirm(
+      "Reset Music AI setup?\n\n" +
+        "This deletes the Media AI Python environment so it can be recreated with a compatible Python version. Downloaded models are kept.\n\n" +
+        "Music AI setup will start again immediately.",
+    );
+    if (!ok) return;
+
+    setMusicSetupRunning(true);
+    setSetupError(null);
+    setSetupPhase("setting-up");
+    try {
+      appendLog("Resetting Music AI Python environment...");
+      await ipc.mediaAi.resetSetup({ alsoDeleteModels: false });
+      appendLog("Music AI Python environment reset.", "success");
+      await refreshAll();
+      await runMusicSetup();
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      setSetupError(msg);
+      setSetupPhase("error");
+      appendLog(`Music AI reset failed: ${msg}`, "error");
+      toast.error(msg);
+    } finally {
+      setMusicSetupRunning(false);
+    }
+  };
+
+  const handleDownloadMusicModel = async (tierId: string) => {
+    const tier = musicModelTiers.find((x) => x.id === tierId);
+    const tierLabel = tier?.label || tierId;
+    setSelectedMusicTierId(tierId);
+    if (!isBackendOnline) {
+      appendLog(`Start the Music AI backend before downloading ${tierLabel}.`);
+      toast.info("Start Music AI first, then download the selected model.");
+      return;
+    }
+    if (musicDownloadPollRef.current !== null) {
+      window.clearInterval(musicDownloadPollRef.current);
+      musicDownloadPollRef.current = null;
+    }
+    setMusicDownloadTierId(tierId);
+    appendLog(`Starting download of music model: ${tierLabel}...`);
+    try {
+      const response = await fetch(`${serverUrl}/v1/generate/music/download`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tier_id: tierId }),
+      });
+      if (!response.ok) {
+        const err = await response
+          .json()
+          .catch(() => ({ detail: `HTTP ${response.status}` }));
+        throw new Error(
+          (err as { detail?: string }).detail ?? `HTTP ${response.status}`,
+        );
+      }
+      // Poll status every 3s until downloaded
+      let lastProgress = -1;
+      const poll = window.setInterval(() => {
+        void fetchMusicTiers().then((tiers) => {
+          if (!tiers) return;
+          const t = tiers.find((x) => x.id === tierId);
+          if (t) {
+            if (t.status === "downloaded") {
+              appendLog(
+                `Music model ${tierLabel} downloaded successfully!`,
+                "success",
+              );
+              setMusicDownloadTierId(null);
+              window.clearInterval(poll);
+              if (musicDownloadPollRef.current === poll) {
+                musicDownloadPollRef.current = null;
+              }
+            } else if (t.status === "downloading") {
+              if (t.download_progress != null) {
+                const progress = t.download_progress;
+                if (progress !== lastProgress) {
+                  lastProgress = progress;
+                  appendLog(
+                    `Music model ${tierLabel} download progress: ${progress}%`,
+                  );
+                }
+              } else if (lastProgress === -1) {
+                lastProgress = 0;
+                appendLog(
+                  `Music model ${tierLabel}: Resolving repository details and checking local cache...`,
+                );
+              }
+            } else if (t.status === "not_downloaded") {
+              appendLog(
+                `Music model ${tierLabel} download was reset or failed.`,
+                "error",
+              );
+              setMusicDownloadTierId(null);
+              window.clearInterval(poll);
+              if (musicDownloadPollRef.current === poll) {
+                musicDownloadPollRef.current = null;
+              }
+            }
+          }
+        });
+      }, 3000);
+      musicDownloadPollRef.current = poll;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setMusicDownloadTierId(null);
+      appendLog(`Music model download failed: ${msg}`, "error");
+      toast.error(`Download failed: ${msg}`);
+    }
+  };
+
+  const handleStopMusicGen = () => {
+    musicGenAbortRef.current?.abort();
+    musicGenAbortRef.current = null;
+    setMusicGenStatus("idle");
+  };
+
+  const handleGenerateMusic = async () => {
+    if (!musicGenPrompt.trim() || !isBackendOnline) return;
+    if (selectedMusicTier?.status !== "downloaded") {
+      toast.error("Download the selected music model first.");
+      return;
+    }
+    const ctrl = new AbortController();
+    musicGenAbortRef.current = ctrl;
+    setMusicGenStatus("generating");
+    setMusicGenError("");
+    setMusicGenAudioUrl(null);
+    setMusicGeneratedTier(null);
+    appendLog(
+      `Generating music: "${musicGenPrompt.slice(0, 60)}${musicGenPrompt.length > 60 ? "..." : ""}" (${musicGenDuration}s)…`,
+    );
+    try {
+      const response = await fetch(`${serverUrl}/v1/generate/music`, {
+        method: "POST",
+        signal: ctrl.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: musicGenPrompt.trim(),
+          duration_seconds: musicGenDuration,
+          tier: selectedMusicTier?.id,
+        }),
+      });
+      if (!response.ok) {
+        const err = await response
+          .json()
+          .catch(() => ({ detail: `HTTP ${response.status}` }));
+        throw new Error(
+          (err as { detail?: string }).detail ?? `HTTP ${response.status}`,
+        );
+      }
+      const data = (await response.json()) as {
+        audio_url: string;
+        tier: string;
+      };
+      setMusicGenAudioUrl(`${serverUrl}${data.audio_url}`);
+      setMusicGeneratedTier(data.tier);
+      setMusicGenStatus("done");
+      appendLog("Music generation complete.", "success");
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        setMusicGenStatus("idle");
+        appendLog("Music generation stopped.", "info");
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        setMusicGenError(msg);
+        setMusicGenStatus("error");
+        appendLog(`Music generation failed: ${msg}`, "error");
+      }
+    } finally {
+      musicGenAbortRef.current = null;
+    }
+  };
+
+  const handleMusicSearch = async () => {
+    if (!musicQuery.trim()) return;
+    setMusicSearching(true);
+    setMusicSearchError("");
+    setMusicResults([]);
+    audioRef.current?.pause();
+    setPlayingTrackId(null);
+    try {
+      const url = `https://itunes.apple.com/search?term=${encodeURIComponent(musicQuery.trim())}&media=music&entity=song&limit=24`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Search failed: ${res.status}`);
+      const data = (await res.json()) as { results: ItunesTrack[] };
+      const withPreview = data.results.filter((t) => !!t.previewUrl);
+      setMusicResults(withPreview);
+      if (withPreview.length === 0) setMusicSearchError("No results found.");
+    } catch (err) {
+      setMusicSearchError(err instanceof Error ? err.message : "Search failed");
+    } finally {
+      setMusicSearching(false);
+    }
+  };
+
+  const handleTogglePreview = (track: ItunesTrack) => {
+    if (playingTrackId === track.trackId) {
+      audioRef.current?.pause();
+      setPlayingTrackId(null);
+    } else {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.onended = null;
+      }
+      const audio = new Audio(track.previewUrl);
+      audio.onended = () => setPlayingTrackId(null);
+      audioRef.current = audio;
+      audio.play().catch(() => setPlayingTrackId(null));
+      setPlayingTrackId(track.trackId);
+    }
+  };
+
+  const handleDownloadTrack = async (track: ItunesTrack) => {
+    await ipc.system.openExternalUrl(track.previewUrl);
+  };
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
@@ -660,6 +1234,8 @@ export default function MediaAIPage() {
 
     setIsGenerating(true);
     setResult(null);
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
 
     if (activeTab === "image") {
       if (isBackendOnline) {
@@ -698,6 +1274,7 @@ export default function MediaAIPage() {
         try {
           const response = await fetch(`${serverUrl}/v1/generate/image`, {
             method: "POST",
+            signal: ctrl.signal,
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               prompt: prompt.trim(),
@@ -748,11 +1325,16 @@ export default function MediaAIPage() {
             `Image generated locally${data.tier ? ` (${data.tier})` : ""}`,
           );
         } catch (error) {
-          const msg = error instanceof Error ? error.message : String(error);
-          appendLog(`Generation failed: ${msg}`, "error");
-          toast.error(msg);
+          if (error instanceof Error && error.name === "AbortError") {
+            appendLog("Image generation stopped.", "info");
+          } else {
+            const msg = error instanceof Error ? error.message : String(error);
+            appendLog(`Generation failed: ${msg}`, "error");
+            toast.error(msg);
+          }
         } finally {
           setIsGenerating(false);
+          abortRef.current = null;
         }
       } else {
         // Cloud fallback when local backend is offline
@@ -779,6 +1361,7 @@ export default function MediaAIPage() {
         try {
           const response = await fetch(`${serverUrl}/v1/generate/video`, {
             method: "POST",
+            signal: ctrl.signal,
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ prompt: prompt.trim() }),
           });
@@ -800,9 +1383,12 @@ export default function MediaAIPage() {
           });
           toast.success("Video generated locally");
         } catch (error) {
-          toast.error(error instanceof Error ? error.message : String(error));
+          if (!(error instanceof Error && error.name === "AbortError")) {
+            toast.error(error instanceof Error ? error.message : String(error));
+          }
         } finally {
           setIsGenerating(false);
+          abortRef.current = null;
         }
       } else {
         // Cloud fallback when local backend is offline
@@ -850,6 +1436,7 @@ export default function MediaAIPage() {
 
       const response = await fetch(`${serverUrl}${endpoint}`, {
         method: "POST",
+        signal: ctrl.signal,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
@@ -882,10 +1469,13 @@ export default function MediaAIPage() {
 
       toast.success(`${activeTab} generated successfully`);
     } catch (error) {
-      console.error("Generation error:", error);
-      toast.error(error instanceof Error ? error.message : String(error));
+      if (!(error instanceof Error && error.name === "AbortError")) {
+        console.error("Generation error:", error);
+        toast.error(error instanceof Error ? error.message : String(error));
+      }
     } finally {
       setIsGenerating(false);
+      abortRef.current = null;
     }
   };
 
@@ -1044,6 +1634,14 @@ export default function MediaAIPage() {
     );
   };
 
+  const musicSetupTitle = status?.venvExists
+    ? "Start Music AI"
+    : "Auto Setup Music AI";
+  const musicSetupDescription = status?.venvExists
+    ? "Runtime already installed — click to start the backend and see your downloaded models."
+    : "Install the ACE-Step runtime, start the backend, then choose a music model.";
+  const hasLiveMusicModelStatus = musicTiers.length > 0;
+
   return (
     <div className="h-full w-full overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-5xl">
@@ -1096,9 +1694,17 @@ export default function MediaAIPage() {
           onValueChange={(v) => {
             setActiveTab(v as MediaTab);
             setResult(null);
+            setPrompt("");
+            if (v !== "music") {
+              audioRef.current?.pause();
+              setPlayingTrackId(null);
+            } else {
+              // Fetch tier status each time user opens Music tab
+              void fetchMusicTiers();
+            }
           }}
         >
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="image" className="flex items-center gap-2">
               <Image className="h-4 w-4" />
               <span className="hidden sm:inline">Image</span>
@@ -1114,6 +1720,10 @@ export default function MediaAIPage() {
             <TabsTrigger value="video" className="flex items-center gap-2">
               <Video className="h-4 w-4" />
               <span className="hidden sm:inline">Video</span>
+            </TabsTrigger>
+            <TabsTrigger value="music" className="flex items-center gap-2">
+              <Search className="h-4 w-4" />
+              <span className="hidden sm:inline">Music</span>
             </TabsTrigger>
           </TabsList>
 
@@ -1207,6 +1817,7 @@ export default function MediaAIPage() {
                   disabled={!prompt.trim()}
                   loading={isGenerating && activeTab === "image"}
                   onGenerate={() => void handleGenerate()}
+                  onStop={handleStop}
                 />
               </CardContent>
             </Card>
@@ -1245,6 +1856,7 @@ export default function MediaAIPage() {
                   disabled={isGenerating || !prompt.trim() || !isBackendOnline}
                   loading={isGenerating && activeTab === "audio"}
                   onGenerate={() => void handleGenerate()}
+                  onStop={handleStop}
                 />
               </CardContent>
             </Card>
@@ -1370,9 +1982,586 @@ export default function MediaAIPage() {
                   disabled={isGenerating || !prompt.trim()}
                   loading={isGenerating && activeTab === "video"}
                   onGenerate={() => void handleGenerate()}
+                  onStop={handleStop}
                 />
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Music — AI Generate + Search */}
+          <TabsContent value="music" className="mt-6 space-y-4">
+            {/* Sub-mode toggle */}
+            <div className="flex gap-1 border-b border-border pb-0">
+              {(["generate", "search"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setMusicMode(mode)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px capitalize",
+                    musicMode === mode
+                      ? "border-primary text-primary"
+                      : "border-transparent text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {mode === "generate" ? (
+                    <Sparkles className="h-3.5 w-3.5" />
+                  ) : (
+                    <Search className="h-3.5 w-3.5" />
+                  )}
+                  {mode === "generate" ? "Generate AI Music" : "Search Songs"}
+                </button>
+              ))}
+            </div>
+
+            {/* ── AI Music Generation ── */}
+            {musicMode === "generate" && (
+              <div className="space-y-4">
+                {!isBackendOnline && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <Wrench className="h-4 w-4" />
+                        {musicSetupTitle}
+                      </CardTitle>
+                      <CardDescription>{musicSetupDescription}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {setupError && (
+                        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                          {setupError}
+                        </div>
+                      )}
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          onClick={() => void handleSetupMusicAi()}
+                          disabled={
+                            musicSetupRunning || !status?.backendAvailable
+                          }
+                        >
+                          {musicSetupRunning ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Wrench className="mr-2 h-4 w-4" />
+                          )}
+                          {musicSetupRunning
+                            ? "Setting Up Music AI..."
+                            : musicSetupTitle}
+                        </Button>
+                        {status?.venvExists && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => void handleResetMusicAi()}
+                            disabled={
+                              musicSetupRunning || !status?.backendAvailable
+                            }
+                          >
+                            Reset Music Runtime
+                          </Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <CardTitle className="flex items-center gap-2">
+                          <HardDrive className="h-5 w-5" />
+                          Music Models
+                        </CardTitle>
+                        <CardDescription>
+                          Choose a local song model, download it once, then use
+                          it for generation.
+                        </CardDescription>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={cn(
+                            "rounded border px-2 py-1 text-xs font-medium",
+                            isBackendOnline
+                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
+                              : "border-amber-500/30 bg-amber-500/10 text-amber-600",
+                          )}
+                        >
+                          {isBackendOnline
+                            ? "Backend online"
+                            : "Backend offline"}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void fetchMusicTiers(true)}
+                          disabled={!isBackendOnline || musicTiersLoading}
+                        >
+                          {musicTiersLoading ? (
+                            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                          )}
+                          Refresh
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {!isBackendOnline && (
+                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+                        <span>
+                          Set up and start Music AI to check downloads and fetch
+                          model weights.
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void handleSetupMusicAi()}
+                          disabled={
+                            musicSetupRunning || !status?.backendAvailable
+                          }
+                        >
+                          {musicSetupRunning ? (
+                            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Wrench className="mr-2 h-3.5 w-3.5" />
+                          )}
+                          Start Music AI
+                        </Button>
+                      </div>
+                    )}
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {musicModelTiers.map((tier) => {
+                        const isChosen = selectedMusicTier?.id === tier.id;
+                        const isBusy =
+                          tier.status === "downloading" ||
+                          musicDownloadTierId === tier.id;
+                        const statusLabel = !isBackendOnline
+                          ? "Needs backend"
+                          : !hasLiveMusicModelStatus && musicTiersLoading
+                            ? "Checking"
+                            : tier.status === "downloaded"
+                              ? "Downloaded"
+                              : isBusy
+                                ? "Downloading"
+                                : "Not downloaded";
+                        const statusColor =
+                          tier.status === "downloaded"
+                            ? "border-emerald-500/30 bg-emerald-500/5"
+                            : isBusy
+                              ? "border-sky-500/30 bg-sky-500/5"
+                              : "border-border bg-muted/10";
+                        return (
+                          <div
+                            key={tier.id}
+                            className={cn(
+                              "rounded-lg border p-3 space-y-3 transition-colors",
+                              statusColor,
+                              isChosen && "ring-1 ring-primary/50",
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-2 min-w-0">
+                                {tier.selected && (
+                                  <span className="shrink-0 rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-primary">
+                                    Recommended
+                                  </span>
+                                )}
+                                {isChosen && (
+                                  <span className="shrink-0 rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase">
+                                    Selected
+                                  </span>
+                                )}
+                                <span className="text-sm font-medium">
+                                  {tier.label}
+                                </span>
+                              </div>
+                              <span
+                                className={cn(
+                                  "shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase",
+                                  tier.status === "downloaded"
+                                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
+                                    : isBusy
+                                      ? "border-sky-500/30 bg-sky-500/10 text-sky-600"
+                                      : "border-border bg-muted/20 text-muted-foreground",
+                                )}
+                              >
+                                {statusLabel}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed">
+                              {tier.description}
+                            </p>
+                            <div className="flex flex-wrap gap-1.5 text-[10px] text-muted-foreground">
+                              <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                                {tier.vram_mb >= 1000
+                                  ? `${tier.vram_mb / 1000} GB VRAM`
+                                  : `${tier.vram_mb} MB VRAM`}
+                              </span>
+                              <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                                ~{(tier.download_size_mb / 1024).toFixed(2)} GB
+                              </span>
+                              <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                                {tier.uses_lm ? "Planner on" : "DiT only"}
+                              </span>
+                              <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                                Vocals + instruments
+                              </span>
+                            </div>
+                            {isBusy && (
+                              <div className="mt-2 space-y-1">
+                                <div className="flex items-center justify-between text-[10px] text-sky-600 font-medium">
+                                  <span>Download Progress</span>
+                                  <span>
+                                    {tier.download_progress != null
+                                      ? `${tier.download_progress}%`
+                                      : "Preparing"}
+                                  </span>
+                                </div>
+                                <div className="w-full h-1.5 bg-sky-500/10 rounded-full overflow-hidden">
+                                  {tier.download_progress != null ? (
+                                    <div
+                                      className="h-full bg-sky-500 rounded-full transition-all duration-300"
+                                      style={{
+                                        width: `${tier.download_progress}%`,
+                                      }}
+                                    />
+                                  ) : (
+                                    <div className="h-full w-1/3 animate-pulse rounded-full bg-sky-500" />
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                size="sm"
+                                variant={isChosen ? "default" : "outline"}
+                                className="h-8 px-3 text-xs"
+                                onClick={() => setSelectedMusicTierId(tier.id)}
+                              >
+                                <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                                {isChosen ? "Selected" : "Use Model"}
+                              </Button>
+                              {tier.status === "downloaded" ? (
+                                <span className="inline-flex h-8 items-center rounded border border-emerald-500/30 bg-emerald-500/10 px-2 text-xs font-medium text-emerald-600">
+                                  Ready to generate
+                                </span>
+                              ) : !isBackendOnline ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 px-3 text-xs"
+                                  onClick={() => void handleSetupMusicAi()}
+                                  disabled={
+                                    musicSetupRunning ||
+                                    !status?.backendAvailable
+                                  }
+                                >
+                                  <Wrench className="mr-1.5 h-3.5 w-3.5" />
+                                  Set Up to Download
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 px-3 text-xs"
+                                  onClick={() =>
+                                    void handleDownloadMusicModel(tier.id)
+                                  }
+                                  disabled={
+                                    isBusy || !tier.available_for_backend
+                                  }
+                                >
+                                  {isBusy ? (
+                                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Download className="mr-1.5 h-3.5 w-3.5" />
+                                  )}
+                                  {isBusy ? "Downloading" : "Download Model"}
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="flex items-center gap-2">
+                          <Sparkles className="h-5 w-5" />
+                          Generate Music
+                        </CardTitle>
+                        <CardDescription>
+                          {selectedMusicTier
+                            ? `Using ${selectedMusicTier.label}`
+                            : "Download a music model, then describe the song."}
+                        </CardDescription>
+                      </div>
+                      {!isBackendOnline && (
+                        <span className="text-xs text-amber-600 border border-amber-500/30 bg-amber-500/10 rounded px-2 py-1">
+                          Backend offline
+                        </span>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {/* Model not downloaded warning */}
+                    {selectedMusicTier?.status === "not_downloaded" && (
+                      <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+                        <Download className="h-4 w-4 mt-0.5 shrink-0" />
+                        <span>
+                          Download the selected model before generating (~
+                          {(
+                            (selectedMusicTier.download_size_mb ?? 5000) / 1024
+                          ).toFixed(2)}{" "}
+                          GB).
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <Label htmlFor="music-prompt">Prompt / Lyrics</Label>
+                      <Textarea
+                        id="music-prompt"
+                        placeholder="[verse]\nWalking down the road at night\nCity lights reflecting bright\n\n[chorus]\nThis is my song, my melody..."
+                        value={musicGenPrompt}
+                        onChange={(e) => setMusicGenPrompt(e.target.value)}
+                        rows={4}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
+                            void handleGenerateMusic();
+                        }}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Duration</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {[10, 15, 30, 60, 120].map((sec) => (
+                          <button
+                            key={sec}
+                            type="button"
+                            onClick={() => setMusicGenDuration(sec)}
+                            className={cn(
+                              "rounded border px-3 py-1.5 text-sm font-medium transition-colors",
+                              musicGenDuration === sec
+                                ? "border-primary/60 bg-primary/15 text-foreground"
+                                : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
+                            )}
+                          >
+                            {sec >= 60 ? `${sec / 60}m` : `${sec}s`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {musicGenStatus === "error" && (
+                      <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                        <Square className="h-4 w-4 mt-0.5 shrink-0" />
+                        {musicGenError}
+                      </div>
+                    )}
+
+                    {musicGenStatus === "done" && musicGenAudioUrl && (
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium text-green-600 dark:text-green-400 flex items-center gap-1.5">
+                          <Sparkles className="h-4 w-4" />
+                          Music generated
+                        </p>
+                        {musicGeneratedTier && (
+                          <p className="text-xs text-muted-foreground">
+                            {musicTiers.find(
+                              (tier) => tier.id === musicGeneratedTier,
+                            )?.label ?? musicGeneratedTier}
+                          </p>
+                        )}
+                        <audio
+                          controls
+                          autoPlay
+                          className="w-full"
+                          src={musicGenAudioUrl}
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const a = document.createElement("a");
+                            a.href = musicGenAudioUrl;
+                            a.download = `music-${Date.now()}.wav`;
+                            a.click();
+                          }}
+                        >
+                          <Download className="mr-2 h-3.5 w-3.5" />
+                          Download WAV
+                        </Button>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => void handleGenerateMusic()}
+                        disabled={
+                          !musicGenPrompt.trim() ||
+                          !isBackendOnline ||
+                          selectedMusicTier?.status !== "downloaded" ||
+                          musicGenStatus === "generating"
+                        }
+                        aria-busy={musicGenStatus === "generating"}
+                        className={cn(
+                          "flex-1",
+                          musicGenStatus === "generating" &&
+                            "pointer-events-none cursor-wait",
+                        )}
+                      >
+                        {musicGenStatus === "generating" ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="mr-2 h-4 w-4" />
+                        )}
+                        {musicGenStatus === "generating"
+                          ? `Generating ${musicGenDuration >= 60 ? musicGenDuration / 60 + "m" : musicGenDuration + "s"} of music…`
+                          : selectedMusicTier?.status !== "downloaded"
+                            ? "Download Model First"
+                            : "Generate Music"}
+                      </Button>
+                      {musicGenStatus === "generating" && (
+                        <Button variant="outline" onClick={handleStopMusicGen}>
+                          <Square className="mr-2 h-4 w-4" />
+                          Stop
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <EventLogPanel
+                  entries={eventLog}
+                  backendLog={status?.lastLog}
+                  open={showLog}
+                  onToggle={() => setShowLog((v) => !v)}
+                />
+              </div>
+            )}
+
+            {/* ── Search Songs ── */}
+            {musicMode === "search" && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Search className="h-5 w-5" />
+                    Search Songs &amp; Ringtones
+                  </CardTitle>
+                  <CardDescription>
+                    Search the iTunes catalog. Preview 30-second clips and
+                    download them to use in your apps.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={musicQuery}
+                      onChange={(e) => setMusicQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void handleMusicSearch();
+                      }}
+                      placeholder="Search songs, artists, or ringtones..."
+                      className="flex-1 h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/30"
+                    />
+                    <Button
+                      onClick={() => void handleMusicSearch()}
+                      disabled={!musicQuery.trim() || musicSearching}
+                    >
+                      {musicSearching ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Search className="mr-2 h-4 w-4" />
+                      )}
+                      {musicSearching ? "Searching..." : "Search"}
+                    </Button>
+                  </div>
+
+                  {musicSearchError && (
+                    <p className="text-sm text-muted-foreground">
+                      {musicSearchError}
+                    </p>
+                  )}
+
+                  {musicResults.length > 0 && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 max-h-[520px] overflow-y-auto pr-1">
+                      {musicResults.map((track) => (
+                        <div
+                          key={track.trackId}
+                          className={cn(
+                            "rounded-lg border p-2.5 space-y-2 transition-colors",
+                            playingTrackId === track.trackId
+                              ? "border-primary/50 bg-primary/5"
+                              : "hover:bg-muted/40",
+                          )}
+                        >
+                          <img
+                            src={track.artworkUrl100.replace(
+                              "100x100bb",
+                              "300x300bb",
+                            )}
+                            alt={track.collectionName}
+                            className="w-full aspect-square rounded object-cover"
+                            loading="lazy"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium truncate leading-tight">
+                              {track.trackName}
+                            </p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {track.artistName}
+                            </p>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              variant={
+                                playingTrackId === track.trackId
+                                  ? "default"
+                                  : "outline"
+                              }
+                              className="flex-1 h-7 px-2"
+                              onClick={() => handleTogglePreview(track)}
+                              title={
+                                playingTrackId === track.trackId
+                                  ? "Pause"
+                                  : "Play preview"
+                              }
+                            >
+                              {playingTrackId === track.trackId ? (
+                                <Pause className="h-3 w-3" />
+                              ) : (
+                                <Play className="h-3 w-3" />
+                              )}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex-1 h-7 px-2"
+                              onClick={() => void handleDownloadTrack(track)}
+                              title="Open in browser to download"
+                            >
+                              <Download className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
         </Tabs>
 
@@ -1844,6 +3033,7 @@ function GenerationForm({
   disabled,
   loading,
   onGenerate,
+  onStop,
 }: {
   promptId: string;
   prompt: string;
@@ -1854,6 +3044,7 @@ function GenerationForm({
   disabled: boolean;
   loading: boolean;
   onGenerate: () => void;
+  onStop?: () => void;
 }) {
   return (
     <div className="space-y-4">
@@ -1873,19 +3064,27 @@ function GenerationForm({
           "Generating..." text both fade to mid-grey and become unreadable.
           We block clicks via `pointer-events-none` and mark `aria-busy` so
           assistive tech still sees it as busy. */}
-      <Button
-        onClick={onGenerate}
-        disabled={!loading && disabled}
-        aria-busy={loading}
-        className={cn("w-full", loading && "pointer-events-none cursor-wait")}
-      >
-        {loading ? (
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        ) : (
-          buttonIcon
+      <div className="flex gap-2">
+        <Button
+          onClick={onGenerate}
+          disabled={!loading && disabled}
+          aria-busy={loading}
+          className={cn("flex-1", loading && "pointer-events-none cursor-wait")}
+        >
+          {loading ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            buttonIcon
+          )}
+          {loading ? "Generating..." : buttonText}
+        </Button>
+        {loading && onStop && (
+          <Button variant="outline" onClick={onStop} title="Stop generation">
+            <Square className="mr-2 h-4 w-4" />
+            Stop
+          </Button>
         )}
-        {loading ? "Generating..." : buttonText}
-      </Button>
+      </div>
     </div>
   );
 }
@@ -2808,7 +4007,7 @@ function SetupBanner({
           <Wrench className="mr-2 h-4 w-4" />
           {pendingComponents.length === 0
             ? "Launch Media AI"
-            : `Install & Download Everything (~${totalGb.toFixed(1)} GB)`}
+            : `Install & Download Everything (~${totalGb.toFixed(2)} GB)`}
         </Button>
         {!status?.backendAvailable && (
           <p className="text-xs text-muted-foreground text-center">

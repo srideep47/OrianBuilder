@@ -157,6 +157,75 @@ function trimOutput(output: string) {
     : output;
 }
 
+const ACE_STEP_GIT_URL = "git+https://github.com/ace-step/ACE-Step-1.5.git";
+
+function getAceStepRuntimePackages(_effectiveBackend: string): string[] {
+  return [
+    "diffusers>=0.37.0",
+    "transformers>=4.51.0,<4.58.0",
+    "accelerate>=1.12.0",
+    "loguru>=0.7.3",
+    "einops>=0.8.1",
+    "vector-quantize-pytorch>=1.27.15",
+    "toml>=0.10.2",
+    "diskcache>=5.6.3",
+    "typer-slim>=0.21.1",
+    "pytorch-wavelets>=1.3.0",
+    "PyWavelets>=1.9.0",
+    "peft>=0.18.0",
+    "lycoris-lora",
+    "lightning>=2.0.0",
+    "setuptools<72",
+  ];
+}
+
+// numba requires LLVM, torchcodec requires FFMPEG, torchao has Windows gaps —
+// install separately so a failure here doesn't block the whole setup.
+function getAceStepOptionalPackages(effectiveBackend: string): string[] {
+  if (["directml", "mps", "metal"].includes(effectiveBackend)) return [];
+  return ["torchao>=0.16.0,<0.17.0", "numba>=0.63.1", "torchcodec>=0.9.1"];
+}
+
+async function installAceStepRuntime(
+  pythonPath: string,
+  backendPath: string,
+  effectiveBackend: string,
+): Promise<string> {
+  const runtimeInstall = await runCommand(
+    pythonPath,
+    ["-m", "pip", "install", ...getAceStepRuntimePackages(effectiveBackend)],
+    { cwd: backendPath, timeoutMs: 45 * 60 * 1000 },
+  );
+
+  // Optional: numba (audio DSP), torchao (INT8 quantization), torchcodec
+  // (video/audio codecs). These can fail on Windows without the right native
+  // toolchain. Core music generation works without them.
+  let optionalInstall = "";
+  const optionalPkgs = getAceStepOptionalPackages(effectiveBackend);
+  if (optionalPkgs.length > 0) {
+    try {
+      optionalInstall = await runCommand(
+        pythonPath,
+        ["-m", "pip", "install", ...optionalPkgs],
+        { cwd: backendPath, timeoutMs: 20 * 60 * 1000 },
+      );
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message.split("\n")[0] : String(err);
+      optionalInstall = `Note: optional packages skipped (${msg}). Quantization and some audio effects unavailable, but core music generation still works.`;
+      logger.warn("Optional ACE-Step packages failed to install:", err);
+    }
+  }
+
+  const packageInstall = await runCommand(
+    pythonPath,
+    ["-m", "pip", "install", "--upgrade", "--no-deps", ACE_STEP_GIT_URL],
+    { cwd: backendPath, timeoutMs: 30 * 60 * 1000 },
+  );
+
+  return `${runtimeInstall}\n${optionalInstall}\n${packageInstall}`;
+}
+
 function appendLog(chunk: Buffer | string) {
   const value = chunk.toString();
   lastLog = trimOutput(`${lastLog ?? ""}${value}`);
@@ -206,36 +275,147 @@ function runCommand(
   });
 }
 
-// Verify system Python is available and is 3.10+
-async function checkSystemPython(cwd: string): Promise<void> {
-  for (const cmd of ["python", "python3"]) {
-    try {
-      const out = await runCommand(cmd, ["--version"], {
-        cwd,
-        timeoutMs: 8000,
-      });
-      const m = out.match(/Python\s+(\d+)\.(\d+)/i);
-      if (m) {
-        const major = parseInt(m[1], 10);
-        const minor = parseInt(m[2], 10);
-        if (major < 3 || (major === 3 && minor < 10)) {
-          throw new Error(
-            `Python ${major}.${minor} found but 3.10+ is required. ` +
-              `Download from https://www.python.org/downloads/`,
-          );
-        }
-        return; // found and valid
-      }
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("3.10+")) throw err;
-      // ENOENT or non-zero exit — try next command
+type PythonInvocation = {
+  command: string;
+  args: string[];
+  displayName: string;
+};
+
+type PythonVersion = {
+  major: number;
+  minor: number;
+  label: string;
+};
+
+function parsePythonVersion(output: string): PythonVersion | null {
+  const match = output.match(/Python\s+(\d+)\.(\d+)(?:\.\d+)?/i);
+  if (!match) return null;
+  const major = parseInt(match[1], 10);
+  const minor = parseInt(match[2], 10);
+  return { major, minor, label: `Python ${major}.${minor}` };
+}
+
+function isMusicPythonVersionSupported(version: PythonVersion): boolean {
+  return version.major === 3 && version.minor >= 11 && version.minor <= 12;
+}
+
+async function getVenvPythonVersion(
+  cwd: string,
+): Promise<PythonVersion | null> {
+  const pythonPath = getVenvPythonPath();
+  if (!fs.existsSync(pythonPath)) return null;
+
+  const out = await runCommand(pythonPath, ["--version"], {
+    cwd,
+    timeoutMs: 8000,
+  });
+  return parsePythonVersion(out);
+}
+
+async function assertVenvPythonCompatible(cwd: string): Promise<void> {
+  const version = await getVenvPythonVersion(cwd);
+  if (!version || isMusicPythonVersionSupported(version)) return;
+
+  throw new Error(
+    `Existing Media AI Python environment uses ${version.label}, but Music AI requires Python 3.11 or 3.12. ` +
+      "Reset Music Runtime, or run setup again so OrianBuilder can recreate it with Python 3.11 or 3.12.",
+  );
+}
+
+async function ensureCompatibleMediaAiVenv(cwd: string): Promise<string> {
+  let note = "";
+  const pythonPath = getVenvPythonPath();
+  if (fs.existsSync(pythonPath)) {
+    const version = await getVenvPythonVersion(cwd);
+    if (version && !isMusicPythonVersionSupported(version)) {
+      stopMediaAiBackend();
+      await fs.promises.rm(getVenvPath(), { recursive: true, force: true });
+      deleteGpuMarker();
+      note =
+        `Removed existing Media AI environment using ${version.label}; ` +
+        "recreating with Python 3.11/3.12 for Music AI.";
+      logger.warn(note);
     }
   }
+
+  if (!fs.existsSync(getVenvPythonPath())) {
+    const systemPython = await findCompatibleSystemPython(cwd);
+    await runCommand(
+      systemPython.command,
+      [...systemPython.args, "-m", "venv", getVenvPath()],
+      {
+        cwd,
+        timeoutMs: 5 * 60 * 1000,
+      },
+    );
+    note = note
+      ? `${note}\nCreated Media AI environment with ${systemPython.displayName}.`
+      : `Created Media AI environment with ${systemPython.displayName}.`;
+  }
+
+  await assertVenvPythonCompatible(cwd);
+  return note;
+}
+
+function systemPythonCandidates(): PythonInvocation[] {
+  const candidates: PythonInvocation[] =
+    process.platform === "win32"
+      ? [
+          { command: "py", args: ["-3.12"], displayName: "py -3.12" },
+          { command: "py", args: ["-3.11"], displayName: "py -3.11" },
+          { command: "python", args: [], displayName: "python" },
+          { command: "python3", args: [], displayName: "python3" },
+        ]
+      : [
+          { command: "python3.12", args: [], displayName: "python3.12" },
+          { command: "python3.11", args: [], displayName: "python3.11" },
+          { command: "python3", args: [], displayName: "python3" },
+          { command: "python", args: [], displayName: "python" },
+        ];
+  return candidates;
+}
+
+async function findCompatibleSystemPython(
+  cwd: string,
+): Promise<PythonInvocation> {
+  let incompatibleVersion: string | null = null;
+  for (const candidate of systemPythonCandidates()) {
+    try {
+      const out = await runCommand(
+        candidate.command,
+        [...candidate.args, "--version"],
+        {
+          cwd,
+          timeoutMs: 8000,
+        },
+      );
+      const version = parsePythonVersion(out);
+      if (version) {
+        if (isMusicPythonVersionSupported(version)) {
+          return candidate;
+        }
+        incompatibleVersion = version.label;
+      }
+    } catch {
+      // ENOENT or non-zero exit: try next command.
+    }
+  }
+  if (incompatibleVersion) {
+    throw new Error(
+      `${incompatibleVersion} found but Music AI requires Python 3.11 or 3.12. ` +
+        "Install Python 3.11 or 3.12 and make sure the Python launcher can find it.",
+    );
+  }
   throw new Error(
-    "Python 3.10+ not found in PATH. " +
-      "Install it from https://www.python.org/downloads/ " +
+    "Python 3.11 or 3.12 not found in PATH. " +
+      "Install Python 3.11 or 3.12 from https://www.python.org/downloads/ " +
       "and make sure to check 'Add Python to PATH' during installation.",
   );
+}
+
+// Verify system Python is available and compatible with ACE-Step 1.5.
+async function checkSystemPython(cwd: string): Promise<void> {
+  await findCompatibleSystemPython(cwd);
 }
 
 async function isBackendHealthy() {
@@ -386,14 +566,7 @@ export async function installMediaAiDependenciesForBackend(
   await fs.promises.mkdir(outputsPath, { recursive: true });
   await fs.promises.mkdir(hfCachePath, { recursive: true });
 
-  await checkSystemPython(backendPath);
-
-  if (!fs.existsSync(getVenvPythonPath())) {
-    await runCommand("python", ["-m", "venv", getVenvPath()], {
-      cwd: backendPath,
-      timeoutMs: 5 * 60 * 1000,
-    });
-  }
+  const venvSetup = await ensureCompatibleMediaAiVenv(backendPath);
 
   const pythonPath = getVenvPythonPath();
   const effectiveBackend =
@@ -504,12 +677,18 @@ export async function installMediaAiDependenciesForBackend(
     logger.warn("Some backend requirements failed to install:", err);
   }
 
+  const aceStepInstall = await installAceStepRuntime(
+    pythonPath,
+    backendPath,
+    effectiveBackend,
+  );
+
   if (effectiveBackend !== "cpu") {
     writeGpuMarker(effectiveBackend);
   }
 
   return trimOutput(
-    `${pipUpgrade}\n${baseInstall}\n${coreInstall}\n${requirementsInstall}`,
+    `${venvSetup}\n${pipUpgrade}\n${baseInstall}\n${coreInstall}\n${requirementsInstall}\n${aceStepInstall}`,
   );
 }
 
@@ -521,12 +700,7 @@ export async function installMediaAiDependencies() {
   await fs.promises.mkdir(outputsPath, { recursive: true });
   await fs.promises.mkdir(hfCachePath, { recursive: true });
 
-  if (!fs.existsSync(getVenvPythonPath())) {
-    await runCommand("python", ["-m", "venv", getVenvPath()], {
-      cwd: backendPath,
-      timeoutMs: 5 * 60 * 1000,
-    });
-  }
+  const venvSetup = await ensureCompatibleMediaAiVenv(backendPath);
 
   const pythonPath = getVenvPythonPath();
   const pipUpgrade = await runCommand(
@@ -586,8 +760,14 @@ export async function installMediaAiDependencies() {
     logger.warn("Some legacy requirements failed to install:", err);
   }
 
+  const aceStepInstall = await installAceStepRuntime(
+    pythonPath,
+    backendPath,
+    cachedHardwareProfile?.bestMediaBackend ?? "cpu",
+  );
+
   return trimOutput(
-    `${pipUpgrade}\n${baseInstall}\n${coreInstall}\n${requirementsInstall}`,
+    `${venvSetup}\n${pipUpgrade}\n${baseInstall}\n${coreInstall}\n${requirementsInstall}\n${aceStepInstall}`,
   );
 }
 

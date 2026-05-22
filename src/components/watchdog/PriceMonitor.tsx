@@ -465,8 +465,7 @@ function DealIndicator({
   const offHigh = analytics.high - current;
   const hitTarget = target !== null && current <= target;
 
-  let toneClass =
-    "border-border bg-muted/30 text-foreground";
+  let toneClass = "border-border bg-muted/30 text-foreground";
   let icon = "•";
   let message: React.ReactNode;
 
@@ -476,8 +475,12 @@ function DealIndicator({
     icon = "✓";
     message = (
       <>
-        Target hit — now at <strong>{symbol}{current.toFixed(2)}</strong> (you
-        set {symbol}
+        Target hit — now at{" "}
+        <strong>
+          {symbol}
+          {current.toFixed(2)}
+        </strong>{" "}
+        (you set {symbol}
         {target.toFixed(2)}).
       </>
     );
@@ -487,7 +490,11 @@ function DealIndicator({
     icon = "★";
     message = (
       <>
-        Best deal — current price <strong>{symbol}{current.toFixed(2)}</strong>{" "}
+        Best deal — current price{" "}
+        <strong>
+          {symbol}
+          {current.toFixed(2)}
+        </strong>{" "}
         is the lowest seen
         {offHigh > 0 && (
           <>
@@ -630,7 +637,9 @@ function PriceSummaryRow({
           </div>
           <div className="mt-1 text-lg font-semibold">
             {symbol}
-            {summary.avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            {summary.avg.toLocaleString(undefined, {
+              maximumFractionDigits: 2,
+            })}
           </div>
           <div className="mt-0.5 text-xs text-muted-foreground">
             across {points.length} checks
@@ -641,7 +650,9 @@ function PriceSummaryRow({
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
               Drop chance
             </div>
-            <div className={cn("mt-1 text-sm font-medium", summary.verdict.tone)}>
+            <div
+              className={cn("mt-1 text-sm font-medium", summary.verdict.tone)}
+            >
               {summary.dropChance}% — {summary.verdict.label}
             </div>
             <div className="text-xs text-muted-foreground">

@@ -229,9 +229,7 @@ export class WatchdogBackend {
       timeout,
     ]);
     if (result === "timeout") {
-      logger.warn(
-        "Watchdog backend did not exit on SIGTERM; sending SIGKILL",
-      );
+      logger.warn("Watchdog backend did not exit on SIGTERM; sending SIGKILL");
       try {
         child.kill("SIGKILL");
       } catch (err) {

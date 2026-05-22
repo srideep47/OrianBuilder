@@ -336,9 +336,7 @@ function SetupCard({
               <CheckCircle2 className="w-4 h-4 text-muted-foreground/70 mt-0.5 shrink-0" />
               <span>
                 Python 3.11+ on this machine. The installer searches{" "}
-                <code className="text-xs bg-muted px-1 py-0.5 rounded">
-                  py
-                </code>
+                <code className="text-xs bg-muted px-1 py-0.5 rounded">py</code>
                 ,{" "}
                 <code className="text-xs bg-muted px-1 py-0.5 rounded">
                   python3

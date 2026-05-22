@@ -234,6 +234,7 @@ Invoke-RestMethod -Method Post `
 - [ ] Add audio voice selection UI
 - [ ] Implement real-time progress reporting via WebSocket
 - [ ] Add video frame preview before full generation
+- [ ] Integrate ACE-Step 1.5, DiffRhythm, and YuE 7B for high-fidelity music generation.
 
 ---
 
@@ -250,7 +251,8 @@ Services Layer (services/*.py)
     ├─ text_generation.py (llama-cpp-python + Phi-3)
     ├─ image_generation.py (ONNX/DirectML + Stable Diffusion)
     ├─ audio_generation.py (SpeechT5 + HiFi-GAN) ← NEW
-    └─ video_generation.py (diffusers + text-to-video-ms) ← UPDATED
+    ├─ video_generation.py (diffusers + text-to-video-ms) ← UPDATED
+    └─ music_generation.py (YuE 7B / ACE-Step 1.5 / DiffRhythm) ← PLANNED
     ↓
 Models (downloaded from Hugging Face on first use)
     ↓

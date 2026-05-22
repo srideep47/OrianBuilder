@@ -25,11 +25,7 @@ import path from "node:path";
 import { app } from "electron";
 import log from "electron-log";
 
-import {
-  detectPython,
-  pythonArgv,
-  type PythonInfo,
-} from "./python_detector";
+import { detectPython, pythonArgv, type PythonInfo } from "./python_detector";
 
 const logger = log.scope("watchdog-installer");
 
@@ -95,7 +91,9 @@ export function getBundledBackendDir(): string {
 
 export function isSetupComplete(): boolean {
   try {
-    return fs.existsSync(getSetupMarkerPath()) && fs.existsSync(getVenvPython());
+    return (
+      fs.existsSync(getSetupMarkerPath()) && fs.existsSync(getVenvPython())
+    );
   } catch {
     return false;
   }
@@ -159,7 +157,10 @@ async function createVenv(
     return;
   }
   ensureRoot();
-  onEvent({ phase: "creating-venv", line: `Creating virtualenv at ${venvDir}` });
+  onEvent({
+    phase: "creating-venv",
+    line: `Creating virtualenv at ${venvDir}`,
+  });
   const { file, args } = pythonArgv(python, ["-m", "venv", venvDir]);
   const exitCode = await runStreaming(file, args, {
     phase: "creating-venv",

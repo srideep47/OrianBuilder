@@ -1,16 +1,49 @@
 import argparse
 import json
 import os
+import sys
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
 from huggingface_hub import hf_hub_download, snapshot_download
-
+import huggingface_hub.utils as hf_utils
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 MODELS_DIR = Path(os.getenv("OMNIGEN_MODELS_DIR", str(BACKEND_DIR / "models")))
 HF_CACHE_DIR = Path(os.getenv("OMNIGEN_HF_CACHE_DIR", str(MODELS_DIR / "huggingface")))
 MARKER_DIR = MODELS_DIR / ".model-markers"
+
+class DownloadProgressTracker:
+    def __init__(self):
+        self.active_downloads = {}
+        self.lock = threading.Lock()
+        self.last_reported = -1.0
+
+    def update(self, tqdm_id, downloaded, total):
+        with self.lock:
+            self.active_downloads[tqdm_id] = (downloaded, total)
+            total_bytes = sum(t for d, t in self.active_downloads.values() if t)
+            downloaded_bytes = sum(d for d, t in self.active_downloads.values() if t)
+            if total_bytes > 0:
+                progress = round((downloaded_bytes / total_bytes) * 100.0, 1)
+                # Only print if it changed by at least 0.1% to avoid spamming
+                if progress > self.last_reported + 0.5 or progress == 100.0:
+                    self.last_reported = progress
+                    print(json.dumps({"type": "progress", "percentage": progress}), flush=True)
+
+tracker = DownloadProgressTracker()
+original_tqdm = hf_utils.tqdm
+
+class JsonProgressTqdm(original_tqdm):
+    def update(self, n=1):
+        super().update(n)
+        if getattr(self, "unit", "") in ("B", "iB", "bytes") or getattr(self, "unit_scale", False):
+            if hasattr(self, "total") and self.total and self.total > 100000:
+                tracker.update(id(self), self.n, self.total)
+
+hf_utils.tqdm = JsonProgressTqdm
+
 
 MODEL_GROUPS = {
     "text": [

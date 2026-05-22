@@ -246,6 +246,29 @@ IMAGE_MODELS = {
         "backends": ["cuda", "rocm", "mps", "directml", "openvino", "cpu"],
     },
 }
+
+MUSIC_MODELS = {
+    "yue-7b-fp16": {
+        "repo": "multimodal-art-projection/YuE",
+        "vram_required_mb": 16000,
+        "backends": ["cuda"]
+    },
+    "ace-step-1.5-llm-dit": {
+        "repo": "ace-step/ACE-Step-1.5",
+        "vram_required_mb": 6000,
+        "backends": ["cuda", "rocm", "mps", "cpu"]
+    },
+    "diffrhythm": {
+        "repo": "ASLP-lab/DiffRhythm",
+        "vram_required_mb": 6000,
+        "backends": ["cuda", "mps", "cpu"]
+    },
+    "ace-step-1.5-dit-only": {
+        "repo": "ace-step/ACE-Step-1.5",
+        "vram_required_mb": 4000,
+        "backends": ["cuda", "rocm", "mps", "cpu"]
+    }
+}
 ```
 
 ### New API endpoints
@@ -270,7 +293,9 @@ POST /v1/models/unload
 | STT            | Whisper large-v3 | ~1.5 GB |
 | TTS fast       | Piper TTS        | CPU     |
 | TTS quality    | XTTS-v2          | ~3 GB   |
-| Music          | MusicGen Small   | ~2 GB   |
+| Music max      | YuE 7B           | ~16 GB  |
+| Music fast     | ACE-Step 1.5 LLM | ~6 GB   |
+| Music fallback | ACE-Step 1.5 DiT | ~4 GB   |
 | Video fast     | LTX-Video        | ~12 GB  |
 
 ---
