@@ -36,7 +36,7 @@ export function getProxyTarget(): string | null {
   return _activePeerId;
 }
 
-export function startProxy(): void {
+export function startProxy(port = PROXY_PORT): void {
   if (_server) return;
 
   _server = http.createServer((req, res) => {
@@ -131,13 +131,16 @@ export function startProxy(): void {
 
       let bytesStreamed = 0;
       let chunkCount = 0;
+      let inferenceFinished = false;
+      let clientDisconnected = false;
+
       const cleanup = networkSwarm.sendInferenceRequest(
         peerId,
         requestId,
         body,
         (chunk) => {
+          if (clientDisconnected || res.destroyed || res.writableEnded) return;
           ensureSseHeaders();
-          if (res.writableEnded) return;
           chunkCount += 1;
           bytesStreamed += chunk.length;
           if (chunkCount === 1) {
@@ -148,6 +151,9 @@ export function startProxy(): void {
           res.write(chunk);
         },
         (err) => {
+          inferenceFinished = true;
+          if (clientDisconnected || res.destroyed) return;
+
           if (err) {
             logger.warn(`[proxy ${shortId}] ended with error: ${err}`);
             // Write the error as a visible SSE chat completion chunk so the
@@ -238,7 +244,14 @@ export function startProxy(): void {
         },
       );
 
-      req.on("close", () => {
+      res.on("close", () => {
+        if (inferenceFinished || clientDisconnected || res.writableEnded) {
+          return;
+        }
+        clientDisconnected = true;
+        logger.info(
+          `[proxy ${shortId}] client disconnected before inference completed; cancelling remote request`,
+        );
         cleanup?.();
         networkSwarm.cancelInferenceRequest(peerId, requestId);
       });
@@ -249,14 +262,14 @@ export function startProxy(): void {
     });
   });
 
-  _server.listen(PROXY_PORT, "127.0.0.1", () => {
-    logger.info(`Compute proxy listening on port ${PROXY_PORT}`);
+  _server.listen(port, "127.0.0.1", () => {
+    logger.info(`Compute proxy listening on port ${port}`);
   });
 
   _server.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "EADDRINUSE") {
       logger.error(
-        `Compute proxy port ${PROXY_PORT} is already in use — remote compute will not work until the port is freed.`,
+        `Compute proxy port ${port} is already in use — remote compute will not work until the port is freed.`,
       );
     } else {
       logger.error("Proxy server error:", err);
