@@ -406,8 +406,9 @@ export function registerNetworkHandlers(): void {
     for (const n of notifications) n.read = true;
     return { success: true };
   });
+}
 
-  // Auto-start if enabled
+export function autoStartNetwork(): void {
   const settings = readSettings() as any;
   if (settings.orionNetworkEnabled !== false) {
     networkSwarm

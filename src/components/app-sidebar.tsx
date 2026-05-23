@@ -12,6 +12,7 @@ import {
   Newspaper,
   Network,
   Eye,
+  Palette,
 } from "lucide-react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useState, useCallback } from "react";
@@ -48,6 +49,7 @@ const items = [
     icon: Newspaper,
     hasPanel: false,
   },
+  { title: "Design", to: "/design-studio", icon: Palette, hasPanel: false },
   { title: "Network", to: "/network", icon: Network, hasPanel: false },
   { title: "Watchdog", to: "/watchdog", icon: Eye, hasPanel: false },
   { title: "Settings", to: "/settings", icon: Settings, hasPanel: true },

@@ -766,6 +766,32 @@ export const friendRequests = sqliteTable("friend_requests", {
     .default(sql`(unixepoch())`),
 });
 
+// --- Design Studio Sessions table ---
+export const designSessions = sqliteTable("design_sessions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  title: text("title").notNull(),
+  skillId: text("skill_id"),
+  designSystemId: text("design_system_id"),
+  messagesJson: text("messages_json", { mode: "json" })
+    .$type<
+      Array<{
+        id: string;
+        role: "user" | "assistant";
+        content: string;
+        artifactHtml?: string;
+      }>
+    >()
+    .notNull()
+    .default(sql`'[]'`),
+  currentArtifact: text("current_artifact"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
 // --- Custom Themes table ---
 export const customThemes = sqliteTable("custom_themes", {
   id: integer("id").primaryKey({ autoIncrement: true }),

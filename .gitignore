@@ -205,3 +205,10 @@ bootstrap.log
 *.key
 *.crt
 src/main/auth/_credentials.gen.ts
+
+# Design Studio — large bundled content sourced from open-design reference
+# These are symlinked/copied from D:\Work\LegionStudios\Reference\open-design
+# and regenerated on demand; do not bloat the repo with 150+ markdown files
+resources/design-studio/design-systems/
+resources/design-studio/skills/
+# Keep resources/design-studio/craft/ — those are our own copies

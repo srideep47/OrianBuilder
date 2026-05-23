@@ -9,6 +9,7 @@ import {
 } from "electron";
 import * as path from "node:path";
 import { registerIpcHandlers } from "./ipc/ipc_host";
+import { autoStartNetwork } from "./ipc/handlers/network_handlers";
 import dotenv from "dotenv";
 // @ts-ignore
 import started from "electron-squirrel-startup";
@@ -182,6 +183,7 @@ export async function onReady() {
     logger.error("Error initializing backup manager", e);
   }
   initializeDatabase();
+  autoStartNetwork();
   recoverInterruptedMissionsOnStartup()
     .then(({ recoveredRunCount, recoveredWorkerCount }) => {
       if (recoveredRunCount > 0 || recoveredWorkerCount > 0) {

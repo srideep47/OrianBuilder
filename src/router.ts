@@ -18,6 +18,7 @@ import { marketplaceRoute, modelsLibraryRoute } from "./routes/marketplace";
 import { onboardingRoute } from "./routes/onboarding";
 import { networkRoute } from "./routes/network";
 import { watchdogRoute } from "./routes/watchdog";
+import { designStudioRoute } from "./routes/design-studio";
 
 const routeTree = rootRoute.addChildren([
   homeRoute,
@@ -38,6 +39,7 @@ const routeTree = rootRoute.addChildren([
   onboardingRoute,
   networkRoute,
   watchdogRoute,
+  designStudioRoute,
 ]);
 
 // src/components/NotFoundRedirect.tsx

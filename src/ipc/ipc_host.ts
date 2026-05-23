@@ -54,6 +54,7 @@ import { registerIdentityHandlers } from "./handlers/identity_handlers";
 import { registerNetworkHandlers } from "./handlers/network_handlers";
 import { registerComputeHandlers } from "./handlers/compute_handlers";
 import { registerWatchdogHandlers } from "./handlers/watchdog_handlers";
+import { registerDesignStudioHandlers } from "./handlers/design_studio_handler";
 
 export function registerIpcHandlers() {
   // Register all IPC handlers by category
@@ -113,4 +114,5 @@ export function registerIpcHandlers() {
   registerNetworkHandlers();
   registerComputeHandlers();
   registerWatchdogHandlers();
+  registerDesignStudioHandlers();
 }

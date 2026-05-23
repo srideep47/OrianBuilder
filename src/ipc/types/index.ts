@@ -58,6 +58,15 @@ export { imageGenerationContracts } from "./image_generation";
 export { identityContracts } from "./identity";
 export { networkContracts, networkEvents } from "./network";
 export { computeContracts } from "./compute";
+export { designStudioContracts, designStudioClient } from "./design_studio";
+export type {
+  DesignSkill,
+  DesignSystem,
+  CraftRule,
+  DesignChatMessage,
+  DesignSession,
+  DesignSessionSummary,
+} from "./design_studio";
 export {
   watchdogContracts,
   watchdogClient,
@@ -552,6 +561,7 @@ import { identityClient } from "./identity";
 import { networkClient, networkEventClient } from "./network";
 import { computeClient } from "./compute";
 import { watchdogClient, watchdogEventClient } from "./watchdog";
+import { designStudioClient } from "./design_studio";
 
 /**
  * Unified IPC client with all domains organized by namespace.
@@ -622,6 +632,7 @@ export const ipc = {
   network: networkClient,
   compute: computeClient,
   watchdog: watchdogClient,
+  designStudio: designStudioClient,
 
   // Event clients for main->renderer pub/sub
   events: {

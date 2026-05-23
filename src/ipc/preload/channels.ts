@@ -60,6 +60,7 @@ import { identityContracts } from "../types/identity";
 import { networkContracts, networkEvents } from "../types/network";
 import { computeContracts } from "../types/compute";
 import { watchdogContracts, watchdogEvents } from "../types/watchdog";
+import { designStudioContracts } from "../types/design_studio";
 
 // =============================================================================
 // Invoke Channels (derived from all contracts)
@@ -129,6 +130,7 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(networkContracts),
   ...getInvokeChannels(computeContracts),
   ...getInvokeChannels(watchdogContracts),
+  ...getInvokeChannels(designStudioContracts),
 
   // Test-only channels
   ...TEST_INVOKE_CHANNELS,
