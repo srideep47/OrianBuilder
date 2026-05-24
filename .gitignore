@@ -132,6 +132,13 @@ package/build/
 *.aab
 *.ipa
 
+# Archive files — source/reference snapshots should not live in git
+*.zip
+*.rar
+*.7z
+*.tar
+*.tar.gz
+
 # Storybook
 storybook-static/
 

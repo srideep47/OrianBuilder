@@ -86,7 +86,7 @@ export const TitleBar = () => {
         <img
           src={logo}
           alt="OrianBuilder Logo"
-          className="w-6 h-6 mr-0.5 ml-2"
+          className="w-6 h-6 mr-0.5 ml-2 -mt-3"
         />
         <Tooltip>
           <TooltipTrigger
@@ -95,7 +95,7 @@ export const TitleBar = () => {
                 data-testid="title-bar-app-name-button"
                 variant="outline"
                 size="sm"
-                className={`hidden @2xl:block no-app-region-drag text-xs max-w-38 truncate font-medium ${
+                className={`hidden @2xl:block no-app-region-drag text-xs max-w-38 truncate font-medium -mt-3 ${
                   selectedApp ? "cursor-pointer" : ""
                 }`}
                 onClick={handleAppClick}

@@ -3,6 +3,7 @@ import { PlusCircle, Search, MoreVertical, Trash2, Edit3 } from "lucide-react";
 import { useAtom, useSetAtom } from "jotai";
 import { pdfPreviewDataAtom } from "@/lib/pdfGenerator";
 import { isPreviewOpenAtom } from "@/atoms/viewAtoms";
+import { sidebarPanelAtom } from "@/atoms/uiAtoms";
 import {
   selectedChatIdAtom,
   homeChatMessagesAtom,
@@ -39,6 +40,7 @@ export function AppList({ show }: { show?: boolean }) {
   const [currentPdfTopic] = useAtom(currentHomePdfTopicAtom);
   const setPdfPreviewData = useSetAtom(pdfPreviewDataAtom);
   const setIsPreviewOpen = useSetAtom(isPreviewOpenAtom);
+  const setSidebarPanel = useSetAtom(sidebarPanelAtom);
   const { chats, loading, invalidateChats } = useChats(null);
   const { selectChat } = useSelectChat();
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false);
@@ -85,6 +87,7 @@ export function AppList({ show }: { show?: boolean }) {
       setHomeChatHistory((prev) => [entry, ...prev]);
     }
     setHomeChatMessages([]);
+    setSidebarPanel(null);
     navigate({ to: "/" });
   };
 

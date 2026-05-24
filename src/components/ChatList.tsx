@@ -15,7 +15,7 @@ import {
   type HomeChatHistoryEntry,
 } from "@/atoms/chatAtoms";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
-import { dropdownOpenAtom } from "@/atoms/uiAtoms";
+import { dropdownOpenAtom, sidebarPanelAtom } from "@/atoms/uiAtoms";
 import { pdfPreviewDataAtom } from "@/lib/pdfGenerator";
 import { isPreviewOpenAtom } from "@/atoms/viewAtoms";
 import { ipc } from "@/ipc/types";
@@ -52,6 +52,7 @@ export function ChatList({ show }: { show?: boolean }) {
   const [selectedChatId, setSelectedChatId] = useAtom(selectedChatIdAtom);
   const [selectedAppId] = useAtom(selectedAppIdAtom);
   const [, setIsDropdownOpen] = useAtom(dropdownOpenAtom);
+  const setSidebarPanel = useSetAtom(sidebarPanelAtom);
   const initialChatMode = useInitialChatMode();
 
   const { chats, loading, invalidateChats } = useChats(selectedAppId);
@@ -214,6 +215,7 @@ export function ChatList({ show }: { show?: boolean }) {
         });
         await invalidateChats();
         selectChat({ chatId, appId: selectedAppId });
+        setSidebarPanel(null);
         return; // success — don't fall through to no-app flow
       } catch (error) {
         const msg = (error as any)?.toString() ?? "";
@@ -239,6 +241,7 @@ export function ChatList({ show }: { show?: boolean }) {
       setHomeChatHistory((prev) => [entry, ...prev]);
     }
     setHomeChatMessages([]);
+    setSidebarPanel(null);
     navigate({ to: "/" });
   };
 

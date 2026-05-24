@@ -16,8 +16,12 @@ import {
 } from "lucide-react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useState, useCallback } from "react";
-import { useAtom } from "jotai";
-import { sidebarPanelAtom, type SidebarPanelItem } from "@/atoms/uiAtoms";
+import { useAtom, useSetAtom } from "jotai";
+import {
+  sidebarPanelAtom,
+  isNetworkPeerListOpenAtom,
+  type SidebarPanelItem,
+} from "@/atoms/uiAtoms";
 
 import {
   Sidebar,
@@ -78,6 +82,7 @@ function IconLabel({ title }: { title: string }) {
 
 export function AppSidebar() {
   const [panelItem, setPanelItem] = useAtom(sidebarPanelAtom);
+  const setIsNetworkPeerListOpen = useSetAtom(isNetworkPeerListOpenAtom);
   const [isHelpDialogOpen, setIsHelpDialogOpen] = useState(false);
 
   const { location } = useRouterState();
@@ -85,6 +90,10 @@ export function AppSidebar() {
 
   const handleIconClick = useCallback(
     (title: string, hasPanel: boolean) => {
+      if (title === "Network") {
+        // Clicking Network in the tools bar toggles the in-page peer list
+        setIsNetworkPeerListOpen((prev) => !prev);
+      }
       if (!hasPanel) {
         setPanelItem(null);
       } else {
@@ -93,7 +102,7 @@ export function AppSidebar() {
         );
       }
     },
-    [setPanelItem],
+    [setPanelItem, setIsNetworkPeerListOpen],
   );
 
   return (

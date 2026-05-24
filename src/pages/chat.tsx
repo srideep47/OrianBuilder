@@ -52,11 +52,16 @@ export default function ChatPage() {
   }, [chatId, chats, loading, navigate]);
 
   useEffect(() => {
-    if (isPreviewOpen) {
-      ref.current?.expand();
-    } else {
-      ref.current?.collapse();
-    }
+    // Defer to next frame so any autoSaveId size restoration completes first;
+    // otherwise the restored size overrides our collapse() on initial mount.
+    const rafId = requestAnimationFrame(() => {
+      if (isPreviewOpen) {
+        ref.current?.expand();
+      } else {
+        ref.current?.collapse();
+      }
+    });
+    return () => cancelAnimationFrame(rafId);
   }, [isPreviewOpen]);
   const ref = useRef<ImperativePanelHandle>(null);
   const chatPanelRef = useRef<ImperativePanelHandle>(null);
@@ -129,8 +134,8 @@ export default function ChatPage() {
           }
         }}
         className={cn(
-          "relative bg-border/60 hover:bg-border transition-colors cursor-col-resize",
-          isChatPanelHidden ? "w-2" : "w-1",
+          "relative shrink-0 self-stretch bg-white/20 hover:bg-white/40 transition-colors cursor-col-resize",
+          isChatPanelHidden ? "w-2" : "w-0.5",
         )}
       />
 
