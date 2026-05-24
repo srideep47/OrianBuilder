@@ -372,7 +372,7 @@ function Spec({
   label: string;
   value: string;
   mono?: boolean;
-  icon?: React.ElementType;
+  icon?: React.ComponentType<{ className?: string }>;
 }) {
   return (
     <span className="flex items-center gap-1 text-muted-foreground">

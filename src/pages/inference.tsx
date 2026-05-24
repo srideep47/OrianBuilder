@@ -60,7 +60,7 @@ function StatCard({
   label: string;
   value: string | number;
   unit?: string;
-  icon: React.ElementType;
+  icon: React.ComponentType<{ className?: string }>;
   accent?: string;
 }) {
   return (
@@ -287,7 +287,7 @@ function Section({
   children,
 }: {
   title: string;
-  icon: React.ElementType;
+  icon: React.ComponentType<{ className?: string }>;
   defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
@@ -386,7 +386,7 @@ const STATE_CONFIG: Record<
     label: string;
     color: string;
     bg: string;
-    icon: React.ElementType;
+    icon: React.ComponentType<{ className?: string }>;
     pulse?: boolean;
   }
 > = {

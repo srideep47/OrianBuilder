@@ -373,7 +373,7 @@ function SidebarGroupLabel<T extends React.ElementType = "div">({
   as,
   ...props
 }: { as?: T } & Omit<React.ComponentPropsWithoutRef<T>, "as">) {
-  const Comp = as || "div";
+  const Comp = (as || "div") as React.ComponentType<any>;
 
   return (
     <Comp
@@ -394,7 +394,7 @@ function SidebarGroupAction<T extends React.ElementType = "button">({
   as,
   ...props
 }: { as?: T } & Omit<React.ComponentPropsWithoutRef<T>, "as">) {
-  const Comp = as || "button";
+  const Comp = (as || "button") as React.ComponentType<any>;
 
   return (
     <Comp
@@ -487,7 +487,7 @@ function SidebarMenuButton<T extends React.ElementType = "button">({
     isActive?: boolean;
     tooltip?: string | React.ComponentProps<typeof TooltipContent>;
   } & VariantProps<typeof sidebarMenuButtonVariants>) {
-  const Comp = as || "button";
+  const Comp = (as || "button") as React.ComponentType<any>;
   const { state } = useSidebar();
 
   const button = (
@@ -532,7 +532,7 @@ function SidebarMenuAction<T extends React.ElementType = "button">({
 }: { as?: T } & Omit<React.ComponentPropsWithoutRef<T>, "as"> & {
     showOnHover?: boolean;
   }) {
-  const Comp = as || "button";
+  const Comp = (as || "button") as React.ComponentType<any>;
 
   return (
     <Comp
@@ -654,7 +654,7 @@ function SidebarMenuSubButton<T extends React.ElementType = "a">({
     size?: "sm" | "md";
     isActive?: boolean;
   }) {
-  const Comp = as || "a";
+  const Comp = (as || "a") as React.ComponentType<any>;
 
   return (
     <Comp

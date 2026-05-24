@@ -50,7 +50,7 @@ function Button<T extends React.ElementType = "button">({
   as,
   ...props
 }: ButtonProps<T>) {
-  const Comp = as || "button";
+  const Comp = (as || "button") as React.ComponentType<any>;
 
   return (
     <Comp
