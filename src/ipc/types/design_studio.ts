@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { defineContract, createClient } from "../contracts/core";
+import {
+  defineContract,
+  defineStream,
+  createClient,
+  createStreamClient,
+} from "../contracts/core";
 
 // =============================================================================
 // Schemas
@@ -153,6 +158,75 @@ export const designStudioContracts = {
     input: z.object({ html: z.string(), filename: z.string().optional() }),
     output: ExportResultSchema,
   }),
+
+  // ── Claude CLI ─────────────────────────────────────────────────────────────
+  detectClaude: defineContract({
+    channel: "design-studio:detect-claude",
+    input: z.void(),
+    output: z.object({
+      available: z.boolean(),
+      version: z.string().optional(),
+    }),
+  }),
+
+  startDesignChat: defineContract({
+    channel: "design-studio:chat:start",
+    input: z.object({
+      sessionId: z.string(),
+      systemPrompt: z.string(),
+      messages: z.array(
+        z.object({ role: z.enum(["user", "assistant"]), content: z.string() }),
+      ),
+      model: z.string().optional(),
+    }),
+    output: z.object({ ok: z.literal(true) }),
+  }),
+
+  cancelDesignChat: defineContract({
+    channel: "design-studio:chat:cancel",
+    input: z.string(),
+    output: z.object({ ok: z.literal(true) }),
+  }),
 } as const;
 
 export const designStudioClient = createClient(designStudioContracts);
+
+// =============================================================================
+// Design Studio Chat Stream (for Claude Code CLI)
+// =============================================================================
+
+export const designStudioChatStream = defineStream({
+  channel: "design-studio:chat:start",
+  input: z.object({
+    sessionId: z.string(),
+    systemPrompt: z.string(),
+    messages: z.array(
+      z.object({ role: z.enum(["user", "assistant"]), content: z.string() }),
+    ),
+    model: z.string().optional(),
+  }),
+  keyField: "sessionId",
+  events: {
+    chunk: {
+      channel: "design-studio:chat:chunk",
+      payload: z.object({ sessionId: z.string(), delta: z.string() }),
+    },
+    end: {
+      channel: "design-studio:chat:end",
+      payload: z.object({
+        sessionId: z.string(),
+        costUsd: z.number().optional(),
+        inputTokens: z.number().optional(),
+        outputTokens: z.number().optional(),
+      }),
+    },
+    error: {
+      channel: "design-studio:chat:error",
+      payload: z.object({ sessionId: z.string(), error: z.string() }),
+    },
+  },
+});
+
+export const designStudioChatStreamClient = createStreamClient(
+  designStudioChatStream,
+);

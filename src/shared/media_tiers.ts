@@ -45,6 +45,32 @@ export interface ImageTierUiConfig {
 
 export const USER_FACING_IMAGE_TIERS: readonly ImageTierUiConfig[] = [
   {
+    tierId: "z-image-turbo",
+    downloadId: "image-z-image-turbo",
+    shortName: "Z Image Turbo",
+    description:
+      "Alibaba Tongyi 8-step model. High quality, ~8 GB VRAM · 12 GB download. Auto-selected for 8 GB+ GPUs. No HuggingFace auth required.",
+    vramGb: 8,
+    downloadGb: 12,
+    defaultSteps: 6,
+    minSteps: 4,
+    maxSteps: 8,
+    supportsGuidance: true,
+    defaultGuidance: 4.0,
+    defaultWidth: 768,
+    defaultHeight: 768,
+    allowedResolutions: [
+      { width: 512, height: 512, label: "512 × 512" },
+      { width: 768, height: 768, label: "768 × 768" },
+      { width: 1024, height: 1024, label: "1024 × 1024" },
+    ],
+    qualityPresets: [
+      { label: "Draft (4 steps)", steps: 4, guidance: 2.0 },
+      { label: "Balanced (6 steps)", steps: 6, guidance: 4.0 },
+      { label: "Quality (8 steps)", steps: 8, guidance: 6.0 },
+    ],
+  },
+  {
     tierId: "sd-turbo",
     downloadId: "image-sd-turbo",
     shortName: "SD Turbo",
@@ -99,45 +125,24 @@ export const USER_FACING_IMAGE_TIERS: readonly ImageTierUiConfig[] = [
 
 // ─── Image generation tiers (text → 512×512 image) ───────────────────────────
 //
-// Tier order: first match by VRAM wins, so fastest-download / fastest-gen
-// models are placed first within each VRAM bracket.
+// Tier order: first match by VRAM wins (highest quality → lowest fallback).
 //
-//   • flux-dev:      SOTA quality, 24GB VRAM, 24GB download
-//   • flux-schnell:  4-step, very high quality, 12GB VRAM, 24GB download
-//   • sd-turbo:      1-step, 2 seconds, 3GB VRAM, 1.7GB download  ← FAST DEFAULT
-//   • z-image-turbo: 8-step, excellent quality, 6GB VRAM, 12GB download
-//   • sdxl-turbo:    1-step, fast, 6GB VRAM, 7GB download
-//   • sd-1.5:        classic 20-step, 4GB VRAM, 4GB download
-//   • sd-1.5-onnx-cpu: CPU fallback, 2.5GB download
+//   • z-image-turbo: Alibaba Tongyi, 8-step, 8GB VRAM ← quality default for 8 GB+
+//   • sdxl-turbo:    1-step, 6GB VRAM
+//   • sd-turbo:      1-step, 3GB VRAM ← budget default for ≤4 GB
+//   • sd-1.5:        classic 20-step, 4GB VRAM
+//   • sd-1.5-onnx-cpu: CPU fallback
 
 export const IMAGE_MODEL_TIERS: readonly MediaTier[] = [
   {
-    // Local GGUF file — auto-selected on any backend when the file exists.
-    // No download needed; file placed at $userData/mediaai/models/z-image-turbo-Q4_1.gguf
-    id: "z-image-turbo-gguf",
-    label: "Z Image Turbo Q4_1 (GGUF)",
-    vramRequiredMb: 0,
-    downloadSizeMb: 0,
+    // Alibaba Tongyi — auto-selected for 8 GB+ GPUs.
+    id: "z-image-turbo",
+    label: "Z Image Turbo (8GB)",
+    vramRequiredMb: 8000,
+    downloadSizeMb: 12000,
     quality: "best",
-    approxSecondsPerGen: 6,
-  },
-  {
-    id: "flux-dev",
-    label: "FLUX.1 dev (24GB)",
-    vramRequiredMb: 24000,
-    downloadSizeMb: 24000,
-    quality: "ultra",
-    hfRepo: "black-forest-labs/FLUX.1-dev",
-    approxSecondsPerGen: 25,
-  },
-  {
-    id: "flux-schnell",
-    label: "FLUX.1 schnell (12GB)",
-    vramRequiredMb: 12000,
-    downloadSizeMb: 24000,
-    quality: "best",
-    hfRepo: "black-forest-labs/FLUX.1-schnell",
-    approxSecondsPerGen: 6,
+    hfRepo: "Tongyi-MAI/Z-Image-Turbo",
+    approxSecondsPerGen: 4,
   },
   {
     id: "sdxl-turbo",
@@ -149,6 +154,7 @@ export const IMAGE_MODEL_TIERS: readonly MediaTier[] = [
     approxSecondsPerGen: 2,
   },
   {
+    // Auto-selected for ≤4 GB GPUs.
     id: "sd-turbo",
     label: "SD Turbo (3GB)",
     vramRequiredMb: 3000,
@@ -156,15 +162,6 @@ export const IMAGE_MODEL_TIERS: readonly MediaTier[] = [
     quality: "good",
     hfRepo: "stabilityai/sd-turbo",
     approxSecondsPerGen: 2,
-  },
-  {
-    id: "z-image-turbo",
-    label: "Z Image Turbo (8GB)",
-    vramRequiredMb: 8000,
-    downloadSizeMb: 12000,
-    quality: "best",
-    hfRepo: "Tongyi-MAI/Z-Image-Turbo",
-    approxSecondsPerGen: 4,
   },
   {
     id: "sd-1.5",
@@ -188,16 +185,25 @@ export const IMAGE_MODEL_TIERS: readonly MediaTier[] = [
 
 // ─── Video generation tiers (text → ~5s video) ───────────────────────────────
 //
-// Modern lineup:
-//   • wan-2.1-t2v-1.3b: Alibaba Wan 2.1, 1.3B variant — efficient, 8GB
-//   • ltx-video: Lightricks LTX-Video, 12GB, very fast
-//   • cogvideox-2b: THUDM CogVideoX 2B, 6GB, decent quality
-//   • animatediff-sd15: SD 1.5 + AnimateDiff motion module, 4GB
-//   • text-to-video-cpu: CPU fallback (8 frames, 256x256)
+// Tier order: highest VRAM → lowest so pickBestTier auto-selects the best fit.
+//
+//   • wan-2.1-14b:    Alibaba Wan 2.1 14B — top quality, 14GB VRAM, 30GB download
+//   • ltx-video:      Lightricks LTX-Video — very fast, 12GB VRAM, 18GB download
+//   • wan-2.1-1.3b:   Alibaba Wan 2.1 1.3B — budget tier with CPU offload, 5GB VRAM
+//   • cogvideox-2b:   THUDM CogVideoX 2B — 6GB VRAM
+//   • animatediff-sd15: SD 1.5 + AnimateDiff, 4GB VRAM
+//   • text-to-video-cpu: CPU fallback
 
-// Ordered highest VRAM → lowest so pickBestTier selects the best model that
-// fits in available VRAM (it walks top-to-bottom and returns the first match).
 export const VIDEO_TIERS: readonly MediaTier[] = [
+  {
+    id: "wan-2.1-14b",
+    label: "Wan 2.1 (14B, 14GB)",
+    vramRequiredMb: 14000,
+    downloadSizeMb: 30000,
+    quality: "ultra",
+    hfRepo: "Wan-AI/Wan2.1-T2V-14B-Diffusers",
+    approxSecondsPerGen: 90,
+  },
   {
     id: "ltx-video",
     label: "LTX Video (12GB)",
@@ -209,8 +215,8 @@ export const VIDEO_TIERS: readonly MediaTier[] = [
   },
   {
     id: "wan-2.1-1.3b",
-    label: "Wan 2.1 (1.3B, 8GB)",
-    vramRequiredMb: 8000,
+    label: "Wan 2.1 (1.3B, 5GB)",
+    vramRequiredMb: 5000,
     downloadSizeMb: 14000,
     quality: "best",
     hfRepo: "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",

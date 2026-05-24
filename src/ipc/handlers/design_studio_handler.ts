@@ -1,10 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import log from "electron-log";
 import { dialog, app, BrowserWindow } from "electron";
 import { eq, desc } from "drizzle-orm";
 import { createTypedHandler } from "./base";
+import { safeSend } from "../utils/safe_sender";
 import {
   designStudioContracts,
   type DesignSkill,
@@ -435,6 +437,254 @@ export function registerDesignStudioHandlers() {
       } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
       }
+    },
+  );
+
+  // ── Claude CLI: Detect ────────────────────────────────────────────────────────
+  createTypedHandler(designStudioContracts.detectClaude, async () => {
+    try {
+      const output = execSync("claude --version", {
+        encoding: "utf-8",
+        timeout: 5000,
+        shell: true,
+        // Suppress stderr so a missing binary doesn't pollute logs
+        stdio: ["ignore", "pipe", "ignore"],
+      } as any).trim();
+      return { available: true, version: output };
+    } catch {
+      return { available: false };
+    }
+  });
+
+  // ── Claude CLI: Stream Chat ───────────────────────────────────────────────────
+  const activeChatStreams = new Map<string, ChildProcess>();
+
+  createTypedHandler(
+    designStudioContracts.startDesignChat,
+    async (ipcEvent, { sessionId, systemPrompt, messages, model }) => {
+      const existing = activeChatStreams.get(sessionId);
+      if (existing) {
+        existing.kill();
+        activeChatStreams.delete(sessionId);
+      }
+
+      // Embed system context + conversation history in the message content.
+      // We deliberately do NOT use --system-prompt: on Windows the shell
+      // would mangle HTML/CSS characters in the prompt value.
+      const historyText = messages
+        .slice(0, -1)
+        .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+        .join("\n\n");
+      const lastMsg = messages[messages.length - 1];
+      const userContent = lastMsg?.content ?? "";
+
+      const fullContent = [
+        systemPrompt,
+        historyText ? `\n\nConversation so far:\n${historyText}` : "",
+        `\n\nUser: ${userContent}`,
+      ].join("");
+
+      // Mirrors open-design's claudeAgentDef.buildArgs exactly:
+      //   -p                            → print mode (required)
+      //   --input-format stream-json    → reads JSONL from stdin
+      //   --output-format stream-json   → JSONL events on stdout
+      //   --verbose                     → required with stream-json output
+      //   --include-partial-messages    → enables token-by-token streaming
+      //                                   (stream_event/content_block_delta)
+      //                                   instead of one block at turn end
+      //   --permission-mode bypassPermissions → no interactive prompts
+      const args = [
+        "-p",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--include-partial-messages",
+        "--permission-mode",
+        "bypassPermissions",
+      ];
+      if (model) args.push("--model", model);
+
+      const proc = spawn("claude", args, {
+        shell: process.platform === "win32",
+        env: { ...process.env },
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      activeChatStreams.set(sessionId, proc);
+
+      // Suppress EPIPE: if claude exits before reading stdin (bad auth,
+      // wrong model, etc.) the regular stderr/exit path handles it.
+      proc.stdin.on("error", (err: NodeJS.ErrnoException) => {
+        if (err.code !== "EPIPE" && err.message !== "write EOF") {
+          logger.warn("[claude-cli] stdin error:", err.message);
+        }
+      });
+
+      // Content must be an array of content blocks (matches open-design)
+      const userMessage = JSON.stringify({
+        type: "user",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: fullContent }],
+        },
+      });
+      proc.stdin.write(`${userMessage}\n`, "utf8");
+      proc.stdin.end(); // EOF tells claude the conversation is done; it exits after responding
+
+      let stderrBuf = "";
+
+      // Parse stream-json JSONL output — mirrors open-design's claude-stream.ts
+      let stdoutBuf = "";
+      const textStreamed = new Set<string>();
+      let currentMsgId: string | null = null;
+      let resultUsage:
+        | { costUsd: number; inputTokens: number; outputTokens: number }
+        | undefined;
+
+      proc.stdout.on("data", (chunk: Buffer) => {
+        stdoutBuf += chunk.toString();
+        let nl: number;
+        while ((nl = stdoutBuf.indexOf("\n")) !== -1) {
+          const line = stdoutBuf.slice(0, nl).trim();
+          stdoutBuf = stdoutBuf.slice(nl + 1);
+          if (!line) continue;
+          let obj: unknown;
+          try {
+            obj = JSON.parse(line);
+          } catch {
+            continue;
+          }
+          if (!obj || typeof obj !== "object") continue;
+          const ev = obj as Record<string, unknown>;
+
+          // Primary path: streaming deltas via stream_event wrapper
+          if (
+            ev.type === "stream_event" &&
+            ev.event &&
+            typeof ev.event === "object"
+          ) {
+            const streamEv = ev.event as Record<string, unknown>;
+            if (
+              streamEv.type === "message_start" &&
+              streamEv.message &&
+              typeof (streamEv.message as Record<string, unknown>).id ===
+                "string"
+            ) {
+              currentMsgId = (streamEv.message as Record<string, unknown>)
+                .id as string;
+            }
+            if (streamEv.type === "content_block_delta") {
+              const delta = streamEv.delta as
+                | Record<string, unknown>
+                | undefined;
+              if (
+                delta?.type === "text_delta" &&
+                typeof delta.text === "string" &&
+                delta.text
+              ) {
+                if (currentMsgId) textStreamed.add(currentMsgId);
+                safeSend(ipcEvent.sender, "design-studio:chat:chunk", {
+                  sessionId,
+                  delta: delta.text,
+                });
+              }
+            }
+          }
+
+          // Capture cost/token usage from the final result event
+          if (ev.type === "result") {
+            const usage = ev.usage as Record<string, unknown> | undefined;
+            resultUsage = {
+              costUsd:
+                typeof ev.total_cost_usd === "number" ? ev.total_cost_usd : 0,
+              inputTokens:
+                typeof usage?.input_tokens === "number"
+                  ? usage.input_tokens
+                  : 0,
+              outputTokens:
+                typeof usage?.output_tokens === "number"
+                  ? usage.output_tokens
+                  : 0,
+            };
+          }
+
+          // Fallback: assistant wrapper (older Claude Code without --include-partial-messages)
+          if (
+            ev.type === "assistant" &&
+            ev.message &&
+            typeof ev.message === "object"
+          ) {
+            const msg = ev.message as Record<string, unknown>;
+            const msgId = typeof msg.id === "string" ? msg.id : null;
+            if (msgId) currentMsgId = msgId;
+            const alreadyStreamed = msgId ? textStreamed.has(msgId) : false;
+            if (!alreadyStreamed && Array.isArray(msg.content)) {
+              for (const block of msg.content as Record<string, unknown>[]) {
+                if (
+                  block?.type === "text" &&
+                  typeof block.text === "string" &&
+                  block.text.length > 0
+                ) {
+                  safeSend(ipcEvent.sender, "design-studio:chat:chunk", {
+                    sessionId,
+                    delta: block.text,
+                  });
+                }
+              }
+            }
+          }
+        }
+      });
+
+      proc.stderr.on("data", (d: Buffer) => {
+        const txt = d.toString();
+        stderrBuf += txt;
+        logger.warn("[claude-cli] stderr:", txt.trim());
+      });
+
+      proc.on("close", (code) => {
+        activeChatStreams.delete(sessionId);
+        if (code === 0) {
+          safeSend(ipcEvent.sender, "design-studio:chat:end", {
+            sessionId,
+            costUsd: resultUsage?.costUsd,
+            inputTokens: resultUsage?.inputTokens,
+            outputTokens: resultUsage?.outputTokens,
+          });
+        } else {
+          const detail =
+            stderrBuf.trim().slice(0, 400) || `exit code ${code ?? "?"}`;
+          safeSend(ipcEvent.sender, "design-studio:chat:error", {
+            sessionId,
+            error: detail,
+          });
+        }
+      });
+
+      proc.on("error", (err) => {
+        activeChatStreams.delete(sessionId);
+        safeSend(ipcEvent.sender, "design-studio:chat:error", {
+          sessionId,
+          error: `Failed to start Claude CLI: ${err.message}`,
+        });
+      });
+
+      return { ok: true } as const;
+    },
+  );
+
+  // ── Claude CLI: Cancel ────────────────────────────────────────────────────────
+  createTypedHandler(
+    designStudioContracts.cancelDesignChat,
+    async (_, sessionId) => {
+      const proc = activeChatStreams.get(sessionId);
+      if (proc) {
+        proc.kill();
+        activeChatStreams.delete(sessionId);
+      }
+      return { ok: true } as const;
     },
   );
 }

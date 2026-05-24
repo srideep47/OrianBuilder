@@ -5,6 +5,7 @@ import {
   useCallback,
   type KeyboardEvent,
 } from "react";
+import type { ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ipc } from "@/ipc/types";
@@ -43,6 +44,10 @@ import {
   Star,
   FileText,
   Archive,
+  Cpu,
+  Zap,
+  Settings2,
+  ChevronRight,
 } from "lucide-react";
 import {
   MODES,
@@ -69,6 +74,62 @@ const logger = {
   error: (...a: unknown[]) => console.error("[design-studio]", ...a),
 };
 const EMBEDDED_BASE_URL = "http://127.0.0.1:11435";
+
+// =============================================================================
+// Provider types
+// =============================================================================
+type DesignProvider =
+  | "embedded-llama"
+  | "claude-code"
+  | "ollama"
+  | "openai-compat";
+
+interface ProviderSettings {
+  provider: DesignProvider;
+  claudeModel: string;
+  ollamaUrl: string;
+  ollamaModel: string;
+  openAiCompatUrl: string;
+  openAiCompatKey: string;
+  openAiCompatModel: string;
+}
+
+const CLAUDE_MODELS = [
+  { id: "claude-opus-4-7", label: "Opus 4.7", hint: "Most powerful" },
+  { id: "claude-sonnet-4-6", label: "Sonnet 4.6", hint: "Balanced · default" },
+  { id: "claude-haiku-4-5", label: "Haiku 4.5", hint: "Fastest" },
+] as const;
+
+const PROVIDER_META: Record<
+  DesignProvider,
+  { label: string; shortLabel: string; icon: ReactNode; color: string }
+> = {
+  "embedded-llama": {
+    label: "Local Llama",
+    shortLabel: "Llama",
+    icon: <Cpu className="h-3 w-3" />,
+    color: "text-emerald-400",
+  },
+  "claude-code": {
+    label: "Claude Code CLI",
+    shortLabel: "Claude",
+    icon: <Zap className="h-3 w-3" />,
+    color: "text-amber-400",
+  },
+  ollama: {
+    label: "Ollama",
+    shortLabel: "Ollama",
+    icon: <span className="text-[10px] font-bold leading-none">🦙</span>,
+    color: "text-blue-400",
+  },
+  "openai-compat": {
+    label: "OpenAI-compat",
+    shortLabel: "OpenAI",
+    icon: <span className="text-[10px] font-bold leading-none">▲</span>,
+    color: "text-purple-400",
+  },
+};
+
 const QK = {
   skills: ["design-studio:skills"],
   designSystems: ["design-studio:design-systems"],
@@ -121,15 +182,37 @@ function parseArtifact(text: string): string | null {
   return null;
 }
 
-async function* streamChat(
+// Extract partial (in-progress) artifact for live preview
+function extractPartialArtifact(text: string): string | null {
+  const m = text.match(/<artifact[^>]*type=["']html["'][^>]*>([\s\S]*)/i);
+  if (m && m[1].length > 40) return m[1];
+  const f = text.match(/```html\n?([\s\S]{40,})/i);
+  if (f) return f[1];
+  if (
+    text.trim().startsWith("<!DOCTYPE html") ||
+    text.trim().startsWith("<html")
+  )
+    return text.trim();
+  return null;
+}
+
+// Shared OpenAI-compatible SSE stream reader
+async function* streamOpenAICompat(
+  baseUrl: string,
+  model: string,
   messages: Array<{ role: string; content: string }>,
   signal: AbortSignal,
+  apiKey?: string,
 ): AsyncGenerator<string> {
-  const res = await fetch(`${EMBEDDED_BASE_URL}/v1/chat/completions`, {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+  const res = await fetch(`${baseUrl.replace(/\/$/, "")}/v1/chat/completions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({
-      model: "local",
+      model,
       messages,
       stream: true,
       max_tokens: 16384,
@@ -164,6 +247,84 @@ async function* streamChat(
       }
     }
   }
+}
+
+// Legacy alias for embedded Llama
+function streamChat(
+  messages: Array<{ role: string; content: string }>,
+  signal: AbortSignal,
+): AsyncGenerator<string> {
+  return streamOpenAICompat(EMBEDDED_BASE_URL, "local", messages, signal);
+}
+
+interface ClaudeUsage {
+  costUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+// Claude Code CLI streaming (via IPC)
+function streamChatClaude(
+  systemPrompt: string,
+  messages: Array<{ role: "user" | "assistant"; content: string }>,
+  signal: AbortSignal,
+  model?: string,
+  onUsage?: (u: ClaudeUsage) => void,
+): AsyncGenerator<string> {
+  const sessionId = crypto.randomUUID();
+  const queue: Array<string | Error | null> = [];
+  let notify: (() => void) | null = null;
+
+  const push = (item: string | Error | null) => {
+    queue.push(item);
+    const n = notify;
+    notify = null;
+    n?.();
+  };
+
+  ipc.designStudioStream.start(
+    { sessionId, systemPrompt, messages, model },
+    {
+      onChunk: (d) => push(d.delta),
+      onEnd: (d) => {
+        if (onUsage && d.costUsd !== undefined) {
+          onUsage({
+            costUsd: d.costUsd,
+            inputTokens: d.inputTokens ?? 0,
+            outputTokens: d.outputTokens ?? 0,
+          });
+        }
+        push(null);
+      },
+      onError: (d) => push(new Error(d.error)),
+    },
+  );
+
+  const onAbort = () => {
+    void ipc.designStudio.cancelDesignChat(sessionId);
+    push(null);
+  };
+  signal.addEventListener("abort", onAbort);
+
+  async function* gen(): AsyncGenerator<string> {
+    try {
+      while (true) {
+        if (queue.length === 0) {
+          await new Promise<void>((r) => {
+            notify = r;
+          });
+        }
+        if (signal.aborted) return;
+        const item = queue.shift();
+        if (item === null) return;
+        if (item instanceof Error) throw item;
+        if (typeof item === "string") yield item;
+      }
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+    }
+  }
+  return gen();
 }
 
 // Comment-mode injection script (injected into artifact HTML)
@@ -226,6 +387,19 @@ export default function DesignStudioPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: QK.sessions }),
   });
 
+  // ── Provider state ────────────────────────────────────────────────────────────
+  const [providerSettings, setProviderSettings] = useState<ProviderSettings>({
+    provider: "embedded-llama",
+    claudeModel: "claude-sonnet-4-6",
+    ollamaUrl: "http://localhost:11434",
+    ollamaModel: "mistral",
+    openAiCompatUrl: "https://api.openai.com",
+    openAiCompatKey: "",
+    openAiCompatModel: "gpt-4o",
+  });
+  const [claudeAvailable, setClaudeAvailable] = useState<boolean | null>(null);
+  const [lastUsage, setLastUsage] = useState<ClaudeUsage | null>(null);
+
   // ── Core state ────────────────────────────────────────────────────────────────
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
   const [messages, setMessages] = useState<DesignChatMessage[]>([]);
@@ -279,6 +453,22 @@ export default function DesignStudioPage() {
 
   const modelRunning =
     (modelStatus?.running && modelStatus?.modelLoaded) ?? false;
+
+  // ── Detect Claude CLI once on mount ──────────────────────────────────────────
+  useEffect(() => {
+    ipc.designStudio
+      .detectClaude()
+      .then((r) => setClaudeAvailable(r.available))
+      .catch(() => setClaudeAvailable(false));
+  }, []);
+
+  // Derived: is the active provider ready to send?
+  const providerReady =
+    providerSettings.provider === "embedded-llama"
+      ? modelRunning
+      : providerSettings.provider === "claude-code"
+        ? claudeAvailable === true
+        : true; // Ollama/OpenAI-compat: assume available (fail at request time)
 
   // ── Auto-restore most recent session once sessions first load ─────────────────
   useEffect(() => {
@@ -380,39 +570,77 @@ export default function DesignStudioPage() {
     setCritiqueScore(null);
     setElementClick(null);
     setCommentMode(false);
+    setLastUsage(null);
   }, []);
 
   // ── Run self-critique ─────────────────────────────────────────────────────────
-  const runCritique = useCallback(async (artifact: string) => {
-    setIsRunningCritique(true);
-    try {
-      let acc = "";
-      for await (const delta of streamChat(
-        [{ role: "user", content: buildCritiquePrompt(artifact) }],
-        new AbortController().signal,
-      )) {
-        acc += delta;
+  const runCritique = useCallback(
+    async (artifact: string) => {
+      setIsRunningCritique(true);
+      try {
+        const critiqueMessages = [
+          { role: "user" as const, content: buildCritiquePrompt(artifact) },
+        ];
+        const critiqueStream =
+          providerSettings.provider === "claude-code"
+            ? streamChatClaude(
+                "",
+                critiqueMessages,
+                new AbortController().signal,
+                providerSettings.claudeModel || undefined,
+              )
+            : providerSettings.provider === "ollama"
+              ? streamOpenAICompat(
+                  providerSettings.ollamaUrl,
+                  providerSettings.ollamaModel || "mistral",
+                  critiqueMessages,
+                  new AbortController().signal,
+                )
+              : providerSettings.provider === "openai-compat"
+                ? streamOpenAICompat(
+                    providerSettings.openAiCompatUrl,
+                    providerSettings.openAiCompatModel || "gpt-4o",
+                    critiqueMessages,
+                    new AbortController().signal,
+                    providerSettings.openAiCompatKey || undefined,
+                  )
+                : streamChat(critiqueMessages, new AbortController().signal);
+        let acc = "";
+        for await (const delta of critiqueStream) {
+          acc += delta;
+        }
+        const match = acc.match(/\{[\s\S]*\}/);
+        if (match) {
+          const parsed = JSON.parse(match[0]) as CritiqueScore;
+          setCritiqueScore(parsed);
+        }
+      } catch {
+        /* critique is optional, silently fail */
+      } finally {
+        setIsRunningCritique(false);
       }
-      const match = acc.match(/\{[\s\S]*\}/);
-      if (match) {
-        const parsed = JSON.parse(match[0]) as CritiqueScore;
-        setCritiqueScore(parsed);
-      }
-    } catch {
-      /* critique is optional, silently fail */
-    } finally {
-      setIsRunningCritique(false);
-    }
-  }, []);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [providerSettings],
+  );
 
   // ── Send message ──────────────────────────────────────────────────────────────
   const sendMessage = useCallback(
     async (overrideInput?: string) => {
       const trimmed = (overrideInput ?? input).trim();
       if (!trimmed || isStreaming) return;
-      if (!modelRunning) {
+      if (providerSettings.provider === "embedded-llama" && !modelRunning) {
         toast.error("No model loaded — open the Engine page.");
         navigate({ to: "/inference" });
+        return;
+      }
+      if (
+        providerSettings.provider === "claude-code" &&
+        claudeAvailable === false
+      ) {
+        toast.error(
+          "Claude CLI not found. Install it with: npm install -g @anthropic-ai/claude-code",
+        );
         return;
       }
 
@@ -483,13 +711,65 @@ export default function DesignStudioPage() {
         { role: "user" as const, content: withArtifactReminder(trimmed) },
       ];
 
+      // Pick stream source based on provider
+      const getStream = (): AsyncGenerator<string> => {
+        const {
+          provider,
+          claudeModel,
+          ollamaUrl,
+          ollamaModel,
+          openAiCompatUrl,
+          openAiCompatKey,
+          openAiCompatModel,
+        } = providerSettings;
+        if (provider === "claude-code") {
+          return streamChatClaude(
+            systemPrompt,
+            historyApi.concat({
+              role: "user" as const,
+              content: withArtifactReminder(trimmed),
+            }),
+            abort.signal,
+            claudeModel || undefined,
+            (u) => setLastUsage(u),
+          );
+        }
+        if (provider === "ollama") {
+          return streamOpenAICompat(
+            ollamaUrl,
+            ollamaModel || "mistral",
+            apiMessages,
+            abort.signal,
+          );
+        }
+        if (provider === "openai-compat") {
+          return streamOpenAICompat(
+            openAiCompatUrl,
+            openAiCompatModel || "gpt-4o",
+            apiMessages,
+            abort.signal,
+            openAiCompatKey || undefined,
+          );
+        }
+        // default: embedded-llama
+        return streamChat(apiMessages, abort.signal);
+      };
+
       try {
         let acc = "";
-        for await (const delta of streamChat(apiMessages, abort.signal)) {
+        let lastLiveUpdate = 0;
+        for await (const delta of getStream()) {
           acc += delta;
           setMessages((prev) =>
             prev.map((m) => (m.id === asstMsg.id ? { ...m, content: acc } : m)),
           );
+          // Live preview: throttled to every 400ms to avoid flooding the iframe
+          const now = Date.now();
+          if (now - lastLiveUpdate > 400) {
+            lastLiveUpdate = now;
+            const partial = extractPartialArtifact(acc);
+            if (partial) setCurrentArtifact(partial);
+          }
         }
         const fullText = acc.includes("</artifact>")
           ? acc
@@ -518,7 +798,7 @@ export default function DesignStudioPage() {
               m.id === asstMsg.id
                 ? {
                     ...m,
-                    content: `⚠️ ${msg}\n\nCheck that the Engine is running with a model loaded.`,
+                    content: `⚠️ ${msg}\n\nCheck that your selected provider is available.`,
                   }
                 : m,
             ),
@@ -550,6 +830,8 @@ export default function DesignStudioPage() {
       createSessionMut,
       persistSession,
       runCritique,
+      providerSettings,
+      claudeAvailable,
     ],
   );
 
@@ -733,13 +1015,19 @@ export default function DesignStudioPage() {
               </div>
               {statusLoading ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-              ) : !modelRunning ? (
+              ) : !providerReady ? (
                 <button
-                  onClick={() => navigate({ to: "/inference" })}
+                  onClick={() =>
+                    providerSettings.provider === "embedded-llama"
+                      ? navigate({ to: "/inference" })
+                      : undefined
+                  }
                   className="flex items-center gap-1 text-[10px] text-amber-400 hover:text-amber-300 bg-amber-400/10 border border-amber-400/20 rounded-full px-2 py-0.5 transition-colors"
                 >
                   <AlertCircle className="h-2.5 w-2.5" />
-                  No engine
+                  {providerSettings.provider === "embedded-llama"
+                    ? "No engine"
+                    : "Not ready"}
                 </button>
               ) : (
                 <div className="flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-full px-2 py-0.5">
@@ -1406,9 +1694,13 @@ export default function DesignStudioPage() {
                 onStop={() => abortRef.current?.abort()}
                 onKeyDown={handleKeyDown}
                 isStreaming={isStreaming}
-                disabled={!modelRunning && !statusLoading}
+                disabled={!providerReady && !statusLoading}
                 inputRef={inputRef}
                 compact
+                providerSettings={providerSettings}
+                onProviderSettingsChange={setProviderSettings}
+                claudeAvailable={claudeAvailable}
+                lastUsage={lastUsage}
               />
             </div>
           </div>
@@ -1437,16 +1729,24 @@ export default function DesignStudioPage() {
                       </Button>
                     </div>
 
-                    {!statusLoading && !modelRunning && (
+                    {!statusLoading && !providerReady && (
                       <div className="flex items-center gap-2 text-sm text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-2 mb-4">
                         <AlertCircle className="h-4 w-4 shrink-0" />
-                        No model loaded.{" "}
-                        <button
-                          onClick={() => navigate({ to: "/inference" })}
-                          className="underline font-medium ml-1 hover:text-amber-400"
-                        >
-                          Open Engine →
-                        </button>
+                        {providerSettings.provider === "embedded-llama" ? (
+                          <>
+                            No model loaded.{" "}
+                            <button
+                              onClick={() => navigate({ to: "/inference" })}
+                              className="underline font-medium ml-1 hover:text-amber-400"
+                            >
+                              Open Engine →
+                            </button>
+                          </>
+                        ) : providerSettings.provider === "claude-code" ? (
+                          "Claude CLI not found on PATH."
+                        ) : (
+                          "Provider not configured."
+                        )}
                       </div>
                     )}
 
@@ -1485,18 +1785,20 @@ export default function DesignStudioPage() {
                         local AI engine. Pick a skill, design system, and
                         fidelity from the panel, then describe what to build.
                       </p>
-                      {!statusLoading && !modelRunning && (
-                        <div className="flex items-center gap-2 text-sm text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-2 w-full justify-center">
-                          <AlertCircle className="h-4 w-4 shrink-0" />
-                          No model loaded.{" "}
-                          <button
-                            onClick={() => navigate({ to: "/inference" })}
-                            className="underline font-medium ml-1 hover:text-amber-400"
-                          >
-                            Open Engine
-                          </button>
-                        </div>
-                      )}
+                      {!statusLoading &&
+                        !providerReady &&
+                        providerSettings.provider === "embedded-llama" && (
+                          <div className="flex items-center gap-2 text-sm text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-2 w-full justify-center">
+                            <AlertCircle className="h-4 w-4 shrink-0" />
+                            No model loaded.{" "}
+                            <button
+                              onClick={() => navigate({ to: "/inference" })}
+                              className="underline font-medium ml-1 hover:text-amber-400"
+                            >
+                              Open Engine
+                            </button>
+                          </div>
+                        )}
                       <Button
                         variant="outline"
                         size="sm"
@@ -1618,8 +1920,12 @@ export default function DesignStudioPage() {
               onStop={() => abortRef.current?.abort()}
               onKeyDown={handleKeyDown}
               isStreaming={isStreaming}
-              disabled={!modelRunning && !statusLoading}
+              disabled={!providerReady && !statusLoading}
               inputRef={inputRef}
+              providerSettings={providerSettings}
+              onProviderSettingsChange={setProviderSettings}
+              claudeAvailable={claudeAvailable}
+              lastUsage={lastUsage}
             />
           </div>
         )}
@@ -1824,6 +2130,10 @@ function ChatInput({
   disabled,
   inputRef,
   compact = false,
+  providerSettings,
+  onProviderSettingsChange,
+  claudeAvailable,
+  lastUsage,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -1834,7 +2144,26 @@ function ChatInput({
   disabled: boolean;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   compact?: boolean;
+  providerSettings: ProviderSettings;
+  onProviderSettingsChange: (s: ProviderSettings) => void;
+  claudeAvailable: boolean | null;
+  lastUsage: ClaudeUsage | null;
 }) {
+  const getPlaceholder = () => {
+    if (
+      providerSettings.provider === "embedded-llama" &&
+      disabled &&
+      !isStreaming
+    )
+      return "Load a model in Engine first…";
+    if (
+      providerSettings.provider === "claude-code" &&
+      claudeAvailable === false
+    )
+      return "Claude CLI not found — install with: npm install -g @anthropic-ai/claude-code";
+    return "Describe what to design… (Enter to send, Shift+Enter for newline)";
+  };
+
   return (
     <div
       className={cn(
@@ -1842,18 +2171,77 @@ function ChatInput({
         compact ? "py-1.5" : "py-2",
       )}
     >
+      {/* Provider bar */}
+      <div className="flex items-center gap-2 mb-1.5">
+        <ProviderDropdown
+          settings={providerSettings}
+          onChange={onProviderSettingsChange}
+          claudeAvailable={claudeAvailable}
+        />
+        {/* Provider status indicator */}
+        {providerSettings.provider === "claude-code" && (
+          <span
+            className={cn(
+              "text-[10px] rounded-full px-1.5 py-0.5 border",
+              claudeAvailable === true
+                ? "text-emerald-400 bg-emerald-400/10 border-emerald-400/20"
+                : claudeAvailable === false
+                  ? "text-red-400 bg-red-400/10 border-red-400/20"
+                  : "text-muted-foreground bg-white/[0.03] border-white/[0.06]",
+            )}
+          >
+            {claudeAvailable === true
+              ? (CLAUDE_MODELS.find(
+                  (m) => m.id === providerSettings.claudeModel,
+                )?.label ?? "Sonnet 4.6")
+              : claudeAvailable === false
+                ? "Not found"
+                : "Checking…"}
+          </span>
+        )}
+        {providerSettings.provider === "ollama" && (
+          <span className="text-[10px] text-muted-foreground">
+            {providerSettings.ollamaModel || "mistral"} @{" "}
+            {providerSettings.ollamaUrl.replace(/^https?:\/\//, "")}
+          </span>
+        )}
+        {providerSettings.provider === "openai-compat" && (
+          <span className="text-[10px] text-muted-foreground truncate max-w-[200px]">
+            {providerSettings.openAiCompatModel || "gpt-4o"} @{" "}
+            {providerSettings.openAiCompatUrl.replace(/^https?:\/\//, "")}
+          </span>
+        )}
+        {/* Usage badge — shown after Claude generations */}
+        {lastUsage && providerSettings.provider === "claude-code" && (
+          <span className="ml-auto flex items-center gap-1.5 text-[10px] text-muted-foreground">
+            <span className="opacity-40">·</span>
+            <span
+              title={`In: ${lastUsage.inputTokens.toLocaleString()} · Out: ${lastUsage.outputTokens.toLocaleString()} tokens`}
+            >
+              {lastUsage.inputTokens > 0
+                ? `${Math.round((lastUsage.inputTokens + lastUsage.outputTokens) / 1000)}K tok`
+                : null}
+            </span>
+            {lastUsage.costUsd > 0 && (
+              <span className="text-amber-400/70 font-medium">
+                $
+                {lastUsage.costUsd < 0.01
+                  ? lastUsage.costUsd.toFixed(4)
+                  : lastUsage.costUsd.toFixed(3)}
+              </span>
+            )}
+          </span>
+        )}
+      </div>
+
       <div className="flex gap-2 items-end">
         <Textarea
           ref={inputRef}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={
-            disabled
-              ? "Load a model in Engine first…"
-              : "Describe what to design… (Enter to send, Shift+Enter for newline)"
-          }
-          disabled={disabled || isStreaming}
+          placeholder={getPlaceholder()}
+          disabled={(disabled && !isStreaming) || isStreaming}
           className={cn(
             "flex-1 resize-none text-sm",
             compact
@@ -1864,7 +2252,9 @@ function ChatInput({
         />
         <Button
           onClick={isStreaming ? onStop : onSend}
-          disabled={disabled || (!value.trim() && !isStreaming)}
+          disabled={
+            (disabled && !isStreaming) || (!value.trim() && !isStreaming)
+          }
           size="icon"
           variant={isStreaming ? "destructive" : "default"}
           className={cn(
@@ -1879,6 +2269,297 @@ function ChatInput({
           )}
         </Button>
       </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// Provider Dropdown
+// =============================================================================
+function ProviderDropdown({
+  settings,
+  onChange,
+  claudeAvailable,
+}: {
+  settings: ProviderSettings;
+  onChange: (s: ProviderSettings) => void;
+  claudeAvailable: boolean | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const [showConfig, setShowConfig] = useState(false);
+  const meta = PROVIDER_META[settings.provider];
+
+  const providers: DesignProvider[] = [
+    "embedded-llama",
+    "claude-code",
+    "ollama",
+    "openai-compat",
+  ];
+
+  const needsConfig =
+    settings.provider === "ollama" || settings.provider === "openai-compat";
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all",
+          "bg-white/[0.04] border-white/[0.08] hover:border-white/[0.15] hover:bg-white/[0.07]",
+          meta.color,
+        )}
+      >
+        {meta.icon}
+        <span>{meta.shortLabel}</span>
+        <ChevronDown className="h-2.5 w-2.5 text-muted-foreground" />
+      </button>
+
+      {open && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => {
+              setOpen(false);
+              setShowConfig(false);
+            }}
+          />
+          <div className="absolute bottom-full left-0 mb-1.5 z-50 bg-popover border border-border rounded-xl shadow-xl py-1 w-72">
+            {/* Provider list */}
+            {!showConfig &&
+              providers.map((p) => {
+                const m = PROVIDER_META[p];
+                const isActive = settings.provider === p;
+                const isClaudeUnavailable =
+                  p === "claude-code" && claudeAvailable === false;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => {
+                      onChange({ ...settings, provider: p });
+                      if (p === "ollama" || p === "openai-compat") {
+                        setShowConfig(true);
+                      } else {
+                        setOpen(false);
+                      }
+                    }}
+                    className={cn(
+                      "w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors",
+                      isActive ? "bg-white/[0.06]" : "hover:bg-white/[0.04]",
+                    )}
+                  >
+                    <span className={m.color}>{m.icon}</span>
+                    <div className="flex-1 text-left">
+                      <div className="font-medium">{m.label}</div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {p === "embedded-llama" && "Your local Llama engine"}
+                        {p === "claude-code" &&
+                          (isClaudeUnavailable
+                            ? "CLI not found on PATH"
+                            : "claude CLI auto-detected")}
+                        {p === "ollama" && "Ollama local server"}
+                        {p === "openai-compat" &&
+                          "Custom OpenAI-compatible API"}
+                      </div>
+                    </div>
+                    {isActive && (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-primary shrink-0" />
+                    )}
+                    {isClaudeUnavailable && (
+                      <AlertCircle className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                    )}
+                    {(p === "ollama" || p === "openai-compat") && !isActive && (
+                      <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                    )}
+                  </button>
+                );
+              })}
+
+            {/* Provider config panel */}
+            {showConfig && (
+              <div className="px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => setShowConfig(false)}
+                  className="flex items-center gap-1.5 text-[10px] text-muted-foreground hover:text-foreground mb-3 transition-colors"
+                >
+                  <ChevronDown className="h-3 w-3 rotate-90" />
+                  Back
+                </button>
+
+                {settings.provider === "ollama" && (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-semibold flex items-center gap-1.5 mb-2">
+                      <span className={PROVIDER_META.ollama.color}>
+                        {PROVIDER_META.ollama.icon}
+                      </span>
+                      Ollama settings
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted-foreground block mb-1">
+                        Base URL
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.ollamaUrl}
+                        onChange={(e) =>
+                          onChange({ ...settings, ollamaUrl: e.target.value })
+                        }
+                        className="w-full px-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.08] rounded-lg outline-none focus:border-primary/40"
+                        placeholder="http://localhost:11434"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted-foreground block mb-1">
+                        Model name
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.ollamaModel}
+                        onChange={(e) =>
+                          onChange({ ...settings, ollamaModel: e.target.value })
+                        }
+                        className="w-full px-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.08] rounded-lg outline-none focus:border-primary/40"
+                        placeholder="mistral"
+                      />
+                    </div>
+                    <Button
+                      size="sm"
+                      className="w-full h-7 text-xs mt-1"
+                      onClick={() => {
+                        setOpen(false);
+                        setShowConfig(false);
+                      }}
+                    >
+                      Done
+                    </Button>
+                  </div>
+                )}
+
+                {settings.provider === "openai-compat" && (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-semibold flex items-center gap-1.5 mb-2">
+                      <span className={PROVIDER_META["openai-compat"].color}>
+                        {PROVIDER_META["openai-compat"].icon}
+                      </span>
+                      OpenAI-compat settings
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted-foreground block mb-1">
+                        Base URL
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.openAiCompatUrl}
+                        onChange={(e) =>
+                          onChange({
+                            ...settings,
+                            openAiCompatUrl: e.target.value,
+                          })
+                        }
+                        className="w-full px-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.08] rounded-lg outline-none focus:border-primary/40"
+                        placeholder="https://api.openai.com"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted-foreground block mb-1">
+                        Model
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.openAiCompatModel}
+                        onChange={(e) =>
+                          onChange({
+                            ...settings,
+                            openAiCompatModel: e.target.value,
+                          })
+                        }
+                        className="w-full px-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.08] rounded-lg outline-none focus:border-primary/40"
+                        placeholder="gpt-4o"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted-foreground block mb-1">
+                        API Key (optional)
+                      </label>
+                      <input
+                        type="password"
+                        value={settings.openAiCompatKey}
+                        onChange={(e) =>
+                          onChange({
+                            ...settings,
+                            openAiCompatKey: e.target.value,
+                          })
+                        }
+                        className="w-full px-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.08] rounded-lg outline-none focus:border-primary/40"
+                        placeholder="sk-..."
+                      />
+                    </div>
+                    <Button
+                      size="sm"
+                      className="w-full h-7 text-xs mt-1"
+                      onClick={() => {
+                        setOpen(false);
+                        setShowConfig(false);
+                      }}
+                    >
+                      Done
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Claude model picker (shown when claude-code is active) */}
+            {!showConfig && settings.provider === "claude-code" && (
+              <div className="px-3 pt-2 pb-2 border-t border-white/[0.06] mt-1">
+                <div className="text-[10px] text-muted-foreground/60 mb-1.5 uppercase tracking-wider font-semibold">
+                  Model
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  {CLAUDE_MODELS.map((m) => {
+                    const active =
+                      (settings.claudeModel || "claude-sonnet-4-6") === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() =>
+                          onChange({ ...settings, claudeModel: m.id })
+                        }
+                        className={cn(
+                          "w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-all",
+                          active
+                            ? "bg-amber-400/15 text-amber-300"
+                            : "text-muted-foreground hover:text-foreground hover:bg-white/[0.05]",
+                        )}
+                      >
+                        <span className="font-medium">{m.label}</span>
+                        <span className="text-[10px] opacity-60">{m.hint}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Config shortcut for currently active configurable provider */}
+            {!showConfig && needsConfig && (
+              <div className="px-3 pt-1 pb-1.5 border-t border-white/[0.06] mt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowConfig(true)}
+                  className="flex items-center gap-1.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors w-full"
+                >
+                  <Settings2 className="h-3 w-3" />
+                  Configure {PROVIDER_META[settings.provider].label}…
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

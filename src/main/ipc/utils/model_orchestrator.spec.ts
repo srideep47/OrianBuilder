@@ -238,24 +238,28 @@ describe("ModelOrchestrator state machine", () => {
 });
 
 describe("pickBestImageTier", () => {
-  it("returns flux-dev with 32 GB VRAM", () => {
-    expect(pickBestImageTier(32000).id).toBe("flux-dev");
+  it("returns z-image-turbo with 32 GB VRAM", () => {
+    expect(pickBestImageTier(32000).id).toBe("z-image-turbo");
   });
 
-  it("returns flux-schnell with 15 GB VRAM", () => {
-    expect(pickBestImageTier(15000).id).toBe("flux-schnell");
+  it("returns z-image-turbo with 12 GB VRAM", () => {
+    expect(pickBestImageTier(12000).id).toBe("z-image-turbo");
   });
 
-  it("returns z-image-turbo with 8 GB VRAM (above sdxl-turbo by tier order)", () => {
+  it("returns z-image-turbo with 8 GB VRAM (auto-selected quality tier)", () => {
     expect(pickBestImageTier(8000).id).toBe("z-image-turbo");
   });
 
-  it("returns sdxl-turbo when only quality 'good' allowed", () => {
+  it("returns sdxl-turbo with 6 GB VRAM", () => {
+    expect(pickBestImageTier(6000).id).toBe("sdxl-turbo");
+  });
+
+  it("returns sdxl-turbo when only quality 'good' allowed at 8 GB", () => {
     expect(pickBestImageTier(8000, "good").id).toBe("sdxl-turbo");
   });
 
-  it("returns sd-1.5 with 5 GB VRAM", () => {
-    expect(pickBestImageTier(5000).id).toBe("sd-1.5");
+  it("returns sd-turbo with 4 GB VRAM (budget tier)", () => {
+    expect(pickBestImageTier(4000).id).toBe("sd-turbo");
   });
 
   it("returns sd-1.5-onnx-cpu with 0 VRAM", () => {
@@ -266,12 +270,11 @@ describe("pickBestImageTier", () => {
     expect(pickBestImageTier(0, "good").id).toBe("sd-1.5-onnx-cpu");
   });
 
-  it("orders tiers ultra → best → good → basic → slow", () => {
+  it("orders tiers best → good → basic → slow (z-image-turbo before sdxl-turbo)", () => {
     expect(IMAGE_MODEL_TIERS.map((t) => t.id)).toEqual([
-      "flux-dev",
-      "flux-schnell",
       "z-image-turbo",
       "sdxl-turbo",
+      "sd-turbo",
       "sd-1.5",
       "sd-1.5-onnx-cpu",
     ]);
@@ -295,7 +298,7 @@ describe("pickBestAudioTtsTier", () => {
 describe("selectAvailableTiers", () => {
   it("combines live and freed VRAM when computing fitting tiers", () => {
     const snapshot = selectAvailableTiers(2000, 6000);
-    // 2000 + 6000 = 8000 → z-image-turbo fits (above sdxl-turbo in order)
+    // 2000 + 6000 = 8000 → z-image-turbo fits (first in tier order at 8 GB)
     expect(snapshot.projectedAvailableVramMb).toBe(8000);
     expect(snapshot.image[0].id).toBe("z-image-turbo");
   });
@@ -303,9 +306,9 @@ describe("selectAvailableTiers", () => {
   it("returns ALL fitting image tiers in best-first order at 13 GB", () => {
     const snapshot = selectAvailableTiers(13000, 0);
     expect(snapshot.image.map((t) => t.id)).toEqual([
-      "flux-schnell",
       "z-image-turbo",
       "sdxl-turbo",
+      "sd-turbo",
       "sd-1.5",
       "sd-1.5-onnx-cpu",
     ]);

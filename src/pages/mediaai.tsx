@@ -26,6 +26,7 @@ import {
   Video,
   Wrench,
   Zap,
+  AlertTriangle,
 } from "lucide-react";
 import {
   ipc,
@@ -40,13 +41,6 @@ import {
   USER_FACING_IMAGE_TIERS,
   type ImageTierUiConfig,
 } from "@/shared/media_tiers";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -73,6 +67,20 @@ interface ItunesTrack {
   primaryGenreName: string;
 }
 
+interface ImageTierApiInfo {
+  id: string;
+  label: string;
+  repo: string | null;
+  vram_mb: number;
+  download_size_mb: number;
+  backends: string[];
+  available_for_backend: boolean;
+  status: "downloaded" | "downloading" | "not_downloaded";
+  download_progress?: number;
+  download_error?: string | null;
+  selected: boolean;
+}
+
 interface MusicTierInfo {
   id: string;
   label: string;
@@ -83,21 +91,68 @@ interface MusicTierInfo {
   uses_lm: boolean;
   repo_url: string;
   available_for_backend: boolean;
-  status: "downloaded" | "downloading" | "not_downloaded";
+  status:
+    | "downloaded"
+    | "downloading"
+    | "partially_downloaded"
+    | "not_downloaded";
   download_progress?: number;
+  download_error?: string | null;
   selected: boolean;
 }
+
+interface VideoTierApiInfo {
+  id: string;
+  label: string;
+  repo: string | null;
+  vram_mb: number;
+  download_size_mb: number;
+  backends: string[];
+  default_frames: number;
+  default_fps: number;
+  default_width: number;
+  default_height: number;
+  default_steps: number;
+  available_for_backend: boolean;
+  status: "downloaded" | "downloading" | "not_downloaded";
+  download_progress?: number;
+  download_error?: string | null;
+  selected: boolean;
+}
+
+type VideoSettings = {
+  frames: number | null;
+  fps: number | null;
+  width: number | null;
+  height: number | null;
+  steps: number | null;
+};
+
+const VIDEO_TIER_DESCRIPTIONS: Record<string, string> = {
+  "wan-2.1-14b":
+    "Top-quality Alibaba Wan 2.1 (14B). Best output, ~30 GB download. Auto-selected for 14 GB+ GPUs. CPU offload on <20 GB VRAM.",
+  "ltx-video":
+    "Lightricks LTX Video — very fast generation, 121 frames at 24 fps. Best speed-to-quality ratio. ~18 GB download.",
+  "wan-2.1-1.3b":
+    "Budget Wan 2.1 (1.3B) with CPU offload. Fits in 5 GB VRAM. Good quality at low hardware cost. ~14 GB download.",
+  "cogvideox-2b":
+    "THUDM CogVideoX 2B. Smooth 720×480 video output. ~11 GB download. 7 GB VRAM.",
+  "animatediff-sd15":
+    "AnimateDiff + SD 1.5. Lowest VRAM requirement (4 GB). Supports DirectML for AMD on Windows. ~6 GB download.",
+  "text-to-video-cpu":
+    "Text-to-Video MS 1.7B — CPU-only fallback. Very slow but works without a GPU. ~8 GB download.",
+};
 
 const MUSIC_TIER_CATALOG: MusicTierInfo[] = [
   {
     id: "ace-step-turbo-4gb",
     label: "ACE-Step 1.5 Turbo (4 GB)",
     description:
-      "Low-VRAM DiT-only model for full songs with vocals and instruments. Best first download for testing on 4 GB GPUs.",
+      "Low-VRAM model with the 0.6B planner enabled for full songs with vocals and instruments. Best first download for testing on 4 GB GPUs.",
     vram_mb: 4000,
-    download_size_mb: 8500,
+    download_size_mb: 9700,
     backends: ["cuda", "rocm", "mps", "metal", "cpu"],
-    uses_lm: false,
+    uses_lm: true,
     repo_url: "https://github.com/ace-step/ACE-Step-1.5",
     available_for_backend: true,
     status: "not_downloaded",
@@ -235,6 +290,7 @@ type ImageSettings = {
   steps: number;
   guidance: number;
   seed: number | null; // null = random each time
+  negativePrompt: string;
 };
 type EventLogEntry = {
   id: number;
@@ -258,6 +314,7 @@ type SetupPhase =
 const TIER_PREF_KEY = "mediaai:image:tier";
 const SETTINGS_KEY = "mediaai:image:settings-by-tier";
 const MUSIC_TIER_PREF_KEY = "mediaai:music:tier";
+const VIDEO_TIER_PREF_KEY = "mediaai:video:tier";
 
 function loadStoredTierId(): string {
   if (typeof window === "undefined") return USER_FACING_IMAGE_TIERS[0].tierId;
@@ -273,6 +330,11 @@ function loadStoredMusicTierId(): string {
     return value;
   }
   return "ace-step-turbo-4gb";
+}
+
+function loadStoredVideoTierId(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(VIDEO_TIER_PREF_KEY);
 }
 
 function loadStoredSettings(): Record<string, ImageSettings> {
@@ -292,6 +354,7 @@ function defaultSettingsFor(tier: ImageTierUiConfig): ImageSettings {
     steps: tier.defaultSteps,
     guidance: tier.defaultGuidance,
     seed: null,
+    negativePrompt: "",
   };
 }
 
@@ -343,12 +406,24 @@ export default function MediaAIPage() {
   // AI music generation state
   const [musicGenPrompt, setMusicGenPrompt] = useState("");
   const [musicGenDuration, setMusicGenDuration] = useState(15);
+  const [showMusicSettings, setShowMusicSettings] = useState(false);
+  const [musicGenInferenceSteps, setMusicGenInferenceSteps] = useState<
+    number | ""
+  >("");
+  const [musicGenUseCotLyrics, setMusicGenUseCotLyrics] = useState(true);
   const [musicGenStatus, setMusicGenStatus] = useState<
     "idle" | "generating" | "done" | "error"
   >("idle");
   const [musicGenError, setMusicGenError] = useState("");
   const [musicGenAudioUrl, setMusicGenAudioUrl] = useState<string | null>(null);
   const musicGenAbortRef = useRef<AbortController | null>(null);
+
+  const [imageTiers, setImageTiers] = useState<ImageTierApiInfo[]>([]);
+  const [imageTiersLoading, setImageTiersLoading] = useState(false);
+  const [imageDownloadTierId, setImageDownloadTierId] = useState<string | null>(
+    null,
+  );
+  const imageDownloadPollRef = useRef<number | null>(null);
 
   const [musicTiers, setMusicTiers] = useState<MusicTierInfo[]>([]);
   const [musicTiersLoading, setMusicTiersLoading] = useState(false);
@@ -364,6 +439,25 @@ export default function MediaAIPage() {
   );
   const musicDownloadPollRef = useRef<number | null>(null);
 
+  // Video tab state
+  const [videoTiers, setVideoTiers] = useState<VideoTierApiInfo[]>([]);
+  const [videoTiersLoading, setVideoTiersLoading] = useState(false);
+  const [selectedVideoTierId, setSelectedVideoTierId] = useState<string | null>(
+    () => loadStoredVideoTierId(),
+  );
+  const [videoSettings, setVideoSettings] = useState<VideoSettings>({
+    frames: null,
+    fps: null,
+    width: null,
+    height: null,
+    steps: null,
+  });
+  const [showVideoSettings, setShowVideoSettings] = useState(false);
+  const [videoDownloadTierId, setVideoDownloadTierId] = useState<string | null>(
+    null,
+  );
+  const videoDownloadPollRef = useRef<number | null>(null);
+
   // Music search state
   const [musicQuery, setMusicQuery] = useState("");
   const [musicResults, setMusicResults] = useState<ItunesTrack[]>([]);
@@ -371,6 +465,11 @@ export default function MediaAIPage() {
   const [musicSearchError, setMusicSearchError] = useState("");
   const [playingTrackId, setPlayingTrackId] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const selectedVideoTierInfo =
+    videoTiers.find((t) => t.id === selectedVideoTierId) ??
+    videoTiers.find((t) => t.selected) ??
+    null;
 
   const selectedImageTier =
     USER_FACING_IMAGE_TIERS.find((t) => t.tierId === selectedImageTierId) ??
@@ -416,6 +515,15 @@ export default function MediaAIPage() {
       // non-fatal
     }
   }, [selectedMusicTierId]);
+
+  useEffect(() => {
+    if (!selectedVideoTierId) return;
+    try {
+      window.localStorage.setItem(VIDEO_TIER_PREF_KEY, selectedVideoTierId);
+    } catch {
+      // non-fatal
+    }
+  }, [selectedVideoTierId]);
 
   const appendLog = useCallback(
     (message: string, level: EventLogEntry["level"] = "info") => {
@@ -497,6 +605,15 @@ export default function MediaAIPage() {
   }, []);
 
   useEffect(() => {
+    return () => {
+      if (videoDownloadPollRef.current !== null) {
+        window.clearInterval(videoDownloadPollRef.current);
+        videoDownloadPollRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (!status) return;
 
     if (status.healthy) {
@@ -570,34 +687,6 @@ export default function MediaAIPage() {
       return latestStatus;
     },
     [],
-  );
-
-  const downloadTier = useCallback(
-    async (tier: ImageTierUiConfig) => {
-      setSetupAction(`download-${tier.tierId}`);
-      setIsDownloading(true);
-      appendLog(`Downloading ${tier.shortName} (~${tier.downloadGb} GB)…`);
-      try {
-        await ipc.mediaAi.downloadModels({
-          models: [tier.downloadId as MediaAiModelId],
-        });
-        appendLog(`${tier.shortName} downloaded.`, "success");
-        toast.success(`${tier.shortName} downloaded`);
-        await refreshAll();
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        if (msg.includes("SIGTERM") || msg.includes("cancelled")) {
-          appendLog("Download cancelled.", "info");
-        } else {
-          appendLog(`Download failed: ${msg}`, "error");
-          toast.error(msg);
-        }
-      } finally {
-        setIsDownloading(false);
-        setSetupAction(null);
-      }
-    },
-    [appendLog, refreshAll],
   );
 
   // One-button setup: install deps with the detected GPU backend (if missing),
@@ -868,6 +957,116 @@ export default function MediaAIPage() {
     setIsGenerating(false);
   };
 
+  const fetchImageTiers = useCallback(async (): Promise<
+    ImageTierApiInfo[] | null
+  > => {
+    if (!isBackendOnline) return null;
+    setImageTiersLoading(true);
+    try {
+      const res = await fetch(`${serverUrl}/v1/generate/image/tiers`);
+      if (res.ok) {
+        const data = (await res.json()) as {
+          tiers: ImageTierApiInfo[];
+          selected_tier_id: string;
+        };
+        setImageTiers(data.tiers);
+        return data.tiers;
+      }
+    } catch {
+      // backend not yet ready — silently ignore
+    } finally {
+      setImageTiersLoading(false);
+    }
+    return null;
+  }, [isBackendOnline, serverUrl]);
+
+  const handleDownloadImageModel = async (tierId: string) => {
+    const tier = imageTiers.find((x) => x.id === tierId);
+    const tierLabel = tier?.label ?? tierId;
+    setSelectedImageTierId(
+      USER_FACING_IMAGE_TIERS.find((t) => t.tierId === tierId)?.tierId ??
+        selectedImageTierId,
+    );
+    if (!isBackendOnline) {
+      appendLog(`Start the backend before downloading ${tierLabel}.`);
+      toast.info("Start Media AI first, then download the selected model.");
+      return;
+    }
+    if (imageDownloadPollRef.current !== null) {
+      window.clearInterval(imageDownloadPollRef.current);
+      imageDownloadPollRef.current = null;
+    }
+    setImageDownloadTierId(tierId);
+    appendLog(`Starting download of image model: ${tierLabel}...`);
+    try {
+      const response = await fetch(`${serverUrl}/v1/generate/image/download`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tier_id: tierId }),
+      });
+      if (!response.ok) {
+        const err = await response
+          .json()
+          .catch(() => ({ detail: `HTTP ${response.status}` }));
+        throw new Error(
+          (err as { detail?: string }).detail ?? `HTTP ${response.status}`,
+        );
+      }
+      let pollCount = 0;
+      const pollOnce = () => {
+        pollCount++;
+        void fetchImageTiers().then((tiers) => {
+          if (!tiers) return;
+          const t = tiers.find((x) => x.id === tierId);
+          if (!t) return;
+          if (t.status === "downloaded") {
+            appendLog(
+              `Image model ${tierLabel} downloaded successfully!`,
+              "success",
+            );
+            toast.success(`${tierLabel} ready.`);
+            setImageDownloadTierId(null);
+            window.clearInterval(poll);
+            if (imageDownloadPollRef.current === poll)
+              imageDownloadPollRef.current = null;
+          } else if (t.status === "downloading") {
+            if (t.download_progress != null && t.download_progress !== -1) {
+              appendLog(
+                `Image model ${tierLabel} progress: ${t.download_progress}%`,
+              );
+            } else if (pollCount === 1) {
+              appendLog(
+                `Image model ${tierLabel}: Resolving repository and checking cache...`,
+              );
+            }
+          } else if (pollCount >= 4) {
+            const errMsg = t.download_error
+              ? `Download failed: ${t.download_error}`
+              : `Download ended with status "${t.status}".`;
+            appendLog(`Image model ${tierLabel}: ${errMsg}`, "error");
+            toast.error(errMsg);
+            setImageDownloadTierId(null);
+            window.clearInterval(poll);
+            if (imageDownloadPollRef.current === poll)
+              imageDownloadPollRef.current = null;
+          }
+        });
+      };
+      window.setTimeout(() => {
+        pollOnce();
+      }, 500);
+      const poll = window.setInterval(() => {
+        pollOnce();
+      }, 3000);
+      imageDownloadPollRef.current = poll;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setImageDownloadTierId(null);
+      appendLog(`Image model download failed: ${msg}`, "error");
+      toast.error(`Download failed: ${msg}`);
+    }
+  };
+
   const fetchMusicTiers = useCallback(
     async (allowBackendProbe = false): Promise<MusicTierInfo[] | null> => {
       if (!isBackendOnline && !allowBackendProbe) return null;
@@ -897,10 +1096,47 @@ export default function MediaAIPage() {
     [isBackendOnline, serverUrl],
   );
 
+  const fetchVideoTiers = useCallback(async (): Promise<
+    VideoTierApiInfo[] | null
+  > => {
+    if (!isBackendOnline) return null;
+    setVideoTiersLoading(true);
+    try {
+      const res = await fetch(`${serverUrl}/v1/generate/video/tiers`);
+      if (res.ok) {
+        const data = (await res.json()) as {
+          tiers: VideoTierApiInfo[];
+          selected_tier_id: string;
+        };
+        setVideoTiers(data.tiers);
+        setSelectedVideoTierId((prev) => {
+          if (prev && data.tiers.some((t) => t.id === prev)) return prev;
+          return data.selected_tier_id;
+        });
+        return data.tiers;
+      }
+    } catch {
+      // backend not yet ready — silently ignore
+    } finally {
+      setVideoTiersLoading(false);
+    }
+    return null;
+  }, [isBackendOnline, serverUrl]);
+
+  useEffect(() => {
+    if (activeTab !== "image" || !isBackendOnline) return;
+    void fetchImageTiers();
+  }, [activeTab, fetchImageTiers, isBackendOnline]);
+
   useEffect(() => {
     if (activeTab !== "music" || !isBackendOnline) return;
     void fetchMusicTiers(true);
   }, [activeTab, fetchMusicTiers, isBackendOnline]);
+
+  useEffect(() => {
+    if (activeTab !== "video" || !isBackendOnline) return;
+    void fetchVideoTiers();
+  }, [activeTab, fetchVideoTiers, isBackendOnline]);
 
   const runMusicSetup = useCallback(async () => {
     appendLog("Setting up Music AI runtime...");
@@ -1067,43 +1303,52 @@ export default function MediaAIPage() {
           (err as { detail?: string }).detail ?? `HTTP ${response.status}`,
         );
       }
-      // Poll status every 3s until downloaded
+      // Poll status — fast at first to catch instant completions (files
+      // already cached), then slow down to standard 3 s cadence.
       let lastProgress = -1;
-      const poll = window.setInterval(() => {
+      let pollCount = 0;
+      const pollOnce = () => {
+        pollCount++;
         void fetchMusicTiers().then((tiers) => {
           if (!tiers) return;
           const t = tiers.find((x) => x.id === tierId);
-          if (t) {
-            if (t.status === "downloaded") {
-              appendLog(
-                `Music model ${tierLabel} downloaded successfully!`,
-                "success",
-              );
-              setMusicDownloadTierId(null);
-              window.clearInterval(poll);
-              if (musicDownloadPollRef.current === poll) {
-                musicDownloadPollRef.current = null;
-              }
-            } else if (t.status === "downloading") {
-              if (t.download_progress != null) {
-                const progress = t.download_progress;
-                if (progress !== lastProgress) {
-                  lastProgress = progress;
-                  appendLog(
-                    `Music model ${tierLabel} download progress: ${progress}%`,
-                  );
-                }
-              } else if (lastProgress === -1) {
-                lastProgress = 0;
+          if (!t) return;
+
+          if (t.status === "downloaded") {
+            appendLog(
+              `Music model ${tierLabel} downloaded successfully!`,
+              "success",
+            );
+            setMusicDownloadTierId(null);
+            window.clearInterval(poll);
+            if (musicDownloadPollRef.current === poll) {
+              musicDownloadPollRef.current = null;
+            }
+          } else if (t.status === "downloading") {
+            if (t.download_progress != null) {
+              const progress = t.download_progress;
+              if (progress !== lastProgress) {
+                lastProgress = progress;
                 appendLog(
-                  `Music model ${tierLabel}: Resolving repository details and checking local cache...`,
+                  `Music model ${tierLabel} download progress: ${progress}%`,
                 );
               }
-            } else if (t.status === "not_downloaded") {
+            } else if (lastProgress === -1) {
+              lastProgress = 0;
               appendLog(
-                `Music model ${tierLabel} download was reset or failed.`,
-                "error",
+                `Music model ${tierLabel}: Resolving repository details and checking local cache...`,
               );
+            }
+          } else {
+            // status is "partially_downloaded" | "not_downloaded"
+            // — download has ended but didn't reach "downloaded".
+            // Give it a few polls to account for thread start-up delay,
+            // then treat it as a failure.
+            if (pollCount >= 4) {
+              const errMsg = t.download_error
+                ? `Download failed: ${t.download_error}`
+                : `Download ended with status "${t.status}". Some components may still be missing.`;
+              appendLog(`Music model ${tierLabel}: ${errMsg}`, "error");
               setMusicDownloadTierId(null);
               window.clearInterval(poll);
               if (musicDownloadPollRef.current === poll) {
@@ -1112,12 +1357,110 @@ export default function MediaAIPage() {
             }
           }
         });
+      };
+      // First poll at 500 ms, then switch to 3 s.
+      window.setTimeout(() => {
+        pollOnce();
+      }, 500);
+      const poll = window.setInterval(() => {
+        pollOnce();
       }, 3000);
       musicDownloadPollRef.current = poll;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setMusicDownloadTierId(null);
       appendLog(`Music model download failed: ${msg}`, "error");
+      toast.error(`Download failed: ${msg}`);
+    }
+  };
+
+  const handleDownloadVideoModel = async (tierId: string) => {
+    const tier = videoTiers.find((x) => x.id === tierId);
+    const tierLabel = tier?.label ?? tierId;
+    setSelectedVideoTierId(tierId);
+    setVideoSettings({
+      frames: null,
+      fps: null,
+      width: null,
+      height: null,
+      steps: null,
+    });
+    if (!isBackendOnline) {
+      appendLog(`Start the backend before downloading ${tierLabel}.`);
+      toast.info("Start Media AI first, then download the selected model.");
+      return;
+    }
+    if (videoDownloadPollRef.current !== null) {
+      window.clearInterval(videoDownloadPollRef.current);
+      videoDownloadPollRef.current = null;
+    }
+    setVideoDownloadTierId(tierId);
+    appendLog(`Starting download of video model: ${tierLabel}...`);
+    try {
+      const response = await fetch(`${serverUrl}/v1/generate/video/download`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tier_id: tierId }),
+      });
+      if (!response.ok) {
+        const err = await response
+          .json()
+          .catch(() => ({ detail: `HTTP ${response.status}` }));
+        throw new Error(
+          (err as { detail?: string }).detail ?? `HTTP ${response.status}`,
+        );
+      }
+      let pollCount = 0;
+      const pollOnce = () => {
+        pollCount++;
+        void fetchVideoTiers().then((tiers) => {
+          if (!tiers) return;
+          const t = tiers.find((x) => x.id === tierId);
+          if (!t) return;
+          if (t.status === "downloaded") {
+            appendLog(
+              `Video model ${tierLabel} downloaded successfully!`,
+              "success",
+            );
+            toast.success(`${tierLabel} ready.`);
+            setVideoDownloadTierId(null);
+            window.clearInterval(poll);
+            if (videoDownloadPollRef.current === poll)
+              videoDownloadPollRef.current = null;
+          } else if (t.status === "downloading") {
+            if (t.download_progress != null && t.download_progress !== -1) {
+              appendLog(
+                `Video model ${tierLabel} progress: ${t.download_progress}%`,
+              );
+            } else if (pollCount === 1) {
+              appendLog(
+                `Video model ${tierLabel}: Resolving repository and checking cache...`,
+              );
+            }
+          } else if (pollCount >= 4) {
+            const errMsg = t.download_error
+              ? `Download failed: ${t.download_error}`
+              : `Download ended with status "${t.status}".`;
+            appendLog(`Video model ${tierLabel}: ${errMsg}`, "error");
+            toast.error(errMsg);
+            setVideoDownloadTierId(null);
+            window.clearInterval(poll);
+            if (videoDownloadPollRef.current === poll)
+              videoDownloadPollRef.current = null;
+          }
+        });
+      };
+      window.setTimeout(() => {
+        pollOnce();
+      }, 500);
+      const poll = window.setInterval(() => {
+        pollOnce();
+      }, 3000);
+      videoDownloadPollRef.current = poll;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setVideoDownloadTierId(null);
+      appendLog(`Video model download failed: ${msg}`, "error");
       toast.error(`Download failed: ${msg}`);
     }
   };
@@ -1152,6 +1495,9 @@ export default function MediaAIPage() {
           prompt: musicGenPrompt.trim(),
           duration_seconds: musicGenDuration,
           tier: selectedMusicTier?.id,
+          inference_steps:
+            musicGenInferenceSteps !== "" ? musicGenInferenceSteps : undefined,
+          use_cot_lyrics: musicGenUseCotLyrics,
         }),
       });
       if (!response.ok) {
@@ -1286,6 +1632,9 @@ export default function MediaAIPage() {
               width: settings.width,
               height: settings.height,
               ...(settings.seed !== null ? { seed: settings.seed } : {}),
+              ...(settings.negativePrompt?.trim()
+                ? { negative_prompt: settings.negativePrompt.trim() }
+                : {}),
             }),
           });
           if (!response.ok) {
@@ -1357,15 +1706,42 @@ export default function MediaAIPage() {
 
     if (activeTab === "video") {
       if (isBackendOnline) {
+        if (
+          selectedVideoTierInfo &&
+          selectedVideoTierInfo.status !== "downloaded"
+        ) {
+          toast.error(`Download ${selectedVideoTierInfo.label} first.`);
+          setIsGenerating(false);
+          return;
+        }
+        const tierLabel =
+          selectedVideoTierInfo?.label ?? "best available model";
+        appendLog(`Generating video with ${tierLabel}…`);
         toast.info(
-          "Generating video locally… first run downloads the model (~11GB) and may take 10–15 minutes.",
+          `Generating with ${tierLabel}. This can take several minutes on first run.`,
         );
         try {
           const response = await fetch(`${serverUrl}/v1/generate/video`, {
             method: "POST",
             signal: ctrl.signal,
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt: prompt.trim() }),
+            body: JSON.stringify({
+              prompt: prompt.trim(),
+              ...(selectedVideoTierId ? { tier: selectedVideoTierId } : {}),
+              ...(videoSettings.frames !== null
+                ? { num_frames: videoSettings.frames }
+                : {}),
+              ...(videoSettings.fps !== null ? { fps: videoSettings.fps } : {}),
+              ...(videoSettings.width !== null
+                ? { width: videoSettings.width }
+                : {}),
+              ...(videoSettings.height !== null
+                ? { height: videoSettings.height }
+                : {}),
+              ...(videoSettings.steps !== null
+                ? { steps: videoSettings.steps }
+                : {}),
+            }),
           });
           if (!response.ok) {
             const errorData = await response
@@ -1376,14 +1752,22 @@ export default function MediaAIPage() {
                 `HTTP ${response.status}`,
             );
           }
-          const data = (await response.json()) as { video_url?: string };
+          const data = (await response.json()) as {
+            video_url?: string;
+            tier?: string;
+          };
           setResult({
             tab: "video",
             url: data.video_url,
             filename: `video-${Date.now()}.mp4`,
             source: "local",
           });
-          toast.success("Video generated locally");
+          appendLog(
+            `Video generated${data.tier ? ` (${data.tier})` : ""}.`,
+            "success",
+          );
+          toast.success(`Video generated${data.tier ? ` (${data.tier})` : ""}`);
+          void fetchVideoTiers();
         } catch (error) {
           if (!(error instanceof Error && error.name === "AbortError")) {
             toast.error(error instanceof Error ? error.message : String(error));
@@ -1700,9 +2084,12 @@ export default function MediaAIPage() {
             if (v !== "music") {
               audioRef.current?.pause();
               setPlayingTrackId(null);
-            } else {
-              // Fetch tier status each time user opens Music tab
+            }
+            if (v === "music") {
               void fetchMusicTiers();
+            }
+            if (v === "video") {
+              void fetchVideoTiers();
             }
           }}
         >
@@ -1745,37 +2132,190 @@ export default function MediaAIPage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-5">
-                <ImageModelPicker
-                  selectedTierId={selectedImageTier.tierId}
-                  onSelect={(id) => setSelectedImageTierId(id)}
-                  tiers={USER_FACING_IMAGE_TIERS}
-                  isTierDownloaded={(id) => tierDownloaded(id)}
-                  onDownload={(tier) => void downloadTier(tier)}
-                  onCancelDownload={() => void cancelDownload()}
-                  onDeleteAndRedownload={(tier) => {
-                    void (async () => {
-                      try {
-                        await ipc.mediaAi.deleteModel({
-                          modelId:
-                            tier.downloadId as import("@/ipc/types").MediaAiModelId,
-                        });
-                        await refreshAll();
-                        toast.info(
-                          `${tier.shortName} deleted — ready to re-download.`,
-                        );
-                        void downloadTier(tier);
-                      } catch (e) {
-                        toast.error(e instanceof Error ? e.message : String(e));
-                      }
-                    })();
-                  }}
-                  isDownloading={isDownloading}
-                  downloadingTierId={
-                    setupAction?.startsWith("download-")
-                      ? setupAction.slice("download-".length)
-                      : null
-                  }
-                />
+                {/* Image model cards — mirrors the music tier selection UI */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Image Model
+                    </Label>
+                    {isBackendOnline && (
+                      <button
+                        type="button"
+                        onClick={() => void fetchImageTiers()}
+                        disabled={imageTiersLoading}
+                        className="text-[10px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                      >
+                        {imageTiersLoading ? "Refreshing…" : "Refresh"}
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {USER_FACING_IMAGE_TIERS.map((uiTier) => {
+                      const apiTier = imageTiers.find(
+                        (t) => t.id === uiTier.tierId,
+                      );
+                      const isChosen =
+                        selectedImageTier.tierId === uiTier.tierId;
+                      const isBusy =
+                        apiTier?.status === "downloading" ||
+                        imageDownloadTierId === uiTier.tierId;
+                      const status = !isBackendOnline
+                        ? "needs-backend"
+                        : (apiTier?.status ?? "unknown");
+                      const statusLabel =
+                        status === "needs-backend"
+                          ? "Needs backend"
+                          : status === "downloaded"
+                            ? "Downloaded"
+                            : isBusy
+                              ? "Downloading"
+                              : imageTiersLoading && !apiTier
+                                ? "Checking"
+                                : "Not downloaded";
+                      const statusColor =
+                        status === "downloaded"
+                          ? "border-emerald-500/30 bg-emerald-500/5"
+                          : isBusy
+                            ? "border-sky-500/30 bg-sky-500/5"
+                            : "border-border bg-muted/10";
+                      return (
+                        <div
+                          key={uiTier.tierId}
+                          className={cn(
+                            "rounded-lg border p-3 space-y-2.5 transition-colors",
+                            statusColor,
+                            isChosen && "ring-1 ring-primary/50",
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              {apiTier?.selected && (
+                                <span className="shrink-0 rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-primary">
+                                  Recommended
+                                </span>
+                              )}
+                              {isChosen && (
+                                <span className="shrink-0 rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase">
+                                  Selected
+                                </span>
+                              )}
+                              <span className="text-sm font-medium truncate">
+                                {uiTier.shortName}
+                              </span>
+                            </div>
+                            <span
+                              className={cn(
+                                "shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase",
+                                status === "downloaded"
+                                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
+                                  : isBusy
+                                    ? "border-sky-500/30 bg-sky-500/10 text-sky-600"
+                                    : "border-border bg-muted/20 text-muted-foreground",
+                              )}
+                            >
+                              {statusLabel}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground leading-relaxed">
+                            {uiTier.description}
+                          </p>
+                          <div className="flex flex-wrap gap-1 text-[10px] text-muted-foreground">
+                            <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                              {uiTier.vramGb} GB VRAM
+                            </span>
+                            <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                              ~{uiTier.downloadGb} GB download
+                            </span>
+                            <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                              {uiTier.supportsGuidance
+                                ? "Guidance ✓"
+                                : "Turbo (1-step)"}
+                            </span>
+                          </div>
+                          {isBusy && (
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between text-[10px] text-sky-600 font-medium">
+                                <span>Downloading</span>
+                                <span>
+                                  {apiTier?.download_progress != null
+                                    ? `${apiTier.download_progress}%`
+                                    : "Preparing…"}
+                                </span>
+                              </div>
+                              <div className="w-full h-1.5 bg-sky-500/10 rounded-full overflow-hidden">
+                                {apiTier?.download_progress != null ? (
+                                  <div
+                                    className="h-full bg-sky-500 rounded-full transition-all duration-300"
+                                    style={{
+                                      width: `${apiTier.download_progress}%`,
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="h-full w-1/3 animate-pulse rounded-full bg-sky-500" />
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          {apiTier?.download_error && !isBusy && (
+                            <div className="flex items-start gap-1.5 rounded-md border border-red-500/30 bg-red-500/5 px-2.5 py-1.5 text-[11px] text-red-600 dark:text-red-400">
+                              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                              <span className="break-all">
+                                {apiTier.download_error}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              size="sm"
+                              variant={isChosen ? "default" : "outline"}
+                              className="h-8 px-3 text-xs"
+                              onClick={() =>
+                                setSelectedImageTierId(uiTier.tierId)
+                              }
+                            >
+                              <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                              {isChosen ? "Selected" : "Use Model"}
+                            </Button>
+                            {status === "downloaded" && (
+                              <span className="inline-flex h-8 items-center rounded border border-emerald-500/30 bg-emerald-500/10 px-2 text-xs font-medium text-emerald-600">
+                                Ready
+                              </span>
+                            )}
+                            {isBackendOnline && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className={cn(
+                                  "h-8 px-3 text-xs",
+                                  status === "downloaded"
+                                    ? "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                                    : "",
+                                )}
+                                onClick={() =>
+                                  void handleDownloadImageModel(uiTier.tierId)
+                                }
+                                disabled={
+                                  isBusy || !apiTier?.available_for_backend
+                                }
+                              >
+                                {isBusy ? (
+                                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                                )}
+                                {isBusy
+                                  ? "Downloading"
+                                  : status === "downloaded"
+                                    ? "Re-download"
+                                    : "Download Model"}
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
 
                 <button
                   type="button"
@@ -1960,34 +2500,322 @@ export default function MediaAIPage() {
           </TabsContent>
 
           {/* Video */}
-          <TabsContent value="video" className="mt-6">
+          <TabsContent value="video" className="mt-6 space-y-4">
             <Card>
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div>
                     <CardTitle>Video Generation</CardTitle>
                     <CardDescription>
-                      Generate short video clips — requires significant VRAM.
+                      Generate short video clips — pick a model that fits your
+                      hardware. Download once, generate many times.
                     </CardDescription>
                   </div>
                   <TierBadge tier={bestTier("video")} />
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-5">
+                {/* Video model cards */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Video Model
+                    </Label>
+                    {isBackendOnline && (
+                      <button
+                        type="button"
+                        onClick={() => void fetchVideoTiers()}
+                        disabled={videoTiersLoading}
+                        className="text-[10px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                      >
+                        {videoTiersLoading ? "Refreshing…" : "Refresh"}
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {videoTiers.length > 0 ? (
+                      videoTiers.map((vTier) => {
+                        const isChosen = selectedVideoTierId === vTier.id;
+                        const isBusy =
+                          vTier.status === "downloading" ||
+                          videoDownloadTierId === vTier.id;
+                        const vStatus = !isBackendOnline
+                          ? "needs-backend"
+                          : vTier.status;
+                        const statusLabel =
+                          vStatus === "needs-backend"
+                            ? "Needs backend"
+                            : vStatus === "downloaded"
+                              ? "Downloaded"
+                              : isBusy
+                                ? "Downloading"
+                                : videoTiersLoading
+                                  ? "Checking"
+                                  : "Not downloaded";
+                        const cardColor =
+                          vStatus === "downloaded"
+                            ? "border-emerald-500/30 bg-emerald-500/5"
+                            : isBusy
+                              ? "border-sky-500/30 bg-sky-500/5"
+                              : "border-border bg-muted/10";
+                        return (
+                          <div
+                            key={vTier.id}
+                            className={cn(
+                              "rounded-lg border p-3 space-y-2.5 transition-colors",
+                              cardColor,
+                              isChosen && "ring-1 ring-primary/50",
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                {vTier.selected && (
+                                  <span className="shrink-0 rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-primary">
+                                    Recommended
+                                  </span>
+                                )}
+                                {isChosen && (
+                                  <span className="shrink-0 rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase">
+                                    Selected
+                                  </span>
+                                )}
+                                <span className="text-sm font-medium truncate">
+                                  {vTier.label}
+                                </span>
+                              </div>
+                              <span
+                                className={cn(
+                                  "shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase",
+                                  vStatus === "downloaded"
+                                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
+                                    : isBusy
+                                      ? "border-sky-500/30 bg-sky-500/10 text-sky-600"
+                                      : "border-border bg-muted/20 text-muted-foreground",
+                                )}
+                              >
+                                {statusLabel}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed">
+                              {VIDEO_TIER_DESCRIPTIONS[vTier.id] ?? vTier.label}
+                            </p>
+                            <div className="flex flex-wrap gap-1 text-[10px] text-muted-foreground">
+                              <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                                {vTier.vram_mb >= 1000
+                                  ? `${vTier.vram_mb / 1000} GB VRAM`
+                                  : `${vTier.vram_mb} MB VRAM`}
+                              </span>
+                              <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                                ~{(vTier.download_size_mb / 1024).toFixed(0)} GB
+                              </span>
+                              <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                                {vTier.default_frames}f @ {vTier.default_fps}fps
+                              </span>
+                              <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                                {vTier.default_width}×{vTier.default_height}
+                              </span>
+                            </div>
+                            {isBusy && (
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between text-[10px] text-sky-600 font-medium">
+                                  <span>Downloading</span>
+                                  <span>
+                                    {vTier.download_progress != null
+                                      ? `${vTier.download_progress}%`
+                                      : "Preparing…"}
+                                  </span>
+                                </div>
+                                <div className="w-full h-1.5 bg-sky-500/10 rounded-full overflow-hidden">
+                                  {vTier.download_progress != null ? (
+                                    <div
+                                      className="h-full bg-sky-500 rounded-full transition-all duration-300"
+                                      style={{
+                                        width: `${vTier.download_progress}%`,
+                                      }}
+                                    />
+                                  ) : (
+                                    <div className="h-full w-1/3 animate-pulse rounded-full bg-sky-500" />
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            {vTier.download_error && !isBusy && (
+                              <div className="flex items-start gap-1.5 rounded-md border border-red-500/30 bg-red-500/5 px-2.5 py-1.5 text-[11px] text-red-600 dark:text-red-400">
+                                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                                <span className="break-all">
+                                  {vTier.download_error}
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                size="sm"
+                                variant={isChosen ? "default" : "outline"}
+                                className="h-8 px-3 text-xs"
+                                onClick={() => {
+                                  setSelectedVideoTierId(vTier.id);
+                                  setVideoSettings({
+                                    frames: null,
+                                    fps: null,
+                                    width: null,
+                                    height: null,
+                                    steps: null,
+                                  });
+                                }}
+                              >
+                                <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                                {isChosen ? "Selected" : "Use Model"}
+                              </Button>
+                              {vStatus === "downloaded" && (
+                                <span className="inline-flex h-8 items-center rounded border border-emerald-500/30 bg-emerald-500/10 px-2 text-xs font-medium text-emerald-600">
+                                  Ready
+                                </span>
+                              )}
+                              {isBackendOnline && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className={cn(
+                                    "h-8 px-3 text-xs",
+                                    vStatus === "downloaded"
+                                      ? "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                                      : "",
+                                  )}
+                                  onClick={() =>
+                                    void handleDownloadVideoModel(vTier.id)
+                                  }
+                                  disabled={
+                                    isBusy || !vTier.available_for_backend
+                                  }
+                                >
+                                  {isBusy ? (
+                                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Download className="mr-1.5 h-3.5 w-3.5" />
+                                  )}
+                                  {isBusy
+                                    ? "Downloading"
+                                    : vStatus === "downloaded"
+                                      ? "Re-download"
+                                      : "Download Model"}
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="col-span-2 flex items-center justify-center py-8 text-sm text-muted-foreground">
+                        {isBackendOnline ? (
+                          videoTiersLoading ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Loading models…
+                            </>
+                          ) : (
+                            "No video models found."
+                          )
+                        ) : (
+                          "Start the backend to see available video models."
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Settings panel */}
+                {selectedVideoTierInfo && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowVideoSettings((v) => !v)}
+                      className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <ChevronDown
+                        className={cn(
+                          "h-3.5 w-3.5 transition-transform",
+                          !showVideoSettings && "-rotate-90",
+                        )}
+                      />
+                      <Settings2 className="h-3.5 w-3.5" />
+                      Settings (
+                      {videoSettings.frames ??
+                        selectedVideoTierInfo.default_frames}{" "}
+                      frames ·{" "}
+                      {videoSettings.fps ?? selectedVideoTierInfo.default_fps}{" "}
+                      fps ·{" "}
+                      {videoSettings.steps ??
+                        selectedVideoTierInfo.default_steps}{" "}
+                      steps)
+                    </button>
+                    {showVideoSettings && (
+                      <VideoSettingsPanel
+                        tier={selectedVideoTierInfo}
+                        settings={videoSettings}
+                        onChange={(patch) =>
+                          setVideoSettings((prev) => ({ ...prev, ...patch }))
+                        }
+                        onReset={() =>
+                          setVideoSettings({
+                            frames: null,
+                            fps: null,
+                            width: null,
+                            height: null,
+                            steps: null,
+                          })
+                        }
+                      />
+                    )}
+                  </>
+                )}
+
+                {/* Not-downloaded warning */}
+                {isBackendOnline &&
+                  selectedVideoTierInfo &&
+                  selectedVideoTierInfo.status !== "downloaded" && (
+                    <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+                      <Download className="h-4 w-4 mt-0.5 shrink-0" />
+                      <span>
+                        Download <strong>{selectedVideoTierInfo.label}</strong>{" "}
+                        first — ~
+                        {(
+                          selectedVideoTierInfo.download_size_mb / 1024
+                        ).toFixed(0)}{" "}
+                        GB.
+                      </span>
+                    </div>
+                  )}
+
                 <GenerationForm
                   promptId="video-prompt"
                   prompt={prompt}
                   setPrompt={setPrompt}
                   placeholder="A gentle ocean wave washing over sand at sunset..."
-                  buttonText="Generate Video"
+                  buttonText={
+                    selectedVideoTierInfo
+                      ? `Generate with ${selectedVideoTierInfo.label}`
+                      : "Generate Video"
+                  }
                   buttonIcon={<Video className="mr-2 h-4 w-4" />}
-                  disabled={isGenerating || !prompt.trim()}
+                  disabled={
+                    isGenerating ||
+                    !prompt.trim() ||
+                    (isBackendOnline &&
+                      selectedVideoTierInfo?.status !== "downloaded")
+                  }
                   loading={isGenerating && activeTab === "video"}
                   onGenerate={() => void handleGenerate()}
                   onStop={handleStop}
                 />
               </CardContent>
             </Card>
+
+            <EventLogPanel
+              entries={eventLog}
+              backendLog={status?.lastLog}
+              open={showLog}
+              onToggle={() => setShowLog((v) => !v)}
+            />
           </TabsContent>
 
           {/* Music — AI Generate + Search */}
@@ -2236,6 +3064,14 @@ export default function MediaAIPage() {
                                 </div>
                               </div>
                             )}
+                            {tier.download_error && !isBusy && (
+                              <div className="mt-2 flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/5 px-2.5 py-1.5 text-[11px] text-red-600 dark:text-red-400">
+                                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                                <span className="break-all">
+                                  Download error: {tier.download_error}
+                                </span>
+                              </div>
+                            )}
                             <div className="flex flex-wrap gap-2">
                               <Button
                                 size="sm"
@@ -2246,11 +3082,18 @@ export default function MediaAIPage() {
                                 <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
                                 {isChosen ? "Selected" : "Use Model"}
                               </Button>
-                              {tier.status === "downloaded" ? (
+                              {tier.status === "downloaded" && (
                                 <span className="inline-flex h-8 items-center rounded border border-emerald-500/30 bg-emerald-500/10 px-2 text-xs font-medium text-emerald-600">
                                   Ready to generate
                                 </span>
-                              ) : !isBackendOnline ? (
+                              )}
+                              {tier.status === "partially_downloaded" && (
+                                <span className="inline-flex h-8 items-center rounded border border-amber-500/30 bg-amber-500/10 px-2 text-xs font-medium text-amber-600">
+                                  Partially Downloaded (Missing Vocals Planner)
+                                </span>
+                              )}
+
+                              {!isBackendOnline ? (
                                 <Button
                                   size="sm"
                                   variant="outline"
@@ -2268,7 +3111,14 @@ export default function MediaAIPage() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-8 px-3 text-xs"
+                                  className={cn(
+                                    "h-8 px-3 text-xs",
+                                    tier.status === "partially_downloaded"
+                                      ? "border-sky-500/30 bg-sky-500/5 text-sky-600 hover:bg-sky-500/10 hover:text-sky-700"
+                                      : tier.status === "downloaded"
+                                        ? "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                                        : "",
+                                  )}
                                   onClick={() =>
                                     void handleDownloadMusicModel(tier.id)
                                   }
@@ -2281,7 +3131,13 @@ export default function MediaAIPage() {
                                   ) : (
                                     <Download className="mr-1.5 h-3.5 w-3.5" />
                                   )}
-                                  {isBusy ? "Downloading" : "Download Model"}
+                                  {isBusy
+                                    ? "Downloading"
+                                    : tier.status === "downloaded"
+                                      ? "Verify / Download Missing"
+                                      : tier.status === "partially_downloaded"
+                                        ? "Download Missing Components"
+                                        : "Download Model"}
                                 </Button>
                               )}
                             </div>
@@ -2327,6 +3183,28 @@ export default function MediaAIPage() {
                         </span>
                       </div>
                     )}
+                    {selectedMusicTier?.status === "partially_downloaded" && (
+                      <div className="flex items-start gap-2 rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-sm text-sky-700 dark:text-sky-400">
+                        <Download className="h-4 w-4 mt-0.5 shrink-0" />
+                        <span>
+                          Missing components detected. Click{" "}
+                          <strong>Download Missing Components</strong> on the
+                          model card above, then <strong>Stop</strong> and{" "}
+                          <strong>Start</strong> the backend to activate the
+                          updated model.
+                        </span>
+                      </div>
+                    )}
+                    {/* Restart reminder — always show when backend is online, since code changes require a restart */}
+                    <div className="flex items-start gap-2 rounded-lg border border-violet-500/30 bg-violet-500/5 px-3 py-2 text-sm text-violet-700 dark:text-violet-400">
+                      <RefreshCw className="h-4 w-4 mt-0.5 shrink-0" />
+                      <span>
+                        <strong>Vocals not working?</strong> Click{" "}
+                        <strong>Stop</strong> then <strong>Start</strong> (top
+                        right) to restart the backend. Code changes only take
+                        effect after a restart.
+                      </span>
+                    </div>
 
                     <div className="space-y-2">
                       <Label htmlFor="music-prompt">Prompt / Lyrics</Label>
@@ -2343,24 +3221,94 @@ export default function MediaAIPage() {
                       />
                     </div>
 
-                    <div className="space-y-2">
-                      <Label>Duration</Label>
-                      <div className="flex flex-wrap gap-2">
-                        {[10, 15, 30, 60, 120].map((sec) => (
-                          <button
-                            key={sec}
-                            type="button"
-                            onClick={() => setMusicGenDuration(sec)}
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>
+                          Duration:{" "}
+                          {musicGenDuration >= 60
+                            ? `${Math.floor(musicGenDuration / 60)}m ${musicGenDuration % 60}s`
+                            : `${musicGenDuration}s`}
+                        </Label>
+                        <input
+                          type="range"
+                          min={10}
+                          max={600}
+                          step={1}
+                          value={musicGenDuration}
+                          onChange={(e) =>
+                            setMusicGenDuration(Number(e.target.value))
+                          }
+                          className="w-full accent-primary"
+                        />
+                      </div>
+
+                      <div className="rounded-lg border border-border">
+                        <button
+                          type="button"
+                          className="flex w-full items-center justify-between p-3 text-sm font-medium hover:bg-muted/50"
+                          onClick={() =>
+                            setShowMusicSettings(!showMusicSettings)
+                          }
+                        >
+                          <span className="flex items-center gap-2">
+                            <Settings2 className="h-4 w-4" />
+                            Generation Settings
+                          </span>
+                          <ChevronDown
                             className={cn(
-                              "rounded border px-3 py-1.5 text-sm font-medium transition-colors",
-                              musicGenDuration === sec
-                                ? "border-primary/60 bg-primary/15 text-foreground"
-                                : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
+                              "h-4 w-4 transition-transform",
+                              showMusicSettings ? "rotate-180" : "",
                             )}
-                          >
-                            {sec >= 60 ? `${sec / 60}m` : `${sec}s`}
-                          </button>
-                        ))}
+                          />
+                        </button>
+                        {showMusicSettings && (
+                          <div className="space-y-4 border-t border-border p-3">
+                            <div className="space-y-2">
+                              <Label className="flex items-center justify-between text-xs">
+                                Inference Steps
+                                <span className="text-muted-foreground">
+                                  {musicGenInferenceSteps === ""
+                                    ? "Default"
+                                    : musicGenInferenceSteps}
+                                </span>
+                              </Label>
+                              <input
+                                type="range"
+                                min={4}
+                                max={50}
+                                step={1}
+                                value={
+                                  musicGenInferenceSteps === ""
+                                    ? 8
+                                    : musicGenInferenceSteps
+                                }
+                                onChange={(e) =>
+                                  setMusicGenInferenceSteps(
+                                    Number(e.target.value),
+                                  )
+                                }
+                                className="w-full accent-primary"
+                              />
+                            </div>
+                            <div className="flex items-center gap-2 pt-1">
+                              <input
+                                type="checkbox"
+                                id="music-cot-lyrics"
+                                checked={musicGenUseCotLyrics}
+                                onChange={(e) =>
+                                  setMusicGenUseCotLyrics(e.target.checked)
+                                }
+                                className="rounded border-input text-primary focus:ring-primary h-4 w-4"
+                              />
+                              <Label
+                                htmlFor="music-cot-lyrics"
+                                className="text-sm font-normal cursor-pointer"
+                              >
+                                Force CoT Lyrics (Vocals)
+                              </Label>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -2595,143 +3543,6 @@ function TierRow({ label, tier }: { label: string; tier: MediaTier | null }) {
   );
 }
 
-// ImageModelPicker — dropdown + status badge + per-row Download button.
-// Reads downloaded state from `isTierDownloaded(downloadId)` (which the
-// parent computes from MediaAiStatus.models, populated by the backend's
-// per-tier marker files).
-function ImageModelPicker({
-  selectedTierId,
-  onSelect,
-  tiers,
-  isTierDownloaded,
-  onDownload,
-  onCancelDownload,
-  onDeleteAndRedownload,
-  isDownloading,
-  downloadingTierId,
-}: {
-  selectedTierId: string;
-  onSelect: (tierId: string) => void;
-  tiers: readonly ImageTierUiConfig[];
-  isTierDownloaded: (downloadId: string) => boolean;
-  onDownload: (tier: ImageTierUiConfig) => void;
-  onCancelDownload: () => void;
-  onDeleteAndRedownload: (tier: ImageTierUiConfig) => void;
-  isDownloading: boolean;
-  downloadingTierId: string | null;
-}) {
-  const selected = tiers.find((t) => t.tierId === selectedTierId) ?? tiers[0];
-  const selectedDownloaded = isTierDownloaded(selected.downloadId);
-  const selectedIsDownloading = downloadingTierId === selected.tierId;
-
-  return (
-    <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
-      <div className="flex items-center justify-between">
-        <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Model
-        </Label>
-        {selectedDownloaded ? (
-          <div className="flex items-center gap-1.5">
-            <span className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-emerald-500">
-              Downloaded
-            </span>
-            <button
-              type="button"
-              title="Delete model files and re-download"
-              onClick={() => onDeleteAndRedownload(selected)}
-              disabled={isDownloading}
-              className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-rose-500/40 hover:bg-rose-500/10 hover:text-rose-500 disabled:opacity-40 transition-colors"
-            >
-              Re-download
-            </button>
-          </div>
-        ) : selectedIsDownloading ? (
-          <span className="inline-flex items-center gap-1 rounded border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-sky-500">
-            <Loader2 className="h-2.5 w-2.5 animate-spin" />
-            Downloading…
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-amber-500">
-            Not downloaded
-          </span>
-        )}
-      </div>
-
-      <Select
-        value={selectedTierId}
-        onValueChange={(v) => v && onSelect(v as string)}
-      >
-        <SelectTrigger className="w-full">
-          <SelectValue>{selected.shortName}</SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          {tiers.map((tier) => {
-            const downloaded = isTierDownloaded(tier.downloadId);
-            return (
-              <SelectItem key={tier.tierId} value={tier.tierId}>
-                <div className="flex w-full items-center justify-between gap-3 min-w-0">
-                  <span className="font-medium">{tier.shortName}</span>
-                  <span className="text-xs text-muted-foreground ml-2 shrink-0">
-                    {downloaded
-                      ? "✓ on disk"
-                      : `~${tier.downloadGb} GB · ${tier.vramGb} GB VRAM`}
-                  </span>
-                </div>
-              </SelectItem>
-            );
-          })}
-        </SelectContent>
-      </Select>
-
-      <div className="flex items-start gap-2 text-xs text-muted-foreground">
-        <div className="flex-1 leading-relaxed">{selected.description}</div>
-        <div className="shrink-0 space-y-0.5 text-right text-[10px]">
-          <div className="text-muted-foreground/70">
-            {selected.vramGb} GB VRAM
-          </div>
-          <div className="text-muted-foreground/70">
-            {selected.downloadGb} GB download
-          </div>
-        </div>
-      </div>
-
-      {!selectedDownloaded && (
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onDownload(selected)}
-            disabled={isDownloading && !selectedIsDownloading}
-            aria-busy={selectedIsDownloading}
-            className={cn(
-              selectedIsDownloading && "pointer-events-none cursor-wait",
-            )}
-          >
-            {selectedIsDownloading ? (
-              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Download className="mr-2 h-3.5 w-3.5" />
-            )}
-            {selectedIsDownloading
-              ? `Downloading ${selected.shortName}…`
-              : `Download ${selected.shortName} (~${selected.downloadGb} GB)`}
-          </Button>
-          {selectedIsDownloading && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onCancelDownload}
-              className="text-muted-foreground hover:text-rose-500"
-            >
-              Cancel
-            </Button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function SegmentPicker<T extends string | number>({
   values,
   labels,
@@ -2932,6 +3743,20 @@ function ImageSettingsPanel({
         )}
       </div>
 
+      {/* Negative prompt */}
+      <div className="space-y-2">
+        <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Negative Prompt
+        </Label>
+        <textarea
+          rows={2}
+          placeholder="Things to avoid: blurry, low quality, extra limbs…"
+          value={settings.negativePrompt ?? ""}
+          onChange={(e) => onChange({ negativePrompt: e.target.value })}
+          className="w-full resize-none rounded-md border border-border bg-background/50 px-3 py-2 text-xs text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-primary/60 focus:ring-1 focus:ring-primary/30"
+        />
+      </div>
+
       <button
         type="button"
         onClick={onReset}
@@ -2939,6 +3764,96 @@ function ImageSettingsPanel({
       >
         Reset to defaults
       </button>
+    </div>
+  );
+}
+
+function VideoSettingsPanel({
+  tier,
+  settings,
+  onChange,
+  onReset,
+}: {
+  tier: VideoTierApiInfo;
+  settings: VideoSettings;
+  onChange: (patch: Partial<VideoSettings>) => void;
+  onReset: () => void;
+}) {
+  const frameOptions =
+    tier.id === "ltx-video"
+      ? [25, 49, 65, 89, 121]
+      : tier.id.startsWith("wan")
+        ? [17, 33, 49, 65, 81]
+        : tier.id === "cogvideox-2b"
+          ? [17, 33, 49]
+          : tier.id === "animatediff-sd15"
+            ? [8, 12, 16, 24]
+            : [4, 8];
+
+  const stepOptions = [10, 20, 30, 50].filter(
+    (s) => s <= tier.default_steps * 2,
+  ) as number[];
+
+  return (
+    <div className="space-y-4 rounded-lg border bg-muted/10 p-4">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Frames
+          </Label>
+          <span className="text-xs text-muted-foreground">
+            default: {tier.default_frames}
+          </span>
+        </div>
+        <SegmentPicker
+          values={frameOptions}
+          selected={settings.frames ?? tier.default_frames}
+          onSelect={(v) => onChange({ frames: v })}
+        />
+        <p className="text-[11px] text-muted-foreground">
+          More frames = longer video, slower generation.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Steps
+          </Label>
+          <span className="text-xs text-muted-foreground">
+            default: {tier.default_steps}
+          </span>
+        </div>
+        <SegmentPicker
+          values={stepOptions}
+          selected={settings.steps ?? tier.default_steps}
+          onSelect={(v) => onChange({ steps: v })}
+        />
+        <p className="text-[11px] text-muted-foreground">
+          More steps = higher quality, slower. {tier.default_steps} is the
+          recommended default.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Resolution
+        </Label>
+        <p className="text-[11px] text-muted-foreground">
+          Default: {tier.default_width}×{tier.default_height}. The backend uses
+          each model's native resolution by default for best quality.
+        </p>
+      </div>
+
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={onReset}
+          className="text-[10px] text-muted-foreground underline-offset-2 hover:underline"
+        >
+          Reset to defaults
+        </button>
+      </div>
     </div>
   );
 }

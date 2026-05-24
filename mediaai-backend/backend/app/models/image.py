@@ -12,6 +12,7 @@ import gc
 import io
 import logging
 import os
+from pathlib import Path
 from typing import Optional, TypedDict
 
 from ..hardware import get_backend, get_torch_device, get_torch_dtype, get_vram_mb
@@ -34,7 +35,6 @@ class ImageTier(TypedDict):
 IMAGE_MODEL_TIERS: list[ImageTier] = [
     {
         # GGUF Q4_1 local file — place at $OMNIGEN_MODELS_DIR/z-image-turbo-Q4_1.gguf
-        # Uses stable-diffusion-cpp-python (CPU/CUDA). Selected first when file exists.
         "id": "z-image-turbo-gguf",
         "label": "Z Image Turbo Q4_1 (GGUF)",
         "repo": None,
@@ -43,23 +43,16 @@ IMAGE_MODEL_TIERS: list[ImageTier] = [
         "backends": ["cuda", "rocm", "metal", "mps", "directml", "cpu"],
     },
     {
-        "id": "flux-dev",
-        "label": "FLUX.1 dev",
-        "repo": "black-forest-labs/FLUX.1-dev",
-        "vram_mb": 24000,
-        "download_size_mb": 24000,
+        # Alibaba Tongyi — 8-step, best quality tier. Auto-selected for 8 GB+.
+        "id": "z-image-turbo",
+        "label": "Z Image Turbo",
+        "repo": "Tongyi-MAI/Z-Image-Turbo",
+        "vram_mb": 8000,
+        "download_size_mb": 12000,
         "backends": ["cuda", "rocm", "metal", "mps"],
     },
     {
-        "id": "flux-schnell",
-        "label": "FLUX.1 schnell",
-        "repo": "black-forest-labs/FLUX.1-schnell",
-        "vram_mb": 12000,
-        "download_size_mb": 24000,
-        "backends": ["cuda", "rocm", "metal", "mps"],
-    },
-    {
-        # 1-step SDXL — 1024×1024, much better quality than SD Turbo, fits 6 GB.
+        # 1-step SDXL — 1024×1024, good quality, fits 6 GB.
         "id": "sdxl-turbo",
         "label": "SDXL Turbo",
         "repo": "stabilityai/sdxl-turbo",
@@ -68,22 +61,13 @@ IMAGE_MODEL_TIERS: list[ImageTier] = [
         "backends": ["cuda", "rocm", "metal", "mps", "directml"],
     },
     {
-        # 1-step turbo fallback for GPUs under 6 GB.
+        # 1-step budget model — auto-selected for GPUs under 6 GB (e.g. 4 GB).
         "id": "sd-turbo",
         "label": "SD Turbo",
         "repo": "stabilityai/sd-turbo",
         "vram_mb": 3000,
         "download_size_mb": 1700,
         "backends": ["cuda", "rocm", "metal", "mps", "directml"],
-    },
-    {
-        # 8-step model — needs 8 GB+ VRAM for GPU inference; CPU-offload on 6 GB.
-        "id": "z-image-turbo",
-        "label": "Z Image Turbo",
-        "repo": "Tongyi-MAI/Z-Image-Turbo",
-        "vram_mb": 8000,
-        "download_size_mb": 12000,
-        "backends": ["cuda", "rocm", "metal", "mps"],
     },
     {
         "id": "sd-1.5",
@@ -102,6 +86,51 @@ IMAGE_MODEL_TIERS: list[ImageTier] = [
         "backends": ["cpu", "openvino", "directml"],
     },
 ]
+
+
+_download_progress: dict[str, float] = {}
+_download_errors: dict[str, str] = {}
+_downloading_tiers: set[str] = set()
+
+
+def tier_status(tier_id: str) -> str:
+    if tier_id in _downloading_tiers:
+        return "downloading"
+    tier = next((t for t in IMAGE_MODEL_TIERS if t["id"] == tier_id), None)
+    if not tier:
+        return "not_downloaded"
+    if tier["id"] == "z-image-turbo-gguf":
+        return "downloaded" if os.path.isfile(_gguf_path()) else "not_downloaded"
+    repo = tier.get("repo")
+    if not repo:
+        return "not_downloaded"
+    hf_home = os.environ.get("HF_HOME", "")
+    cache_dir = Path(hf_home) / "hub" if hf_home else Path.home() / ".cache" / "huggingface" / "hub"
+    repo_dir = cache_dir / f"models--{repo.replace('/', '--')}"
+    snaps = repo_dir / "snapshots"
+    if snaps.is_dir() and any(snaps.iterdir()):
+        return "downloaded"
+    return "not_downloaded"
+
+
+def get_download_error(tier_id: str) -> str | None:
+    return _download_errors.get(tier_id)
+
+
+def download_tier(tier_id: str) -> None:
+    tier = next((t for t in IMAGE_MODEL_TIERS if t["id"] == tier_id), None)
+    if not tier or not tier.get("repo"):
+        return
+    _downloading_tiers.add(tier_id)
+    _download_errors.pop(tier_id, None)
+    try:
+        from huggingface_hub import snapshot_download  # type: ignore
+        snapshot_download(repo_id=tier["repo"])
+    except Exception as exc:  # noqa: BLE001
+        _download_errors[tier_id] = str(exc)
+    finally:
+        _downloading_tiers.discard(tier_id)
+        _download_progress.pop(tier_id, None)
 
 
 def _gguf_path() -> str:
@@ -241,35 +270,6 @@ def get_pipeline(forced_tier_id: Optional[str] = None):
         else:
             pipe = pipe.to(device)
         _enable_memory_savers(pipe)
-    elif tier["id"] == "flux-dev":
-        from diffusers import FluxPipeline  # type: ignore
-        import torch  # type: ignore
-
-        pipe = FluxPipeline.from_pretrained(
-            tier["repo"], torch_dtype=torch.bfloat16
-        )
-        pipe = pipe.to(device)
-        # FLUX dev is large — enable CPU offload when we're tight on VRAM.
-        if get_vram_mb() < 32000 and device == "cuda":
-            try:
-                pipe.enable_model_cpu_offload()
-            except Exception:  # noqa: BLE001
-                pass
-        _enable_memory_savers(pipe)
-    elif tier["id"] == "flux-schnell":
-        from diffusers import FluxPipeline  # type: ignore
-        import torch  # type: ignore
-
-        pipe = FluxPipeline.from_pretrained(
-            tier["repo"], torch_dtype=torch.bfloat16
-        )
-        pipe = pipe.to(device)
-        if get_vram_mb() < 16000 and device == "cuda":
-            try:
-                pipe.enable_model_cpu_offload()
-            except Exception:  # noqa: BLE001
-                pass
-        _enable_memory_savers(pipe)
     elif tier["id"] == "z-image-turbo":
         from diffusers import DiffusionPipeline  # type: ignore
 
@@ -350,20 +350,6 @@ def _generation_params(tier_id: str, steps: int, guidance: float, w: int, h: int
         }
     if tier_id in ("sd-turbo", "sdxl-turbo"):
         return {"num_inference_steps": 1, "guidance_scale": 0.0}
-    if tier_id == "flux-schnell":
-        return {
-            "num_inference_steps": max(1, min(steps, 4)),
-            "guidance_scale": 0.0,
-            "width": w,
-            "height": h,
-        }
-    if tier_id == "flux-dev":
-        return {
-            "num_inference_steps": max(20, min(steps, 50)),
-            "guidance_scale": max(1.0, guidance),
-            "width": w,
-            "height": h,
-        }
     if tier_id == "z-image-turbo":
         return {
             "num_inference_steps": max(4, min(steps, 8)),
@@ -394,6 +380,7 @@ def generate_image(
     height: int = 512,
     forced_tier_id: Optional[str] = None,
     seed: Optional[int] = None,
+    negative_prompt: Optional[str] = None,
 ) -> bytes:
     pipe = get_pipeline(forced_tier_id)
     tier = pick_best_tier(forced_tier_id)
@@ -421,7 +408,10 @@ def generate_image(
         generator = torch.Generator().manual_seed(seed)
         params["generator"] = generator
 
-    image = pipe(prompt=prompt, **params).images[0]
+    call_kwargs: dict = {"prompt": prompt, **params}
+    if negative_prompt and tier["id"] not in ("sd-turbo", "sdxl-turbo", "z-image-turbo-gguf"):
+        call_kwargs["negative_prompt"] = negative_prompt
+    image = pipe(**call_kwargs).images[0]
     buf = io.BytesIO()
     image.save(buf, format="PNG")
     return buf.getvalue()

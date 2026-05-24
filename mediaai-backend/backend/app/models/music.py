@@ -74,17 +74,19 @@ MUSIC_TIERS: list[MusicTier] = [
         "id": "ace-step-turbo-4gb",
         "label": "ACE-Step 1.5 Turbo (4 GB)",
         "description": (
-            "Low-VRAM DiT-only mode with the LM planner disabled. Fast local "
-            "music generation with vocals and instruments; prompt adherence is "
-            "less structured than the 12 GB planner tier."
+            "Low-VRAM mode with the 0.6B planner enabled for full songs with "
+            "vocals and instruments. Fast local music generation."
         ),
         "vram_mb": 4000,
-        "download_size_mb": 8500,
+        "download_size_mb": 9700,
         "backends": ["cuda", "rocm", "mps", "metal", "cpu"],
-        "hf_repos": ["ACE-Step/Ace-Step1.5"],
+        "hf_repos": [
+            "ACE-Step/Ace-Step1.5",
+            "ACE-Step/acestep-5Hz-lm-0.6B",
+        ],
         "config_path": "acestep-v15-turbo",
-        "lm_model_path": None,
-        "uses_lm": False,
+        "lm_model_path": "acestep-5Hz-lm-0.6B",
+        "uses_lm": True,
         "inference_steps": 8,
         "repo_url": "https://github.com/ace-step/ACE-Step-1.5",
     },
@@ -177,6 +179,7 @@ def is_downloaded(tier_id: str) -> bool:
 _download_lock = threading.Lock()
 _downloading: set[str] = set()
 _download_progress: dict[str, float] = {}
+_download_errors: dict[str, str] = {}
 
 
 class DownloadProgressTracker:
@@ -258,6 +261,10 @@ def _monitor_download_size(
             pass
 
 
+def _root_has_any_of_tier(root: Path, tier: MusicTier) -> bool:
+    return any(_contains_weights(root / dirname) for dirname in _required_checkpoint_dirs(tier))
+
+
 def is_downloading(tier_id: str) -> bool:
     return tier_id in _downloading
 
@@ -267,7 +274,16 @@ def tier_status(tier_id: str) -> str:
         return "downloading"
     if is_downloaded(tier_id):
         return "downloaded"
+    tier = pick_best_music_tier(tier_id)
+    root = _active_checkpoint_root(tier)
+    if _root_has_any_of_tier(root, tier):
+        return "partially_downloaded"
     return "not_downloaded"
+
+
+def get_download_error(tier_id: str) -> str | None:
+    """Return the last download error for *tier_id*, or ``None``."""
+    return _download_errors.get(tier_id)
 
 
 def _snapshot_download_with_progress(
@@ -337,11 +353,22 @@ def _download_tier_repos(tier: MusicTier, checkpoint_root: Path) -> None:
 
 
 def download_tier(tier_id: str) -> None:
-    """Download model weights for a tier. Safe to run in a background thread."""
+    """Download model weights for a tier. Safe to run in a background thread.
+
+    Always runs the full HF snapshot_download sequence so that missing
+    components (e.g. the LM planner added after initial download) are fetched.
+    HF Hub is idempotent — files already on disk are validated and skipped.
+    """
     tier = pick_best_music_tier(tier_id)
-    if is_downloaded(tier_id):
-        _download_progress[tier_id] = 100.0
-        return
+
+    # Invalidate any stale marker from a previous tier config that had fewer
+    # required components (e.g. before the LM planner was added).
+    try:
+        stale_marker = _tier_marker_path(tier_id)
+        if stale_marker.exists():
+            stale_marker.unlink()
+    except OSError:
+        pass
 
     with _download_lock:
         if tier_id in _downloading:
@@ -396,7 +423,11 @@ def download_tier(tier_id: str) -> None:
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.touch()
         _download_progress[tier_id] = 100.0
+        _download_errors.pop(tier_id, None)
         log.info("music tier %s downloaded", tier_id)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("download failed for tier %s", tier_id)
+        _download_errors[tier_id] = str(exc)
     finally:
         stop_monitor.set()
         _downloading.discard(tier_id)
@@ -462,7 +493,15 @@ def _can_quantize(device: str) -> bool:
 
 
 def _split_prompt(prompt: str) -> tuple[str, str, bool]:
-    cleaned = prompt.strip()
+    """Parse the user prompt into (caption, lyrics, instrumental).
+
+    ACE-Step requires a non-empty ``lyrics`` string to generate vocals.
+    If the user supplies structure tags (``[verse]``, ``[chorus]`` etc.) or
+    multi-line text they are passed through verbatim.  For short prompts
+    without tags we wrap the text inside a ``[verse]`` tag so the model
+    knows to synthesise vocals instead of falling back to instrumental.
+    """
+    cleaned = prompt.replace("\\n", "\n").replace("\\r", "\r").strip()
     lower = cleaned.lower()
     is_instrumental = "instrumental" in lower and "[instrumental]" not in lower
     has_lyric_tags = any(tag in lower for tag in ("[verse", "[chorus", "[bridge", "[intro", "[outro"))
@@ -474,13 +513,22 @@ def _split_prompt(prompt: str) -> tuple[str, str, bool]:
         first_line = next((line.strip() for line in cleaned.splitlines() if line.strip()), "")
         caption = first_line if first_line and not first_line.startswith("[") else "vocal song with structured lyrics"
         return caption[:512], cleaned[:4096], False
-    return cleaned[:512], "", False
+
+    # Simple prompt without explicit lyrics — wrap in [verse] so the DiT
+    # receives a structure tag and the LM planner knows vocals are wanted.
+    return cleaned[:512], f"[verse]\n{cleaned}\n", False
 
 
 def _load_tier(tier: MusicTier, checkpoint_root: Path) -> None:
     global _dit_handler, _llm_handler, _loaded_tier_id
     if _dit_handler is not None and _loaded_tier_id == tier["id"]:
-        return
+        # If the tier config now requires the LM but it was loaded without
+        # one (e.g. the 4 GB tier was upgraded to include the planner),
+        # force a full reload so the LLM handler gets initialised.
+        if tier["uses_lm"] and _llm_handler is None:
+            log.info("tier %s now requires LM planner — forcing reload", tier["id"])
+        else:
+            return
 
     try:
         from acestep.handler import AceStepHandler  # type: ignore
@@ -534,6 +582,8 @@ def generate_music(
     prompt: str,
     duration_seconds: float = 15.0,
     forced_tier_id: Optional[str] = None,
+    inference_steps: Optional[int] = None,
+    use_cot_lyrics: Optional[bool] = None,
 ) -> bytes:
     """Generate a WAV file from a prompt using a previously downloaded tier."""
     tier = pick_best_music_tier(forced_tier_id)
@@ -565,13 +615,13 @@ def generate_music(
             lyrics=lyrics,
             instrumental=instrumental,
             duration=duration_seconds,
-            inference_steps=tier["inference_steps"],
+            inference_steps=inference_steps if inference_steps is not None else tier["inference_steps"],
             shift=3.0,
             thinking=tier["uses_lm"],
             use_cot_metas=tier["uses_lm"],
             use_cot_caption=tier["uses_lm"],
             use_cot_language=tier["uses_lm"],
-            use_cot_lyrics=False,
+            use_cot_lyrics=use_cot_lyrics if use_cot_lyrics is not None else tier["uses_lm"],
         )
         config = GenerationConfig(
             batch_size=1,

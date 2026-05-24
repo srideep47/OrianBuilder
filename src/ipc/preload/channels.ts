@@ -60,7 +60,10 @@ import { identityContracts } from "../types/identity";
 import { networkContracts, networkEvents } from "../types/network";
 import { computeContracts } from "../types/compute";
 import { watchdogContracts, watchdogEvents } from "../types/watchdog";
-import { designStudioContracts } from "../types/design_studio";
+import {
+  designStudioContracts,
+  designStudioChatStream,
+} from "../types/design_studio";
 
 // =============================================================================
 // Invoke Channels (derived from all contracts)
@@ -68,6 +71,7 @@ import { designStudioContracts } from "../types/design_studio";
 
 const CHAT_STREAM_CHANNELS = getStreamChannels(chatStreamContract);
 const HELP_STREAM_CHANNELS = getStreamChannels(helpStreamContract);
+const DESIGN_CHAT_STREAM_CHANNELS = getStreamChannels(designStudioChatStream);
 
 // Test-only channels (handler only registered in E2E test builds, but channel always allowed)
 const TEST_INVOKE_CHANNELS = [
@@ -89,6 +93,7 @@ export const VALID_INVOKE_CHANNELS = [
   // Stream invoke channels
   CHAT_STREAM_CHANNELS.invoke,
   HELP_STREAM_CHANNELS.invoke,
+  DESIGN_CHAT_STREAM_CHANNELS.invoke,
 
   // Integrations
   ...getInvokeChannels(githubContracts),
@@ -148,6 +153,7 @@ export const VALID_RECEIVE_CHANNELS = [
   // Stream receive channels
   ...CHAT_STREAM_CHANNELS.receive,
   ...HELP_STREAM_CHANNELS.receive,
+  ...DESIGN_CHAT_STREAM_CHANNELS.receive,
 
   // Event channels
   ...getReceiveChannels(agentEvents),

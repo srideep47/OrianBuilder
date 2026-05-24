@@ -44,6 +44,20 @@ class VideoTier(TypedDict):
 # model that actually fits in available VRAM.
 VIDEO_TIERS: list[VideoTier] = [
     {
+        # Highest-quality tier — auto-selected for 14 GB+ GPUs.
+        "id": "wan-2.1-14b",
+        "label": "Wan 2.1 (14B)",
+        "repo": "Wan-AI/Wan2.1-T2V-14B-Diffusers",
+        "vram_mb": 14000,
+        "download_size_mb": 30000,
+        "backends": ["cuda", "rocm", "metal", "mps"],
+        "default_frames": 81,
+        "default_fps": 16,
+        "default_width": 832,
+        "default_height": 480,
+        "default_steps": 30,
+    },
+    {
         "id": "ltx-video",
         "label": "LTX Video",
         "repo": "Lightricks/LTX-Video",
@@ -57,10 +71,11 @@ VIDEO_TIERS: list[VideoTier] = [
         "default_steps": 30,
     },
     {
+        # Budget tier — CPU offload lets this fit in 5 GB VRAM.
         "id": "wan-2.1-1.3b",
         "label": "Wan 2.1 (1.3B)",
         "repo": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
-        "vram_mb": 8000,
+        "vram_mb": 5000,
         "download_size_mb": 14000,
         "backends": ["cuda", "rocm", "metal", "mps"],
         "default_frames": 81,
@@ -128,6 +143,48 @@ _pipeline = None
 _pipeline_tier_id: Optional[str] = None
 _lock = threading.Lock()
 
+_download_progress: dict[str, float] = {}
+_download_errors: dict[str, str] = {}
+_downloading_tiers: set[str] = set()
+
+
+def tier_status(tier_id: str) -> str:
+    if tier_id in _downloading_tiers:
+        return "downloading"
+    tier = next((t for t in VIDEO_TIERS if t["id"] == tier_id), None)
+    if not tier:
+        return "not_downloaded"
+    repo = tier.get("repo")
+    if not repo:
+        return "not_downloaded"
+    hf_home = os.environ.get("HF_HOME", "")
+    cache_dir = Path(hf_home) / "hub" if hf_home else Path.home() / ".cache" / "huggingface" / "hub"
+    repo_dir = cache_dir / f"models--{repo.replace('/', '--')}"
+    snaps = repo_dir / "snapshots"
+    if snaps.is_dir() and any(snaps.iterdir()):
+        return "downloaded"
+    return "not_downloaded"
+
+
+def get_download_error(tier_id: str) -> str | None:
+    return _download_errors.get(tier_id)
+
+
+def download_tier(tier_id: str) -> None:
+    tier = next((t for t in VIDEO_TIERS if t["id"] == tier_id), None)
+    if not tier or not tier.get("repo"):
+        return
+    _downloading_tiers.add(tier_id)
+    _download_errors.pop(tier_id, None)
+    try:
+        from huggingface_hub import snapshot_download  # type: ignore
+        snapshot_download(repo_id=tier["repo"])
+    except Exception as exc:  # noqa: BLE001
+        _download_errors[tier_id] = str(exc)
+    finally:
+        _downloading_tiers.discard(tier_id)
+        _download_progress.pop(tier_id, None)
+
 
 def _enable_savers(pipe) -> None:
     for fn_name in (
@@ -163,11 +220,32 @@ def get_pipeline(forced_tier_id: Optional[str] = None):
         device,
     )
 
-    if tier["id"] == "wan-2.1-1.3b":
+    if tier["id"] == "wan-2.1-14b":
+        from diffusers import WanPipeline  # type: ignore
+        import torch  # type: ignore
+
+        pipe = WanPipeline.from_pretrained(tier["repo"], torch_dtype=torch.bfloat16)
+        # 14B needs CPU offload on anything under 20 GB.
+        if device == "cuda" and get_vram_mb() < 20000:
+            try:
+                pipe.enable_model_cpu_offload()
+            except Exception:  # noqa: BLE001
+                pipe = pipe.to(device)
+        else:
+            pipe = pipe.to(device)
+        _enable_savers(pipe)
+    elif tier["id"] == "wan-2.1-1.3b":
         from diffusers import WanPipeline  # type: ignore
 
         pipe = WanPipeline.from_pretrained(tier["repo"], torch_dtype=dtype)
-        pipe = pipe.to(device)
+        # Use CPU offload so the 1.3B fits in ≤5 GB VRAM.
+        if device == "cuda":
+            try:
+                pipe.enable_model_cpu_offload()
+            except Exception:  # noqa: BLE001
+                pipe = pipe.to(device)
+        else:
+            pipe = pipe.to(device)
         _enable_savers(pipe)
     elif tier["id"] == "ltx-video":
         from diffusers import LTXPipeline  # type: ignore
@@ -259,7 +337,7 @@ def generate_video(
         }
 
         # Wan/LTX/CogVideoX accept guidance_scale; AnimateDiff/text-to-video may not.
-        if tier["id"] in ("wan-2.1-1.3b", "ltx-video", "cogvideox-2b"):
+        if tier["id"] in ("wan-2.1-14b", "wan-2.1-1.3b", "ltx-video", "cogvideox-2b"):
             kwargs["guidance_scale"] = 6.0
 
         log.info("video gen tier=%s frames=%s", tier["id"], kwargs["num_frames"])

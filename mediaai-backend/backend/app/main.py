@@ -94,6 +94,7 @@ class V1ImageRequest(BaseModel):
     height: int = 512
     tier: str | None = None
     seed: int | None = None
+    negative_prompt: str | None = None
 
 
 class V1ImageResponse(BaseModel):
@@ -113,6 +114,7 @@ async def v1_generate_image(req: V1ImageRequest) -> V1ImageResponse:
             req.height,
             req.tier,
             req.seed,
+            req.negative_prompt,
         )
     except Exception as exc:  # noqa: BLE001 — surface generation errors verbatim
         raise HTTPException(status_code=500, detail=f"image generation failed: {exc}") from exc
@@ -121,6 +123,80 @@ async def v1_generate_image(req: V1ImageRequest) -> V1ImageResponse:
     out_path.write_bytes(data)
     tier = image_model.pick_best_tier(req.tier)
     return V1ImageResponse(image_url=_outputs_url(filename), tier=tier["id"])
+
+
+# ─── v1 image tier management ────────────────────────────────────────────────
+
+
+class V1ImageTierInfo(BaseModel):
+    id: str
+    label: str
+    repo: str | None
+    vram_mb: int
+    download_size_mb: int
+    backends: list[str]
+    available_for_backend: bool
+    status: str  # "downloaded" | "downloading" | "not_downloaded"
+    download_progress: float | None = None
+    download_error: str | None = None
+    selected: bool
+
+
+class V1ImageTiersResponse(BaseModel):
+    tiers: list[V1ImageTierInfo]
+    selected_tier_id: str
+
+
+@app.get("/v1/generate/image/tiers", response_model=V1ImageTiersResponse)
+async def v1_image_tiers() -> V1ImageTiersResponse:
+    best = image_model.pick_best_tier()
+    backend = hardware.get_backend()
+    normalized_backend = "mps" if backend == "metal" else backend
+    tiers = [
+        V1ImageTierInfo(
+            id=t["id"],
+            label=t["label"],
+            repo=t.get("repo"),
+            vram_mb=t["vram_mb"],
+            download_size_mb=t["download_size_mb"],
+            backends=t["backends"],
+            available_for_backend=normalized_backend in t["backends"],
+            status=image_model.tier_status(t["id"]),
+            download_progress=(
+                image_model._download_progress.get(t["id"])
+                if image_model.tier_status(t["id"]) == "downloading"
+                else None
+            ),
+            download_error=image_model.get_download_error(t["id"]),
+            selected=(t["id"] == best["id"]),
+        )
+        for t in image_model.IMAGE_MODEL_TIERS
+    ]
+    return V1ImageTiersResponse(tiers=tiers, selected_tier_id=best["id"])
+
+
+class V1ImageDownloadRequest(BaseModel):
+    tier_id: str
+
+
+class V1ImageDownloadResponse(BaseModel):
+    ok: bool
+    tier_id: str
+    status: str
+
+
+@app.post("/v1/generate/image/download", response_model=V1ImageDownloadResponse)
+async def v1_image_download(req: V1ImageDownloadRequest) -> V1ImageDownloadResponse:
+    import asyncio
+
+    image_model.pick_best_tier(req.tier_id)  # validates the tier id
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, image_model.download_tier, req.tier_id)
+    return V1ImageDownloadResponse(
+        ok=True,
+        tier_id=req.tier_id,
+        status=image_model.tier_status(req.tier_id),
+    )
 
 
 # ─── v1 video generation ─────────────────────────────────────────────────────
@@ -167,6 +243,90 @@ async def v1_generate_video(req: V1VideoRequest) -> V1VideoResponse:
     )
 
 
+# ─── v1 video tier management ────────────────────────────────────────────────
+
+
+class V1VideoTierInfo(BaseModel):
+    id: str
+    label: str
+    repo: str | None
+    vram_mb: int
+    download_size_mb: int
+    backends: list[str]
+    default_frames: int
+    default_fps: int
+    default_width: int
+    default_height: int
+    default_steps: int
+    available_for_backend: bool
+    status: str  # "downloaded" | "downloading" | "not_downloaded"
+    download_progress: float | None = None
+    download_error: str | None = None
+    selected: bool
+
+
+class V1VideoTiersResponse(BaseModel):
+    tiers: list[V1VideoTierInfo]
+    selected_tier_id: str
+
+
+@app.get("/v1/generate/video/tiers", response_model=V1VideoTiersResponse)
+async def v1_video_tiers() -> V1VideoTiersResponse:
+    best = video_model.pick_best_video_tier()
+    backend = hardware.get_backend()
+    normalized_backend = "mps" if backend == "metal" else backend
+    tiers = [
+        V1VideoTierInfo(
+            id=t["id"],
+            label=t["label"],
+            repo=t.get("repo"),
+            vram_mb=t["vram_mb"],
+            download_size_mb=t["download_size_mb"],
+            backends=t["backends"],
+            default_frames=t["default_frames"],
+            default_fps=t["default_fps"],
+            default_width=t["default_width"],
+            default_height=t["default_height"],
+            default_steps=t["default_steps"],
+            available_for_backend=normalized_backend in t["backends"],
+            status=video_model.tier_status(t["id"]),
+            download_progress=(
+                video_model._download_progress.get(t["id"])
+                if video_model.tier_status(t["id"]) == "downloading"
+                else None
+            ),
+            download_error=video_model.get_download_error(t["id"]),
+            selected=(t["id"] == best["id"]),
+        )
+        for t in video_model.VIDEO_TIERS
+    ]
+    return V1VideoTiersResponse(tiers=tiers, selected_tier_id=best["id"])
+
+
+class V1VideoDownloadRequest(BaseModel):
+    tier_id: str
+
+
+class V1VideoDownloadResponse(BaseModel):
+    ok: bool
+    tier_id: str
+    status: str
+
+
+@app.post("/v1/generate/video/download", response_model=V1VideoDownloadResponse)
+async def v1_video_download(req: V1VideoDownloadRequest) -> V1VideoDownloadResponse:
+    import asyncio
+
+    video_model.pick_best_video_tier(req.tier_id)  # validates the tier id
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, video_model.download_tier, req.tier_id)
+    return V1VideoDownloadResponse(
+        ok=True,
+        tier_id=req.tier_id,
+        status=video_model.tier_status(req.tier_id),
+    )
+
+
 # ─── v1 TTS ───────────────────────────────────────────────────────────────────
 
 
@@ -209,8 +369,9 @@ class V1MusicTierInfo(BaseModel):
     uses_lm: bool
     repo_url: str
     available_for_backend: bool
-    status: str  # "downloaded" | "downloading" | "not_downloaded"
+    status: str  # "downloaded" | "downloading" | "partially_downloaded" | "not_downloaded"
     download_progress: float | None = None
+    download_error: str | None = None
     selected: bool
 
 
@@ -238,6 +399,7 @@ async def v1_music_tiers() -> V1MusicTiersResponse:
             available_for_backend=normalized_backend in t["backends"],
             status=music_model.tier_status(t["id"]),
             download_progress=music_model._download_progress.get(t["id"]) if music_model.tier_status(t["id"]) == "downloading" else None,
+            download_error=music_model.get_download_error(t["id"]),
             selected=(t["id"] == best["id"]),
         )
         for t in music_model.MUSIC_TIERS
@@ -276,6 +438,8 @@ class V1MusicRequest(BaseModel):
     prompt: str
     duration_seconds: float = 15.0
     tier: str | None = None
+    inference_steps: int | None = None
+    use_cot_lyrics: bool | None = None
 
 
 class V1MusicResponse(BaseModel):
@@ -292,6 +456,8 @@ async def v1_generate_music(req: V1MusicRequest) -> V1MusicResponse:
             req.prompt,
             req.duration_seconds,
             req.tier,
+            req.inference_steps,
+            req.use_cot_lyrics,
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"music generation failed: {exc}") from exc
