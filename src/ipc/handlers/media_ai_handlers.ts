@@ -7,6 +7,7 @@ import {
   getMediaAiBackendStatus,
   installMediaAiDependencies,
   installMediaAiDependenciesForBackend,
+  installThreeDRuntimeOnly,
   isMediaAiDownloadActive,
   resetMediaAiSetup,
   startMediaAiBackend,
@@ -30,6 +31,21 @@ export function registerMediaAiHandlers() {
         const output = await installMediaAiDependenciesForBackend(
           params.backend,
         );
+        return { success: true, output };
+      } catch (err) {
+        return {
+          success: false,
+          output: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+
+  createTypedHandler(
+    mediaAiContracts.installThreeDRuntime,
+    async (_e, params) => {
+      try {
+        const output = await installThreeDRuntimeOnly(params.backend);
         return { success: true, output };
       } catch (err) {
         return {

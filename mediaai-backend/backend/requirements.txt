@@ -31,3 +31,6 @@ torchcodec>=0.9.1
 peft>=0.18.0
 lycoris-lora
 lightning>=2.0.0
+# 3D asset runtime (TripoSR) is installed by the Electron setup helper via
+# installTripoSrRuntime() — it pulls the package from GitHub with --no-deps so
+# pip does not try to re-resolve a torch wheel that is already pinned above.

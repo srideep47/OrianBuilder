@@ -95,6 +95,11 @@ export const mediaAiContracts = {
     input: InstallForBackendParamsSchema,
     output: MediaAiOperationResultSchema,
   }),
+  installThreeDRuntime: defineContract({
+    channel: "media-ai:install-3d-runtime",
+    input: InstallForBackendParamsSchema,
+    output: MediaAiOperationResultSchema,
+  }),
   downloadModels: defineContract({
     channel: "media-ai:download-models",
     input: DownloadMediaAiModelsParamsSchema,

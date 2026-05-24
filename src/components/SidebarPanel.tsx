@@ -4,6 +4,7 @@ import { ChatList } from "./ChatList";
 import { AppList } from "./AppList";
 import { SettingsList } from "./SettingsList";
 import { LibraryList } from "./LibraryList";
+import { GenAssetsList } from "./GenAssetsList";
 import { cn } from "@/lib/utils";
 
 export function SidebarPanel() {
@@ -25,6 +26,7 @@ export function SidebarPanel() {
         <ChatList show={panelItem === "Chat"} />
         <SettingsList show={panelItem === "Settings"} />
         <LibraryList show={panelItem === "Library"} />
+        <GenAssetsList show={panelItem === "Gen Assets"} />
       </div>
     </div>
   );

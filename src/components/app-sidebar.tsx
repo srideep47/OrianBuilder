@@ -46,7 +46,7 @@ const items = [
     icon: HardDrive,
     hasPanel: false,
   },
-  { title: "Media AI", to: "/mediaai", icon: Sparkles, hasPanel: false },
+  { title: "Gen Assets", to: "/mediaai", icon: Sparkles, hasPanel: true },
   {
     title: "Daily AI Digest",
     to: "/dailyaidigest",
@@ -158,7 +158,8 @@ function AppIcons({
           {items.map((item) => {
             const isActive =
               (item.to === "/" && pathname === "/") ||
-              (item.to !== "/" && pathname.startsWith(item.to));
+              (item.to !== "/" && pathname.startsWith(item.to)) ||
+              (item.title === "Gen Assets" && pathname.startsWith("/3dassets"));
 
             const isPanelActive = activePanel === item.title;
 

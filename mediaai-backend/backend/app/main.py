@@ -3,6 +3,13 @@ import os
 import time
 from pathlib import Path
 
+# Force trimesh to import before torch/other modules register NumPy C API bindings.
+# This prevents the NumPy 2.0 ABI size mismatch error on Windows.
+try:
+    import trimesh  # noqa: F401
+except ImportError:
+    pass
+
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +23,7 @@ from app.models import tts as tts_model
 from app.models import stt as stt_model
 from app.models import video as video_model
 from app.models import music as music_model
+from app.models import threed as threed_model
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 STATIC_DIR = BACKEND_DIR / "static"
@@ -295,6 +303,221 @@ async def v1_generate_music(req: V1MusicRequest) -> V1MusicResponse:
         audio_url=_outputs_url(filename),
         tier=tier["id"],
         duration_seconds=req.duration_seconds,
+    )
+
+
+# ─── v1 3D asset generation (TripoSR) ────────────────────────────────────────
+
+
+class V1ThreeDTierInfo(BaseModel):
+    id: str
+    label: str
+    description: str
+    vram_mb: int
+    download_size_mb: int
+    backends: list[str]
+    hf_repo: str
+    repo_url: str
+    available_for_backend: bool
+    status: str  # "downloaded" | "downloading" | "not_downloaded"
+    download_progress: float | None = None
+    selected: bool
+
+
+class V1ThreeDTiersResponse(BaseModel):
+    tiers: list[V1ThreeDTierInfo]
+    selected_tier_id: str
+
+
+class V1ThreeDDiagnosticsResponse(BaseModel):
+    tsr_importable: bool
+    skimage_importable: bool
+    trimesh_importable: bool
+    numpy_version: str | None
+    numpy_major: int | None
+    numpy_file: str | None = None
+    huggingface_hub_version: str | None = None
+    python_executable: str | None = None
+    error: str | None = None
+    sys_path: list[str]
+
+
+@app.get("/v1/generate/3d/diagnostics", response_model=V1ThreeDDiagnosticsResponse)
+async def v1_threed_diagnostics() -> V1ThreeDDiagnosticsResponse:
+    """Reports whether the 3D runtime can be imported. The page uses this to
+    distinguish 'TripoSR truly missing' from 'transient backend issue', so the
+    install button only appears when reinstallation is actually needed."""
+    import sys
+
+    error: str | None = None
+    tsr_ok = False
+    skimage_ok = False
+    trimesh_ok = False
+    numpy_version: str | None = None
+    numpy_major: int | None = None
+    numpy_file: str | None = None
+    hf_hub_version: str | None = None
+    python_executable: str | None = sys.executable
+
+    try:
+        import numpy as _np  # type: ignore
+        numpy_version = getattr(_np, "__version__", None)
+        numpy_file = getattr(_np, "__file__", None)
+        if numpy_version:
+            try:
+                numpy_major = int(numpy_version.split(".")[0])
+            except ValueError:
+                numpy_major = None
+        if numpy_major is not None and numpy_major < 2:
+            error = (
+                f"numpy is {numpy_version} (from {numpy_file}) but the rest of Media AI "
+                "was built against numpy 2.x — generation will fail with a 'dtype size "
+                "changed' error. Click 'Reinstall Runtime' to fix."
+            )
+    except Exception as exc:  # noqa: BLE001
+        error = f"numpy import failed: {exc}"
+
+    try:
+        import huggingface_hub  # type: ignore
+        hf_hub_version = getattr(huggingface_hub, "__version__", None)
+        if hf_hub_version:
+            major_minor = tuple(int(x) for x in hf_hub_version.split(".")[:2])
+            if not ((0, 34) <= major_minor < (1, 0)):
+                if error is None:
+                    error = (
+                        f"huggingface_hub is {hf_hub_version} but transformers needs "
+                        ">=0.34.0,<1.0. Click 'Reinstall Runtime' to fix."
+                    )
+    except Exception as exc:  # noqa: BLE001
+        if error is None:
+            error = f"huggingface_hub import failed: {exc}"
+
+    try:
+        from skimage.measure import marching_cubes  # type: ignore  # noqa: F401
+        skimage_ok = True
+    except Exception as exc:  # noqa: BLE001
+        if error is None:
+            error = f"scikit-image marching_cubes import failed: {exc}"
+
+    try:
+        import tsr.system  # type: ignore  # noqa: F401
+        tsr_ok = True
+    except Exception as exc:  # noqa: BLE001
+        if error is None:
+            error = f"tsr import failed: {exc}"
+
+    try:
+        import trimesh  # type: ignore  # noqa: F401
+        trimesh_ok = True
+    except Exception as exc:  # noqa: BLE001
+        if error is None:
+            error = f"trimesh import failed: {exc}"
+
+    return V1ThreeDDiagnosticsResponse(
+        tsr_importable=tsr_ok,
+        skimage_importable=skimage_ok,
+        trimesh_importable=trimesh_ok,
+        numpy_version=numpy_version,
+        numpy_major=numpy_major,
+        numpy_file=numpy_file,
+        huggingface_hub_version=hf_hub_version,
+        python_executable=python_executable,
+        error=error,
+        sys_path=list(sys.path),
+    )
+
+
+@app.get("/v1/generate/3d/tiers", response_model=V1ThreeDTiersResponse)
+async def v1_threed_tiers() -> V1ThreeDTiersResponse:
+    best = threed_model.pick_best_threed_tier()
+    backend = hardware.get_backend()
+    normalized_backend = "mps" if backend == "metal" else backend
+    tiers = [
+        V1ThreeDTierInfo(
+            id=t["id"],
+            label=t["label"],
+            description=t["description"],
+            vram_mb=t["vram_mb"],
+            download_size_mb=t["download_size_mb"],
+            backends=t["backends"],
+            hf_repo=t["hf_repo"],
+            repo_url=t["repo_url"],
+            available_for_backend=normalized_backend in t["backends"],
+            status=threed_model.tier_status(t["id"]),
+            download_progress=(
+                threed_model._download_progress.get(t["id"])
+                if threed_model.tier_status(t["id"]) == "downloading"
+                else None
+            ),
+            selected=(t["id"] == best["id"]),
+        )
+        for t in threed_model.THREED_TIERS
+    ]
+    return V1ThreeDTiersResponse(tiers=tiers, selected_tier_id=best["id"])
+
+
+class V1ThreeDDownloadRequest(BaseModel):
+    tier_id: str
+
+
+class V1ThreeDDownloadResponse(BaseModel):
+    ok: bool
+    tier_id: str
+    status: str
+
+
+@app.post("/v1/generate/3d/download", response_model=V1ThreeDDownloadResponse)
+async def v1_threed_download(req: V1ThreeDDownloadRequest) -> V1ThreeDDownloadResponse:
+    import asyncio
+
+    threed_model.pick_best_threed_tier(req.tier_id)
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, threed_model.download_tier, req.tier_id)
+    return V1ThreeDDownloadResponse(
+        ok=True,
+        tier_id=req.tier_id,
+        status=threed_model.tier_status(req.tier_id),
+    )
+
+
+class V1ThreeDResponse(BaseModel):
+    model_url: str
+    tier: str
+
+
+@app.post("/v1/generate/3d", response_model=V1ThreeDResponse)
+async def v1_generate_3d(
+    image: UploadFile = File(...),
+    tier: str | None = Form(default=None),
+    mesh_resolution: int = Form(default=256),
+    foreground_ratio: float = Form(default=0.85),
+) -> V1ThreeDResponse:
+    """Generate a .glb 3D mesh from a single image."""
+    try:
+        image_bytes = await image.read()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"failed to read image: {exc}") from exc
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="empty image upload")
+
+    try:
+        data = await run_in_threadpool(
+            threed_model.generate_3d_from_image,
+            image_bytes,
+            tier,
+            mesh_resolution,
+            foreground_ratio,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"3d generation failed: {exc}") from exc
+
+    filename = _unique_filename("glb", image.filename or "asset")
+    out_path = OUTPUTS_DIR / filename
+    out_path.write_bytes(data)
+    resolved_tier = threed_model.pick_best_threed_tier(tier)
+    return V1ThreeDResponse(
+        model_url=_outputs_url(filename),
+        tier=resolved_tier["id"],
     )
 
 

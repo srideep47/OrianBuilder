@@ -196,6 +196,18 @@ def get_pipeline(forced_tier_id: Optional[str] = None):
                 "diffusers>=0.33.0 is required for the z-image-turbo-gguf tier. "
                 "Run: pip install -U 'diffusers>=0.33.0'"
             ) from _imp_err
+        # The gguf parser is a runtime dependency of GGUFQuantizationConfig.
+        # Without it, diffusers silently falls back to torch's safetensors
+        # loader and crashes with "Unable to load weights from checkpoint file"
+        # — which gives the user no clue what to install. Check up front.
+        try:
+            import gguf  # type: ignore  # noqa: F401
+        except ImportError as _imp_err:
+            raise RuntimeError(
+                "The 'gguf' Python package is required to load Z-Image-Turbo "
+                "GGUF weights. Click 'Reinstall Dependencies' on the Media AI "
+                "page, or run: pip install 'gguf>=0.10.0'"
+            ) from _imp_err
 
         _hf_model_dir = os.path.join(
             os.getenv("HF_HOME", ""),

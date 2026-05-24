@@ -953,7 +953,9 @@ export default function MediaAIPage() {
 
   // Fast path: venv already installed — just start the backend and fetch tiers.
   const startMusicBackendOnly = useCallback(async () => {
-    const currentStatus = await ipc.mediaAi.getStatus(undefined).catch(() => null);
+    const currentStatus = await ipc.mediaAi
+      .getStatus(undefined)
+      .catch(() => null);
     if (currentStatus?.healthy) {
       setSetupPhase("online");
       await fetchMusicTiers(true);

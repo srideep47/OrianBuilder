@@ -196,6 +196,22 @@ mediaai-backend/venv/
 mediaai-backend/__pycache__/
 mediaai-backend/*.egg-info/
 
+# Backend runtime caches and outputs — never commit. These hold generated
+# images, videos, 3D meshes and temp acestep caches; keeping them out of git
+# prevents multi-MB accidental commits and review-noise diffs.
+mediaai-backend/backend/.cache/
+mediaai-backend/backend/outputs/*
+!mediaai-backend/backend/outputs/.gitkeep
+
+# Downloaded AI model weights — multi-GB files (TripoSR, Z-Image-Turbo,
+# ACE-Step, SD-1.5, MusicGen, etc.). User downloads these via the in-app
+# Setup buttons; they MUST NOT enter git.
+mediaai-backend/backend/models/*
+!mediaai-backend/backend/models/.gitkeep
+
+# rembg's U2Net auto-download cache (~176 MB, downloaded on first use)
+.u2net/
+
 # Lock files for package managers (uncomment if needed)
 # package-lock.json
 # yarn.lock

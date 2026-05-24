@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from "child_process";
 import fs from "fs";
 import path from "path";
 import log from "electron-log";
+import treeKill from "tree-kill";
 import type { MediaAiModelId, MediaAiStatus } from "../types/media_ai";
 import type { HardwareProfile } from "@/main/hardware/types";
 
@@ -51,6 +52,12 @@ function getMediaAiDataPaths() {
 
 function getVenvPath() {
   return path.join(getMediaAiDataPaths().root, ".venv");
+}
+
+function getTripoSrSrcPath() {
+  // TripoSR has no setup.py, so we can't pip-install it. We clone the repo
+  // here and add this path to PYTHONPATH so `from tsr.system import TSR` works.
+  return path.join(getMediaAiDataPaths().root, "triposr-src");
 }
 
 function getGpuMarkerPath() {
@@ -130,9 +137,17 @@ function getPythonCommand() {
 function getBackendEnvironment(): NodeJS.ProcessEnv {
   const backendPath = resolveMediaAiBackendPath();
   const { modelsPath, outputsPath, hfCachePath } = getMediaAiDataPaths();
+  // Stitch the TripoSR source onto PYTHONPATH if we've cloned it — this lets
+  // `from tsr.system import TSR` resolve without pip having to install the
+  // package (TripoSR's repo has no setup.py).
+  const tripoSrSrc = getTripoSrSrcPath();
+  const pythonPathEntries = [backendPath];
+  if (fs.existsSync(path.join(tripoSrSrc, "tsr"))) {
+    pythonPathEntries.push(tripoSrSrc);
+  }
   return {
     ...process.env,
-    PYTHONPATH: backendPath,
+    PYTHONPATH: pythonPathEntries.join(path.delimiter),
     OMNIGEN_MODELS_DIR: modelsPath,
     OMNIGEN_OUTPUTS_DIR: outputsPath,
     OMNIGEN_HF_CACHE_DIR: hfCachePath,
@@ -184,6 +199,469 @@ function getAceStepRuntimePackages(_effectiveBackend: string): string[] {
 function getAceStepOptionalPackages(effectiveBackend: string): string[] {
   if (["directml", "mps", "metal"].includes(effectiveBackend)) return [];
   return ["torchao>=0.16.0,<0.17.0", "numba>=0.63.1", "torchcodec>=0.9.1"];
+}
+
+const TRIPO_SR_GIT_URL = "https://github.com/VAST-AI-Research/TripoSR.git";
+
+function getTripoSrRuntimePackages(_effectiveBackend: string): string[] {
+  // TripoSR runtime packages — deliberately minimal to avoid numpy ABI chaos.
+  //
+  // Root-cause of the recurring "Expected 96, got 88" error: onnxruntime
+  // (used by rembg for background removal) and PyMCubes both ship Windows
+  // native C extensions whose internal numpy ABI expectation depends on which
+  // numpy was available when the wheel was built on PyPI's CI. We've been in
+  // a constant fight with mismatched versions. The fix is to stop using them:
+  //
+  //   • rembg / onnxruntime  → replaced with PIL-based threshold segmentation
+  //                            in threed.py (good enough for cartoon/object
+  //                            images on light backgrounds)
+  //   • PyMCubes              → replaced with scikit-image marching_cubes.
+  //                            skimage ships as a proper numpy-2.x-compatible
+  //                            wheel and is maintained by the scientific Python
+  //                            community. Our torchmcubes shim wraps it.
+  //
+  // huggingface_hub is pinned below 1.0 because transformers (loaded by
+  // TripoSR internally) enforces huggingface_hub>=0.34.0,<1.0 at import time
+  // and throws a hard error if the installed version is outside that range.
+  //
+  // pandas>=2.2.2 is the first release with numpy-2.x ABI compatibility.
+  // TripoSR imports transformers, which imports sklearn, which imports pandas
+  // at module load. Older pandas (e.g. 1.5.3 pulled in by TTS) crashes with
+  // "Expected 96 from C header, got 88 from PyObject" the moment its Cython
+  // extensions are loaded against numpy 2.x.
+  // rembg + onnxruntime are what upstream TripoSR uses to segment the subject
+  // out of the reference image with U2Net. We previously avoided them because
+  // they fought numpy 1.x — but with numpy 2.x + pandas 2.x they install
+  // cleanly on Windows and the segmentation quality is dramatically better
+  // than our PIL flood-fill. Subject quality in the final mesh is bounded by
+  // segmentation quality, so this is the single biggest mesh-quality lever.
+  return [
+    "numpy>=2.0,<3.0",
+    "huggingface-hub>=0.34.0,<1.0",
+    "scikit-image>=0.21.0",
+    "omegaconf>=2.3.0",
+    "trimesh>=4.0.0",
+    "einops>=0.7.0",
+    "Pillow>=10.0.0",
+    "pandas>=2.2.2",
+    "onnxruntime>=1.18.0",
+    "rembg[cpu]>=2.0.50",
+  ];
+}
+
+const TORCHMCUBES_SHIM_SOURCE = `"""Shim: exposes torchmcubes.marching_cubes using scikit-image.
+
+TripoSR requires torchmcubes (GitHub-only, CUDA build needed) for mesh
+extraction. scikit-image ships pre-built, numpy-2.x-compatible wheels for
+every major platform — no compiler or CUDA toolkit required. The interface
+is identical: marching_cubes(scalar_field_tensor, isovalue) → (vertices, faces).
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import torch
+
+
+def marching_cubes(volume, isovalue: float = 0.0):
+    """Drop-in for torchmcubes.marching_cubes using skimage.measure."""
+    if isinstance(volume, torch.Tensor):
+        scalar_field = volume.detach().cpu().numpy()
+    else:
+        scalar_field = np.asarray(volume)
+    scalar_field = scalar_field.astype(np.float32, copy=False)
+
+    from skimage.measure import marching_cubes as _mc  # type: ignore
+    # skimage returns (vertices, faces, normals, values); TripoSR only uses
+    # vertices and faces.
+    verts, faces, _normals, _values = _mc(scalar_field, level=float(isovalue))
+    # .copy() is critical: skimage can return arrays with negative strides
+    # which torch.from_numpy does not support.
+    return (
+        torch.from_numpy(np.ascontiguousarray(verts, dtype=np.float32)),
+        torch.from_numpy(np.ascontiguousarray(faces, dtype=np.int64)),
+    )
+
+
+def grid_interp(*_args, **_kwargs):
+    raise NotImplementedError(
+        "torchmcubes.grid_interp is not needed by TripoSR and is not "
+        "implemented in this scikit-image shim."
+    )
+`;
+
+async function writeThreeDShims(): Promise<string> {
+  // We only ship the torchmcubes shim. rembg is now installed for real (via
+  // the runtime packages list) so U2Net segmentation can run — that's what
+  // upstream TripoSR uses and it produces much cleaner cutouts than corner
+  // sampling on noisy AI-generated reference images. If an older install
+  // left a rembg.py shim on PYTHONPATH it would shadow the real package, so
+  // we delete it as part of the same step.
+  const srcPath = getTripoSrSrcPath();
+  const mcubesPath = path.join(srcPath, "torchmcubes.py");
+  await fs.promises.writeFile(mcubesPath, TORCHMCUBES_SHIM_SOURCE, "utf8");
+
+  const messages: string[] = [`torchmcubes shim written to ${mcubesPath}`];
+  for (const stale of ["rembg.py", "rembg.py.disabled"]) {
+    const stalePath = path.join(srcPath, stale);
+    try {
+      await fs.promises.unlink(stalePath);
+      messages.push(`removed stale ${stale} from TripoSR source`);
+    } catch {
+      // not present — fine
+    }
+  }
+  return messages.join("\n");
+}
+
+async function cloneOrUpdateTripoSrSrc(): Promise<string> {
+  const srcPath = getTripoSrSrcPath();
+  const parentDir = path.dirname(srcPath);
+  await fs.promises.mkdir(parentDir, { recursive: true });
+
+  const alreadyCloned = fs.existsSync(path.join(srcPath, ".git"));
+  if (alreadyCloned) {
+    try {
+      const pullOut = await runCommand("git", ["pull", "--ff-only"], {
+        cwd: srcPath,
+        timeoutMs: 5 * 60 * 1000,
+      });
+      logger.info(`TripoSR source updated at ${srcPath}`);
+      // Sanity check: tsr/ must exist for PYTHONPATH to resolve `import tsr`.
+      if (!fs.existsSync(path.join(srcPath, "tsr"))) {
+        throw new Error(
+          `TripoSR was cloned but tsr/ subfolder is missing at ${srcPath} — upstream layout may have changed.`,
+        );
+      }
+      return `TripoSR source updated at ${srcPath}\n${pullOut}`;
+    } catch (err) {
+      logger.warn(
+        "git pull failed for TripoSR source — leaving existing checkout:",
+        err,
+      );
+      return `TripoSR source already present at ${srcPath} (pull skipped: ${err instanceof Error ? err.message.split("\n")[0] : String(err)})`;
+    }
+  }
+
+  // Fresh clone. If a stale non-git folder is in the way, remove it first.
+  if (fs.existsSync(srcPath)) {
+    await fs.promises.rm(srcPath, { recursive: true, force: true });
+  }
+  const cloneOut = await runCommand(
+    "git",
+    ["clone", "--depth", "1", TRIPO_SR_GIT_URL, srcPath],
+    { cwd: parentDir, timeoutMs: 10 * 60 * 1000 },
+  );
+  // Sanity check the clone landed where we expect — the tsr/ subfolder is what
+  // PYTHONPATH needs to see. If the upstream repo layout ever moves, we want
+  // a loud failure here rather than a confusing "TripoSR is not installed"
+  // error later from the Python side.
+  if (!fs.existsSync(path.join(srcPath, "tsr"))) {
+    throw new Error(
+      `TripoSR clone finished but tsr/ subfolder is missing at ${srcPath}. Clone output:\n${cloneOut}`,
+    );
+  }
+  logger.info(`TripoSR source cloned to ${srcPath}`);
+  return `TripoSR source cloned to ${srcPath}\n${cloneOut}`;
+}
+
+function getVenvSitePackages(): string | null {
+  const venvPath = getVenvPath();
+  // Windows: Lib/site-packages
+  const winSp = path.join(venvPath, "Lib", "site-packages");
+  if (fs.existsSync(winSp)) return winSp;
+  // Unix: lib/python3.x/site-packages
+  const libDir = path.join(venvPath, "lib");
+  if (fs.existsSync(libDir)) {
+    const pyDir = fs.readdirSync(libDir).find((d) => d.startsWith("python"));
+    if (pyDir) {
+      const unixSp = path.join(libDir, pyDir, "site-packages");
+      if (fs.existsSync(unixSp)) return unixSp;
+    }
+  }
+  return null;
+}
+
+/** Hard-delete numpy and any ABI-sensitive packages from site-packages before
+ *  reinstalling. pip refuses to replace files that Windows still has locked,
+ *  and silently leaves the old DLLs behind — that's exactly the failure mode
+ *  causing the recurring "Expected 96, got 88" error. By removing the files
+ *  ourselves (after tree-killing the backend) we guarantee pip's next install
+ *  produces a clean, consistent package on disk.
+ *
+ *  IMPORTANT: pip on Windows also leaves stale `~`-prefixed remnant directories
+ *  (e.g. `~umpy`, `~-mpy`, `~.mpy.libs`) when it can't fully rename/delete
+ *  locked files during uninstall. These remnants contain OLD .pyd files that
+ *  Windows DLL loading can pick up, causing the numpy ABI size mismatch.
+ *  We remove ALL `~`-prefixed directories as a safety measure.
+ */
+async function purgeBinaryPackages(packageNames: string[]): Promise<string> {
+  const sitePackages = getVenvSitePackages();
+  if (!sitePackages) return "site-packages not found, skipping purge";
+
+  const removed: string[] = [];
+  const failed: string[] = [];
+
+  let entries: string[] = [];
+  try {
+    entries = await fs.promises.readdir(sitePackages);
+  } catch (err) {
+    return `purge: readdir failed: ${err instanceof Error ? err.message : String(err)}`;
+  }
+
+  for (const entry of entries) {
+    // Match e.g. "numpy", "numpy-2.0.0.dist-info", "numpy.libs"
+    const matchesPackage = packageNames.some(
+      (pkg) =>
+        entry === pkg ||
+        entry === `${pkg}.libs` ||
+        entry.startsWith(`${pkg}-`) ||
+        entry.startsWith(`${pkg}.`),
+    );
+
+    // Match pip's stale remnant directories: ~umpy, ~-mpy, ~.mpy.libs, etc.
+    // pip renames locked dirs to ~<random_prefix><suffix> on Windows when it
+    // can't delete them. These contain old .pyd files that pollute DLL loading.
+    const isStaleRemnant = entry.startsWith("~");
+
+    if (!matchesPackage && !isStaleRemnant) continue;
+
+    const fullPath = path.join(sitePackages, entry);
+    try {
+      await fs.promises.rm(fullPath, { recursive: true, force: true });
+      removed.push(entry);
+    } catch (err) {
+      failed.push(
+        `${entry} (${err instanceof Error ? err.message.split("\n")[0] : String(err)})`,
+      );
+    }
+  }
+
+  const summary = [
+    `Purged ${removed.length} entries from ${sitePackages}`,
+    removed.length ? `Removed: ${removed.join(", ")}` : "",
+    failed.length ? `Failed: ${failed.join(", ")}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  logger.info(summary);
+  return summary;
+}
+
+async function installTripoSrRuntime(
+  pythonPath: string,
+  backendPath: string,
+  effectiveBackend: string,
+): Promise<string> {
+  // Step 0: Hard-purge ABI-sensitive packages from disk. pip's uninstall has
+  // been failing to actually remove numpy's DLLs on the user's Windows machine
+  // (file locks from a still-warm backend), so it "succeeds" but leaves the
+  // old 1.x files in place. We bypass pip entirely and just delete the dirs.
+  // This is safe because the next pip install will recreate them.
+  const purgeReport = await purgeBinaryPackages([
+    "numpy",
+    // rembg + onnxruntime are now intentionally REINSTALLED below (after the
+    // numpy 2.x stack is in place) so U2Net segmentation can run. We still
+    // purge first because pip's uninstall on Windows leaves stale .pyd files
+    // when the previous backend held them open.
+    "rembg",
+    "onnxruntime",
+    // PyMCubes / mcubes are NOT reinstalled — we replaced them with the
+    // scikit-image torchmcubes shim. Keep purging in case a previous broken
+    // install still has them on disk.
+    "PyMCubes",
+    "mcubes",
+    // pandas ships Cython extensions whose ABI is locked to the numpy used
+    // at wheel-build time. TTS pulls pandas<2.0 (1.5.3, numpy-1.x ABI) which
+    // crashes on import once numpy 2.x is installed. Purge it so we can
+    // force a fresh, numpy-2.x-compatible wheel below.
+    "pandas",
+    // Pin huggingface_hub to avoid stuck 1.x install.
+    "huggingface_hub",
+  ]);
+
+  // Step 1: Ensure numpy is 2.x BEFORE installing anything else. Without this,
+  // pip's resolver can keep an existing numpy<2 because it satisfies most
+  // packages' loose constraints — and then later imports of any wheel built
+  // against numpy 2.x fail with "Expected 96 from C header, got 88". Forcing
+  // numpy first means every wheel installed below will be picked to match.
+  let numpyPrep = "";
+  try {
+    // Uninstall first as a belt-and-braces measure (purgeBinaryPackages should
+    // already have wiped the files, but pip's metadata may still claim
+    // something is installed).
+    await runCommand(pythonPath, ["-m", "pip", "uninstall", "-y", "numpy"], {
+      cwd: backendPath,
+      timeoutMs: 5 * 60 * 1000,
+    }).catch((err) => {
+      logger.info("numpy uninstall returned non-zero (probably absent):", err);
+    });
+    numpyPrep = await runCommand(
+      pythonPath,
+      [
+        "-m",
+        "pip",
+        "install",
+        "--upgrade",
+        "--no-cache-dir",
+        "numpy>=2.0,<3.0",
+      ],
+      { cwd: backendPath, timeoutMs: 10 * 60 * 1000 },
+    );
+  } catch (err) {
+    numpyPrep = `ERROR: numpy 2.x install failed: ${err instanceof Error ? err.message : String(err)}`;
+    logger.error("numpy 2.x install failed:", err);
+    throw new Error(numpyPrep);
+  }
+
+  // Step 2: PyPI dependencies. Now that numpy 2.x is already present, pip
+  // picks wheels of rembg / onnxruntime / PyMCubes that were built against
+  // numpy 2.x (older numpy-1-only wheels are no longer "best match").
+  const runtimeInstall = await runCommand(
+    pythonPath,
+    [
+      "-m",
+      "pip",
+      "install",
+      "--upgrade",
+      ...getTripoSrRuntimePackages(effectiveBackend).filter(
+        (p) => !p.startsWith("numpy"),
+      ),
+    ],
+    { cwd: backendPath, timeoutMs: 30 * 60 * 1000 },
+  );
+
+  // Step 3: TripoSR source. The upstream repo has no setup.py / pyproject.toml,
+  // so `pip install git+...` fails with "does not appear to be a Python project".
+  // We clone the repo into the user-data directory and add it to PYTHONPATH
+  // via getBackendEnvironment() so `from tsr.system import TSR` resolves.
+  let srcInstall = "";
+  try {
+    srcInstall = await cloneOrUpdateTripoSrSrc();
+  } catch (err) {
+    srcInstall = `ERROR: failed to fetch TripoSR source: ${err instanceof Error ? err.message : String(err)}`;
+    logger.error("Failed to clone TripoSR source:", err);
+    throw new Error(srcInstall);
+  }
+
+  // Step 4: 3D shims (torchmcubes & rembg).
+  //   • The real torchmcubes package compiles CUDA kernels and needs a build
+  //     toolchain that most Windows machines don't have. Our shim re-exports
+  //     scikit-image marching_cubes under the same module name.
+  //   • The real rembg package depends on onnxruntime and other native DLLs
+  //     which cause constant numpy ABI mismatches on Windows. Our shim resolves
+  //     its top-level import since OrianBuilder uses a PIL-based alternative.
+  let shimWrite = "";
+  try {
+    shimWrite = await writeThreeDShims();
+  } catch (err) {
+    shimWrite = `ERROR: failed to write 3D shims: ${err instanceof Error ? err.message : String(err)}`;
+    logger.error("Failed to write 3D shims:", err);
+    throw new Error(shimWrite);
+  }
+
+  // Step 5: numpy safety net. If the pip resolver above silently downgraded
+  // numpy (a buggy older wheel of rembg can pin numpy<2), force-reinstall the
+  // 2.x version back. --no-deps prevents pip from pulling anything else down
+  // with it.
+  let numpyRepair = "";
+  try {
+    numpyRepair = await runCommand(
+      pythonPath,
+      [
+        "-m",
+        "pip",
+        "install",
+        "--upgrade",
+        "--force-reinstall",
+        "--no-cache-dir",
+        "--no-deps",
+        "numpy>=2.0,<3.0",
+      ],
+      { cwd: backendPath, timeoutMs: 10 * 60 * 1000 },
+    );
+  } catch (err) {
+    numpyRepair = `Warning: numpy repair failed: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}`;
+    logger.warn("numpy repair failed:", err);
+  }
+
+  // Step 5b: force-reinstall every package whose wheel must be ABI-compatible
+  // with the installed numpy. If any of these were installed earlier against a
+  // different numpy (which is exactly the bug the user keeps hitting), pip's
+  // --upgrade is a no-op when the version number hasn't changed — only
+  // --force-reinstall --no-cache-dir actually fetches a fresh wheel.
+  let abiRepair = "";
+  try {
+    abiRepair = await runCommand(
+      pythonPath,
+      [
+        "-m",
+        "pip",
+        "install",
+        "--force-reinstall",
+        "--no-cache-dir",
+        // --no-deps prevents pandas from dragging in a numpy<2 because of
+        // TTS's transitive metadata constraint (TTS pins pandas<2.0).
+        "--no-deps",
+        "scikit-image>=0.21.0",
+        "huggingface-hub>=0.34.0,<1.0",
+        "trimesh>=4.0.0",
+        "pandas>=2.2.2",
+      ],
+      { cwd: backendPath, timeoutMs: 20 * 60 * 1000 },
+    );
+  } catch (err) {
+    abiRepair = `Warning: ABI repair (mcubes/onnxruntime/rembg/trimesh) failed: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}`;
+    logger.warn("ABI repair failed:", err);
+  }
+
+  // Step 6: end-to-end ABI smoke test. Import torch FIRST — the real backend
+  // loads torch via the hardware module before trimesh/skimage. If torch's DLLs
+  // were compiled against numpy 1.x, the "dtype size changed" crash only appears
+  // when torch is already loaded. Without torch in the smoke test, we get a
+  // false-pass and the user sees the crash during actual generation.
+  let numpyVerify = "";
+  try {
+    const versionOut = await runCommand(
+      pythonPath,
+      [
+        "-c",
+        "import sys; " +
+          "import torch; print('torch', torch.__version__); " +
+          "import numpy; print('numpy', numpy.__version__, numpy.__file__); " +
+          "import huggingface_hub; print('huggingface_hub', huggingface_hub.__version__); " +
+          "import skimage; print('scikit-image', skimage.__version__); " +
+          "from skimage.measure import marching_cubes; print('marching_cubes OK'); " +
+          "import trimesh; print('trimesh', trimesh.__version__); " +
+          // pandas import exercises its Cython _libs against the current
+          // numpy ABI — the exact failure path that crashed 3D generation
+          // when pandas<2.0 was left over from a TTS install.
+          "import pandas; print('pandas', pandas.__version__); " +
+          "from pandas._libs.interval import Interval; print('pandas._libs OK'); " +
+          // rembg + onnxruntime are needed for U2Net background segmentation,
+          // which is the single biggest mesh-quality lever in the 3D pipeline.
+          // A broken install would silently fall back to PIL flood-fill (less
+          // accurate) — check up front so we can flag it during setup.
+          "import onnxruntime; print('onnxruntime', onnxruntime.__version__); " +
+          "import rembg; print('rembg', rembg.__version__); " +
+          "hf_ver = tuple(int(x) for x in huggingface_hub.__version__.split('.')[:2]); " +
+          "assert (0, 34) <= hf_ver < (1, 0), f'huggingface_hub out of range: {huggingface_hub.__version__}'; " +
+          "pd_ver = tuple(int(x) for x in pandas.__version__.split('.')[:2]); " +
+          "assert pd_ver >= (2, 2), f'pandas too old for numpy 2.x ABI: {pandas.__version__}'; " +
+          "ver = tuple(int(x) for x in numpy.__version__.split('.')[:2]); " +
+          "sys.exit(0) if ver >= (2, 0) else sys.exit(f'numpy too old: {numpy.__version__}')",
+      ],
+      { cwd: backendPath, timeoutMs: 2 * 60_000 },
+    );
+    numpyVerify = `ABI smoke test passed:\n${versionOut}`;
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    numpyVerify = `ERROR: ABI smoke test failed:\n${detail}`;
+    logger.error("ABI smoke test failed:", err);
+    throw new Error(numpyVerify);
+  }
+
+  return `${purgeReport}\n${numpyPrep}\n${runtimeInstall}\n${srcInstall}\n${shimWrite}\n${numpyRepair}\n${abiRepair}\n${numpyVerify}`;
 }
 
 async function installAceStepRuntime(
@@ -629,6 +1107,10 @@ export async function installMediaAiDependenciesForBackend(
           "sentencepiece>=0.2.0",
           "imageio>=2.34.0",
           "imageio-ffmpeg>=0.5.0",
+          // gguf is required for the z-image-turbo-gguf tier — without it,
+          // diffusers' from_single_file falls back to a torch checkpoint loader
+          // and crashes with "Unable to load weights from checkpoint file".
+          "gguf>=0.10.0",
         ];
 
   // For CUDA backend, install torch with GPU support explicitly before other
@@ -683,13 +1165,48 @@ export async function installMediaAiDependenciesForBackend(
     effectiveBackend,
   );
 
+  // TripoSR is optional — if its install fails we still want music/image/etc.
+  // to keep working, so wrap it the same way ACE-Step does for its optional
+  // packages.
+  let tripoSrInstall = "";
+  try {
+    tripoSrInstall = await installTripoSrRuntime(
+      pythonPath,
+      backendPath,
+      effectiveBackend,
+    );
+  } catch (err) {
+    tripoSrInstall = `Warning: TripoSR runtime install failed: ${err instanceof Error ? err.message : String(err)}`;
+    logger.warn("TripoSR install failed:", err);
+  }
+
   if (effectiveBackend !== "cpu") {
     writeGpuMarker(effectiveBackend);
   }
 
   return trimOutput(
-    `${venvSetup}\n${pipUpgrade}\n${baseInstall}\n${coreInstall}\n${requirementsInstall}\n${aceStepInstall}`,
+    `${venvSetup}\n${pipUpgrade}\n${baseInstall}\n${coreInstall}\n${requirementsInstall}\n${aceStepInstall}\n${tripoSrInstall}`,
   );
+}
+
+/** Installs ONLY the TripoSR runtime into the existing Media AI venv. Used by
+ *  the 3D Assets page so a user who already set up Media AI for image/music
+ *  can add 3D generation without reinstalling everything else. */
+export async function installThreeDRuntimeOnly(
+  backend?: string,
+): Promise<string> {
+  const backendPath = resolveMediaAiBackendPath();
+  await ensureCompatibleMediaAiVenv(backendPath);
+
+  const pythonPath = getVenvPythonPath();
+  const effectiveBackend =
+    backend ?? cachedHardwareProfile?.bestMediaBackend ?? "cpu";
+
+  logger.info(
+    `Installing TripoSR runtime for backend "${effectiveBackend}" into existing venv`,
+  );
+
+  return installTripoSrRuntime(pythonPath, backendPath, effectiveBackend);
 }
 
 export async function installMediaAiDependencies() {
@@ -766,8 +1283,20 @@ export async function installMediaAiDependencies() {
     cachedHardwareProfile?.bestMediaBackend ?? "cpu",
   );
 
+  let tripoSrInstall = "";
+  try {
+    tripoSrInstall = await installTripoSrRuntime(
+      pythonPath,
+      backendPath,
+      cachedHardwareProfile?.bestMediaBackend ?? "cpu",
+    );
+  } catch (err) {
+    tripoSrInstall = `Warning: TripoSR runtime install failed: ${err instanceof Error ? err.message : String(err)}`;
+    logger.warn("TripoSR install failed:", err);
+  }
+
   return trimOutput(
-    `${venvSetup}\n${pipUpgrade}\n${baseInstall}\n${coreInstall}\n${requirementsInstall}\n${aceStepInstall}`,
+    `${venvSetup}\n${pipUpgrade}\n${baseInstall}\n${coreInstall}\n${requirementsInstall}\n${aceStepInstall}\n${tripoSrInstall}`,
   );
 }
 
@@ -954,7 +1483,25 @@ export function stopMediaAiBackend() {
     return;
   }
   logger.info("Stopping Media AI backend...");
-  pythonServer.kill();
+  // On Windows, uvicorn / python can have child processes (reloader workers,
+  // OMP threads holding native DLLs) that survive a plain .kill(). tree-kill
+  // takes the entire process tree down with SIGKILL so pip can replace the
+  // numpy DLLs on the next install.
+  const pid = pythonServer.pid;
+  if (pid !== undefined) {
+    treeKill(pid, "SIGKILL", (err) => {
+      if (err) {
+        logger.warn(`tree-kill failed for pid=${pid}:`, err);
+      }
+    });
+  }
+  // Defensive: also call the built-in kill() in case treeKill didn't catch
+  // the immediate child.
+  try {
+    pythonServer.kill("SIGKILL");
+  } catch {
+    /* already dead */
+  }
   pythonServer = null;
 }
 
