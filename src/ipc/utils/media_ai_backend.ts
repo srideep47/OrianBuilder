@@ -74,20 +74,32 @@ function readGpuMarker(): string | undefined {
   }
 }
 
+/**
+ * Checks whether the minimum required Python packages are installed in the
+ * venv. We look for fastapi, uvicorn, and diffusers as sentinels — if any are
+ * missing the install was interrupted (e.g. lost internet) and the backend
+ * cannot start.
+ */
+function areBaseDepsInstalled(): boolean {
+  const sitePackages = getVenvSitePackages();
+  if (!sitePackages) return false;
+  try {
+    const entries = fs.readdirSync(sitePackages);
+    const lower = entries.map((e) => e.toLowerCase());
+    const hasFastapi = lower.some((e) => e.startsWith("fastapi"));
+    const hasUvicorn = lower.some((e) => e.startsWith("uvicorn"));
+    const hasDiffusers = lower.some((e) => e.startsWith("diffusers"));
+    return hasFastapi && hasUvicorn && hasDiffusers;
+  } catch {
+    return false;
+  }
+}
+
 // Probe the venv's site-packages to detect GPU-capable packages already installed.
 // Handles existing installs that pre-date the marker file.
 function detectGpuBackendFromVenv(): string | undefined {
-  const venvPath = getVenvPath();
-  // Windows: Lib/site-packages; Unix: lib/python3.x/site-packages
-  let sitePackages = path.join(venvPath, "Lib", "site-packages");
-  if (!fs.existsSync(sitePackages)) {
-    const libDir = path.join(venvPath, "lib");
-    if (fs.existsSync(libDir)) {
-      const pyDir = fs.readdirSync(libDir).find((d) => d.startsWith("python"));
-      if (pyDir) sitePackages = path.join(libDir, pyDir, "site-packages");
-    }
-  }
-  if (!fs.existsSync(sitePackages)) return undefined;
+  const sitePackages = getVenvSitePackages();
+  if (!sitePackages) return undefined;
   try {
     const entries = fs.readdirSync(sitePackages);
     // CUDA torch dist-info contains "+cu" in version string (e.g. torch-2.7.0+cu128.dist-info)
@@ -999,6 +1011,7 @@ export async function getMediaAiBackendStatus(): Promise<MediaAiStatus> {
     venvPath: getVenvPath(),
     pythonPath: getPythonCommand(),
     venvExists: fs.existsSync(getVenvPythonPath()),
+    depsInstalled: areBaseDepsInstalled(),
     requirementsPath,
     requirementsAvailable: fs.existsSync(requirementsPath),
     modelsPath,

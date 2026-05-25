@@ -37,13 +37,6 @@ import { neonTemplateHook } from "@/client_logic/template_hook";
 import { getEffectiveDefaultChatMode } from "@/lib/schemas";
 import { useFreeAgentQuota } from "@/hooks/useFreeAgentQuota";
 import { useInitialChatMode } from "@/hooks/useInitialChatMode";
-import {
-  streamChatResponse,
-  PROXY_MODEL_URL,
-  EMBEDDED_MODEL_URL,
-} from "@/lib/chatStream";
-import { useQuery } from "@tanstack/react-query";
-import type { ComputeTarget } from "@/ipc/types/compute";
 import { OrianBuilderMarkdownParser } from "@/components/chat/OrianBuilderMarkdownParser";
 
 let hasCheckedReleaseNotes = false;
@@ -76,18 +69,22 @@ export default function HomePage() {
   const replyCancelledRef = useRef(false);
   const flushTimerRef = useRef<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Tracks the ID of the persistent "General Chat" app used for non-build conversations.
+  const generalChatAppIdRef = useRef<number | null>(null);
+  // Sync once when settings loads (settings is fetched asynchronously)
+  useEffect(() => {
+    if (
+      generalChatAppIdRef.current === null &&
+      typeof (settings as any)?.generalChatAppId === "number"
+    ) {
+      generalChatAppIdRef.current = (settings as any).generalChatAppId as number;
+    }
+  }, [settings]);
   const { streamMessage } = useStreamChat({ hasChatId: false });
   const posthog = usePostHog();
   const appVersion = useAppVersion();
   const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
 
-  // Use the proxy port when a peer is the active compute target
-  const { data: computeTarget } = useQuery<ComputeTarget>({
-    queryKey: queryKeys.compute.target,
-    queryFn: () => ipc.compute.getTarget(),
-  });
-  const localModelUrl =
-    computeTarget?.mode === "peer" ? PROXY_MODEL_URL : EMBEDDED_MODEL_URL;
   const [releaseUrl, setReleaseUrl] = useState("");
   const { theme } = useTheme();
   const queryClient = useQueryClient();
@@ -217,91 +214,60 @@ export default function HomePage() {
     const isBuildRequest = /build|bulid/i.test(inputValue);
 
     if (!selectedApp && !isBuildRequest) {
-      if (isReplying) return;
+      // Route conversational messages through a persistent "General Chat" app so
+      // they are saved to the DB and appear in the chat tab view, just like build
+      // chats. We create the app once and reuse it for all subsequent conversations.
+      try {
+        setLoadingMode("existing");
+        setIsLoading(true);
 
-      const userText = inputValue.trim();
+        let gcAppId = generalChatAppIdRef.current;
 
-      // Build the full conversation for the local model (history + new turn).
-      // chatMessages here is the current state — the new user message hasn't
-      // been appended yet, so this is safe to use synchronously.
-      const apiMessages: { role: string; content: string }[] = [
-        {
-          role: "system",
-          content:
-            "You are OrianBuilder Assistant, a helpful AI. Answer questions clearly and concisely.",
-        },
-        ...chatMessages.map((m) => ({ role: m.role, content: m.content })),
-        { role: "user", content: userText },
-      ];
+        if (!gcAppId) {
+          // Create a blank app to hold general conversations. No template, no git
+          // scaffold — it's just a container for the chat records.
+          const result = await ipc.app.createApp({
+            name: "General Chat",
+            initialChatMode: "conversational",
+          });
+          gcAppId = result.app.id;
+          generalChatAppIdRef.current = gcAppId;
+          // Persist so we can reuse it across sessions (settings uses .passthrough())
+          void updateSettings({ generalChatAppId: gcAppId } as any);
+        }
 
-      setChatMessages((prev) => [
-        ...prev,
-        { role: "user", content: userText },
-        { role: "assistant", content: "" },
-      ]);
-      setInputValue("");
-      setIsReplying(true);
-      assistantBufferRef.current = "";
-
-      if (flushTimerRef.current) {
-        window.clearInterval(flushTimerRef.current);
-        flushTimerRef.current = null;
-      }
-
-      const commitAssistant = (content: string) => {
-        if (replyCancelledRef.current) return;
-        updateLastAssistantContent(content);
-        setIsReplying(false);
-        replyAbortRef.current = null;
-        stopReplyFlush();
-      };
-
-      const openRouterKey =
-        settings?.providerSettings?.openrouter?.apiKey?.value;
-
-      const abortController = new AbortController();
-      replyAbortRef.current = abortController;
-      replyCancelledRef.current = false;
-
-      void streamChatResponse(
-        apiMessages,
-        openRouterKey,
-        {
-          onChunk: (delta) => {
-            if (replyCancelledRef.current) return;
-            assistantBufferRef.current += delta;
-          },
-          onEnd: () => commitAssistant(assistantBufferRef.current),
-          onError: (msg) => commitAssistant(`[Error] ${msg}`),
-        },
-        abortController.signal,
-        localModelUrl,
-      ).catch((err: unknown) => {
-        if (replyCancelledRef.current) return;
-        commitAssistant(
-          `[Error] ${(err as { message?: string })?.message ?? "Stream failed."}`,
-        );
-      });
-
-      // Flush buffered chunks to state on a smooth interval
-      flushTimerRef.current = window.setInterval(() => {
-        setChatMessages((prev) => {
-          const last = prev[prev.length - 1];
-          if (
-            last?.role === "assistant" &&
-            last.content !== assistantBufferRef.current
-          ) {
-            const next = [...prev];
-            next[next.length - 1] = {
-              ...last,
-              content: assistantBufferRef.current,
-            };
-            return next;
-          }
-          return prev;
+        const chatId = await ipc.chat.createChat({
+          appId: gcAppId,
+          initialChatMode: "conversational",
         });
-      }, 80);
 
+        streamMessage({
+          prompt: inputValue,
+          chatId,
+          appId: gcAppId,
+          attachments,
+          requestedChatMode: "conversational",
+        });
+
+        await new Promise((resolve) =>
+          setTimeout(resolve, settings?.isTestMode ? 0 : 500),
+        );
+
+        setInputValue("");
+        setIsPreviewOpen(false);
+        posthog.capture("home:chat-submit", { existingApp: false, conversational: true });
+        selectChat({ chatId, appId: gcAppId });
+
+        void refreshApps();
+        void invalidateAppQuery(queryClient, { appId: gcAppId });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
+      } catch (error) {
+        console.error("Failed to create conversational chat:", error);
+        showError(
+          (error as any)?.toString() ?? "Failed to start chat",
+        );
+        setIsLoading(false);
+      }
       return;
     }
 
@@ -360,11 +326,15 @@ export default function HomePage() {
 
       setInputValue("");
       setIsPreviewOpen(false);
-      await refreshApps();
-      await invalidateAppQuery(queryClient, { appId });
-      await queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
+
+      // Navigate immediately so the user isn't stuck on the loading screen
+      // while background data refreshes complete. Refreshes run fire-and-forget.
       posthog.capture("home:chat-submit", { existingApp: !!selectedApp });
       selectChat({ chatId, appId });
+
+      void refreshApps();
+      void invalidateAppQuery(queryClient, { appId });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
     } catch (error) {
       console.error("Failed to create chat:", error);
       showError(

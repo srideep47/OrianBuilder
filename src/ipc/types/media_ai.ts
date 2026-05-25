@@ -31,6 +31,10 @@ export const MediaAiStatusSchema = z.object({
   venvPath: z.string(),
   pythonPath: z.string(),
   venvExists: z.boolean(),
+  /** True when the venv exists AND the minimum Python packages (fastapi, uvicorn,
+   *  diffusers) are present. False when the venv was created but pip install was
+   *  interrupted (e.g. lost internet), so the backend cannot start. */
+  depsInstalled: z.boolean(),
   requirementsPath: z.string(),
   requirementsAvailable: z.boolean(),
   modelsPath: z.string(),

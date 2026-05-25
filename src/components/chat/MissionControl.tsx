@@ -358,7 +358,7 @@ export function MissionControl({ chatId }: { chatId?: number }) {
       title: goal.length > 64 ? `${goal.slice(0, 61)}...` : goal,
       goal,
       autonomyProfile:
-        settings?.defaultMissionAutonomyProfile ?? "trusted-workspace",
+        settings?.defaultMissionAutonomyProfile ?? "full-autopilot-sandbox",
     });
     setActiveMission(created.id);
     await updateMissionStatus({ missionId: created.id, status: "running" });

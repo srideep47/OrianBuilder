@@ -101,7 +101,14 @@ export function buildLlamaServerArgs(
 
   // Resolve GPU layer count.
   const resolvedGpuLayers = resolveGpuLayers(input);
-  flags.push("--n-gpu-layers", String(resolvedGpuLayers));
+  // Guard: NaN/Infinity can reach here if GGUF metadata is missing or uses
+  // keys the reader doesn't recognise (e.g. newly-released model families like
+  // Gemma 4). Newer llama-server also rejects -1 and requires "all" instead.
+  const gpuLayersArg =
+    !Number.isFinite(resolvedGpuLayers) || resolvedGpuLayers < 0
+      ? "all"
+      : String(Math.floor(resolvedGpuLayers));
+  flags.push("--n-gpu-layers", gpuLayersArg);
 
   if (input.cacheTypeK) {
     flags.push("--cache-type-k", input.cacheTypeK);
@@ -129,7 +136,12 @@ export function buildLlamaServerArgs(
     flags.push("--device", input.overrideDevice);
   }
 
-  return { flags, resolvedGpuLayers };
+  // Normalise for status reporting: NaN → -1, negative → -1 (means "all")
+  const safeResolvedGpuLayers =
+    Number.isFinite(resolvedGpuLayers) && resolvedGpuLayers >= 0
+      ? Math.floor(resolvedGpuLayers)
+      : -1;
+  return { flags, resolvedGpuLayers: safeResolvedGpuLayers };
 }
 
 function resolveGpuLayers(input: LlamaServerArgInput): number {
@@ -141,7 +153,7 @@ function resolveGpuLayers(input: LlamaServerArgInput): number {
     return clampGpuLayers(input.manualGpuLayers, totalLayers);
   }
   if (!input.autoCompute) {
-    // No info to compute — let llama-server decide (`-1` = all layers).
+    // No autoCompute info — tell the caller to pass "all" to llama-server.
     return -1;
   }
   const auto = input.autoCompute;

@@ -630,9 +630,12 @@ export default function MediaAIPage() {
       setupPhase === "online" ||
       setupPhase === "stopping" ||
       setupPhase === "error";
-    if (status.venvExists) {
+    if (status.venvExists && status.depsInstalled) {
       if (canTransition) setSetupPhase("stopped");
     } else if (canTransition) {
+      // Either no venv yet, or venv was created but pip install was
+      // interrupted (e.g. user lost internet). Either way, show "needs-setup"
+      // so the Install & Setup button appears and the chain can (re-)run.
       setSetupPhase("needs-setup");
     }
   }, [status]); // intentionally omits setupPhase — reads snapshot at render time
@@ -715,7 +718,7 @@ export default function MediaAIPage() {
     ];
 
     try {
-      if (!status?.venvExists) {
+      if (!status?.venvExists || !status?.depsInstalled) {
         setSetupChainStep("install");
         // Re-detect hardware right before installing so we pick up the GPU
         // even if the initial detect-at-startup race missed it (or the user
@@ -727,6 +730,12 @@ export default function MediaAIPage() {
         const backend =
           freshHw?.bestMediaBackend ?? hardware?.bestMediaBackend ?? "cpu";
         if (freshHw) setHardware(freshHw);
+        if (status?.venvExists && !status?.depsInstalled) {
+          appendLog(
+            "Previous installation was incomplete — resuming install…",
+            "info",
+          );
+        }
         appendLog(
           `Installing Python dependencies (${backend} backend${freshHw?.primaryGpu?.model ? ` · ${freshHw.primaryGpu.model}` : ""})…`,
         );
@@ -4832,20 +4841,38 @@ function SetupBanner({
       !(status?.models.some((m) => m.id === c.id && m.downloaded) ?? false),
   );
   const totalGb = pendingComponents.reduce((acc, c) => acc + c.sizeGb, 0);
+  // Detect incomplete install: venv exists but required packages are missing
+  const isIncompleteInstall = status?.venvExists && !status?.depsInstalled;
   return (
     <Card className="mb-6">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Sparkles className="h-5 w-5 text-primary" />
-          Set Up Media AI
+          {isIncompleteInstall ? "Resume Media AI Setup" : "Set Up Media AI"}
         </CardTitle>
         <CardDescription>
-          One click installs the Python runtime with GPU support (when
-          available), downloads every media model, and launches the local
-          backend.
+          {isIncompleteInstall
+            ? "A previous installation was interrupted before it could finish. Click the button below to resume — packages already downloaded will be skipped."
+            : "One click installs the Python runtime with GPU support (when available), downloads every media model, and launches the local backend."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
+        {/* Incomplete install warning */}
+        {isIncompleteInstall && (
+          <div className="flex items-start gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/5 px-4 py-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-600" />
+            <div className="text-sm">
+              <p className="font-medium text-yellow-700">
+                Installation incomplete
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                The Python environment was created but required packages were
+                not fully installed (possibly due to a lost network connection).
+                The backend cannot start until the install is completed.
+              </p>
+            </div>
+          </div>
+        )}
         {/* Hardware detected */}
         {hardware && (
           <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/20 px-4 py-3 text-sm">
@@ -4922,9 +4949,11 @@ function SetupBanner({
           disabled={!status?.backendAvailable}
         >
           <Wrench className="mr-2 h-4 w-4" />
-          {pendingComponents.length === 0
-            ? "Launch Media AI"
-            : `Install & Download Everything (~${totalGb.toFixed(2)} GB)`}
+          {isIncompleteInstall
+            ? "Resume Install & Setup"
+            : pendingComponents.length === 0
+              ? "Launch Media AI"
+              : `Install & Download Everything (~${totalGb.toFixed(2)} GB)`}
         </Button>
         {!status?.backendAvailable && (
           <p className="text-xs text-muted-foreground text-center">

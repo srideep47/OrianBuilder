@@ -739,14 +739,9 @@ ${componentSnippet}
           `Theme for app ${updatedChat.app.id}: ${updatedChat.app.themeId ?? "none"}, prompt length: ${themePrompt.length} chars`,
         );
 
-        // Autopilot directive is applied for local-agent runs when the user
-        // has explicitly opted into full-autopilot — either via the legacy
-        // `autonomousMode` toggle or the default mission autonomy profile.
-        const autopilotMode =
-          selectedChatMode === "local-agent" &&
-          (settings.autonomousMode === true ||
-            settings.defaultMissionAutonomyProfile ===
-              "full-autopilot-sandbox");
+        // Autopilot is always active for local-agent runs — the 8-phase
+        // automated pipeline is the intended default for all build prompts.
+        const autopilotMode = selectedChatMode === "local-agent";
 
         // Migration on read converts "agent" to "build", so no need to check for it here
         let systemPrompt = constructSystemPrompt({
