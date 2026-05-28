@@ -23,6 +23,7 @@ log = logging.getLogger(__name__)
 class ImageTier(TypedDict):
     id: str
     repo: Optional[str]
+    filename: Optional[str]   # single-file download (GGUF); None = snapshot_download
     vram_mb: int
     download_size_mb: int
     backends: list[str]
@@ -34,12 +35,16 @@ class ImageTier(TypedDict):
 # show stale options.
 IMAGE_MODEL_TIERS: list[ImageTier] = [
     {
-        # GGUF Q4_1 local file — place at $OMNIGEN_MODELS_DIR/z-image-turbo-Q4_1.gguf
+        # GGUF Q4_1 quantised weights — downloaded as a single file from HF
+        # and stored at $OMNIGEN_MODELS_DIR/z-image-turbo-Q4_1.gguf.
+        # VAE + text encoder are fetched separately from Tongyi-MAI/Z-Image-Turbo
+        # on first generation and cached in the HF hub cache.
         "id": "z-image-turbo-gguf",
         "label": "Z Image Turbo Q4_1 (GGUF)",
-        "repo": None,
+        "repo": "Ankithareddy08/z-image-turbo-gguf",
+        "filename": "z-image-turbo-Q4_1.gguf",
         "vram_mb": 0,
-        "download_size_mb": 0,
+        "download_size_mb": 4967,
         "backends": ["cuda", "rocm", "metal", "mps", "directml", "cpu"],
     },
     {
@@ -47,6 +52,7 @@ IMAGE_MODEL_TIERS: list[ImageTier] = [
         "id": "z-image-turbo",
         "label": "Z Image Turbo",
         "repo": "Tongyi-MAI/Z-Image-Turbo",
+        "filename": None,
         "vram_mb": 8000,
         "download_size_mb": 12000,
         "backends": ["cuda", "rocm", "metal", "mps"],
@@ -56,6 +62,7 @@ IMAGE_MODEL_TIERS: list[ImageTier] = [
         "id": "sdxl-turbo",
         "label": "SDXL Turbo",
         "repo": "stabilityai/sdxl-turbo",
+        "filename": None,
         "vram_mb": 6000,
         "download_size_mb": 7000,
         "backends": ["cuda", "rocm", "metal", "mps", "directml"],
@@ -65,6 +72,7 @@ IMAGE_MODEL_TIERS: list[ImageTier] = [
         "id": "sd-turbo",
         "label": "SD Turbo",
         "repo": "stabilityai/sd-turbo",
+        "filename": None,
         "vram_mb": 3000,
         "download_size_mb": 1700,
         "backends": ["cuda", "rocm", "metal", "mps", "directml"],
@@ -73,6 +81,7 @@ IMAGE_MODEL_TIERS: list[ImageTier] = [
         "id": "sd-1.5",
         "label": "Stable Diffusion 1.5",
         "repo": "runwayml/stable-diffusion-v1-5",
+        "filename": None,
         "vram_mb": 4000,
         "download_size_mb": 4000,
         "backends": ["cuda", "rocm", "metal", "mps", "directml"],
@@ -81,6 +90,7 @@ IMAGE_MODEL_TIERS: list[ImageTier] = [
         "id": "sd-1.5-onnx-cpu",
         "label": "SD 1.5 ONNX (CPU)",
         "repo": "nmkd/stable-diffusion-1.5-onnx-fp16",
+        "filename": None,
         "vram_mb": 0,
         "download_size_mb": 2500,
         "backends": ["cpu", "openvino", "directml"],
@@ -124,8 +134,22 @@ def download_tier(tier_id: str) -> None:
     _downloading_tiers.add(tier_id)
     _download_errors.pop(tier_id, None)
     try:
-        from huggingface_hub import snapshot_download  # type: ignore
-        snapshot_download(repo_id=tier["repo"])
+        filename = tier.get("filename")
+        if filename:
+            # Single-file download (e.g. GGUF). Download directly into the
+            # models directory so the rest of the code finds it at _gguf_path().
+            from huggingface_hub import hf_hub_download  # type: ignore
+            dest_dir = os.path.dirname(_gguf_path())
+            os.makedirs(dest_dir, exist_ok=True)
+            hf_hub_download(
+                repo_id=tier["repo"],
+                filename=filename,
+                local_dir=dest_dir,
+            )
+        else:
+            # Full repo snapshot (all other tiers — diffusers, ONNX, etc.)
+            from huggingface_hub import snapshot_download  # type: ignore
+            snapshot_download(repo_id=tier["repo"])
     except Exception as exc:  # noqa: BLE001
         _download_errors[tier_id] = str(exc)
     finally:

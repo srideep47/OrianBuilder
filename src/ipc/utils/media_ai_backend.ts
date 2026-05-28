@@ -19,7 +19,7 @@ export function initMediaAiHardware(profile: HardwareProfile | null): void {
 
 const logger = log.scope("media_ai_backend");
 
-const SERVER_URL = "http://127.0.0.1:8000";
+const SERVER_URL = "http://127.0.0.1:8001";
 const MODEL_LABELS: Record<MediaAiModelId, string> = {
   text: "Phi-3 text model",
   image: "Stable Diffusion image model",
@@ -1465,7 +1465,7 @@ export async function startMediaAiBackend() {
 
   pythonServer = spawn(
     getPythonCommand(),
-    ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"],
+    ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8001"],
     {
       cwd: backendPath,
       shell: false,

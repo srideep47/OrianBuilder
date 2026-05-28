@@ -666,6 +666,10 @@ async def v1_generate_3d(
     if not image_bytes:
         raise HTTPException(status_code=400, detail="empty image upload")
 
+    # Evict the image pipeline before loading TripoSR — both models together
+    # exceed 10 GB and will OOM-kill the backend on 16 GB systems.
+    image_model.unload_pipeline()
+
     try:
         data = await run_in_threadpool(
             threed_model.generate_3d_from_image,

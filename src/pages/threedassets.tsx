@@ -2,6 +2,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   Box,
   CheckCircle2,
+  ChevronDown,
   Download,
   HardDrive,
   Image as ImageIcon,
@@ -42,6 +43,19 @@ interface ThreeDTierInfo {
   backends: string[];
   hf_repo: string;
   repo_url: string;
+  available_for_backend: boolean;
+  status: "downloaded" | "downloading" | "not_downloaded";
+  download_progress?: number | null;
+  selected: boolean;
+}
+
+interface ImageTierInfo {
+  id: string;
+  label: string;
+  description?: string;
+  vram_mb: number;
+  download_size_mb: number;
+  backends?: string[];
   available_for_backend: boolean;
   status: "downloaded" | "downloading" | "not_downloaded";
   download_progress?: number | null;
@@ -181,6 +195,12 @@ export default function ThreeDAssetsPage() {
   );
   const genAbortRef = useRef<AbortController | null>(null);
 
+  const [imageTiers, setImageTiers] = useState<ImageTierInfo[]>([]);
+  const [imageTiersLoading, setImageTiersLoading] = useState(false);
+  const [imageTiersExpanded, setImageTiersExpanded] = useState(true);
+  const [imageDownloadTierId, setImageDownloadTierId] = useState<string | null>(null);
+  const imageDownloadPollRef = useRef<number | null>(null);
+
   const serverUrl = status?.serverUrl ?? "http://127.0.0.1:8000";
   const isBackendOnline = status?.healthy === true;
 
@@ -202,10 +222,41 @@ export default function ThreeDAssetsPage() {
     tierList[0] ??
     null;
 
+  const hasImageModelReady = imageTiers.some((t) => t.status === "downloaded");
+
   const refreshStatus = useCallback(async () => {
     const next = await ipc.mediaAi.getStatus(undefined).catch(() => null);
     if (next) setStatus(next);
   }, []);
+
+  const fetchImageTiers = useCallback(
+    async (): Promise<ImageTierInfo[] | null> => {
+      if (!isBackendOnline) return null;
+      setImageTiersLoading(true);
+      try {
+        const res = await fetch(`${serverUrl}/v1/generate/image/tiers`);
+        if (res.ok) {
+          const data = (await res.json()) as {
+            tiers: ImageTierInfo[];
+            selected_tier_id: string;
+          };
+          setImageTiers(data.tiers);
+          // Auto-collapse the picker once we confirm a model is already ready —
+          // no need to show all options when generation is already possible.
+          if (data.tiers.some((t) => t.status === "downloaded")) {
+            setImageTiersExpanded(false);
+          }
+          return data.tiers;
+        }
+      } catch {
+        // Backend not running
+      } finally {
+        setImageTiersLoading(false);
+      }
+      return null;
+    },
+    [isBackendOnline, serverUrl],
+  );
 
   const fetchTiers = useCallback(
     async (allowBackendProbe = false): Promise<ThreeDTierInfo[] | null> => {
@@ -255,6 +306,7 @@ export default function ThreeDAssetsPage() {
   useEffect(() => {
     if (!isBackendOnline) return;
     void fetchTiers(true);
+    void fetchImageTiers();
     // Probe the 3D runtime as soon as the backend is up so the "Install 3D
     // Runtime" card appears before the user even tries to generate. Otherwise
     // they have to hit Generate, see a confusing error, and only THEN see the
@@ -288,7 +340,7 @@ export default function ThreeDAssetsPage() {
         // and let the per-generate path catch any error.
       }
     })();
-  }, [isBackendOnline, fetchTiers, serverUrl]);
+  }, [isBackendOnline, fetchTiers, fetchImageTiers, serverUrl]);
 
   useEffect(() => {
     return () => {
@@ -298,6 +350,21 @@ export default function ThreeDAssetsPage() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (imageDownloadPollRef.current !== null) {
+        window.clearInterval(imageDownloadPollRef.current);
+        imageDownloadPollRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isBackendOnline && inputMode === "text") {
+      void fetchImageTiers();
+    }
+  }, [isBackendOnline, inputMode, fetchImageTiers]);
 
   useEffect(() => {
     return () => {
@@ -527,6 +594,61 @@ export default function ThreeDAssetsPage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setDownloadTierId(null);
+      toast.error(`Download failed: ${msg}`);
+    }
+  };
+
+  const handleImageModelDownload = async (tierId: string) => {
+    const tier = imageTiers.find((t) => t.id === tierId);
+    if (!isBackendOnline) {
+      toast.info("Start the backend first, then download the model.");
+      return;
+    }
+    if (imageDownloadPollRef.current !== null) {
+      window.clearInterval(imageDownloadPollRef.current);
+      imageDownloadPollRef.current = null;
+    }
+    setImageDownloadTierId(tierId);
+    try {
+      const res = await fetch(`${serverUrl}/v1/generate/image/download`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tier_id: tierId }),
+      });
+      if (!res.ok) {
+        const err = await res
+          .json()
+          .catch(() => ({ detail: `HTTP ${res.status}` }));
+        throw new Error(
+          (err as { detail?: string }).detail ?? `HTTP ${res.status}`,
+        );
+      }
+      const poll = window.setInterval(() => {
+        void fetchImageTiers().then((next) => {
+          if (!next) return;
+          const t = next.find((x) => x.id === tierId);
+          if (!t) return;
+          if (t.status === "downloaded") {
+            toast.success(`${tier?.label ?? tierId} downloaded`);
+            setImageDownloadTierId(null);
+            window.clearInterval(poll);
+            if (imageDownloadPollRef.current === poll) {
+              imageDownloadPollRef.current = null;
+            }
+          } else if (t.status === "not_downloaded") {
+            toast.error(`${tier?.label ?? tierId} download failed`);
+            setImageDownloadTierId(null);
+            window.clearInterval(poll);
+            if (imageDownloadPollRef.current === poll) {
+              imageDownloadPollRef.current = null;
+            }
+          }
+        });
+      }, 3000);
+      imageDownloadPollRef.current = poll;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setImageDownloadTierId(null);
       toast.error(`Download failed: ${msg}`);
     }
   };
@@ -1010,6 +1132,236 @@ export default function ThreeDAssetsPage() {
         </CardContent>
       </Card>
 
+      {inputMode === "text" && (
+        <Card>
+          {/* Clickable header row — acts as the dropdown trigger */}
+          <button
+            type="button"
+            onClick={() => setImageTiersExpanded((v) => !v)}
+            className="w-full text-left"
+          >
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <ImageIcon className="h-5 w-5 shrink-0" />
+                  <div className="min-w-0">
+                    <CardTitle className="text-base">Image Model</CardTitle>
+                    <CardDescription className="mt-0.5">
+                      {hasImageModelReady
+                        ? (() => {
+                            const ready = imageTiers.find(
+                              (t) => t.status === "downloaded",
+                            );
+                            return (
+                              <span className="flex items-center gap-1.5">
+                                <span className="font-medium text-emerald-600">
+                                  {ready?.label ?? "Model ready"}
+                                </span>
+                                <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-emerald-600">
+                                  Ready
+                                </span>
+                              </span>
+                            );
+                          })()
+                        : "Download a model to enable text prompts"}
+                    </CardDescription>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {imageTiersLoading && (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                  )}
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 text-muted-foreground transition-transform",
+                      imageTiersExpanded && "rotate-180",
+                    )}
+                  />
+                </div>
+              </div>
+            </CardHeader>
+          </button>
+
+          {imageTiersExpanded && (
+            <CardContent className="space-y-3 pt-0">
+              <div className="flex items-center justify-between pb-1">
+                <p className="text-xs text-muted-foreground">
+                  Text-to-3D generates a reference image first — pick a model
+                  that fits your hardware.
+                </p>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void fetchImageTiers();
+                  }}
+                  disabled={!isBackendOnline || imageTiersLoading}
+                  className="shrink-0 text-[10px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 ml-3"
+                >
+                  {imageTiersLoading ? "Refreshing…" : "Refresh"}
+                </button>
+              </div>
+
+              {!isBackendOnline && (
+                <p className="text-sm text-muted-foreground">
+                  Start the backend to see available image models.
+                </p>
+              )}
+              {isBackendOnline && imageTiers.length === 0 && !imageTiersLoading && (
+                <p className="text-sm text-muted-foreground">
+                  No image models found. Click Refresh to check again.
+                </p>
+              )}
+
+              <div className="grid gap-2 md:grid-cols-2">
+                {imageTiers.map((tier) => {
+                  const isDownloading =
+                    tier.status === "downloading" ||
+                    imageDownloadTierId === tier.id;
+                  const isReady = tier.status === "downloaded";
+                  return (
+                    <div
+                      key={tier.id}
+                      className={cn(
+                        "rounded-lg border p-3 space-y-2.5 transition-colors",
+                        isReady
+                          ? "border-emerald-500/30 bg-emerald-500/5"
+                          : isDownloading
+                            ? "border-sky-500/30 bg-sky-500/5"
+                            : "border-border bg-muted/10",
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {tier.selected && (
+                            <span className="shrink-0 rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-primary">
+                              Recommended
+                            </span>
+                          )}
+                          <span className="text-sm font-medium truncate">
+                            {tier.label}
+                          </span>
+                        </div>
+                        <span
+                          className={cn(
+                            "shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase",
+                            isReady
+                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
+                              : isDownloading
+                                ? "border-sky-500/30 bg-sky-500/10 text-sky-600"
+                                : "border-border bg-muted/20 text-muted-foreground",
+                          )}
+                        >
+                          {!isBackendOnline
+                            ? "Needs backend"
+                            : isReady
+                              ? "Downloaded"
+                              : isDownloading
+                                ? "Downloading"
+                                : "Not downloaded"}
+                        </span>
+                      </div>
+
+                      {tier.description && (
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                          {tier.description}
+                        </p>
+                      )}
+
+                      <div className="flex flex-wrap gap-1 text-[10px] text-muted-foreground">
+                        {/* VRAM chip */}
+                        <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                          {tier.vram_mb === 0
+                            ? tier.backends?.some((b) =>
+                                ["cuda", "rocm", "metal", "mps"].includes(b),
+                              )
+                              ? "GGUF · CPU+GPU"
+                              : "CPU only"
+                            : tier.vram_mb >= 1000
+                              ? `${tier.vram_mb / 1000} GB VRAM`
+                              : `${tier.vram_mb} MB VRAM`}
+                        </span>
+                        {/* For GGUF tiers show approx GPU VRAM usage alongside the
+                            file size — they're roughly equal for Q4 quants */}
+                        {tier.id.toLowerCase().includes("gguf") &&
+                          tier.download_size_mb > 0 && (
+                            <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                              ~{(tier.download_size_mb / 1024).toFixed(1)} GB VRAM (GPU)
+                            </span>
+                          )}
+                        {tier.download_size_mb > 0 && (
+                          <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                            ~{(tier.download_size_mb / 1024).toFixed(1)} GB
+                            {tier.id.toLowerCase().includes("gguf")
+                              ? " file"
+                              : " download"}
+                          </span>
+                        )}
+                        <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                          Text → Image
+                        </span>
+                      </div>
+
+                      {isDownloading && (
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[10px] text-sky-600 font-medium">
+                            <span>Downloading</span>
+                            <span>
+                              {tier.download_progress != null
+                                ? `${tier.download_progress}%`
+                                : "Preparing…"}
+                            </span>
+                          </div>
+                          <div className="w-full h-1.5 bg-sky-500/10 rounded-full overflow-hidden">
+                            {tier.download_progress != null ? (
+                              <div
+                                className="h-full bg-sky-500 rounded-full transition-all duration-300"
+                                style={{ width: `${tier.download_progress}%` }}
+                              />
+                            ) : (
+                              <div className="h-full w-1/3 animate-pulse rounded-full bg-sky-500" />
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex flex-wrap gap-2">
+                        {isReady ? (
+                          <span className="inline-flex h-8 items-center rounded border border-emerald-500/30 bg-emerald-500/10 px-2 text-xs font-medium text-emerald-600">
+                            Ready
+                          </span>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 px-3 text-xs"
+                            onClick={() =>
+                              void handleImageModelDownload(tier.id)
+                            }
+                            disabled={
+                              isDownloading ||
+                              !isBackendOnline ||
+                              !tier.available_for_backend
+                            }
+                          >
+                            {isDownloading ? (
+                              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Download className="mr-1.5 h-3.5 w-3.5" />
+                            )}
+                            {isDownloading ? "Downloading…" : "Download Model"}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          )}
+        </Card>
+      )}
+
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -1041,6 +1393,17 @@ export default function ThreeDAssetsPage() {
                   2,
                 )}{" "}
                 GB).
+              </span>
+            </div>
+          )}
+
+          {inputMode === "text" && isBackendOnline && !hasImageModelReady && imageTiers.length > 0 && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+              <Download className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>
+                Text-to-3D requires an image model to generate the reference
+                image. Download one from the <strong>Image Model</strong>{" "}
+                section above.
               </span>
             </div>
           )}
@@ -1221,6 +1584,7 @@ export default function ThreeDAssetsPage() {
                 selectedTier?.status !== "downloaded" ||
                 isBusy ||
                 (inputMode === "text" && !prompt.trim()) ||
+                (inputMode === "text" && !hasImageModelReady) ||
                 (inputMode === "image" && !imageFile)
               }
               aria-busy={isBusy}
@@ -1239,8 +1603,10 @@ export default function ThreeDAssetsPage() {
                   ? "Generating reference image…"
                   : "Reconstructing 3D mesh…"
                 : selectedTier?.status !== "downloaded"
-                  ? "Download Model First"
-                  : "Generate 3D Model"}
+                  ? "Download 3D Model First"
+                  : inputMode === "text" && !hasImageModelReady
+                    ? "Download Image Model First"
+                    : "Generate 3D Model"}
             </Button>
             {isBusy && (
               <Button variant="outline" onClick={handleStopGen}>
