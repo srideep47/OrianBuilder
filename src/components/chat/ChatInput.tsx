@@ -720,20 +720,70 @@ export function ChatInput({
         );
       }
 
-      // Vercel section is OPTIONAL. If the user hasn't connected Vercel, we're
-      // done after the GitHub work above (source push + native Releases upload).
-      if (!hasVercel) {
+      // Deployment is OPTIONAL and goes to a SINGLE provider. We respect the
+      // provider the app is already linked to; otherwise we fall back to
+      // whichever token is connected (Vercel takes precedence when both are).
+      const hasNetlify = !!settings.netlifyAccessToken?.value;
+      const useNetlify =
+        !!app.netlifySiteId ||
+        (!app.vercelProjectId && !hasVercel && hasNetlify);
+      const useVercel = !useNetlify && (!!app.vercelProjectId || hasVercel);
+
+      // Neither provider connected → GitHub-only publish is complete.
+      if (!useVercel && !useNetlify) {
         queryClient.invalidateQueries({
           queryKey: queryKeys.apps.detail({ appId }),
         });
         showSuccess(
           isNativePublish
-            ? "Auto-publish: native installer is live on GitHub Releases. Connect Vercel in Settings to also publish a download page."
-            : "Auto-publish: source synced to GitHub. Connect Vercel in Settings to enable deployment.",
+            ? "Auto-publish: native installer is live on GitHub Releases. Connect Vercel or Netlify in Settings to also publish a download page."
+            : "Auto-publish: source synced to GitHub. Connect Vercel or Netlify in Settings to enable deployment.",
         );
         return;
       }
 
+      // --- Netlify deploy path ---
+      if (useNetlify) {
+        showInfo(
+          app.netlifySiteId
+            ? "Auto-publish: building & deploying to Netlify."
+            : `Auto-publish: building & deploying Netlify site "${app.name}".`,
+        );
+        // createSite is idempotent: it re-deploys the already-linked site when
+        // present, or creates + deploys a new one otherwise.
+        await ipc.netlify.createSite({ appId, name: app.name });
+
+        let netlifyUrl: string | null = null;
+        try {
+          const deployments = await ipc.netlify.getDeployments({ appId });
+          const ready = deployments.find(
+            (deployment) =>
+              deployment.readyState === "READY" &&
+              deployment.target === "production",
+          );
+          if (ready?.url) {
+            netlifyUrl = ready.url.startsWith("http")
+              ? ready.url
+              : `https://${ready.url}`;
+          }
+        } catch {
+          // A just-created deployment can still be processing; app row is the fallback.
+        }
+
+        const refreshedApp = await ipc.app.getApp(appId);
+        const url = netlifyUrl || refreshedApp.netlifyDeploymentUrl;
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.apps.detail({ appId }),
+        });
+        showSuccess(
+          url
+            ? `Published to Netlify: ${url}`
+            : "Published to GitHub and deployed to Netlify.",
+        );
+        return;
+      }
+
+      // --- Vercel deploy path ---
       if (!app.vercelProjectId) {
         showInfo(`Auto-publish: linking Vercel project "${app.name}".`);
         const projects = await ipc.vercel.listProjects();
@@ -794,6 +844,7 @@ export function ChatInput({
     settings?.autoPublishAfterChecks,
     settings?.githubAccessToken?.value,
     settings?.vercelAccessToken?.value,
+    settings?.netlifyAccessToken?.value,
   ]);
 
   const handleSubmit = async () => {
@@ -1558,8 +1609,8 @@ export function ChatInput({
                   />
                 </TooltipTrigger>
                 <TooltipContent>
-                  Push to GitHub and deploy to Vercel after a successful checked
-                  turn.
+                  Push to GitHub and deploy to Vercel or Netlify after a
+                  successful checked turn.
                 </TooltipContent>
               </Tooltip>
             </div>

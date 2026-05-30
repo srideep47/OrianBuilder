@@ -21,6 +21,7 @@ import { agentContracts, agentEvents } from "../types/agent";
 import { githubContracts, gitContracts, githubEvents } from "../types/github";
 import { mcpContracts, mcpEvents } from "../types/mcp";
 import { vercelContracts } from "../types/vercel";
+import { netlifyContracts } from "../types/netlify";
 import { supabaseContracts } from "../types/supabase";
 import { neonContracts } from "../types/neon";
 import { migrationContracts } from "../types/migration";
@@ -101,6 +102,7 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(gitContracts),
   ...getInvokeChannels(mcpContracts),
   ...getInvokeChannels(vercelContracts),
+  ...getInvokeChannels(netlifyContracts),
   ...getInvokeChannels(supabaseContracts),
   ...getInvokeChannels(neonContracts),
   ...getInvokeChannels(migrationContracts),

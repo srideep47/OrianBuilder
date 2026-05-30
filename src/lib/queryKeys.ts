@@ -288,6 +288,15 @@ export const queryKeys = {
   },
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // Netlify Deployments
+  // ─────────────────────────────────────────────────────────────────────────────
+  netlify: {
+    all: ["netlify-deployments"] as const,
+    deployments: ({ appId }: { appId: number }) =>
+      ["netlify-deployments", appId] as const,
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // App Upgrades
   // ─────────────────────────────────────────────────────────────────────────────
   appUpgrades: {
@@ -466,6 +475,7 @@ export type AppQueryKey =
       (typeof queryKeys.freeAgentQuota)[keyof typeof queryKeys.freeAgentQuota]
     >
   | QueryKeyOf<(typeof queryKeys.vercel)[keyof typeof queryKeys.vercel]>
+  | QueryKeyOf<(typeof queryKeys.netlify)[keyof typeof queryKeys.netlify]>
   | QueryKeyOf<
       (typeof queryKeys.appUpgrades)[keyof typeof queryKeys.appUpgrades]
     >

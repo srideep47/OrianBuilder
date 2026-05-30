@@ -331,8 +331,8 @@ export function HomeChatInput({
                   />
                 </TooltipTrigger>
                 <TooltipContent>
-                  Push to GitHub and deploy to Vercel after a successful checked
-                  turn.
+                  Push to GitHub and deploy to Vercel or Netlify after a
+                  successful checked turn.
                 </TooltipContent>
               </Tooltip>
               {settings?.enableSelectAppFromHomeChatInput && (

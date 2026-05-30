@@ -33,6 +33,7 @@ export { agentContracts, agentEvents } from "./agent";
 export { githubContracts, gitContracts, githubEvents } from "./github";
 export { mcpContracts, mcpEvents } from "./mcp";
 export { vercelContracts } from "./vercel";
+export { netlifyContracts } from "./netlify";
 export { supabaseContracts } from "./supabase";
 export { neonContracts } from "./neon";
 export { migrationContracts } from "./migration";
@@ -208,6 +209,7 @@ export { agentClient, agentEventClient } from "./agent";
 export { githubClient, gitClient, githubEventClient } from "./github";
 export { mcpClient, mcpEventClient } from "./mcp";
 export { vercelClient } from "./vercel";
+export { netlifyClient } from "./netlify";
 export { supabaseClient } from "./supabase";
 export { neonClient } from "./neon";
 export { migrationClient } from "./migration";
@@ -335,6 +337,19 @@ export type {
   GetVercelDeploymentsParams,
   DisconnectVercelProjectParams,
 } from "./vercel";
+
+// Netlify types
+export type {
+  NetlifySite,
+  NetlifyDeployment,
+  SaveNetlifyAccessTokenParams,
+  ConnectToExistingNetlifySiteParams,
+  IsNetlifySiteAvailableParams,
+  IsNetlifySiteAvailableResponse,
+  CreateNetlifySiteParams,
+  GetNetlifyDeploymentsParams,
+  DisconnectNetlifySiteParams,
+} from "./netlify";
 
 // Supabase types
 export type {
@@ -529,6 +544,7 @@ import { agentClient, agentEventClient } from "./agent";
 import { githubClient, gitClient, githubEventClient } from "./github";
 import { mcpClient, mcpEventClient } from "./mcp";
 import { vercelClient } from "./vercel";
+import { netlifyClient } from "./netlify";
 import { supabaseClient } from "./supabase";
 import { neonClient } from "./neon";
 import { migrationClient } from "./migration";
@@ -608,6 +624,7 @@ export const ipc = {
   git: gitClient,
   mcp: mcpClient,
   vercel: vercelClient,
+  netlify: netlifyClient,
   supabase: supabaseClient,
   neon: neonClient,
   migration: migrationClient,

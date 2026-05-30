@@ -110,6 +110,8 @@ userData/
 # Claude Code
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+# Local Claude session state & agent memory (machine-specific, not shared)
+.claude/projects/
 
 # Python
 __pycache__/
@@ -138,6 +140,14 @@ package/build/
 *.7z
 *.tar
 *.tar.gz
+
+# Large video media — generated/reference clips (e.g. assets/*.mp4 planet
+# videos) are multi-MB binaries that should never enter git.
+*.mp4
+*.mov
+*.webm
+*.mkv
+*.avi
 
 # Storybook
 storybook-static/

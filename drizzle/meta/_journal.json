@@ -281,6 +281,13 @@
       "when": 1748000000000,
       "tag": "0039_design_studio_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1780146244609,
+      "tag": "0040_handy_nekra",
+      "breakpoints": true
     }
   ]
 }

@@ -134,7 +134,7 @@ export default function ChatPage() {
           }
         }}
         className={cn(
-          "relative shrink-0 self-stretch bg-white/20 hover:bg-white/40 transition-colors cursor-col-resize",
+          "relative shrink-0 self-stretch bg-border hover:bg-gray-400 transition-colors cursor-col-resize",
           isChatPanelHidden ? "w-2" : "w-0.5",
         )}
       />

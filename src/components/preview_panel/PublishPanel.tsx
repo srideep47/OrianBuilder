@@ -1,17 +1,57 @@
+import { useState, useEffect } from "react";
 import { useAtomValue } from "jotai";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { useLoadApp } from "@/hooks/useLoadApp";
 import { GitHubConnector } from "@/components/GitHubConnector";
 import { VercelConnector } from "@/components/VercelConnector";
+import { NetlifyConnector } from "@/components/NetlifyConnector";
 import { PortalMigrate } from "@/components/PortalMigrate";
 import { MigrationPanel } from "@/components/MigrationPanel";
-import { ipc } from "@/ipc/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { GithubCollaboratorManager } from "@/components/GithubCollaboratorManager";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 
 export const PublishPanel = () => {
   const selectedAppId = useAtomValue(selectedAppIdAtom);
   const { app, loading } = useLoadApp(selectedAppId);
+  const [deployProvider, setDeployProvider] = useState<"vercel" | "netlify">(
+    "vercel",
+  );
+
+  const vercelConnected = !!app?.vercelProjectId;
+  const netlifyConnected = !!app?.netlifySiteId;
+
+  // Single-choice: the non-selected provider's button is disabled, so clicking
+  // it does nothing (it won't open the other provider).
+  const vercelTabDisabled = deployProvider !== "vercel";
+  const netlifyTabDisabled = deployProvider !== "netlify";
+
+  // The currently selected provider is "locked in" once it has an active
+  // deployment — you must disconnect it before switching, which is what keeps a
+  // site deployed to only ONE provider at a time.
+  const activeConnected =
+    (deployProvider === "vercel" && vercelConnected) ||
+    (deployProvider === "netlify" && netlifyConnected);
+  const otherProvider = deployProvider === "vercel" ? "netlify" : "vercel";
+  const otherProviderLabel = otherProvider === "vercel" ? "Vercel" : "Netlify";
+
+  // Keep the active tab pinned to whichever provider is actually connected, so
+  // the selection always matches the live deployment.
+  useEffect(() => {
+    if (vercelConnected && deployProvider !== "vercel") {
+      setDeployProvider("vercel");
+    } else if (netlifyConnected && deployProvider !== "netlify") {
+      setDeployProvider("netlify");
+    }
+  }, [vercelConnected, netlifyConnected, deployProvider]);
+
+  // Switching is only allowed via the explicit control below, and only while
+  // the current provider isn't connected.
+  const switchToOtherProvider = () => {
+    if (activeConnected) return;
+    setDeployProvider(otherProvider);
+  };
 
   if (loading) {
     return (
@@ -122,61 +162,167 @@ export const PublishPanel = () => {
           </CardContent>
         </Card>
 
-        {/* Vercel Section */}
+        {/* Deployment Section */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  ipc.system.openExternalUrl("https://vercel.com/dashboard");
-                }}
-                className="flex items-center gap-2 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer bg-transparent border-none p-0"
+              <svg
+                className="w-5 h-5 text-blue-600 dark:text-blue-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
               >
-                <svg
-                  className="w-5 h-5"
-                  fill="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path d="M24 22.525H0l12-21.05 12 21.05z" />
-                </svg>
-                Vercel
-              </button>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"
+                />
+              </svg>
+              Deploy
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Publish your app by deploying it to Vercel.
-            </p>
+            <div>
+              <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                Select your deployment destination
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                Please choose one platform to connect your account and publish
+                your application.
+              </p>
+            </div>
 
-            {!app?.githubOrg || !app?.githubRepo ? (
-              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
-                <div className="flex items-start gap-3">
+            {/* Provider Selection (exclusive tab-switcher) */}
+            <div>
+              <Label className="block text-sm font-medium mb-1">
+                Select Deployment Provider
+              </Label>
+              <div
+                role="radiogroup"
+                aria-label="Select Deployment Provider"
+                className="flex rounded-md border border-gray-200 dark:border-gray-700"
+              >
+                <Button
+                  type="button"
+                  role="radio"
+                  aria-checked={deployProvider === "vercel"}
+                  disabled={vercelTabDisabled}
+                  title={
+                    vercelTabDisabled
+                      ? "Netlify is selected. Use “Switch to Vercel” below."
+                      : undefined
+                  }
+                  variant={deployProvider === "vercel" ? "default" : "ghost"}
+                  className={`flex-1 rounded-none rounded-l-md border-0 gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+                    deployProvider === "vercel"
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-gray-50 dark:hover:bg-gray-800"
+                  }`}
+                  data-testid="deploy-provider-vercel"
+                >
                   <svg
-                    className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0"
-                    fill="none"
-                    stroke="currentColor"
+                    className="w-4 h-4"
+                    fill="currentColor"
                     viewBox="0 0 24 24"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
-                    />
+                    <path d="M24 22.525H0l12-21.05 12 21.05z" />
                   </svg>
-                  <div>
-                    <h3 className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                      GitHub Required for Vercel Deployment
-                    </h3>
-                    <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
-                      Deploying to Vercel requires connecting to GitHub first.
-                      Please set up your GitHub repository above.
-                    </p>
+                  Vercel
+                </Button>
+                <Button
+                  type="button"
+                  role="radio"
+                  aria-checked={deployProvider === "netlify"}
+                  disabled={netlifyTabDisabled}
+                  title={
+                    netlifyTabDisabled
+                      ? "Vercel is selected. Use “Switch to Netlify” below."
+                      : undefined
+                  }
+                  variant={deployProvider === "netlify" ? "default" : "ghost"}
+                  className={`flex-1 rounded-none rounded-r-md border-0 border-l border-gray-200 dark:border-gray-700 gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+                    deployProvider === "netlify"
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-gray-50 dark:hover:bg-gray-800"
+                  }`}
+                  data-testid="deploy-provider-netlify"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M16.934 8.519a1.044 1.044 0 0 1 .303.23l2.349-1.045-2.192-2.171-.491 2.954zM12.06 6.546a1.305 1.305 0 0 1 .209.574l3.497 1.482a1.044 1.044 0 0 1 .355-.177l.574-3.45-2.13-2.234-2.505 3.31v.025zM23.917 11.426l-3.282-3.293-2.766 1.234.005.005 4.553 1.93a.36.36 0 0 1 .067.038c.491-.067.957.067 1.423.086zM3.36 13.946l-1.69-1.71L0 13.91l2.602 1.105.758-1.07zM12.957 17.06l-.121.064-1.39 6.876h.04l2.49-3.288-.998-3.673a1.305 1.305 0 0 1-.021.021zM10.836 16.685l-3.575-1.515a.792.792 0 0 1-.046.111L4.1 19.762l8.183-2.516a1.044 1.044 0 0 1-.045-.13l-1.402-.431zM7.18 13.673l3.466 1.47a1.305 1.305 0 0 1 .55-.394l.617-3.722a1.305 1.305 0 0 1-.428-.297l-3.598 1.564a.792.792 0 0 1 .005.214l-.612 1.165z" />
+                  </svg>
+                  Netlify
+                </Button>
+              </div>
+              {activeConnected ? (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                  Your app is deployed to{" "}
+                  {deployProvider === "vercel" ? "Vercel" : "Netlify"}.
+                  Disconnect it below to switch to {otherProviderLabel}.
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  onClick={switchToOtherProvider}
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-2"
+                  data-testid="deploy-switch-provider"
+                >
+                  Switch to {otherProviderLabel}
+                </button>
+              )}
+            </div>
+
+            {/* Dynamic provider content — only one is ever rendered */}
+            {deployProvider === "vercel" ? (
+              <div data-testid="deploy-provider-content-vercel">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                  Publish your app by deploying it to Vercel.
+                </p>
+                {!app?.githubOrg || !app?.githubRepo ? (
+                  <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <svg
+                        className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+                        />
+                      </svg>
+                      <div>
+                        <h3 className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                          GitHub Required for Vercel Deployment
+                        </h3>
+                        <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                          Deploying to Vercel requires connecting to GitHub
+                          first. Please set up your GitHub repository above.
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <VercelConnector
+                    appId={selectedAppId}
+                    folderName={app.name}
+                  />
+                )}
               </div>
             ) : (
-              <VercelConnector appId={selectedAppId} folderName={app.name} />
+              <div data-testid="deploy-provider-content-netlify">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                  Publish your app by deploying it to Netlify.
+                </p>
+                <NetlifyConnector appId={selectedAppId} folderName={app.name} />
+              </div>
             )}
           </CardContent>
         </Card>
