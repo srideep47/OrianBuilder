@@ -159,6 +159,28 @@ export function registerChatHandlers() {
     await db.update(chats).set(updates).where(eq(chats.id, chatId));
   });
 
+  createTypedHandler(chatContracts.appendMessages, async (_, params) => {
+    const chat = await db.query.chats.findFirst({
+      where: eq(chats.id, params.chatId),
+      columns: { id: true },
+    });
+    if (!chat) {
+      throw new OrianBuilderError(
+        "Chat not found",
+        OrianBuilderErrorKind.NotFound,
+      );
+    }
+
+    await db.insert(messages).values(
+      params.messages.map((message) => ({
+        chatId: params.chatId,
+        role: message.role,
+        content: message.content,
+        model: message.model ?? null,
+      })),
+    );
+  });
+
   createTypedHandler(chatContracts.deleteMessages, async (_, chatId) => {
     await db.delete(messages).where(eq(messages.chatId, chatId));
   });

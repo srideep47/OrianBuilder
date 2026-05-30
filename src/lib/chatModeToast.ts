@@ -12,6 +12,8 @@ export function getChatModeDisplayName(mode: ChatMode): string {
       return "Agent";
     case "plan":
       return "Plan";
+    case "conversational":
+      return "Chat";
   }
 }
 

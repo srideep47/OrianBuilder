@@ -96,7 +96,7 @@ export interface CloudImageGenResult {
   error?: string;
 }
 
-/** Returns a CloudImageGenResult — never throws. `success=false` means
+/** Returns a CloudImageGenResult; never throws. `success=false` means
  *  the caller should fall back to a local/stub provider. */
 export async function generateImageViaCloud(
   prompt: string,

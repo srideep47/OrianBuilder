@@ -134,6 +134,21 @@ describe("ModelOrchestrator state machine", () => {
     expect(reloadHook).toHaveBeenCalledOnce();
   });
 
+  it("acquireLlm does not double-transition when reloadLlm self-advances state", async () => {
+    // Regression: the embedded handler's loadModelFromConfig (wired as reloadLlm)
+    // calls informLlmAcquired, advancing state to "llm-loaded" before acquireLlm's
+    // own final transition. That used to throw "Invalid orchestrator transition:
+    // llm-loaded -> llm-loaded". The guard must tolerate it.
+    const orch = getOrchestrator();
+    orch.setHooks({
+      reloadLlm: async (params) => {
+        orch.informLlmAcquired(params);
+      },
+    });
+    await expect(orch.acquireLlm(sampleParams)).resolves.toBeUndefined();
+    expect(orch.getStatus().state).toBe("llm-loaded");
+  });
+
   it("acquireLlm rolls back to idle when reloadLlm throws", async () => {
     const orch = getOrchestrator();
     orch.setHooks({

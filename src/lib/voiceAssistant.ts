@@ -24,11 +24,9 @@ export function buildAssistantReply(input: string): string {
     return `The current time on your device is ${new Date().toLocaleTimeString()}.`;
   }
 
-  if (
-    normalizedInput.includes("hello") ||
-    normalizedInput.includes("hi") ||
-    normalizedInput.includes("hey")
-  ) {
+  // Use word-boundary matching for short greeting tokens so substrings like
+  // "hi" inside "something" don't falsely trigger a greeting.
+  if (/\b(hello|hi|hey)\b/.test(normalizedInput)) {
     return "Hello. I am ready to listen and reply. Ask me anything you want to test.";
   }
 

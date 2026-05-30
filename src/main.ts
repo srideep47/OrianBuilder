@@ -786,7 +786,7 @@ app.on("window-all-closed", () => {
 
 // Only set isRunning to false when the app is properly quit by the user.
 // IMPORTANT: This handler must be synchronous because Electron's EventEmitter
-// does not await async callbacks — the returned Promise would be silently ignored.
+// does not await async callbacks; the returned Promise would be silently ignored.
 app.on("will-quit", () => {
   logger.info("App is quitting, setting isRunning to false");
 

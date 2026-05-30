@@ -273,6 +273,7 @@ export type {
   ChatResponseChunk,
   ChatResponseEnd,
   UpdateChatParams,
+  AppendChatMessagesParams,
   TokenCountParams,
   TokenCountResult,
 } from "./chat";
@@ -561,6 +562,7 @@ import {
 import { missionClient } from "./mission";
 import { hardwareClient } from "./hardware";
 import { orchestratorClient } from "./model_orchestrator";
+import { flowClient } from "./intent";
 import { llamaBinaryClient, llamaBinaryEventClient } from "./llama_binary";
 import { identityClient } from "./identity";
 import { networkClient, networkEventClient } from "./network";
@@ -635,6 +637,7 @@ export const ipc = {
   mission: missionClient,
   hardware: hardwareClient,
   orchestrator: orchestratorClient,
+  flow: flowClient,
   llamaBinary: llamaBinaryClient,
   identity: identityClient,
   network: networkClient,

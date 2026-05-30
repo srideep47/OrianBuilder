@@ -15,11 +15,73 @@ console.log("AZURE_CODE_SIGNING_DLIB", process.env.AZURE_CODE_SIGNING_DLIB);
 
 // (Previously this file walked node-llama-cpp's transitive deps so its native
 // binaries were included in the runtime bundle. Inference now runs in a
-// separate llama-server child process — its binary is shipped via the
+// separate llama-server child process; its binary is shipped via the
 // `resources/llama-server` extraResource entry below, and the closure walker
 // was removed along with the dependency.)
 
 // Based on https://github.com/electron/forge/blob/6b2d547a7216c30fde1e1fddd1118eee5d872945/packages/plugin/vite/src/VitePlugin.ts#L124
+const packagedRuntimeModules = [
+  "@hyperswarm",
+  "@noble",
+  "adaptive-timeout",
+  "b4a",
+  "bare-ansi-escapes",
+  "bare-assert",
+  "bare-events",
+  "bare-fs",
+  "bare-inspect",
+  "bare-os",
+  "bare-path",
+  "bare-stream",
+  "bare-type",
+  "bare-url",
+  "bits-to-bytes",
+  "blind-relay",
+  "bogon",
+  "compact-encoding",
+  "compact-encoding-bitfield",
+  "compact-encoding-net",
+  "dht-rpc",
+  "dugite",
+  "events-universal",
+  "fast-fifo",
+  "generate-object-property",
+  "generate-string",
+  "hypercore-crypto",
+  "hypercore-id-encoding",
+  "hyperdht",
+  "hyperdht-address",
+  "hyperschema",
+  "hyperswarm",
+  "is-property",
+  "kademlia-routing-table",
+  "nanoassert",
+  "nat-sampler",
+  "noise-curve-ed",
+  "noise-handshake",
+  "protomux",
+  "queue-tick",
+  "record-cache",
+  "require-addon",
+  "safety-catch",
+  "shuffled-priority-queue",
+  "signal-promise",
+  "sodium-native",
+  "sodium-secretstream",
+  "sodium-universal",
+  "streamx",
+  "teex",
+  "text-decoder",
+  "time-ordered-set",
+  "timeout-refresh",
+  "udx-native",
+  "unordered-set",
+  "unslab",
+  "which-runtime",
+  "xache",
+  "z32",
+];
+
 const ignore = (file: string) => {
   if (!file) return false;
   // `file` always starts with `/`
@@ -47,6 +109,15 @@ const ignore = (file: string) => {
     return false;
   }
   if (file.startsWith("/node_modules/better-sqlite3")) {
+    return false;
+  }
+  if (
+    packagedRuntimeModules.some(
+      (moduleName) =>
+        file === `/node_modules/${moduleName}` ||
+        file.startsWith(`/node_modules/${moduleName}/`),
+    )
+  ) {
     return false;
   }
   if (file.startsWith("/node_modules/node-pty")) {

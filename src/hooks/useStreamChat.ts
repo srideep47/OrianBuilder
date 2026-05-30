@@ -38,6 +38,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
 import { applyCancellationNoticeToLastAssistantMessage } from "@/shared/chatCancellation";
 import { handleEffectiveChatModeChunk } from "@/lib/chatModeStream";
+import { ensureSelectedEmbeddedModelReady } from "@/lib/embeddedModelAutoload";
 
 export function getRandomNumberId() {
   return Math.floor(Math.random() * 1_000_000_000_000_000);
@@ -208,6 +209,8 @@ export function useStreamChat({
         appId ?? resolvedAppIdFromChat ?? selectedAppId ?? null;
       let effectiveMissionId = missionId ?? activeMissionByChatId.get(chatId);
       try {
+        await ensureSelectedEmbeddedModelReady(settings);
+
         const cachedChat =
           requestedChatMode === null
             ? undefined

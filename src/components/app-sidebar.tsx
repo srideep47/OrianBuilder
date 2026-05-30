@@ -13,6 +13,7 @@ import {
   Network,
   Eye,
   Palette,
+  Orbit,
 } from "lucide-react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useState, useCallback } from "react";
@@ -37,6 +38,7 @@ import { HelpDialog } from "./HelpDialog";
 
 const items = [
   { title: "Apps", to: "/", icon: Home, hasPanel: true },
+  { title: "Orion", to: "/orion", icon: Orbit, hasPanel: false },
   { title: "Chat", to: "/chat", icon: Inbox, hasPanel: true },
   { title: "Engine", to: "/inference", icon: Cpu, hasPanel: false },
   { title: "Models", to: "/models", icon: Database, hasPanel: false },

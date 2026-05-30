@@ -45,11 +45,19 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 
   // Redirect to onboarding only on the very first load (no settings yet)
   useEffect(() => {
-    const s = settings as typeof settings & { onboardingCompleted?: boolean };
+    const s = settings as typeof settings & {
+      onboardingCompleted?: boolean;
+      isTestMode?: boolean;
+    };
     const pathname = routerState.location.pathname;
     // Only redirect if settings are loaded and onboarding was never completed
     // and we're currently on the root path (don't interrupt other navigation)
-    if (s && s.onboardingCompleted === false && pathname === "/") {
+    if (
+      s &&
+      s.onboardingCompleted === false &&
+      s.isTestMode !== true &&
+      pathname === "/"
+    ) {
       navigate({ to: "/onboarding", replace: true });
     }
   }, [settings]);

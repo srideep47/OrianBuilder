@@ -15,7 +15,9 @@ export const ChatSummarySchema = z.object({
   appId: z.number(),
   title: z.string().nullable(),
   createdAt: z.date(),
-  chatMode: z.enum(["build", "ask", "local-agent", "plan"]).nullable(),
+  chatMode: z
+    .enum(["build", "ask", "local-agent", "plan", "conversational"])
+    .nullable(),
 });
 
 /**
@@ -154,13 +156,22 @@ export const StoredChatModeSchema = z.enum([
   "agent", // DEPRECATED: converted to "build" on read
   "local-agent",
   "plan",
+  "conversational",
 ]);
 export type StoredChatMode = z.infer<typeof StoredChatModeSchema>;
 
 /**
- * Active chat modes (excludes deprecated values)
+ * Active chat modes (excludes deprecated values).
+ * "conversational" is a lightweight plain-chat mode (no codebase injection, no
+ * builder panel) used for general Q&A and as the home command surface.
  */
-export const ChatModeSchema = z.enum(["build", "ask", "local-agent", "plan"]);
+export const ChatModeSchema = z.enum([
+  "build",
+  "ask",
+  "local-agent",
+  "plan",
+  "conversational",
+]);
 export type ChatMode = z.infer<typeof ChatModeSchema>;
 
 /**

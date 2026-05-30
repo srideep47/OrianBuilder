@@ -20,7 +20,7 @@ import { getLastLlmParams, estimateFreedLlmVramMb } from "./model_orchestrator";
 
 const logger = log.scope("media-dispatcher");
 
-/** 1×1 transparent PNG used as last-resort placeholder when no provider
+/** 1x1 transparent PNG used as last-resort placeholder when no provider
  *  can satisfy a request. */
 const PLACEHOLDER_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
@@ -154,10 +154,23 @@ async function dispatch(
   }
 }
 
+/**
+ * Run a media generation request through the real provider chain directly,
+ * without going through the orchestrator's LLM swap. Used by the flow layer
+ * when no embedded LLM is loaded (so there is nothing to swap out). When an
+ * LLM *is* loaded, callers should use `orchestrator.runMediaGeneration` instead
+ * so the LLM is unloaded/reloaded around generation.
+ */
+export function dispatchMediaGeneration(
+  request: MediaGenerationRequest,
+): Promise<MediaGenerationResult> {
+  return dispatch(request);
+}
+
 let initialized = false;
 
 /** Registers the dispatcher as the orchestrator's media provider. Safe to
- *  call multiple times — only registers once. */
+ *  call multiple times; only registers once. */
 export function initMediaDispatcher(): void {
   if (initialized) return;
   getOrchestrator().setHooks({ mediaProvider: dispatch });

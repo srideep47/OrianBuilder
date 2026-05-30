@@ -49,6 +49,7 @@ import { registerMarketplaceHandlers } from "./handlers/model_marketplace_handle
 import { registerMissionHandlers } from "./handlers/mission_handlers";
 import { registerHardwareHandlers } from "./handlers/hardware_handlers";
 import { registerOrchestratorHandlers } from "./handlers/orchestrator_handlers";
+import { registerFlowHandlers } from "./handlers/flow_handlers";
 import { registerLlamaBinaryHandlers } from "./handlers/llama_binary_handler";
 import { registerIdentityHandlers } from "./handlers/identity_handlers";
 import { registerNetworkHandlers } from "./handlers/network_handlers";
@@ -109,6 +110,7 @@ export function registerIpcHandlers() {
   registerMissionHandlers();
   registerHardwareHandlers();
   registerOrchestratorHandlers();
+  registerFlowHandlers();
   registerLlamaBinaryHandlers();
   registerIdentityHandlers();
   registerNetworkHandlers();

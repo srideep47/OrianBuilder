@@ -86,7 +86,11 @@ export function registerTokenCountHandlers() {
       let systemPrompt = constructSystemPrompt({
         aiRules: await readAiRules(getOrianBuilderAppPath(chat.app.path)),
         chatMode:
-          selectedChatMode === "local-agent" ? "build" : selectedChatMode,
+          selectedChatMode === "local-agent"
+            ? "build"
+            : selectedChatMode === "conversational"
+              ? "ask"
+              : selectedChatMode,
         enableTurboEditsV2: isTurboEditsV2Enabled(settings),
         themePrompt,
       });

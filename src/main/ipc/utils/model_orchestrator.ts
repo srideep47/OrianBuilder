@@ -264,7 +264,13 @@ class OrchestratorImpl implements ModelOrchestrator {
       }
       this.currentLlmModel = params.modelPath;
       this.lastLlmParams = params;
-      this.transition("llm-loaded");
+      // The reloadLlm hook may itself advance state to "llm-loaded" (e.g. the
+      // embedded handler's loadModelFromConfig calls informLlmAcquired). Only
+      // transition if the hook didn't already, to avoid an llm-loaded ->
+      // llm-loaded invalid transition.
+      if (this.state !== "llm-loaded") {
+        this.transition("llm-loaded");
+      }
     } catch (err) {
       this.transition("idle");
       throw err;

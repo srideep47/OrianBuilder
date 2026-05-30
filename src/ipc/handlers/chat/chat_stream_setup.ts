@@ -746,7 +746,10 @@ ${componentSnippet}
         // Migration on read converts "agent" to "build", so no need to check for it here
         let systemPrompt = constructSystemPrompt({
           aiRules,
-          chatMode: selectedChatMode,
+          // "conversational" is a lightweight plain-chat mode: treat it like
+          // "ask" for prompting (no code generation / codebase injection).
+          chatMode:
+            selectedChatMode === "conversational" ? "ask" : selectedChatMode,
           enableTurboEditsV2: isTurboEditsV2Enabled(settings),
           themePrompt,
           autopilotMode,

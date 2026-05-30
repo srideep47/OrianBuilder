@@ -166,6 +166,23 @@ export const UpdateChatParamsSchema = z.object({
 
 export type UpdateChatParams = z.infer<typeof UpdateChatParamsSchema>;
 
+export const AppendChatMessagesParamsSchema = z.object({
+  chatId: z.number(),
+  messages: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string(),
+        model: z.string().nullable().optional(),
+      }),
+    )
+    .min(1),
+});
+
+export type AppendChatMessagesParams = z.infer<
+  typeof AppendChatMessagesParamsSchema
+>;
+
 /**
  * Schema for token count params.
  */
@@ -232,6 +249,12 @@ export const chatContracts = {
   updateChat: defineContract({
     channel: "update-chat",
     input: UpdateChatParamsSchema,
+    output: z.void(),
+  }),
+
+  appendMessages: defineContract({
+    channel: "chat:append-messages",
+    input: AppendChatMessagesParamsSchema,
     output: z.void(),
   }),
 

@@ -12,6 +12,13 @@ import { isPreviewOpenAtom } from "@/atoms/viewAtoms";
 import { useState, useEffect, useRef } from "react";
 import { useStreamChat } from "@/hooks/useStreamChat";
 import { HomeChatInput } from "@/components/chat/HomeChatInput";
+import { OrionCommandBar } from "@/components/orion/OrionCommandBar";
+import {
+  HowItWorksPanel,
+  ModelEnginePanel,
+  OrionSessionsPanel,
+  WorkflowsPanel,
+} from "@/components/orion/OrionPanels";
 import { usePostHog } from "posthog-js/react";
 import { PrivacyBanner } from "@/components/TelemetryBanner";
 import { useAppVersion } from "@/hooks/useAppVersion";
@@ -77,7 +84,8 @@ export default function HomePage() {
       generalChatAppIdRef.current === null &&
       typeof (settings as any)?.generalChatAppId === "number"
     ) {
-      generalChatAppIdRef.current = (settings as any).generalChatAppId as number;
+      generalChatAppIdRef.current = (settings as any)
+        .generalChatAppId as number;
     }
   }, [settings]);
   const { streamMessage } = useStreamChat({ hasChatId: false });
@@ -210,7 +218,7 @@ export default function HomePage() {
 
     // Only invoke the app builder when the message contains a build intent.
     // Typo variant "bulid" is also accepted. Messages without "build" get a
-    // plain conversational reply — no createApp, no git init, no builder panel.
+    // plain conversational reply; no createApp, no git init, no builder panel.
     const isBuildRequest = /build|bulid/i.test(inputValue);
 
     if (!selectedApp && !isBuildRequest) {
@@ -225,7 +233,7 @@ export default function HomePage() {
 
         if (!gcAppId) {
           // Create a blank app to hold general conversations. No template, no git
-          // scaffold — it's just a container for the chat records.
+          // scaffold; it's just a container for the chat records.
           const result = await ipc.app.createApp({
             name: "General Chat",
             initialChatMode: "conversational",
@@ -255,7 +263,10 @@ export default function HomePage() {
 
         setInputValue("");
         setIsPreviewOpen(false);
-        posthog.capture("home:chat-submit", { existingApp: false, conversational: true });
+        posthog.capture("home:chat-submit", {
+          existingApp: false,
+          conversational: true,
+        });
         selectChat({ chatId, appId: gcAppId });
 
         void refreshApps();
@@ -263,9 +274,7 @@ export default function HomePage() {
         void queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
       } catch (error) {
         console.error("Failed to create conversational chat:", error);
-        showError(
-          (error as any)?.toString() ?? "Failed to start chat",
-        );
+        showError((error as any)?.toString() ?? "Failed to start chat");
         setIsLoading(false);
       }
       return;
@@ -415,17 +424,31 @@ export default function HomePage() {
     />
   );
 
-  // Landing state — no messages yet: keep the original centered layout
+  // Landing state: no messages yet, keep the original centered layout.
   if (chatMessages.length === 0) {
     return (
-      <div className="flex flex-col h-full w-full items-center justify-center">
+      <div className="h-full w-full overflow-y-auto">
         {forceCloseDialog}
-        <div className="w-full max-w-4xl px-3 sm:px-6 lg:px-8">
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-3 py-8 sm:px-6 lg:px-8">
+          <div>
+            <h1 className="text-xl font-semibold text-foreground">
+              Build a new app
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Start with the classic builder input, or use Orion below to chain
+              every workflow from one command.
+            </p>
+          </div>
           <HomeChatInput
             onSubmit={handleSubmit}
             isStreaming={isReplying}
             onCancel={handleCancelReply}
           />
+          <OrionCommandBar appId={appId ?? undefined} />
+          <ModelEnginePanel />
+          <OrionSessionsPanel />
+          <WorkflowsPanel />
+          <HowItWorksPanel />
         </div>
         <PrivacyBanner />
         {releaseNotesDialog}
@@ -433,7 +456,7 @@ export default function HomePage() {
     );
   }
 
-  // Chat state — messages exist: standard chat-app layout
+  // Chat state: messages exist, standard chat-app layout.
   return (
     <div className="flex flex-col h-full w-full overflow-hidden">
       {forceCloseDialog}
