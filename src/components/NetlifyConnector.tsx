@@ -259,6 +259,19 @@ function UnconnectedNetlifyConnector({
     };
   }, []);
 
+  // Validate the pre-filled site name once Netlify is connected, so name
+  // collisions surface immediately instead of only on "Create & Deploy".
+  useEffect(() => {
+    if (
+      settings?.netlifyAccessToken &&
+      siteSetupMode === "create" &&
+      siteName
+    ) {
+      checkSiteAvailability(siteName);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings?.netlifyAccessToken, siteSetupMode]);
+
   const loadAvailableSites = async () => {
     setIsLoadingSites(true);
     try {

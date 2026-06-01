@@ -561,11 +561,29 @@ export async function createAndLinkNetlifySite({
     let siteId = app.netlifySiteId;
     let siteFallbackUrl: string | null = app.netlifyDeploymentUrl ?? null;
     if (!siteId) {
-      const site = await netlifyApi<NetlifySiteResponse>(
-        accessToken,
-        "/sites",
-        { method: "POST", body: { name } },
-      );
+      let site: NetlifySiteResponse;
+      try {
+        site = await netlifyApi<NetlifySiteResponse>(accessToken, "/sites", {
+          method: "POST",
+          body: { name },
+        });
+      } catch (err: any) {
+        // Netlify subdomains are globally unique across ALL Netlify accounts,
+        // so a name can collide even though it's free in the current account
+        // (which is all our availability check can see). Surface a clear,
+        // actionable message instead of the raw "422 ... subdomain must be
+        // unique" payload.
+        const msg = String(err?.message ?? "");
+        if (/subdomain/i.test(msg) && /must be unique|already/i.test(msg)) {
+          throw new OrianBuilderError(
+            `The site name "${name}" is already taken on Netlify. ` +
+              `Site names must be unique across all of Netlify — please choose ` +
+              `a different name and try again.`,
+            OrianBuilderErrorKind.Precondition,
+          );
+        }
+        throw err;
+      }
       if (!site.id) {
         throw new OrianBuilderError(
           "Failed to create site: No site ID returned.",
