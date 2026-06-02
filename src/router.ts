@@ -11,6 +11,7 @@ import { appsRoute } from "./routes/apps";
 import { themesRoute } from "./routes/themes";
 import { promptsRoute } from "./routes/prompts";
 import { mediaRoute } from "./routes/media";
+import { sharedContentRoute } from "./routes/shared";
 import { mediaAiRoute } from "./routes/mediaai";
 import { threeDAssetsRoute } from "./routes/threedassets";
 import { dailyAiDigestRoute } from "./routes/dailyaidigest";
@@ -31,6 +32,7 @@ const routeTree = rootRoute.addChildren([
   themesRoute,
   promptsRoute,
   mediaRoute,
+  sharedContentRoute,
   mediaAiRoute,
   threeDAssetsRoute,
   dailyAiDigestRoute,

@@ -57,6 +57,8 @@ import { registerNetworkHandlers } from "./handlers/network_handlers";
 import { registerComputeHandlers } from "./handlers/compute_handlers";
 import { registerWatchdogHandlers } from "./handlers/watchdog_handlers";
 import { registerDesignStudioHandlers } from "./handlers/design_studio_handler";
+import { registerGeneratedMediaHandlers } from "./handlers/generated_media_handlers";
+import { registerSharedMediaHandlers } from "./handlers/shared_media_handlers";
 
 export function registerIpcHandlers() {
   // Register all IPC handlers by category
@@ -119,4 +121,6 @@ export function registerIpcHandlers() {
   registerComputeHandlers();
   registerWatchdogHandlers();
   registerDesignStudioHandlers();
+  registerGeneratedMediaHandlers();
+  registerSharedMediaHandlers();
 }

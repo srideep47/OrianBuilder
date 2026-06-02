@@ -30,6 +30,7 @@ import {
   type PeerMetadataPayload,
   type ChannelMessage,
 } from "./peer-channel";
+import { mediaShare } from "./media-share";
 import type { Peer } from "@/ipc/types/network";
 import { app } from "electron";
 import { lanDiscovery, type LanPeer } from "./lan-discovery";
@@ -308,6 +309,7 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
       if (entry?.channel !== channel) return; // already replaced
       const displayName = entry.peer.displayName;
       connectedPeers.delete(remoteKeyHex);
+      mediaShare.onPeerGone(remoteKeyHex);
       this.emit("peers-changed", this._getPeerList());
       logger.info(
         `Peer ${displayName} (${remoteKeyHex.slice(0, 16)}…) disconnected`,
@@ -326,6 +328,13 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
     channel: PeerChannel,
     msg: ChannelMessage,
   ) {
+    // Media sharing — only between trusted peers. Delegated to the coordinator.
+    if (msg.type.startsWith("MEDIA_")) {
+      if (!isTrustedPeer(remoteKeyHex)) return;
+      void mediaShare.handleMessage(remoteKeyHex, channel, msg);
+      return;
+    }
+
     if (msg.type === "PING") {
       channel.send({ type: "PONG", nonce: msg.nonce });
       return;
@@ -390,6 +399,9 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
         lastLoadUpdateAt: peer.lastLoadUpdateAt,
       });
       if (trusted) updatePeerLastSeen(p.publicKey);
+
+      // Exchange sharable-media catalogs with newly-ready trusted peers.
+      if (trusted) mediaShare.onPeerReady(remoteKeyHex);
 
       this.emit("peers-changed", this._getPeerList());
       if (wasNew) {
@@ -736,3 +748,29 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
 }
 
 export const networkSwarm = new NetworkSwarm();
+
+// Give the media-share coordinator the ability to reach connected peers.
+mediaShare.init({
+  broadcastToTrusted(msg) {
+    for (const { channel, peer } of connectedPeers.values()) {
+      if (!peer.isTrusted || channel.isClosed()) continue;
+      try {
+        channel.send(msg);
+      } catch {
+        /* ignore */
+      }
+    }
+  },
+  sendToPeer(peerKey, msg) {
+    const entry = connectedPeers.get(peerKey);
+    if (!entry || entry.channel.isClosed()) return false;
+    try {
+      return entry.channel.send(msg);
+    } catch {
+      return false;
+    }
+  },
+  getDisplayName(peerKey) {
+    return connectedPeers.get(peerKey)?.peer.displayName ?? null;
+  },
+});

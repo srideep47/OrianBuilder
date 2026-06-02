@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Cpu,
   Download,
+  BookMarked,
   FileAudio,
   HardDrive,
   Image,
@@ -545,6 +546,30 @@ export default function MediaAIPage() {
 
   const serverUrl = status?.serverUrl ?? "http://127.0.0.1:8000";
   const isBackendOnline = status?.healthy === true;
+
+  // Auto-save locally generated image / video / audio into the global media
+  // library so it appears (categorised) in Library → Media automatically.
+  const autoSavedUrls = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!result || result.source !== "local" || !result.url) return;
+    const extByTab: Record<string, string> = {
+      image: ".png",
+      video: ".mp4",
+      audio: ".wav",
+    };
+    const ext = extByTab[result.tab];
+    if (!ext) return; // not a savable asset (e.g. transcribe)
+    const fullUrl = `${serverUrl}${result.url}`;
+    if (autoSavedUrls.current.has(fullUrl)) return;
+    autoSavedUrls.current.add(fullUrl);
+    ipc.generatedMedia
+      .saveFromUrl({ url: fullUrl, prompt: prompt.trim() || null, ext })
+      .then(() => toast.success("Added to Library → Media"))
+      .catch((err) => {
+        autoSavedUrls.current.delete(fullUrl);
+        console.warn("Failed to add generated media to library:", err);
+      });
+  }, [result, serverUrl, prompt]);
   const musicModelTiers =
     musicTiers.length > 0
       ? MUSIC_TIER_CATALOG.map(
@@ -1674,6 +1699,8 @@ export default function MediaAIPage() {
           setResult({
             tab: "image",
             absoluteUrl: blobUrl,
+            // Keep the backend URL in `url` so Save to Library can fetch it
+            url: imageUrl,
             filename: `image-${Date.now()}.png`,
             source: "local",
           });
@@ -1984,12 +2011,23 @@ export default function MediaAIPage() {
                 : "Your AI-generated content is ready"}
             </CardDescription>
           </div>
-          {hasDownloadable && (
-            <Button variant="outline" size="sm" onClick={handleDownload}>
-              <Download className="mr-2 h-4 w-4" />
-              Download
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {result.source === "local" &&
+              (result.tab === "image" ||
+                result.tab === "video" ||
+                result.tab === "audio") && (
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <BookMarked className="h-3.5 w-3.5" />
+                  In Library
+                </span>
+              )}
+            {hasDownloadable && (
+              <Button variant="outline" size="sm" onClick={handleDownload}>
+                <Download className="mr-2 h-4 w-4" />
+                Download
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {result.content && (

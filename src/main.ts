@@ -233,6 +233,34 @@ export async function onReady() {
   // Handle orian-media:// protocol requests to serve persistent media and screenshot files.
   protocol.handle("orian-media", async (request) => {
     const url = new URL(request.url);
+
+    // Global generated-media store: orian-media://generated/{filename}
+    // Served from userData/generated-media/ (see main/generated_media/store.ts).
+    if (url.hostname === "generated") {
+      try {
+        const filename = decodeURIComponent(url.pathname.slice(1));
+        if (
+          !filename ||
+          filename.includes("..") ||
+          filename.includes("/") ||
+          filename.includes("\\")
+        ) {
+          return new Response("Forbidden", { status: 403 });
+        }
+        const storeDir = path.join(app.getPath("userData"), "generated-media");
+        const resolvedPath = path.resolve(path.join(storeDir, filename));
+        const rel = path.relative(storeDir, resolvedPath);
+        if (rel.startsWith("..") || path.isAbsolute(rel)) {
+          return new Response("Forbidden", { status: 403 });
+        }
+        return await net.fetch(
+          require("node:url").pathToFileURL(resolvedPath).href,
+        );
+      } catch {
+        return new Response("Not Found", { status: 404 });
+      }
+    }
+
     // Format: orian-media://media/{app-path}/.orianbuilder/{subdir}/{filename}
     //   where {subdir} is ORIANBUILDER_MEDIA_SUBDIR or ORIANBUILDER_SCREENSHOT_SUBDIR.
     //   Uses a fixed hostname to avoid URL hostname normalization (lowercasing).

@@ -18,6 +18,8 @@ import { OrianBuilderAppMediaFolder } from "@/components/OrianBuilderAppMediaFol
 import { ImageGeneratorDialog } from "@/components/ImageGeneratorDialog";
 import { ImageGenerationProgressButton } from "@/components/ImageGenerationProgressButton";
 import { filterMediaAppsByQuery } from "@/lib/mediaUtils";
+import { useGeneratedMedia } from "@/hooks/useGeneratedMedia";
+import { GeneratedMediaCard } from "@/components/GeneratedMediaCard";
 // ---------------------------------------------------------------------------
 // Main Library Homepage
 // ---------------------------------------------------------------------------
@@ -49,6 +51,12 @@ export default function LibraryHomePage() {
     isMutatingMedia,
   } = useAppMediaFiles();
   const { apps: allApps } = useLoadApps();
+  const {
+    items: generatedMedia,
+    isLoading: generatedLoading,
+    removeItem: removeGeneratedMedia,
+    isMutating: isMutatingGenerated,
+  } = useGeneratedMedia();
   const [createThemeDialogOpen, setCreateThemeDialogOpen] = useState(false);
   const [imageGeneratorOpen, setImageGeneratorOpen] = useState(false);
 
@@ -60,7 +68,8 @@ export default function LibraryHomePage() {
     setDialogOpen: setPromptDialogOpen,
   } = useAddPromptDeepLink();
 
-  const isLoading = promptsLoading || themesLoading || mediaLoading;
+  const isLoading =
+    promptsLoading || themesLoading || mediaLoading || generatedLoading;
 
   const filteredItems = useMemo(() => {
     if (activeFilter === "media") return [];
@@ -116,8 +125,21 @@ export default function LibraryHomePage() {
     return filterMediaAppsByQuery(mediaApps, searchQuery);
   }, [mediaApps, activeFilter, searchQuery]);
 
+  const filteredGeneratedMedia = useMemo(() => {
+    if (activeFilter === "themes" || activeFilter === "prompts") return [];
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return generatedMedia;
+    return generatedMedia.filter(
+      (m) =>
+        (m.prompt?.toLowerCase().includes(q) ?? false) ||
+        m.fileName.toLowerCase().includes(q),
+    );
+  }, [generatedMedia, activeFilter, searchQuery]);
+
   const hasNoResults =
-    filteredItems.length === 0 && filteredMediaApps.length === 0;
+    filteredItems.length === 0 &&
+    filteredMediaApps.length === 0 &&
+    filteredGeneratedMedia.length === 0;
 
   return (
     <div className="min-h-screen w-full">
@@ -198,6 +220,14 @@ export default function LibraryHomePage() {
                   onMoveMediaFile={moveMediaFile}
                   isMutatingMedia={isMutatingMedia}
                   searchQuery={searchQuery}
+                />
+              ))}
+              {filteredGeneratedMedia.map((item) => (
+                <GeneratedMediaCard
+                  key={`generated-${item.fileName}`}
+                  item={item}
+                  onDelete={removeGeneratedMedia}
+                  isMutating={isMutatingGenerated}
                 />
               ))}
             </div>

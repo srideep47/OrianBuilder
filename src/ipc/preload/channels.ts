@@ -66,6 +66,14 @@ import {
   designStudioContracts,
   designStudioChatStream,
 } from "../types/design_studio";
+import {
+  generatedMediaContracts,
+  generatedMediaEvents,
+} from "../types/generated_media";
+import {
+  sharedMediaContracts,
+  sharedMediaEvents,
+} from "../types/shared_media";
 
 // =============================================================================
 // Invoke Channels (derived from all contracts)
@@ -140,6 +148,8 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(computeContracts),
   ...getInvokeChannels(watchdogContracts),
   ...getInvokeChannels(designStudioContracts),
+  ...getInvokeChannels(generatedMediaContracts),
+  ...getInvokeChannels(sharedMediaContracts),
 
   // Test-only channels
   ...TEST_INVOKE_CHANNELS,
@@ -171,6 +181,8 @@ export const VALID_RECEIVE_CHANNELS = [
   ...getReceiveChannels(llamaBinaryEvents),
   ...getReceiveChannels(networkEvents),
   ...getReceiveChannels(watchdogEvents),
+  ...getReceiveChannels(generatedMediaEvents),
+  ...getReceiveChannels(sharedMediaEvents),
 ] as const;
 
 // =============================================================================

@@ -79,6 +79,28 @@ export {
   watchdogEvents,
   watchdogEventClient,
 } from "./watchdog";
+export {
+  generatedMediaContracts,
+  generatedMediaClient,
+  generatedMediaEvents,
+  generatedMediaEventClient,
+  generatedMediaUrl,
+} from "./generated_media";
+export type {
+  GeneratedMediaItem,
+  GeneratedMediaKind,
+} from "./generated_media";
+export {
+  sharedMediaContracts,
+  sharedMediaClient,
+  sharedMediaEvents,
+  sharedMediaEventClient,
+} from "./shared_media";
+export type {
+  SharedMediaMeta,
+  SharedPeerCatalog,
+  SharedDownloadProgress,
+} from "./shared_media";
 export type {
   WatchdogStatus,
   WatchdogSetupParams,
@@ -585,6 +607,14 @@ import { networkClient, networkEventClient } from "./network";
 import { computeClient } from "./compute";
 import { watchdogClient, watchdogEventClient } from "./watchdog";
 import {
+  generatedMediaClient,
+  generatedMediaEventClient,
+} from "./generated_media";
+import {
+  sharedMediaClient,
+  sharedMediaEventClient,
+} from "./shared_media";
+import {
   designStudioClient,
   designStudioChatStreamClient,
 } from "./design_studio";
@@ -660,6 +690,8 @@ export const ipc = {
   network: networkClient,
   compute: computeClient,
   watchdog: watchdogClient,
+  generatedMedia: generatedMediaClient,
+  sharedMedia: sharedMediaClient,
   designStudio: designStudioClient,
   designStudioStream: designStudioChatStreamClient,
 
@@ -675,5 +707,7 @@ export const ipc = {
     llamaBinary: llamaBinaryEventClient,
     network: networkEventClient,
     watchdog: watchdogEventClient,
+    generatedMedia: generatedMediaEventClient,
+    sharedMedia: sharedMediaEventClient,
   },
 } as const;

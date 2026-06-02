@@ -1,6 +1,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   Box,
+  BookMarked,
   CheckCircle2,
   ChevronDown,
   Download,
@@ -190,6 +191,7 @@ export default function ThreeDAssetsPage() {
   const [genError, setGenError] = useState("");
   const [genStage, setGenStage] = useState<string>("");
   const [glbUrl, setGlbUrl] = useState<string | null>(null);
+  const [genImageFullUrl, setGenImageFullUrl] = useState<string | null>(null);
   const [meshResolution, setMeshResolution] = useState<256 | 320 | 384 | 512>(
     320,
   );
@@ -736,7 +738,9 @@ export default function ThreeDAssetsPage() {
         if (!imageData.image_url) {
           throw new Error("Image step returned no image_url");
         }
-        const imgResp = await fetch(`${serverUrl}${imageData.image_url}`, {
+        const fullImageUrl = `${serverUrl}${imageData.image_url}`;
+        setGenImageFullUrl(fullImageUrl);
+        const imgResp = await fetch(fullImageUrl, {
           signal: ctrl.signal,
         });
         if (!imgResp.ok) {
@@ -805,6 +809,25 @@ export default function ThreeDAssetsPage() {
       setGenStatus("done");
       setGenStage("");
       toast.success("3D model ready");
+
+      // Auto-save to Library → Media: the 3D model and, if we generated one,
+      // its reference image.
+      void ipc.generatedMedia
+        .saveFromUrl({
+          url: `${serverUrl}${meshData.model_url}`,
+          prompt: prompt.trim() || null,
+          ext: ".glb",
+        })
+        .catch((e) => console.warn("Failed to save 3D model to library:", e));
+      if (genImageFullUrl) {
+        void ipc.generatedMedia
+          .saveFromUrl({
+            url: genImageFullUrl,
+            prompt: prompt.trim() || null,
+            ext: ".png",
+          })
+          .catch((e) => console.warn("Failed to save reference image:", e));
+      }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
         setGenStatus("idle");
@@ -1623,19 +1646,25 @@ export default function ThreeDAssetsPage() {
                 3D model ready
               </p>
               <ModelViewer url={glbUrl} />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  const a = document.createElement("a");
-                  a.href = glbUrl;
-                  a.download = `model-${Date.now()}.glb`;
-                  a.click();
-                }}
-              >
-                <Download className="mr-2 h-3.5 w-3.5" />
-                Download .glb
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const a = document.createElement("a");
+                    a.href = glbUrl;
+                    a.download = `model-${Date.now()}.glb`;
+                    a.click();
+                  }}
+                >
+                  <Download className="mr-2 h-3.5 w-3.5" />
+                  Download .glb
+                </Button>
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <BookMarked className="h-3.5 w-3.5" />
+                  Saved to Library
+                </span>
+              </div>
             </div>
           )}
         </CardContent>

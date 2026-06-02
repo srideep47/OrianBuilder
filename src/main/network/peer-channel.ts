@@ -32,7 +32,34 @@ export type ChannelMessage =
       loadedModels: string[];
       computeAvailable: boolean;
       queueDepth: number;
-    };
+    }
+  // ── Media Sharing ───────────────────────────────────────────────────────
+  /** Sender advertises its full set of sharable media. */
+  | { type: "MEDIA_ANNOUNCE"; items: SharedMediaMeta[] }
+  /** Ask a peer to (re)send its MEDIA_ANNOUNCE. */
+  | { type: "MEDIA_LIST_REQUEST" }
+  /** Request the bytes of one shared file (by the owner's fileName). */
+  | { type: "MEDIA_DOWNLOAD_REQUEST"; requestId: string; fileName: string }
+  /** One base64-encoded chunk of a requested file. */
+  | {
+      type: "MEDIA_DOWNLOAD_CHUNK";
+      requestId: string;
+      data: string;
+      eof: boolean;
+    }
+  | { type: "MEDIA_DOWNLOAD_ERROR"; requestId: string; error: string };
+
+/** Metadata describing a shared media item (sent in MEDIA_ANNOUNCE). */
+export interface SharedMediaMeta {
+  /** The owner's fileName — unique within that peer. */
+  fileName: string;
+  kind: "image" | "video" | "audio" | "model";
+  mimeType: string;
+  sizeBytes: number;
+  prompt: string | null;
+  /** Small base64 data-URL thumbnail (images/videos), optional. */
+  thumbnail: string | null;
+}
 
 export interface PeerMetadataPayload {
   publicKey: string;
