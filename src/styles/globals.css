@@ -197,21 +197,44 @@ body[data-scroll-locked] .app-region-drag {
   --sidebar-ring: oklch(0.72 0.18 270 / 0.5);
 }
 
+/* ── Global animation timing tokens ──────────────────────────────────────────
+   At 120 Hz a frame is 8.3 ms.  Transitions should feel immediate but polished:
+   · hover feedback  → 80 ms   (≈ 10 frames at 120 Hz)
+   · panel / drawer  → 150 ms  (≈ 18 frames at 120 Hz)
+   · page enter      → 200 ms  (≈ 24 frames at 120 Hz)
+   All durations are defined as custom properties so they can be overridden in
+   one place if we ever change the target refresh rate.             */
+:root {
+  --dur-instant:  60ms;
+  --dur-fast:     80ms;
+  --dur-normal:   150ms;
+  --dur-slow:     200ms;
+  --ease-out:     cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-spring:  cubic-bezier(0.34, 1.56, 0.64, 1);   /* slight overshoot */
+  --ease-smooth:  cubic-bezier(0.4,  0,    0.2, 1);    /* material standard */
+}
+
 /* Allow the galaxy background to bleed through card surfaces in dark mode.
-   Scoped to semantic card slots only — avoids compositing every button/badge. */
+   Scoped to semantic card slots only — avoids compositing every button/badge.
+   transform:translateZ(0) forces each card onto its own GPU compositor layer
+   so backdrop-filter is resolved on the GPU and doesn't cause CPU repaints.  */
 .dark [data-slot="card"],
 .dark .bg-card {
   backdrop-filter: blur(14px) saturate(160%);
   -webkit-backdrop-filter: blur(14px) saturate(160%);
+  transform: translateZ(0);          /* GPU layer promotion */
+  will-change: transform;
 }
 
-/* Galaxy mode — card glass (stronger blur + ensure above cosmos canvas) */
+/* Galaxy mode — card glass */
 body.galaxy-mode [data-slot="card"],
 body.galaxy-mode .bg-card {
   backdrop-filter: blur(18px) saturate(180%) !important;
   -webkit-backdrop-filter: blur(18px) saturate(180%) !important;
   position: relative;
   z-index: 2;
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 /* Dark glass for the main content container */
@@ -220,6 +243,9 @@ body.galaxy-mode .bg-card {
   backdrop-filter: blur(4px) saturate(140%);
   -webkit-backdrop-filter: blur(4px) saturate(140%);
   border-color: oklch(1 0 0 / 0.1);
+  /* Isolate compositing so child repaints don't bubble up */
+  contain: layout style;
+  transform: translateZ(0);
 }
 
 @theme inline {
@@ -340,7 +366,7 @@ body.galaxy-mode .bg-card {
 .scrollbar-on-hover {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
-  transition: scrollbar-color 0.35s ease;
+  transition: scrollbar-color var(--dur-fast) var(--ease-smooth);
 }
 .scrollbar-on-hover:hover,
 .scrollbar-on-hover:focus-within {
@@ -363,8 +389,8 @@ body.galaxy-mode .bg-card {
   min-width: 40px;
   min-height: 40px;
   transition:
-    background-color 0.35s ease,
-    border-color 0.35s ease;
+    background-color var(--dur-fast) var(--ease-smooth),
+    border-color var(--dur-fast) var(--ease-smooth);
 }
 .scrollbar-on-hover:hover::-webkit-scrollbar-thumb,
 .scrollbar-on-hover:focus-within::-webkit-scrollbar-thumb {
@@ -433,347 +459,6 @@ body.galaxy-mode .bg-card {
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   GALAXY SPACE BACKGROUND — OrianBuilder Space UI
-   ═══════════════════════════════════════════════════════════════ */
-
-/* ─ Keyframes ─────────────────────────────────────────────────── */
-@keyframes galaxyRotate {
-  from {
-    transform: rotate(0deg) scale(1.05);
-  }
-  to {
-    transform: rotate(360deg) scale(1.05);
-  }
-}
-@keyframes galaxySpiralDrift {
-  from {
-    transform: translate(0, 0) rotate(0deg);
-  }
-  to {
-    transform: translate(-4%, -3%) rotate(2deg);
-  }
-}
-
-/*  Star / particle drift: translate exactly ONE tile width so the
-    tiled background-pattern loops seamlessly — no jump at wrap. */
-@keyframes galaxyStarsDrift {
-  from {
-    transform: translate(0, 0);
-  }
-  to {
-    transform: translate(-280px, -280px);
-  }
-}
-@keyframes galaxyParticlesDrift {
-  from {
-    transform: translate(0, 0);
-  }
-  to {
-    transform: translate(-500px, -500px);
-  }
-}
-@keyframes galaxyTwinkle {
-  0%,
-  100% {
-    opacity: 0.55;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-/* ─ Wrapper ────────────────────────────────────────────────────── */
-/*  NO contain — it breaks backdrop-filter on descendant-external
-    elements (the glass setup cards) across the containment boundary. */
-.galaxy-bg-wrapper {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  overflow: hidden;
-  background: #000000;
-}
-
-/* ─ Rotating galactic core ─────────────────────────────────────── */
-.galaxy-bg-core {
-  position: absolute;
-  width: 200%;
-  height: 200%;
-  top: -50%;
-  left: -50%;
-  will-change: transform;
-  background:
-    radial-gradient(
-      ellipse 18% 14% at 50% 50%,
-      rgba(255, 255, 240, 0.98) 0%,
-      rgba(255, 240, 220, 0.85) 2%,
-      transparent 6%
-    ),
-    radial-gradient(
-      ellipse 32% 25% at 50% 50%,
-      rgba(240, 215, 255, 0.7) 0%,
-      rgba(220, 175, 255, 0.5) 4%,
-      transparent 13%
-    ),
-    radial-gradient(
-      ellipse 52% 40% at 50% 50%,
-      rgba(170, 125, 225, 0.5) 0%,
-      rgba(110, 80, 175, 0.3) 9%,
-      transparent 26%
-    ),
-    radial-gradient(
-      ellipse 78% 58% at 50% 50%,
-      rgba(85, 60, 150, 0.38) 0%,
-      rgba(55, 38, 105, 0.22) 16%,
-      transparent 36%
-    ),
-    #000000;
-  animation: galaxyRotate 260s linear infinite;
-}
-
-/* ─ Spiral-arm nebula (own GPU layer — separate sibling, not ::before) ── */
-.galaxy-bg-nebula {
-  position: absolute;
-  inset: 0;
-  will-change: transform;
-  background:
-    radial-gradient(
-      ellipse 42% 32% at 26% 34%,
-      rgba(185, 140, 245, 0.42) 0%,
-      rgba(140, 98, 205, 0.24) 9%,
-      transparent 26%
-    ),
-    radial-gradient(
-      ellipse 36% 27% at 74% 66%,
-      rgba(155, 112, 228, 0.38) 0%,
-      rgba(112, 80, 185, 0.2) 8%,
-      transparent 23%
-    ),
-    radial-gradient(
-      ellipse 44% 33% at 64% 27%,
-      rgba(165, 122, 235, 0.36) 0%,
-      rgba(122, 90, 195, 0.18) 10%,
-      transparent 28%
-    ),
-    radial-gradient(
-      ellipse 34% 22% at 16% 20%,
-      rgba(142, 100, 215, 0.32) 0%,
-      rgba(102, 70, 175, 0.16) 8%,
-      transparent 22%
-    );
-  animation: galaxySpiralDrift 200s ease-in-out infinite alternate;
-}
-
-/* ─ Drifting star field ─────────────────────────────────────────
-   All layers share the SAME tile size (280×280 px) so
-   translating by -280px produces a perfect seamless loop.
-   The layer is oversized (top/left: -5%, width/height: 110%)
-   to prevent edge gaps during the translate.                     */
-.galaxy-bg-stars {
-  position: absolute;
-  top: -5%;
-  left: -5%;
-  width: 110%;
-  height: 110%;
-  will-change: transform;
-  background-image:
-    radial-gradient(2px 2px at 12% 18%, rgba(255, 255, 255, 1), transparent),
-    radial-gradient(
-      1.5px 1.5px at 38% 42%,
-      rgba(235, 228, 255, 0.96),
-      transparent
-    ),
-    radial-gradient(2px 2px at 68% 12%, rgba(255, 255, 255, 1), transparent),
-    radial-gradient(
-      1.8px 1.8px at 22% 65%,
-      rgba(255, 248, 255, 0.92),
-      transparent
-    ),
-    radial-gradient(2px 2px at 82% 50%, rgba(255, 255, 255, 0.98), transparent),
-    radial-gradient(
-      1.6px 1.6px at 52% 78%,
-      rgba(218, 228, 255, 0.92),
-      transparent
-    ),
-    radial-gradient(
-      1.8px 1.8px at 74% 35%,
-      rgba(255, 255, 255, 0.95),
-      transparent
-    ),
-    radial-gradient(2px 2px at 8% 88%, rgba(248, 242, 255, 0.9), transparent),
-    radial-gradient(
-      1.5px 1.5px at 46% 58%,
-      rgba(255, 255, 255, 0.88),
-      transparent
-    ),
-    radial-gradient(2px 2px at 92% 24%, rgba(230, 220, 255, 0.94), transparent);
-  background-size: 280px 280px; /* ALL layers same tile = seamless loop */
-  background-position:
-    0 0,
-    100px 56px,
-    196px 14px,
-    42px 210px,
-    224px 84px,
-    70px 168px,
-    154px 238px,
-    238px 126px,
-    112px 196px,
-    182px 42px;
-  animation: galaxyStarsDrift 18s linear infinite;
-}
-
-/* ─ Second, slower star layer for depth parallax ─────────────── */
-.galaxy-bg-stars2 {
-  position: absolute;
-  top: -5%;
-  left: -5%;
-  width: 110%;
-  height: 110%;
-  will-change: transform;
-  background-image:
-    radial-gradient(
-      1.4px 1.4px at 30% 25%,
-      rgba(255, 255, 255, 0.8),
-      transparent
-    ),
-    radial-gradient(1px 1px at 60% 55%, rgba(220, 210, 255, 0.75), transparent),
-    radial-gradient(
-      1.4px 1.4px at 85% 72%,
-      rgba(255, 255, 255, 0.78),
-      transparent
-    ),
-    radial-gradient(1px 1px at 15% 82%, rgba(210, 220, 255, 0.72), transparent),
-    radial-gradient(
-      1.2px 1.2px at 50% 38%,
-      rgba(255, 255, 255, 0.76),
-      transparent
-    ),
-    radial-gradient(1px 1px at 78% 88%, rgba(230, 225, 255, 0.7), transparent);
-  background-size: 280px 280px;
-  background-position:
-    0 0,
-    56px 112px,
-    140px 28px,
-    196px 196px,
-    84px 224px,
-    224px 70px;
-  animation: galaxyStarsDrift 30s linear infinite reverse;
-}
-
-/* ─ Twinkling accent stars (opacity-only, no translate) ─────── */
-.galaxy-bg-twinkle {
-  position: absolute;
-  inset: 0;
-  background-image:
-    radial-gradient(
-      2.5px 2.5px at 20% 35%,
-      rgba(255, 255, 255, 1),
-      transparent
-    ),
-    radial-gradient(2px 2px at 55% 65%, rgba(242, 238, 255, 0.96), transparent),
-    radial-gradient(
-      2.5px 2.5px at 76% 20%,
-      rgba(255, 255, 255, 0.98),
-      transparent
-    ),
-    radial-gradient(
-      2.2px 2.2px at 30% 72%,
-      rgba(255, 248, 255, 0.92),
-      transparent
-    ),
-    radial-gradient(2px 2px at 66% 40%, rgba(238, 232, 255, 0.9), transparent),
-    radial-gradient(
-      2.5px 2.5px at 10% 55%,
-      rgba(255, 255, 255, 0.96),
-      transparent
-    ),
-    radial-gradient(
-      2.2px 2.2px at 88% 70%,
-      rgba(248, 242, 255, 0.92),
-      transparent
-    );
-  background-size:
-    420px 420px,
-    460px 460px,
-    390px 390px,
-    440px 440px,
-    470px 470px,
-    400px 400px,
-    450px 450px;
-  background-position:
-    0 0,
-    84px 84px,
-    42px 126px,
-    126px 42px,
-    168px 168px,
-    21px 189px,
-    147px 105px;
-  animation: galaxyTwinkle 3.5s ease-in-out infinite;
-}
-
-/* ─ Glowing particles (larger, slow opposite drift) ─────────── */
-.galaxy-bg-particles {
-  position: absolute;
-  top: -10%;
-  left: -10%;
-  width: 120%;
-  height: 120%;
-  will-change: transform;
-  background-image:
-    radial-gradient(
-      3.5px 3.5px at 18% 28%,
-      rgba(195, 175, 255, 0.8),
-      transparent
-    ),
-    radial-gradient(
-      2.8px 2.8px at 58% 48%,
-      rgba(218, 198, 255, 0.75),
-      transparent
-    ),
-    radial-gradient(
-      3.5px 3.5px at 40% 70%,
-      rgba(238, 218, 255, 0.72),
-      transparent
-    ),
-    radial-gradient(3px 3px at 80% 36%, rgba(208, 188, 255, 0.76), transparent),
-    radial-gradient(
-      2.8px 2.8px at 26% 56%,
-      rgba(228, 208, 255, 0.7),
-      transparent
-    ),
-    radial-gradient(3px 3px at 72% 82%, rgba(215, 195, 255, 0.74), transparent);
-  background-size: 500px 500px;
-  background-position:
-    0 0,
-    100px 100px,
-    50px 300px,
-    300px 50px,
-    200px 400px,
-    400px 200px;
-  animation: galaxyParticlesDrift 24s linear infinite;
-}
-
-/* ─ Static filmic grain ─────────────────────────────────────── */
-.galaxy-bg-grain {
-  position: absolute;
-  inset: 0;
-  opacity: 0.04;
-  mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='1' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.8'/></svg>");
-  background-size: 200px 200px;
-}
-
-/* ─ Edge vignette ───────────────────────────────────────────── */
-.galaxy-bg-vignette {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(
-    115% 88% at 50% 50%,
-    transparent 42%,
-    rgba(0, 0, 0, 0.65) 100%
-  );
-}
 
 /* ════════════════════════════════════════════════════════════════
    GALAXY MODE — UI OVERRIDES
@@ -783,9 +468,9 @@ body.galaxy-mode {
   background: #03030a !important;
   font-family: "Inter", "Geist", system-ui, sans-serif;
   /* CSS variable overrides — match Cosmic Rays warm dark palette */
-  --background: rgba(4, 3, 10, 0); /* transparent — let rays show */
-  --background-lighter: rgba(10, 6, 20, 0);
-  --background-lightest: rgba(16, 10, 30, 0);
+  --background: rgba(4, 3, 10, 1); /* solid — galaxy canvas removed */
+  --background-lighter: rgba(10, 6, 20, 1);
+  --background-lightest: rgba(16, 10, 30, 1);
   --foreground: #f3ecdf;
   --muted: rgba(243, 236, 223, 0.08);
   --muted-foreground: rgba(243, 236, 223, 0.55);
@@ -1184,7 +869,9 @@ body.galaxy-mode .galaxy-pro-link {
   color: rgba(139, 127, 255, 0.9) !important;
   padding: 4px 8px;
   border-radius: 4px;
-  transition: all 0.2s;
+  transition:
+    color var(--dur-fast) var(--ease-smooth),
+    background-color var(--dur-fast) var(--ease-smooth);
 }
 body.galaxy-mode .galaxy-pro-link:hover {
   color: rgba(180, 170, 255, 1) !important;
@@ -1313,10 +1000,12 @@ body.galaxy-mode .galaxy-card {
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  animation: galaxyFadeInUp 0.45s ease-out both;
+  animation: galaxyFadeInUp 0.2s var(--ease-out) both;
+  transform: translateZ(0);        /* own GPU layer — blur composites correctly */
+  will-change: transform;
   transition:
-    border-color 0.2s,
-    box-shadow 0.2s;
+    border-color var(--dur-fast) var(--ease-smooth),
+    box-shadow var(--dur-fast) var(--ease-smooth);
 }
 body.galaxy-mode .galaxy-card:hover {
   border-color: rgba(139, 127, 255, 0.28);
@@ -1346,12 +1035,12 @@ body.galaxy-mode .galaxy-page-title {
   background-clip: text;
   color: transparent;
   margin-bottom: 0.5rem;
-  animation: galaxyFadeInDown 0.55s ease-out both;
+  animation: galaxyFadeInDown 0.2s var(--ease-out) both;
 }
 body.galaxy-mode .galaxy-page-subtitle {
   color: rgba(190, 180, 240, 0.65);
   font-size: 0.92rem;
-  animation: galaxyFadeInDown 0.55s ease-out 0.08s both;
+  animation: galaxyFadeInDown 0.2s var(--ease-out) 0.04s both;
 }
 /* Per-route title gradient overrides */
 body[data-route="chat"] .galaxy-page-title {
@@ -1412,7 +1101,7 @@ body.galaxy-mode .galaxy-section-label {
   color: rgba(180, 165, 255, 0.6);
   margin-bottom: 1rem;
   padding-left: 0.25rem;
-  animation: galaxyFadeIn 0.4s ease-out both;
+  animation: galaxyFadeIn 0.15s var(--ease-out) both;
 }
 
 /* ── Chat panel glass: dark glass on messages background ─────── */
@@ -2343,15 +2032,79 @@ body[data-route="app-details"] .galaxy-bg-nebula {
   word-break: break-word;
 }
 
-/* Respect user's reduced-motion preference for ambient animations */
+/* Respect user's reduced-motion preference — kill all ambient animations */
 @media (prefers-reduced-motion: reduce) {
-  .orion-glow,
-  .galaxy-bg-core,
-  .galaxy-bg-nebula,
-  .galaxy-bg-stars,
-  .galaxy-bg-stars2,
-  .galaxy-bg-particles,
-  .galaxy-bg-twinkle {
-    animation: none !important;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
+}
+
+/* Disable GPU-heavy blur on devices that prefer reduced motion or have low
+   performance. backdrop-filter creates a separate compositing layer for every
+   blurred element and is the single largest GPU cost at idle. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+/* ── GPU layer promotion for all blurred surfaces ─────────────────────────
+   backdrop-filter REQUIRES its own compositing layer to work on the GPU.
+   Without transform:translateZ(0), the browser paints the blur on the CPU
+   during every frame. With it, the blur is resolved once and composited
+   cheaply at the GPU level — no repaint on scroll, hover, or animation.
+   This is the single most impactful change for high-refresh-rate rendering.  */
+body.galaxy-mode [data-sidebar="sidebar"],
+body.galaxy-mode [data-panel="sidebar-panel"],
+body.galaxy-mode .galaxy-setup-card,
+body.galaxy-mode .galaxy-onboarding-card,
+body.galaxy-mode .galaxy-prompt-card,
+body.galaxy-mode .galaxy-card,
+body.galaxy-mode .galaxy-promo-banner,
+body.galaxy-mode .galaxy-import-btn,
+.glass,
+.glass-deep,
+.glass-soft {
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+/* ── Smooth momentum scrolling on all scroll containers ───────────────────
+   -webkit-overflow-scrolling: touch enables native momentum scrolling.
+   scroll-behavior: smooth applies to programmatic scrolls.                  */
+[class*="overflow-y-auto"],
+[class*="overflow-auto"],
+[class*="overflow-y-scroll"],
+.overflow-y-auto,
+.overflow-auto {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: auto; /* keep 'auto' — smooth can delay programmatic jumps */
+}
+
+/* ── Interactive element hover: instant GPU-composited response ────────────
+   Only animate transform + opacity on interactive elements — both run on the
+   compositor thread and never block the main thread.                         */
+button,
+[role="button"],
+a,
+[data-sidebar="menu-button"] {
+  transition:
+    opacity var(--dur-instant) var(--ease-smooth),
+    transform var(--dur-instant) var(--ease-smooth);
+}
+
+/* ── Contain page-level panels to isolate their reflow/repaint ─────────────
+   contain: layout style — layout changes inside don't affect outside elements,
+   paint changes don't invalidate ancestor layers.                             */
+#layout-main-content-container > *,
+[data-panel],
+[data-sidebar] {
+  contain: layout style;
 }

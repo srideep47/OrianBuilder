@@ -879,24 +879,33 @@ export function registerEmbeddedModelHandlers(): void {
   ipcMain.handle("embedded-model:get-saved-config", () => {
     const settings = readSettings() as any;
     const cfg = settings.embeddedConfig ?? {};
+    // Fallback defaults are tuned for RTX 3060 6 GB / Ryzen 7 5800H / 16 GB RAM.
+    // See embeddedModelAutoload.ts DEFAULT_EMBEDDED_MODEL_CONFIG for the full rationale.
     return {
       modelPath: cfg.modelPath ?? null,
       inferenceBackend: cfg.inferenceBackend ?? "llama-cpp",
       tensorRtEngineDir: cfg.tensorRtEngineDir ?? null,
-      gpuMemoryUtilization: cfg.gpuMemoryUtilization ?? 0.98,
-      vramHeadroomMb: cfg.vramHeadroomMb ?? 512,
-      contextSize: cfg.contextSize ?? 8192,
+      // 90 % utilisation — safer than 98 % on a 6 GB card (driver + CUDA ~600 MB overhead)
+      gpuMemoryUtilization: cfg.gpuMemoryUtilization ?? 0.90,
+      // 768 MB headroom — prevents OOM on first large prompt on RTX 3060
+      vramHeadroomMb: cfg.vramHeadroomMb ?? 768,
+      // 32 K is the OrianBuilder minimum for the full codebase system prompt
+      contextSize: cfg.contextSize ?? 32768,
       batchSize: cfg.batchSize ?? 512,
-      temperature: cfg.temperature ?? 0.7,
+      temperature: cfg.temperature ?? 0.6,
       topP: cfg.topP ?? 0.95,
-      topK: cfg.topK ?? 40,
-      repeatPenalty: cfg.repeatPenalty ?? 1.1,
+      topK: cfg.topK ?? 20,
+      repeatPenalty: cfg.repeatPenalty ?? 1.0,
       seed: cfg.seed ?? null,
+      // Flash attention required for KV quantisation (cacheTypeK/V below)
       flashAttention: cfg.flashAttention ?? true,
       aggressiveMemory: cfg.aggressiveMemory ?? true,
       gpuLayersMode: cfg.gpuLayersMode ?? "auto",
       manualGpuLayers: cfg.manualGpuLayers ?? null,
       selectedGpuModel: cfg.selectedGpuModel ?? null,
+      // Q8_0 KV cache: halves KV memory at < 0.5 % quality loss — doubles context budget
+      cacheTypeK: cfg.cacheTypeK ?? "q8_0",
+      cacheTypeV: cfg.cacheTypeV ?? "q8_0",
     };
   });
 

@@ -5,7 +5,7 @@ import os from "node:os";
 const logger = log.scope("performance-monitor");
 
 // Constants
-const MONITOR_INTERVAL_MS = 30000; // 30 seconds
+const MONITOR_INTERVAL_MS = 120_000; // 2 minutes — metrics don't need sub-minute precision
 const BYTES_PER_MB = 1024 * 1024;
 
 let monitorInterval: NodeJS.Timeout | null = null;

@@ -21,7 +21,7 @@ import { statsTracker } from "@/ipc/utils/inference/stats_tracker";
 
 const logger = log.scope("llama-server-stats");
 
-const POLL_INTERVAL_MS = 400;
+const POLL_INTERVAL_MS = 1_000; // 1 s — enough resolution for stats; was 400 ms
 const REQUEST_TIMEOUT_MS = 750;
 
 interface SlotTimings {

@@ -231,6 +231,14 @@ async def v1_generate_video(req: V1VideoRequest) -> V1VideoResponse:
             req.height,
             req.steps,
         )
+    except RuntimeError as exc:
+        # RAM-preflight and other resource-not-available errors raise RuntimeError
+        # with a multi-line, user-friendly message — surface them as 503 so the
+        # renderer can show the full text instead of "failed to fetch".
+        msg = str(exc)
+        if "Not enough free RAM" in msg or "out of memory" in msg.lower():
+            raise HTTPException(status_code=503, detail=msg) from exc
+        raise HTTPException(status_code=500, detail=f"video generation failed: {exc}") from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"video generation failed: {exc}") from exc
 

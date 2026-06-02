@@ -624,24 +624,33 @@ function InferenceMonitor({
 
 // ─── defaults ────────────────────────────────────────────────────────────────
 
+// ── Engine screen defaults — RTX 3060 6 GB / Ryzen 7 5800H / 16 GB RAM ───────
+//
+//  90 % VRAM utilisation + 768 MB headroom prevents OOM on 6 GB cards.
+//  Q8_0 KV cache halves KV memory so 32 K context fits alongside all 36 layers
+//  of Qwen3-8B Q4_K_M (~4 GB loaded).  Flash attention is required for KV quant.
+//  The auto GPU-layer calculator will offload a few layers to CPU if needed to
+//  keep the 32 K OrianBuilder context budget.
 const DEFAULT_CONFIG: EmbeddedModelConfig = {
   modelPath: "",
   inferenceBackend: "llama-cpp",
   tensorRtEngineDir: null,
-  gpuMemoryUtilization: 0.98,
-  vramHeadroomMb: 512,
-  contextSize: 65536,
-  batchSize: 512,
+  gpuMemoryUtilization: 0.90,   // 90 % of 6 144 MB = 5 530 MB allocated
+  vramHeadroomMb: 768,          // CUDA ctx + cuBLAS workspace on RTX 3060
+  contextSize: 32768,           // OrianBuilder min (codebase system prompt)
+  batchSize: 512,               // good for 3060's 360 GB/s bandwidth
   temperature: 0.6,
   topP: 0.95,
   topK: 20,
   repeatPenalty: 1.0,
   seed: null,
-  flashAttention: true,
+  flashAttention: true,         // Ampere SM 8.6 — full FA2 support; required for KV quant
   aggressiveMemory: true,
   gpuLayersMode: "auto",
   manualGpuLayers: null,
   selectedGpuModel: null,
+  cacheTypeK: "q8_0",           // halves KV cache → ~2× more context for same VRAM
+  cacheTypeV: "q8_0",
 };
 
 // ─── page ─────────────────────────────────────────────────────────────────────
@@ -799,6 +808,18 @@ export default function InferencePage() {
       unsubTensorRtBuild();
     };
   }, [patch]);
+
+  // Auto-refresh the library whenever a marketplace download finishes so the
+  // new model immediately appears in the "From Library" dropdown without the
+  // user having to click the manual Refresh button.
+  useEffect(() => {
+    const unsub = ipc.events.marketplace.onDownloadProgress((progress) => {
+      if (progress.state === "completed") {
+        refreshLibrary();
+      }
+    });
+    return unsub;
+  }, [refreshLibrary]);
 
   useEffect(() => {
     const maxContext = modelInfo?.contextLengthTrained;
@@ -1505,13 +1526,26 @@ export default function InferencePage() {
                       variant="outline"
                       size="sm"
                       onClick={refreshLibrary}
+                      title="Refresh model list"
                     >
                       <RefreshCw className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      title="Open models folder"
+                      onClick={async () => {
+                        const info = await ipc.marketplace.getModelsDirInfo();
+                        ipc.system.showItemInFolder(info.dir);
+                      }}
+                    >
+                      <FolderOpen className="w-4 h-4" />
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground mt-1.5">
                     Pick from your downloaded library above, or browse to any
-                    GGUF anywhere on disk (e.g. an LM Studio folder).
+                    GGUF anywhere on disk. Downloaded models are auto-detected
+                    when a marketplace download finishes.
                   </p>
                 </div>
 

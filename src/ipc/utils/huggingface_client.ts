@@ -159,7 +159,9 @@ export async function getModelDetail(
   const params = new URLSearchParams();
   // Ask HF to expand siblings with file sizes (lfs.size for big GGUFs).
   params.append("blobs", "true");
-  const url = `/api/models/${encodeURIComponent(repoId)}?${params.toString()}`;
+  // repoId is "owner/repo" — the slash must stay as a literal path separator.
+  // encodeURIComponent would turn it into %2F which HF rejects with 400.
+  const url = `/api/models/${repoId}?${params.toString()}`;
   logger.info(`HF model detail: ${url}`);
   const data = await fetchJson<any>(url, opts);
   // Normalize to our type
@@ -212,7 +214,8 @@ export async function getFileSize(
   opts: { authToken?: string; signal?: AbortSignal } = {},
 ): Promise<number | null> {
   // Use the "tree" API to introspect the file.
-  const url = `/api/models/${encodeURIComponent(repoId)}/tree/main?path=${encodeURIComponent(fileName)}`;
+  // repoId slash must stay literal; only the fileName path segment needs encoding.
+  const url = `/api/models/${repoId}/tree/main?path=${encodeURIComponent(fileName)}`;
   try {
     const data = await fetchJson<
       Array<{ path: string; size?: number; lfs?: { size?: number } }>

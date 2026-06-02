@@ -96,16 +96,7 @@
       rgba(220, 210, 255, 0.45),
       transparent 60%
     );
-  animation: orionStarDrift 90s linear infinite;
   opacity: 0.7;
-}
-@keyframes orionStarDrift {
-  from {
-    transform: translate3d(0, 0, 0);
-  }
-  to {
-    transform: translate3d(-40px, 20px, 0);
-  }
 }
 
 /* Canvas — cosmic rays, screen-blended over the warm stage */
@@ -158,18 +149,25 @@
   backdrop-filter: blur(18px) saturate(150%) brightness(1.12);
   -webkit-backdrop-filter: blur(18px) saturate(150%) brightness(1.12);
   border: 1px solid rgba(255, 255, 255, 0.14);
+  /* Own GPU compositing layer — blur resolves on GPU, not CPU */
+  transform: translateZ(0);
+  will-change: transform;
 }
 .glass-deep {
   background: rgba(4, 2, 16, 0.6);
   backdrop-filter: blur(24px) saturate(140%);
   -webkit-backdrop-filter: blur(24px) saturate(140%);
   border: 1px solid rgba(255, 255, 255, 0.08);
+  transform: translateZ(0);
+  will-change: transform;
 }
 .glass-soft {
   background: rgba(255, 255, 255, 0.04);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.07);
+  transform: translateZ(0);
+  will-change: transform;
 }
 .glow {
   box-shadow:

@@ -1,9 +1,9 @@
-import { Route } from "@tanstack/react-router";
-import HubPage from "../pages/hub"; // Assuming HubPage is in src/pages/hub.tsx
-import { rootRoute } from "./root"; // Assuming rootRoute is defined in src/routes/root.ts
+import { createRoute } from "@tanstack/react-router";
+import { lazyRouteComponent } from "@tanstack/react-router";
+import { rootRoute } from "./root";
 
-export const hubRoute = new Route({
+export const hubRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/hub",
-  component: HubPage,
+  component: lazyRouteComponent(() => import("../pages/hub")),
 });

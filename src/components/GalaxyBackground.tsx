@@ -138,9 +138,21 @@ export function GalaxyBackground() {
     let rays: Ray[] = [];
     let raf = 0;
     let last = performance.now();
+    // Pause the animation loop when the window/tab is hidden
+    let paused = document.hidden;
+
+    const onVisibilityChange = () => {
+      paused = document.hidden;
+      if (!paused && raf === 0) {
+        last = performance.now();
+        raf = requestAnimationFrame(loop);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     const resize = () => {
-      DPR = Math.min(window.devicePixelRatio || 1, 2);
+      // Cap DPR at 1 — retina-scale canvas doubles GPU memory for a background
+      DPR = Math.min(window.devicePixelRatio || 1, 1);
       W = window.innerWidth;
       H = window.innerHeight;
       canvas.width = Math.floor(W * DPR);
@@ -148,7 +160,11 @@ export function GalaxyBackground() {
       canvas.style.width = `${W}px`;
       canvas.style.height = `${H}px`;
       ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-      rays = Array.from({ length: targetCount(W, H) }, () => makeRay(W, H));
+      // Use 50% of the original ray count — still visually rich, half the GPU work
+      rays = Array.from(
+        { length: Math.round(targetCount(W, H) * 0.5) },
+        () => makeRay(W, H),
+      );
     };
 
     const reduce = window.matchMedia(
@@ -156,7 +172,21 @@ export function GalaxyBackground() {
     ).matches;
     const speedScale = reduce ? 0.12 : 1;
 
+    // Frame-rate throttle: target 30 fps instead of 60 (background eye-candy)
+    const TARGET_FRAME_MS = 1000 / 30;
+    let lastFrameTime = 0;
+
     const loop = (now: number) => {
+      if (paused) {
+        raf = 0;
+        return;
+      }
+      // Skip frame if we haven't waited long enough (30 fps cap)
+      if (now - lastFrameTime < TARGET_FRAME_MS) {
+        raf = requestAnimationFrame(loop);
+        return;
+      }
+      lastFrameTime = now;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
 
@@ -255,11 +285,13 @@ export function GalaxyBackground() {
 
     window.addEventListener("resize", resize);
     resize();
-    raf = requestAnimationFrame(loop);
+    if (!paused) raf = requestAnimationFrame(loop);
 
     return () => {
       window.removeEventListener("resize", resize);
-      cancelAnimationFrame(raf);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
     };
   }, []);
 

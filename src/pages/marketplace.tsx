@@ -9,6 +9,7 @@ import type {
 import { Button } from "@/components/ui/button";
 import { showError, showSuccess } from "@/lib/toast";
 import { cn } from "@/lib/utils";
+import { useNavigate } from "@tanstack/react-router";
 import {
   Search,
   Loader2,
@@ -25,6 +26,8 @@ import {
   ChevronDown,
   ChevronRight,
   Cpu,
+  FolderOpen,
+  Zap,
 } from "lucide-react";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -72,6 +75,7 @@ const FEATURED_QUERIES = [
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function MarketplacePage() {
+  const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [sort, setSort] =
@@ -112,7 +116,7 @@ export default function MarketplacePage() {
     };
   }, [debouncedQuery, sort]);
 
-  // Download progress subscription
+  // Download progress subscription — keep list in sync and notify on completion
   useEffect(() => {
     (async () => {
       setDownloads(await ipc.marketplace.listDownloads());
@@ -122,6 +126,11 @@ export default function MarketplacePage() {
         const next = prev.filter((d) => d.id !== p.id);
         return [...next, p].sort((a, b) => b.startedAt - a.startedAt);
       });
+      // When a download finishes, show a persistent toast pointing the user to
+      // the Engine screen where the model will appear automatically.
+      if (p.state === "completed") {
+        showSuccess(`${p.fileName} downloaded — ready to use in the Engine`);
+      }
     });
     return off;
   }, []);
@@ -274,9 +283,14 @@ export default function MarketplacePage() {
             onClose={() => setSelected(null)}
             onDownload={startDownload}
             onCancel={cancelDl}
+            onUseInEngine={() => navigate({ to: "/inference" })}
           />
         ) : (
-          <DownloadsPanel downloads={downloads} onCancel={cancelDl} />
+          <DownloadsPanel
+            downloads={downloads}
+            onCancel={cancelDl}
+            onUseInEngine={() => navigate({ to: "/inference" })}
+          />
         )}
       </div>
     </div>
@@ -360,6 +374,7 @@ function ModelDetailPanel({
   onClose,
   onDownload,
   onCancel,
+  onUseInEngine,
 }: {
   detail: HFModelDetail;
   isLoading: boolean;
@@ -367,6 +382,7 @@ function ModelDetailPanel({
   onClose: () => void;
   onDownload: (repoId: string, fileName: string) => void;
   onCancel: (id: string) => void;
+  onUseInEngine: () => void;
 }) {
   const ggufFiles = useMemo(
     () => detail.siblings.filter((s) => /\.gguf$/i.test(s.rfilename)),
@@ -478,6 +494,7 @@ function ModelDetailPanel({
                     dlByName={dlByName}
                     onDownload={onDownload}
                     onCancel={onCancel}
+                    onUseInEngine={onUseInEngine}
                   />
                 ))}
               </div>
@@ -496,6 +513,7 @@ function FileGroup({
   dlByName,
   onDownload,
   onCancel,
+  onUseInEngine,
 }: {
   base: string;
   files: HFFileSibling[];
@@ -503,6 +521,7 @@ function FileGroup({
   dlByName: Map<string, DownloadProgress>;
   onDownload: (repoId: string, fileName: string) => void;
   onCancel: (id: string) => void;
+  onUseInEngine: () => void;
 }) {
   const [open, setOpen] = useState(true);
   return (
@@ -538,6 +557,7 @@ function FileGroup({
                 download={dl}
                 onDownload={() => onDownload(repoId, f.rfilename)}
                 onCancel={dl ? () => onCancel(dl.id) : undefined}
+                onUseInEngine={onUseInEngine}
               />
             );
           })}
@@ -555,6 +575,7 @@ function FileRow({
   download,
   onDownload,
   onCancel,
+  onUseInEngine,
 }: {
   fileName: string;
   size: number;
@@ -563,6 +584,7 @@ function FileRow({
   download?: DownloadProgress;
   onDownload: () => void;
   onCancel?: () => void;
+  onUseInEngine: () => void;
 }) {
   const isDone = download?.state === "completed";
   const isActive =
@@ -586,12 +608,36 @@ function FileRow({
             {size > 0 && <span>{formatBytes(size)}</span>}
           </div>
         </div>
-        <div className="shrink-0">
+        <div className="shrink-0 flex items-center gap-1.5">
           {isDone ? (
-            <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-medium">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Downloaded
-            </span>
+            <>
+              <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-medium">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Ready
+              </span>
+              <Button
+                size="sm"
+                className="h-7 px-2 text-xs bg-green-600 hover:bg-green-700 text-white"
+                onClick={onUseInEngine}
+                title="Open in Engine screen"
+              >
+                <Zap className="w-3 h-3 mr-1" />
+                Use
+              </Button>
+              {download?.destPath && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-2"
+                  title={`Show in folder: ${download.destPath}`}
+                  onClick={() =>
+                    ipc.system.showItemInFolder(download.destPath)
+                  }
+                >
+                  <FolderOpen className="w-3 h-3" />
+                </Button>
+              )}
+            </>
           ) : isActive ? (
             <button
               onClick={onCancel}
@@ -645,9 +691,11 @@ function FileRow({
 function DownloadsPanel({
   downloads,
   onCancel,
+  onUseInEngine,
 }: {
   downloads: DownloadProgress[];
   onCancel: (id: string) => void;
+  onUseInEngine: () => void;
 }) {
   const [filter, setFilter] = useState<"all" | "active" | "completed">(
     "active",
@@ -698,6 +746,7 @@ function DownloadsPanel({
               key={d.id}
               download={d}
               onCancel={() => onCancel(d.id)}
+              onUseInEngine={onUseInEngine}
             />
           ))
         )}
@@ -709,9 +758,11 @@ function DownloadsPanel({
 function DownloadCard({
   download,
   onCancel,
+  onUseInEngine,
 }: {
   download: DownloadProgress;
   onCancel: () => void;
+  onUseInEngine: () => void;
 }) {
   const pct =
     download.totalBytes > 0
@@ -719,6 +770,7 @@ function DownloadCard({
       : 0;
   const isActive =
     download.state === "downloading" || download.state === "queued";
+  const isDone = download.state === "completed";
   const eta =
     download.bytesPerSecond > 0 && download.totalBytes > 0
       ? Math.max(
@@ -728,10 +780,17 @@ function DownloadCard({
         )
       : 0;
   return (
-    <div className="rounded-lg border bg-background p-3">
+    <div
+      className={cn(
+        "rounded-lg border bg-background p-3",
+        isDone && "border-green-500/30 bg-green-500/5",
+      )}
+    >
       <div className="flex items-start justify-between gap-2 mb-1.5">
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-mono truncate">{download.fileName}</p>
+          <p className="text-xs font-mono truncate font-medium">
+            {download.fileName}
+          </p>
           <p className="text-[10px] text-muted-foreground truncate">
             {download.repoId}
           </p>
@@ -739,8 +798,7 @@ function DownloadCard({
         <span
           className={cn(
             "text-[10px] px-1.5 py-0.5 rounded font-medium capitalize shrink-0",
-            download.state === "completed" &&
-              "bg-green-500/10 text-green-700 dark:text-green-400",
+            isDone && "bg-green-500/10 text-green-700 dark:text-green-400",
             download.state === "downloading" && "bg-primary/10 text-primary",
             download.state === "failed" && "bg-red-500/10 text-red-600",
             download.state === "cancelled" && "bg-muted text-muted-foreground",
@@ -748,9 +806,10 @@ function DownloadCard({
               "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400",
           )}
         >
-          {download.state}
+          {isDone ? "✓ ready" : download.state}
         </span>
       </div>
+
       {isActive && (
         <>
           <div className="h-1 rounded-full bg-muted overflow-hidden">
@@ -779,8 +838,43 @@ function DownloadCard({
           </button>
         </>
       )}
+
+      {isDone && (
+        <div className="mt-2 space-y-1.5">
+          {/* Saved path */}
+          <p
+            className="text-[10px] text-muted-foreground font-mono truncate cursor-pointer hover:text-foreground transition-colors"
+            title={download.destPath}
+            onClick={() => ipc.system.showItemInFolder(download.destPath)}
+          >
+            <FolderOpen className="w-3 h-3 inline mr-1 -mt-0.5" />
+            {download.destPath}
+          </p>
+          {/* Action buttons */}
+          <div className="flex gap-1.5">
+            <Button
+              size="sm"
+              className="h-7 text-xs flex-1 bg-green-600 hover:bg-green-700 text-white"
+              onClick={onUseInEngine}
+            >
+              <Zap className="w-3 h-3 mr-1" />
+              Use in Engine
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs px-2"
+              title="Show in folder"
+              onClick={() => ipc.system.showItemInFolder(download.destPath)}
+            >
+              <FolderOpen className="w-3 h-3" />
+            </Button>
+          </div>
+        </div>
+      )}
+
       {download.state === "failed" && (
-        <p className="text-[10px] text-red-600 flex items-start gap-1">
+        <p className="text-[10px] text-red-600 flex items-start gap-1 mt-1.5">
           <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
           {download.error}
         </p>

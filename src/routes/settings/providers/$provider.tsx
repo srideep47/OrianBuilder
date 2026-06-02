@@ -1,6 +1,13 @@
-import { createRoute } from "@tanstack/react-router";
+import { createRoute, lazyRouteComponent } from "@tanstack/react-router";
 import { rootRoute } from "@/routes/root";
-import { ProviderSettingsPage } from "@/components/settings/ProviderSettingsPage";
+import { lazy } from "react";
+
+// Lazy-load the heavy provider settings component
+const ProviderSettingsPageLazy = lazy(() =>
+  import("@/components/settings/ProviderSettingsPage").then((m) => ({
+    default: m.ProviderSettingsPage,
+  })),
+);
 
 interface ProviderSettingsParams {
   provider: string;
@@ -17,6 +24,6 @@ export const providerSettingsRoute = createRoute({
   component: function ProviderSettingsRouteComponent() {
     const { provider } = providerSettingsRoute.useParams();
 
-    return <ProviderSettingsPage provider={provider} />;
+    return <ProviderSettingsPageLazy provider={provider} />;
   },
 });

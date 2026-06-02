@@ -25,6 +25,61 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 OUTPUTS_DIR = Path(os.getenv("OMNIGEN_OUTPUTS_DIR", str(BACKEND_DIR / "outputs")))
 
 
+def _get_available_ram_mb() -> int:
+    """Returns available system RAM in MB. Returns 0 on platforms where we
+    can't determine it (psutil missing, etc) — callers should treat 0 as
+    'unknown' and proceed, not as 'no RAM'."""
+    try:
+        import psutil  # type: ignore
+
+        return int(psutil.virtual_memory().available / (1024 * 1024))
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _get_total_ram_mb() -> int:
+    """Returns total system RAM in MB, or 0 if unavailable."""
+    try:
+        import psutil  # type: ignore
+
+        return int(psutil.virtual_memory().total / (1024 * 1024))
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _check_ram_sufficient(tier: "VideoTier") -> None:
+    """Raises RuntimeError with an actionable message if there isn't enough
+    free RAM to load this video tier. Loading a 14 GB model into 2 GB of free
+    RAM causes Windows to swap to disk, locking up the entire machine for
+    minutes. Refuse fast instead so the user can close other apps."""
+    available = _get_available_ram_mb()
+    total = _get_total_ram_mb()
+    if available <= 0:
+        # psutil missing or failed — skip the check rather than block generation.
+        return
+
+    # Rough memory requirement: download_size * 1.1 (load buffer + activations).
+    # For Wan 2.1 1.3B with ~14 GB on disk that's ~15.4 GB of RAM headroom needed.
+    required = int(tier["download_size_mb"] * 1.1)
+
+    if available < required:
+        # Build a friendly error message that suggests concrete next steps.
+        gb_avail = available / 1024
+        gb_required = required / 1024
+        gb_total = total / 1024 if total > 0 else 0
+        hint_lines = [
+            f"Not enough free RAM to load {tier['label']}.",
+            f"Required: ~{gb_required:.1f} GB free.  Available: ~{gb_avail:.1f} GB"
+            + (f" of {gb_total:.1f} GB total." if gb_total else "."),
+            "",
+            "Try one of:",
+            "  • Close Chrome / browsers and other apps, then retry.",
+            "  • Restart the OrianBuilder app to free its working memory.",
+            "  • Pick the 'Text-to-Video MS (CPU)' tier — it only needs ~3 GB.",
+        ]
+        raise RuntimeError("\n".join(hint_lines))
+
+
 class VideoTier(TypedDict):
     id: str
     repo: Optional[str]
@@ -213,18 +268,61 @@ def get_pipeline(forced_tier_id: Optional[str] = None):
 
     device = get_torch_device()
     dtype = get_torch_dtype()
+
+    # Verify the CUDA runtime is actually usable. If get_torch_device() said
+    # "cuda" but torch.cuda.is_available() is False, the model would silently
+    # fall back to CPU during from_pretrained — which on Wan 2.1 means a 14 GB
+    # load into RAM with no offload, instantly locking up low-RAM laptops.
+    if device == "cuda":
+        try:
+            import torch  # type: ignore
+
+            if not torch.cuda.is_available():
+                log.warning(
+                    "device=cuda requested but torch.cuda.is_available()=False; "
+                    "falling back to CPU — generation will be slow and may OOM"
+                )
+                device = "cpu"
+            else:
+                cuda_name = torch.cuda.get_device_name(0)
+                free_mb, total_mb = (x // (1024 * 1024) for x in torch.cuda.mem_get_info())
+                log.info(
+                    "CUDA OK: device=%s vram_free=%dMB vram_total=%dMB",
+                    cuda_name,
+                    free_mb,
+                    total_mb,
+                )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("CUDA probe failed (%s); falling back to CPU", exc)
+            device = "cpu"
+
+    # Preflight RAM check — fail fast with a clear message instead of locking
+    # up the machine when the model is too big to fit in available RAM.
+    _check_ram_sufficient(tier)
+
+    avail_ram = _get_available_ram_mb()
     log.info(
-        "loading video tier id=%s repo=%s device=%s",
+        "loading video tier id=%s repo=%s device=%s dtype=%s vram_mb=%d free_ram_mb=%d",
         tier["id"],
         tier["repo"],
         device,
+        dtype,
+        get_vram_mb(),
+        avail_ram,
     )
 
     if tier["id"] == "wan-2.1-14b":
         from diffusers import WanPipeline  # type: ignore
         import torch  # type: ignore
 
-        pipe = WanPipeline.from_pretrained(tier["repo"], torch_dtype=torch.bfloat16)
+        # bfloat16 matches the on-disk format — no dtype conversion during load,
+        # which halves peak RAM vs float16. low_cpu_mem_usage streams shards to
+        # CPU instead of materializing a meta-tensor copy first.
+        pipe = WanPipeline.from_pretrained(
+            tier["repo"],
+            torch_dtype=torch.bfloat16,
+            low_cpu_mem_usage=True,
+        )
         # 14B needs CPU offload on anything under 20 GB.
         if device == "cuda" and get_vram_mb() < 20000:
             try:
@@ -236,17 +334,61 @@ def get_pipeline(forced_tier_id: Optional[str] = None):
         _enable_savers(pipe)
     elif tier["id"] == "wan-2.1-1.3b":
         from diffusers import WanPipeline  # type: ignore
+        import torch  # type: ignore
 
-        pipe = WanPipeline.from_pretrained(tier["repo"], torch_dtype=dtype)
-        # Use CPU offload so the 1.3B fits in ≤5 GB VRAM.
+        # bfloat16 matches the Wan on-disk weight format so PyTorch can load
+        # each shard without allocating a temporary float16 copy — this halves
+        # peak RAM (the UMT5-XXL text encoder alone is ~11 GB on disk).
+        # low_cpu_mem_usage=True is essential: it uses meta-tensor materialization
+        # so peak RAM usage stays close to the model size (vs ~2× without it).
+        pipe = WanPipeline.from_pretrained(
+            tier["repo"],
+            torch_dtype=torch.bfloat16,
+            low_cpu_mem_usage=True,
+        )
+        # Free the intermediate Python references from the load process before
+        # configuring offload — gives back any temporary tensors that pip's
+        # safetensors loader retained.
+        gc.collect()
+
         if device == "cuda":
-            try:
-                pipe.enable_model_cpu_offload()
-            except Exception:  # noqa: BLE001
-                pipe = pipe.to(device)
+            vram = get_vram_mb()
+            if vram < 8000:
+                # ≤ 8 GB VRAM (e.g. RTX 3060 Laptop 6 GB): sequential offload moves
+                # individual layers to GPU one-at-a-time, keeping peak VRAM under 4 GB.
+                # enable_model_cpu_offload keeps whole sub-modules on GPU and can spike
+                # past 6 GB, causing Windows access-violation crashes.
+                log.info("VRAM=%dMB < 8GB → using sequential_cpu_offload", vram)
+                try:
+                    pipe.enable_sequential_cpu_offload()
+                    log.info("sequential_cpu_offload enabled — inference will use GPU")
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("sequential_cpu_offload failed (%s); trying model_cpu_offload", exc)
+                    try:
+                        pipe.enable_model_cpu_offload()
+                    except Exception as exc2:  # noqa: BLE001
+                        log.warning("model_cpu_offload also failed (%s); using full CPU", exc2)
+                        pipe = pipe.to(device)
+            else:
+                log.info("VRAM=%dMB ≥ 8GB → using model_cpu_offload", vram)
+                try:
+                    pipe.enable_model_cpu_offload()
+                except Exception:  # noqa: BLE001
+                    pipe = pipe.to(device)
         else:
+            log.warning(
+                "loading Wan 2.1 1.3B on CPU — this will be very slow and use ~14 GB RAM"
+            )
             pipe = pipe.to(device)
-        _enable_savers(pipe)
+
+        # VAE memory helpers — skip the offload call since we already configured it.
+        for fn_name in ("enable_attention_slicing", "enable_vae_slicing", "enable_vae_tiling"):
+            fn = getattr(pipe, fn_name, None)
+            if callable(fn):
+                try:
+                    fn()
+                except Exception:  # noqa: BLE001
+                    pass
     elif tier["id"] == "ltx-video":
         from diffusers import LTXPipeline  # type: ignore
 

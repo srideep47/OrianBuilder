@@ -260,21 +260,14 @@ export function ChatPanel({
     setShowScrollButton(false);
 
     if (isChatSwitch && messages.length > 0) {
-      // When switching chats with existing messages, wait for Virtuoso to render
-      // then scroll to ensure we're at the bottom
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          scrollToBottom("instant");
-        });
-      });
+      // Wait one microtask for React to flush state, then one rAF for the
+      // browser paint — this is one full frame instead of two.
+      queueMicrotask(() =>
+        requestAnimationFrame(() => scrollToBottom("instant")),
+      );
     } else if (!isChatSwitch) {
-      // For stream count changes (new message sent), wait for Virtuoso to render
-      // the placeholder message before scrolling
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          scrollToBottom();
-        });
-      });
+      // Same: one microtask + one rAF to catch Virtuoso's placeholder render.
+      queueMicrotask(() => requestAnimationFrame(() => scrollToBottom()));
     }
     // Note: if isChatSwitch && messages.length === 0, we don't scroll yet.
     // The messages will be fetched and this effect will re-run with messages.length > 0.
@@ -306,12 +299,10 @@ export function ChatPanel({
     prevIsStreamingRef.current = isStreaming;
 
     if (wasStreaming && !isStreaming && isAtBottomRef.current) {
-      // Double RAF ensures DOM is fully updated with footer content
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          scrollToBottom("smooth");
-        });
-      });
+      // One microtask flush + one paint frame is enough for the footer to appear.
+      queueMicrotask(() =>
+        requestAnimationFrame(() => scrollToBottom("smooth")),
+      );
     }
   }, [isStreaming, scrollToBottom]);
 
@@ -333,9 +324,11 @@ export function ChatPanel({
 
     firstRafId = requestAnimationFrame(() => {
       if (cancelled) return;
+      // One rAF is enough — error content renders synchronously.
+      scrollToBottom("instant");
       secondRafId = requestAnimationFrame(() => {
         if (cancelled) return;
-        scrollToBottom("instant");
+        scrollToBottom("instant"); // second pass catches any async height expansion
         timeoutId = window.setTimeout(() => {
           if (!cancelled) {
             scrollToBottom("smooth");

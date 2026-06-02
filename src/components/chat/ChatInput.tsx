@@ -124,7 +124,6 @@ import { cn } from "@/lib/utils";
 import { useVoiceToText } from "@/hooks/useVoiceToText";
 import { useChatMode } from "@/hooks/useChatMode";
 import { useInitialChatMode } from "@/hooks/useInitialChatMode";
-import { streamChatResponse } from "@/lib/chatStream";
 import {
   extractPdfTopic,
   generatePdfContent,
@@ -1028,99 +1027,6 @@ export function ChatInput({
         });
         setIsInlineReplying(false);
       });
-
-      return;
-    }
-
-    // Non-build messages get a conversational reply instead of going to the builder.
-    const isBuildRequest =
-      /build|bulid/i.test(currentInput) || attachments.length > 0;
-
-    if (!isBuildRequest && chatId) {
-      if (isInlineReplying) return;
-
-      const userId = --inlineIdCounterRef.current;
-      const assistantId = --inlineIdCounterRef.current;
-
-      const existingMsgs = messagesById.get(chatId) ?? [];
-      const apiMessages = [
-        {
-          role: "system",
-          content:
-            "You are OrianBuilder Assistant, a helpful AI. Answer questions clearly and concisely.",
-        },
-        ...existingMsgs.map((m) => ({ role: m.role, content: m.content })),
-        { role: "user", content: currentInput },
-      ];
-
-      setMessagesById((prev) => {
-        const next = new Map(prev);
-        next.set(chatId, [
-          ...(next.get(chatId) ?? []),
-          { id: userId, role: "user" as const, content: currentInput },
-          { id: assistantId, role: "assistant" as const, content: "" },
-        ]);
-        return next;
-      });
-
-      setInputValue("");
-      clearAttachments();
-      setSelectedComponents([]);
-      setVisualEditingSelectedComponent(null);
-      setIsInlineReplying(true);
-      inlineBufferRef.current = "";
-
-      if (inlineFlushTimerRef.current) {
-        window.clearInterval(inlineFlushTimerRef.current);
-        inlineFlushTimerRef.current = null;
-      }
-
-      const openRouterKey =
-        settings?.providerSettings?.openrouter?.apiKey?.value;
-
-      const commitAssistant = (content: string) => {
-        setMessagesById((prev) => {
-          const next = new Map(prev);
-          const msgs = next.get(chatId) ?? [];
-          next.set(
-            chatId,
-            msgs.map((m) => (m.id === assistantId ? { ...m, content } : m)),
-          );
-          return next;
-        });
-        setIsInlineReplying(false);
-        if (inlineFlushTimerRef.current) {
-          window.clearInterval(inlineFlushTimerRef.current);
-          inlineFlushTimerRef.current = null;
-        }
-      };
-
-      streamChatResponse(apiMessages, openRouterKey, {
-        onChunk: (delta) => {
-          inlineBufferRef.current += delta;
-        },
-        onEnd: () => commitAssistant(inlineBufferRef.current),
-        onError: (msg) => commitAssistant(`⚠️ ${msg}`),
-      });
-
-      inlineFlushTimerRef.current = window.setInterval(() => {
-        const buf = inlineBufferRef.current;
-        setMessagesById((prev) => {
-          const msgs = prev.get(chatId) ?? [];
-          const last = msgs.at(-1);
-          if (last?.id === assistantId && last.content !== buf) {
-            const next = new Map(prev);
-            next.set(
-              chatId,
-              msgs.map((m) =>
-                m.id === assistantId ? { ...m, content: buf } : m,
-              ),
-            );
-            return next;
-          }
-          return prev;
-        });
-      }, 80);
 
       return;
     }

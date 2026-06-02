@@ -95,32 +95,6 @@ export const USER_FACING_IMAGE_TIERS: readonly ImageTierUiConfig[] = [
       { label: "Quality (4 steps)", steps: 4, guidance: 0 },
     ],
   },
-  {
-    tierId: "z-image-turbo",
-    downloadId: "image-z-image-turbo",
-    shortName: "Z Image Turbo",
-    description:
-      "8-step model with high quality. ~8 GB VRAM · 12 GB download. Recommended for dedicated GPUs.",
-    vramGb: 8,
-    downloadGb: 12,
-    defaultSteps: 4,
-    minSteps: 4,
-    maxSteps: 8,
-    supportsGuidance: true,
-    defaultGuidance: 4.0,
-    defaultWidth: 768,
-    defaultHeight: 768,
-    allowedResolutions: [
-      { width: 512, height: 512, label: "512 × 512" },
-      { width: 768, height: 768, label: "768 × 768" },
-      { width: 1024, height: 1024, label: "1024 × 1024" },
-    ],
-    qualityPresets: [
-      { label: "Draft (4 steps)", steps: 4, guidance: 2.0 },
-      { label: "Balanced (6 steps)", steps: 6, guidance: 4.0 },
-      { label: "Quality (8 steps)", steps: 8, guidance: 6.0 },
-    ],
-  },
 ] as const;
 
 // ─── Image generation tiers (text → 512×512 image) ───────────────────────────

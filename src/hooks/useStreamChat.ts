@@ -765,9 +765,12 @@ export function useStreamChat({
     }, [chatId, setQueuePausedById, setStreamCompletedSuccessfullyById]),
     clearCompletionFlag: useCallback(() => {
       if (chatId === undefined) return;
+      // Set to false (not delete) so the queue processor sees a definitive
+      // "not completed" state and doesn't accidentally dequeue on the next
+      // render cycle with an undefined → false fallback.
       setStreamCompletedSuccessfullyById((prev) => {
         const next = new Map(prev);
-        next.delete(chatId);
+        next.set(chatId, false);
         return next;
       });
     }, [chatId, setStreamCompletedSuccessfullyById]),

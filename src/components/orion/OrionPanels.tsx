@@ -88,7 +88,7 @@ export function ModelEnginePanel() {
       }
     };
     void poll();
-    const id = window.setInterval(poll, 2000);
+    const id = window.setInterval(poll, 10_000); // 10 s is fine for orchestrator status display
     return () => {
       active = false;
       window.clearInterval(id);

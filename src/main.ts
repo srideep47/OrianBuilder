@@ -382,6 +382,10 @@ const createWindow = () => {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, "preload.js"),
+      // Throttle JS timers and rendering when the window is hidden / minimised.
+      // When the window is *visible* the compositor runs at the display's full
+      // refresh rate (120 / 165 Hz) with no artificial cap.
+      backgroundThrottling: true,
       // transparent: true,
     },
     icon: path.join(app.getAppPath(), "assets/icon/logo.png"),
@@ -607,6 +611,46 @@ protocol.registerSchemesAsPrivileged([
     },
   },
 ]);
+
+// ── GPU acceleration — enables 120 / 165 Hz smooth rendering ─────────────────
+//
+// Rule: NEVER use disable-gpu-compositing.
+//   It forces every frame through the CPU (software rasterisation), which caps
+//   the renderer at ~60 fps regardless of display refresh rate and makes
+//   transitions feel sluggish on integrated GPUs.
+//
+// The flags below hand rasterisation, compositing and texture uploads to the
+// GPU so the compositor thread runs independently of the main/JS thread —
+// that is what makes interactions feel instant at 120/165 Hz.
+
+// Move tile rasterisation from the CPU renderer thread to the GPU process.
+// Each visible tile gets rasterised in parallel on the GPU → no JS jank.
+app.commandLine.appendSwitch("enable-gpu-rasterization");
+
+// Upload texture tiles directly to GPU memory without an intermediate copy.
+// Halves the memory bandwidth for every tile update.
+app.commandLine.appendSwitch("enable-zero-copy");
+
+// Out-of-process canvas rasterisation — canvas 2D draws run on the GPU thread
+// instead of blocking the main thread. Critical for any canvas element.
+app.commandLine.appendSwitch("enable-features",
+  [
+    "BackgroundTabFreezing",   // ≤1 fps when window is hidden (idle power)
+    "CanvasOopRasterization",  // canvas on GPU thread
+    "UseSkiaRenderer",         // Skia compositing backend (lower latency)
+  ].join(","),
+);
+
+// Don't let Chromium's GPU denylist block integrated Intel / AMD GPUs.
+// Without this, many iGPUs fall back to software rasterisation silently.
+app.commandLine.appendSwitch("ignore-gpu-blocklist");
+
+// Use native OS GPU memory buffers (zero extra copy on display scanout).
+app.commandLine.appendSwitch("enable-native-gpu-memory-buffers");
+
+// Rasterise tiles with 4 parallel worker threads.
+// At 120 Hz a frame budget is 8.3 ms; 4 threads let large pages tile in time.
+app.commandLine.appendSwitch("num-raster-threads", "4");
 
 // Skip singleton lock for E2E test builds to allow parallel test execution.
 // Deep link handling still works via the 'open-url' event registered below.

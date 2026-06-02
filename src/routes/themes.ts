@@ -1,9 +1,9 @@
 import { createRoute } from "@tanstack/react-router";
+import { lazyRouteComponent } from "@tanstack/react-router";
 import { rootRoute } from "./root";
-import ThemesPage from "@/pages/themes";
 
 export const themesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/library/themes",
-  component: ThemesPage,
+  component: lazyRouteComponent(() => import("@/pages/themes")),
 });

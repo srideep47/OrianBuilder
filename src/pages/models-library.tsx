@@ -55,7 +55,7 @@ export default function ModelsLibraryPage() {
 
   useEffect(() => {
     refresh();
-    const t = setInterval(refresh, 4000);
+    const t = setInterval(refresh, 30_000); // refresh every 30 s; models don't change by the second
     return () => clearInterval(t);
   }, [refresh]);
 

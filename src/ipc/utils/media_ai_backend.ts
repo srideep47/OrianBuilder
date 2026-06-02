@@ -33,6 +33,17 @@ const MODEL_LABELS: Record<MediaAiModelId, string> = {
 let pythonServer: ChildProcess | null = null;
 let lastLog: string | undefined;
 
+/** Tracks how many times the backend has been auto-restarted after a crash.
+ *  Resets to 0 on every intentional startMediaAiBackend() call.  Caps out
+ *  at MAX_CRASH_RESTARTS to avoid an infinite crash-restart loop when the
+ *  crash is deterministic (e.g. corrupted model weights). */
+let _crashRestartCount = 0;
+const MAX_CRASH_RESTARTS = 3;
+
+/** Set to true just before an intentional SIGKILL so the close handler
+ *  doesn't mistake the forced shutdown for a crash and schedule a restart. */
+let _intentionalStop = false;
+
 export function resolveMediaAiBackendPath() {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, "mediaai-backend", "backend");
@@ -1449,6 +1460,9 @@ export async function startMediaAiBackend() {
   if (pythonServer) {
     return;
   }
+  // Reset crash counter on every intentional (re)start so we always allow
+  // at least MAX_CRASH_RESTARTS auto-recoveries from the next crash.
+  _crashRestartCount = 0;
   if (!fs.existsSync(path.join(backendPath, "app", "main.py"))) {
     logger.warn(
       `Media AI backend not found at ${backendPath}; skipping auto-start.`,
@@ -1487,7 +1501,29 @@ export async function startMediaAiBackend() {
   });
   pythonServer.on("close", (code) => {
     logger.info(`Media AI backend exited with code ${code}`);
+    // Capture and immediately reset the intentional-stop flag so the next
+    // start/stop cycle is unaffected.
+    const wasIntentional = _intentionalStop;
+    _intentionalStop = false;
     pythonServer = null;
+
+    // Auto-restart only on unexpected crashes — not on intentional SIGKILL.
+    // stopMediaAiBackend() sets _intentionalStop = true before sending SIGKILL
+    // so we can distinguish the two cases even though both produce non-zero codes.
+    const isCrash = !wasIntentional && code !== 0 && code !== null;
+    if (isCrash && _crashRestartCount < MAX_CRASH_RESTARTS) {
+      _crashRestartCount++;
+      const delay = 3000;
+      logger.warn(
+        `Media AI backend crashed (code ${code}), scheduling auto-restart ` +
+          `(attempt ${_crashRestartCount}/${MAX_CRASH_RESTARTS}) in ${delay}ms…`,
+      );
+      setTimeout(() => {
+        startMediaAiBackend().catch((err) => {
+          logger.error("Media AI backend auto-restart failed:", err);
+        });
+      }, delay);
+    }
   });
 }
 
@@ -1496,6 +1532,8 @@ export function stopMediaAiBackend() {
     return;
   }
   logger.info("Stopping Media AI backend...");
+  // Mark as intentional so the close handler doesn't schedule an auto-restart.
+  _intentionalStop = true;
   // On Windows, uvicorn / python can have child processes (reloader workers,
   // OMP threads holding native DLLs) that survive a plain .kill(). tree-kill
   // takes the entire process tree down with SIGKILL so pip can replace the

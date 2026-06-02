@@ -59,7 +59,7 @@ export function getCurrentLoad(): number {
 
 export function startLoadMonitor(): void {
   if (_interval) return;
-  _interval = setInterval(() => void _broadcast(), 2000);
+  _interval = setInterval(() => void _broadcast(), 10_000); // 10 s is plenty for peer load visibility
   // Broadcast immediately on start
   void _broadcast();
   logger.info("Load monitor started");

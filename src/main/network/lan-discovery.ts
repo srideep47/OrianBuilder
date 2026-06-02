@@ -21,8 +21,8 @@ import log from "electron-log";
 const logger = log.scope("network:lan");
 
 const PORT = 38291;
-const BROADCAST_INTERVAL_MS = 4_000;
-const PEER_STALE_AFTER_MS = 12_000;
+const BROADCAST_INTERVAL_MS = 15_000; // 15 s — peers are stable; saves constant UDP packets
+const PEER_STALE_AFTER_MS = 45_000; // 3× broadcast interval
 const MAGIC = "ORION-LAN-V1";
 
 export interface LanBeacon {

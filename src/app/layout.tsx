@@ -9,7 +9,6 @@ import { useEffect, type ReactNode } from "react";
 import { useRunApp, useAppOutputSubscription } from "@/hooks/useRunApp";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useRouterState, useNavigate } from "@tanstack/react-router";
-import { GalaxyBackground } from "@/components/GalaxyBackground";
 import {
   appConsoleEntriesAtom,
   previewModeAtom,
@@ -144,7 +143,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <>
       <ThemeProvider>
         <DeepLinkProvider>
-          <GalaxyBackground />
           <SidebarProvider defaultOpen={false}>
             <TitleBar />
             <AppSidebar />
