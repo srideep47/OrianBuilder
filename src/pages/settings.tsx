@@ -27,6 +27,7 @@ import { ChatEventNotificationSwitch } from "@/components/ChatEventNotificationS
 import { AutoUpdateSwitch } from "@/components/AutoUpdateSwitch";
 import { ReleaseChannelSelector } from "@/components/ReleaseChannelSelector";
 import { NeonIntegration } from "@/components/NeonIntegration";
+import { YouTubeIntegration } from "@/components/YouTubeIntegration";
 import { RuntimeModeSelector } from "@/components/RuntimeModeSelector";
 import { NodePathSelector } from "@/components/NodePathSelector";
 import { ToolsMcpSettings } from "@/components/settings/ToolsMcpSettings";
@@ -73,7 +74,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="min-h-screen px-8 py-4">
+    <div className="flex-1 overflow-y-auto px-8 py-4">
       <div className="max-w-5xl mx-auto">
         <Button
           onClick={() => router.history.back()}
@@ -144,6 +145,9 @@ export default function SettingsPage() {
               </div>
               <div id={SETTING_IDS.neon}>
                 <NeonIntegration />
+              </div>
+              <div id={SETTING_IDS.youtube}>
+                <YouTubeIntegration />
               </div>
               <div id={SETTING_IDS.braveSearch}>
                 <BraveSearchSettings />

@@ -101,6 +101,13 @@ export type {
   SharedPeerCatalog,
   SharedDownloadProgress,
 } from "./shared_media";
+export {
+  youtubeContracts,
+  youtubeClient,
+  youtubeEvents,
+  youtubeEventClient,
+} from "./youtube";
+export type { YouTubeStatus, YouTubePrivacy } from "./youtube";
 export type {
   WatchdogStatus,
   WatchdogSetupParams,
@@ -614,6 +621,7 @@ import {
   sharedMediaClient,
   sharedMediaEventClient,
 } from "./shared_media";
+import { youtubeClient, youtubeEventClient } from "./youtube";
 import {
   designStudioClient,
   designStudioChatStreamClient,
@@ -692,6 +700,7 @@ export const ipc = {
   watchdog: watchdogClient,
   generatedMedia: generatedMediaClient,
   sharedMedia: sharedMediaClient,
+  youtube: youtubeClient,
   designStudio: designStudioClient,
   designStudioStream: designStudioChatStreamClient,
 
@@ -709,5 +718,6 @@ export const ipc = {
     watchdog: watchdogEventClient,
     generatedMedia: generatedMediaEventClient,
     sharedMedia: sharedMediaEventClient,
+    youtube: youtubeEventClient,
   },
 } as const;

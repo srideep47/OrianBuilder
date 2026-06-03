@@ -1,8 +1,19 @@
 import { useState } from "react";
-import { Trash2, Film, ImageIcon, Music, Box, X, ZoomIn, Share2 } from "lucide-react";
+import {
+  Trash2,
+  Film,
+  ImageIcon,
+  Music,
+  Box,
+  X,
+  ZoomIn,
+  Share2,
+  Youtube,
+} from "lucide-react";
 import { ipc, generatedMediaUrl, type GeneratedMediaItem } from "@/ipc/types";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { PublishToYouTubeDialog } from "@/components/PublishToYouTubeDialog";
 import { toast } from "sonner";
 
 function formatBytes(bytes: number): string {
@@ -78,6 +89,7 @@ export function GeneratedMediaCard({
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
   const src = generatedMediaUrl(item.fileName);
   const KindIcon = KIND_ICON[item.kind];
 
@@ -182,8 +194,29 @@ export function GeneratedMediaCard({
               disabled={sharing}
             />
           </div>
+
+          {/* Publish — videos only (YouTube is video-only). */}
+          {item.kind === "video" && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full justify-center gap-1.5"
+              onClick={() => setPublishOpen(true)}
+            >
+              <Youtube className="h-3.5 w-3.5 text-red-600" />
+              Publish to YouTube
+            </Button>
+          )}
         </div>
       </div>
+
+      {item.kind === "video" && (
+        <PublishToYouTubeDialog
+          item={item}
+          open={publishOpen}
+          onOpenChange={setPublishOpen}
+        />
+      )}
 
       {lightboxOpen && (
         <LightboxImage src={src} alt={item.prompt ?? item.fileName} onClose={() => setLightboxOpen(false)} />

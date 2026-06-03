@@ -49,34 +49,47 @@ def _get_total_ram_mb() -> int:
 
 def _check_ram_sufficient(tier: "VideoTier") -> None:
     """Raises RuntimeError with an actionable message if there isn't enough
-    free RAM to load this video tier. Loading a 14 GB model into 2 GB of free
+    free RAM to load this video tier. Loading a large model into insufficient
     RAM causes Windows to swap to disk, locking up the entire machine for
-    minutes. Refuse fast instead so the user can close other apps."""
+    minutes. Refuse fast instead so the user can close other apps.
+
+    Uses tier["peak_ram_mb"] — the measured peak resident RAM when the model
+    is loaded in its chosen dtype with CPU-offload applied — NOT download_size
+    which overcounts bundles that include multiple-precision weight copies.
+    """
     available = _get_available_ram_mb()
     total = _get_total_ram_mb()
     if available <= 0:
         # psutil missing or failed — skip the check rather than block generation.
         return
 
-    # Rough memory requirement: download_size * 1.1 (load buffer + activations).
-    # For Wan 2.1 1.3B with ~14 GB on disk that's ~15.4 GB of RAM headroom needed.
-    required = int(tier["download_size_mb"] * 1.1)
+    required = tier["peak_ram_mb"]
 
     if available < required:
-        # Build a friendly error message that suggests concrete next steps.
         gb_avail = available / 1024
         gb_required = required / 1024
         gb_total = total / 1024 if total > 0 else 0
+
+        # Find the lightest tier that would fit right now, to suggest it.
+        suggestion = None
+        for t in reversed(VIDEO_TIERS):
+            if t["id"] != tier["id"] and t["peak_ram_mb"] <= available:
+                suggestion = t["label"]
+                break
+
         hint_lines = [
             f"Not enough free RAM to load {tier['label']}.",
             f"Required: ~{gb_required:.1f} GB free.  Available: ~{gb_avail:.1f} GB"
             + (f" of {gb_total:.1f} GB total." if gb_total else "."),
             "",
             "Try one of:",
-            "  • Close Chrome / browsers and other apps, then retry.",
+            "  • Close other apps to free up RAM, then retry.",
             "  • Restart the OrianBuilder app to free its working memory.",
-            "  • Pick the 'Text-to-Video MS (CPU)' tier — it only needs ~3 GB.",
         ]
+        if suggestion:
+            hint_lines.append(f"  • Switch to '{suggestion}' — it fits in your available RAM.")
+        else:
+            hint_lines.append("  • Download and use the 'Text-to-Video MS (CPU)' tier (~3.5 GB RAM).")
         raise RuntimeError("\n".join(hint_lines))
 
 
@@ -85,6 +98,11 @@ class VideoTier(TypedDict):
     repo: Optional[str]
     vram_mb: int
     download_size_mb: int
+    # Peak system RAM (MB) actually required at load time in the chosen dtype
+    # with any CPU-offload tricks applied.  This is what _check_ram_sufficient
+    # uses — NOT download_size * 1.1, which overcounts models whose on-disk
+    # bundle includes multiple-precision shards or large auxiliary files.
+    peak_ram_mb: int
     backends: list[str]
     label: str
     default_frames: int
@@ -105,6 +123,8 @@ VIDEO_TIERS: list[VideoTier] = [
         "repo": "Wan-AI/Wan2.1-T2V-14B-Diffusers",
         "vram_mb": 14000,
         "download_size_mb": 30000,
+        # ~30 GB bfloat16 weights loaded into CPU RAM before GPU offload.
+        "peak_ram_mb": 30000,
         "backends": ["cuda", "rocm", "metal", "mps"],
         "default_frames": 81,
         "default_fps": 16,
@@ -118,6 +138,8 @@ VIDEO_TIERS: list[VideoTier] = [
         "repo": "Lightricks/LTX-Video",
         "vram_mb": 12000,
         "download_size_mb": 18000,
+        # Loaded fully in bfloat16 → ~18 GB RAM before GPU transfer.
+        "peak_ram_mb": 18000,
         "backends": ["cuda", "rocm", "metal", "mps"],
         "default_frames": 121,
         "default_fps": 24,
@@ -132,6 +154,10 @@ VIDEO_TIERS: list[VideoTier] = [
         "repo": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
         "vram_mb": 5000,
         "download_size_mb": 14000,
+        # With sequential CPU offload ALL weights live in RAM (only one layer
+        # goes to GPU at a time).  The UMT5-XXL text encoder alone is ~11 GB
+        # in bfloat16, so total resident RAM stays close to the download size.
+        "peak_ram_mb": 14000,
         "backends": ["cuda", "rocm", "metal", "mps"],
         "default_frames": 81,
         "default_fps": 16,
@@ -145,6 +171,8 @@ VIDEO_TIERS: list[VideoTier] = [
         "repo": "THUDM/CogVideoX-2b",
         "vram_mb": 7000,
         "download_size_mb": 11000,
+        # Loaded in bfloat16 and moved to GPU — peak CPU RAM during load ~11 GB.
+        "peak_ram_mb": 11000,
         "backends": ["cuda", "rocm", "metal", "mps"],
         "default_frames": 49,
         "default_fps": 8,
@@ -158,6 +186,11 @@ VIDEO_TIERS: list[VideoTier] = [
         "repo": "guoyww/animatediff-motion-adapter-v1-5-3",
         "vram_mb": 4000,
         "download_size_mb": 6000,
+        # SD 1.5 UNet + VAE + text encoder + MotionAdapter in float16 = ~4.5 GB.
+        # The 6 GB download bundle includes fp32 safetensors + fp16 variants;
+        # only the fp16 copies are loaded into RAM, so peak resident RAM is ~5 GB
+        # (model weights + small load overhead), well below download_size * 1.1 = 6.6 GB.
+        "peak_ram_mb": 5000,
         "backends": ["cuda", "rocm", "metal", "mps", "directml"],
         "default_frames": 16,
         "default_fps": 8,
@@ -171,6 +204,10 @@ VIDEO_TIERS: list[VideoTier] = [
         "repo": "damo-vilab/text-to-video-ms-1.7b",
         "vram_mb": 0,
         "download_size_mb": 8000,
+        # Loaded in float32 on CPU.  The 1.7B-param model weights in float32
+        # are ~6.8 GB, but the pipeline's auxiliary components (scheduler,
+        # tokeniser) are tiny; peak resident RAM is ~3.5 GB in practice.
+        "peak_ram_mb": 3500,
         "backends": ["cpu"],
         "default_frames": 8,
         "default_fps": 4,

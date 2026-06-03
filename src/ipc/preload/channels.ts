@@ -74,6 +74,7 @@ import {
   sharedMediaContracts,
   sharedMediaEvents,
 } from "../types/shared_media";
+import { youtubeContracts, youtubeEvents } from "../types/youtube";
 
 // =============================================================================
 // Invoke Channels (derived from all contracts)
@@ -150,6 +151,7 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(designStudioContracts),
   ...getInvokeChannels(generatedMediaContracts),
   ...getInvokeChannels(sharedMediaContracts),
+  ...getInvokeChannels(youtubeContracts),
 
   // Test-only channels
   ...TEST_INVOKE_CHANNELS,
@@ -183,6 +185,7 @@ export const VALID_RECEIVE_CHANNELS = [
   ...getReceiveChannels(watchdogEvents),
   ...getReceiveChannels(generatedMediaEvents),
   ...getReceiveChannels(sharedMediaEvents),
+  ...getReceiveChannels(youtubeEvents),
 ] as const;
 
 // =============================================================================
