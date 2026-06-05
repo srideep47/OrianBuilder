@@ -22,3 +22,26 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Capacitor / native mobile build artifacts.
+# `cap add` generates its own android/.gitignore, but these are listed here too
+# so machine-specific and rebuildable files never get committed (e.g. before
+# the native project exists, or if its .gitignore is removed).
+# Android
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/captures/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+# iOS
+ios/App/build/
+ios/App/Pods/
+ios/App/output/
+ios/App/App/public/
+# Built app packages
+*.apk
+*.aab
+*.ipa

@@ -63,22 +63,24 @@ const items = [
   { title: "Hub", to: "/hub", icon: Store, hasPanel: false },
 ] as const;
 
-// Renders a nav label, splitting two-word titles onto two lines for a compact look
+// Renders a nav label, capped at two lines so every item stays compact enough
+// for the full list to fit without scrolling. Three-word titles (e.g. "Daily AI
+// Digest") keep the first word on line one and the rest on line two.
 function IconLabel({ title }: { title: string }) {
   const words = title.split(" ");
   if (words.length > 1) {
+    const lines =
+      words.length > 2 ? [words[0], words.slice(1).join(" ")] : words;
     return (
-      <span className="flex flex-col items-center leading-[1.1] text-[10px] text-center">
-        {words.map((w) => (
-          <span key={w}>{w}</span>
+      <span className="flex flex-col items-center leading-[1.05] text-[9px] text-center">
+        {lines.map((line) => (
+          <span key={line}>{line}</span>
         ))}
       </span>
     );
   }
   return (
-    <span className="text-[10px] leading-tight text-center w-full">
-      {title}
-    </span>
+    <span className="text-[9px] leading-tight text-center w-full">{title}</span>
   );
 }
 
@@ -109,8 +111,8 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarContent className="overflow-hidden">
-        <div className="mt-11">
+      <SidebarContent className="overflow-y-auto overflow-x-hidden group-data-[collapsible=icon]:overflow-y-auto group-data-[collapsible=icon]:overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="mt-11 flex flex-1 flex-col min-h-0">
           <AppIcons
             onIconClick={handleIconClick}
             pathname={pathname}
@@ -119,19 +121,17 @@ export function AppSidebar() {
         </div>
       </SidebarContent>
 
-      <SidebarFooter className="pb-4">
+      <SidebarFooter className="pb-2">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               size="sm"
               tooltip="Help"
-              className="flex flex-col items-center justify-center gap-0.5 w-full h-[62px] mb-1 rounded-xl font-medium"
+              className="flex flex-col items-center justify-center gap-0.5 w-full h-[40px] mb-0 rounded-lg font-medium"
               onClick={() => setIsHelpDialogOpen(true)}
             >
-              <HelpCircle className="h-[18px] w-[18px] shrink-0" />
-              <span className="text-[10px] leading-tight text-center">
-                Help
-              </span>
+              <HelpCircle className="h-4 w-4 shrink-0" />
+              <span className="text-[9px] leading-tight text-center">Help</span>
             </SidebarMenuButton>
             <HelpDialog
               isOpen={isHelpDialogOpen}
@@ -154,9 +154,9 @@ function AppIcons({
   activePanel: SidebarPanelItem;
 }) {
   return (
-    <SidebarGroup className="px-1 py-0">
-      <SidebarGroupContent>
-        <SidebarMenu className="gap-0">
+    <SidebarGroup className="px-1 py-0 flex flex-1 flex-col min-h-0">
+      <SidebarGroupContent className="flex flex-1 flex-col min-h-0">
+        <SidebarMenu className="flex flex-1 flex-col justify-evenly gap-0">
           {items.map((item) => {
             const isActive =
               (item.to === "/" && pathname === "/") ||
@@ -173,10 +173,10 @@ function AppIcons({
                   size="sm"
                   tooltip={item.title}
                   isActive={isActive || isPanelActive}
-                  className="flex flex-col items-center justify-center gap-0.5 w-full h-[62px] mb-0.5 rounded-xl font-medium"
+                  className="flex flex-col items-center justify-center gap-0.5 w-full h-[40px] shrink-0 rounded-lg font-medium"
                   onClick={() => onIconClick(item.title, item.hasPanel)}
                 >
-                  <item.icon className="h-[18px] w-[18px] shrink-0" />
+                  <item.icon className="h-4 w-4 shrink-0" />
                   <IconLabel title={item.title} />
                 </SidebarMenuButton>
               </SidebarMenuItem>

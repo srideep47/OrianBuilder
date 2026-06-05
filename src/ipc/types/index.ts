@@ -86,10 +86,7 @@ export {
   generatedMediaEventClient,
   generatedMediaUrl,
 } from "./generated_media";
-export type {
-  GeneratedMediaItem,
-  GeneratedMediaKind,
-} from "./generated_media";
+export type { GeneratedMediaItem, GeneratedMediaKind } from "./generated_media";
 export {
   sharedMediaContracts,
   sharedMediaClient,
@@ -108,6 +105,19 @@ export {
   youtubeEventClient,
 } from "./youtube";
 export type { YouTubeStatus, YouTubePrivacy } from "./youtube";
+export {
+  androidEmulatorContracts,
+  androidEmulatorClient,
+  androidEmulatorEvents,
+  androidEmulatorEventClient,
+} from "./android_emulator";
+export type {
+  AndroidEmulatorStatus,
+  AndroidSetupProgress,
+  AndroidOperationResult,
+  AndroidFindApkResult,
+  AndroidLaunchParams,
+} from "./android_emulator";
 export type {
   WatchdogStatus,
   WatchdogSetupParams,
@@ -617,11 +627,12 @@ import {
   generatedMediaClient,
   generatedMediaEventClient,
 } from "./generated_media";
-import {
-  sharedMediaClient,
-  sharedMediaEventClient,
-} from "./shared_media";
+import { sharedMediaClient, sharedMediaEventClient } from "./shared_media";
 import { youtubeClient, youtubeEventClient } from "./youtube";
+import {
+  androidEmulatorClient,
+  androidEmulatorEventClient,
+} from "./android_emulator";
 import {
   designStudioClient,
   designStudioChatStreamClient,
@@ -701,6 +712,7 @@ export const ipc = {
   generatedMedia: generatedMediaClient,
   sharedMedia: sharedMediaClient,
   youtube: youtubeClient,
+  androidEmulator: androidEmulatorClient,
   designStudio: designStudioClient,
   designStudioStream: designStudioChatStreamClient,
 
@@ -719,5 +731,6 @@ export const ipc = {
     generatedMedia: generatedMediaEventClient,
     sharedMedia: sharedMediaEventClient,
     youtube: youtubeEventClient,
+    androidEmulator: androidEmulatorEventClient,
   },
 } as const;

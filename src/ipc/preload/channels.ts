@@ -70,11 +70,12 @@ import {
   generatedMediaContracts,
   generatedMediaEvents,
 } from "../types/generated_media";
-import {
-  sharedMediaContracts,
-  sharedMediaEvents,
-} from "../types/shared_media";
+import { sharedMediaContracts, sharedMediaEvents } from "../types/shared_media";
 import { youtubeContracts, youtubeEvents } from "../types/youtube";
+import {
+  androidEmulatorContracts,
+  androidEmulatorEvents,
+} from "../types/android_emulator";
 
 // =============================================================================
 // Invoke Channels (derived from all contracts)
@@ -152,6 +153,7 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(generatedMediaContracts),
   ...getInvokeChannels(sharedMediaContracts),
   ...getInvokeChannels(youtubeContracts),
+  ...getInvokeChannels(androidEmulatorContracts),
 
   // Test-only channels
   ...TEST_INVOKE_CHANNELS,
@@ -186,6 +188,7 @@ export const VALID_RECEIVE_CHANNELS = [
   ...getReceiveChannels(generatedMediaEvents),
   ...getReceiveChannels(sharedMediaEvents),
   ...getReceiveChannels(youtubeEvents),
+  ...getReceiveChannels(androidEmulatorEvents),
 ] as const;
 
 // =============================================================================

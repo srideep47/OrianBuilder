@@ -37,6 +37,22 @@ export const capacitorContracts = {
     input: AppIdParamsSchema,
     output: z.void(),
   }),
+
+  // Whether a usable Android Studio install is present (used to hide the
+  // "Sync & Open Android" button when it would only crash).
+  isAndroidStudioAvailable: defineContract({
+    channel: "is-android-studio-available",
+    input: z.void(),
+    output: z.boolean(),
+  }),
+
+  // Whether Xcode is available (macOS only) — used to hide the "Sync & Open
+  // iOS" button on machines that can't open it.
+  isXcodeAvailable: defineContract({
+    channel: "is-xcode-available",
+    input: z.void(),
+    output: z.boolean(),
+  }),
 } as const;
 
 // =============================================================================
