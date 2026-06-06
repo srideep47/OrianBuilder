@@ -245,3 +245,7 @@ src/main/auth/_credentials.gen.ts
 resources/design-studio/design-systems/
 resources/design-studio/skills/
 # Keep resources/design-studio/craft/ — those are our own copies
+
+# Ad-hoc scratch / diagnostic scripts (never commit)
+.tmp_*
+*.tmp.mjs

@@ -60,6 +60,7 @@ import { registerDesignStudioHandlers } from "./handlers/design_studio_handler";
 import { registerGeneratedMediaHandlers } from "./handlers/generated_media_handlers";
 import { registerSharedMediaHandlers } from "./handlers/shared_media_handlers";
 import { registerYouTubeHandlers } from "./handlers/youtube_handlers";
+import { registerAndroidEmulatorHandlers } from "./handlers/android_emulator_handlers";
 
 export function registerIpcHandlers() {
   // Register all IPC handlers by category
@@ -125,4 +126,5 @@ export function registerIpcHandlers() {
   registerGeneratedMediaHandlers();
   registerSharedMediaHandlers();
   registerYouTubeHandlers();
+  registerAndroidEmulatorHandlers();
 }

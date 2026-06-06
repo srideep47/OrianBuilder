@@ -41,6 +41,55 @@ function isCapacitorInstalled(appPath: string): boolean {
   );
 }
 
+/**
+ * Resolve the Android Studio launcher path the way Capacitor does — honoring
+ * CAPACITOR_ANDROID_STUDIO_PATH, then platform defaults.
+ */
+function resolveAndroidStudioPath(): string | null {
+  if (process.env.CAPACITOR_ANDROID_STUDIO_PATH) {
+    return process.env.CAPACITOR_ANDROID_STUDIO_PATH;
+  }
+  const defaults =
+    process.platform === "win32"
+      ? [
+          "C:\\Program Files\\Android\\Android Studio\\bin\\studio64.exe",
+          "C:\\Program Files\\Android\\Android Studio\\bin\\studio.exe",
+        ]
+      : process.platform === "darwin"
+        ? ["/Applications/Android Studio.app"]
+        : [
+            "/usr/local/android-studio/bin/studio.sh",
+            "/opt/android-studio/bin/studio.sh",
+          ];
+  return defaults.find((p) => fs.existsSync(p)) ?? null;
+}
+
+/**
+ * Whether Android Studio is present AND its installation is intact. A common
+ * failure mode is a launcher (studio64.exe) without the rest of the IDE — most
+ * tellingly the `product-info.json` descriptor — which makes the IDE crash on
+ * startup with "Cannot detect a launch configuration". We detect that here so
+ * we can show a helpful message instead of launching a broken IDE.
+ */
+function isAndroidStudioUsable(): boolean {
+  const studioPath = resolveAndroidStudioPath();
+  if (!studioPath) return false;
+  if (process.platform === "darwin") {
+    return fs.existsSync(path.join(studioPath, "Contents", "Info.plist"));
+  }
+  // studioPath is <root>/bin/studio64.exe — a valid install has the JetBrains
+  // product descriptor at its root.
+  const installRoot = path.dirname(path.dirname(studioPath));
+  return fs.existsSync(path.join(installRoot, "product-info.json"));
+}
+
+/** Whether Xcode is available. iOS tooling only exists on macOS. */
+function isXcodeAvailable(): boolean {
+  return (
+    process.platform === "darwin" && fs.existsSync("/Applications/Xcode.app")
+  );
+}
+
 export function registerCapacitorHandlers() {
   createTypedHandler(capacitorContracts.isCapacitor, async (_, params) => {
     const app = await getApp(params.appId);
@@ -117,6 +166,14 @@ export function registerCapacitorHandlers() {
     });
   });
 
+  createTypedHandler(capacitorContracts.isAndroidStudioAvailable, async () =>
+    isAndroidStudioUsable(),
+  );
+
+  createTypedHandler(capacitorContracts.isXcodeAvailable, async () =>
+    isXcodeAvailable(),
+  );
+
   createTypedHandler(capacitorContracts.openAndroid, async (_, params) => {
     const app = await getApp(params.appId);
     const appPath = getOrianBuilderAppPath(app.path);
@@ -134,6 +191,17 @@ export function registerCapacitorHandlers() {
         "Test mode: Simulating opening Android project in Android Studio",
       );
       return;
+    }
+
+    // Don't launch a broken/absent Android Studio — it would pop its own cryptic
+    // "Cannot start the IDE" dialog. Surface a helpful message instead.
+    if (!isAndroidStudioUsable()) {
+      throw new OrianBuilderError(
+        "Android Studio isn't installed (or its installation is incomplete), so it can't be opened.\n\n" +
+          "You don't need Android Studio to test on Android — use the “Android Test” panel below to build a debug APK and launch it in the emulator directly.\n\n" +
+          "If you'd rather use this button, reinstall Android Studio from https://developer.android.com/studio (or set CAPACITOR_ANDROID_STUDIO_PATH to a working install).",
+        OrianBuilderErrorKind.Precondition,
+      );
     }
 
     await simpleSpawn({

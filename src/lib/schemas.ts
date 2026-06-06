@@ -373,6 +373,9 @@ const BaseUserSettingsFields = {
   runtimeMode2: RuntimeMode2Schema.optional(),
   customNodePath: z.string().optional().nullable(),
   customAppsFolder: z.string().optional().nullable(),
+  // Path to the OrianBuilder-managed Android SDK (downloaded on demand for the
+  // in-app Android emulator). Persisted so it survives restarts.
+  androidSdkManagedPath: z.string().optional().nullable(),
   isRunning: z.boolean().optional(),
   lastKnownPerformance: z
     .object({

@@ -52,6 +52,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { useCheckName } from "@/hooks/useCheckName";
 import { AppUpgrades } from "@/components/AppUpgrades";
 import { CapacitorControls } from "@/components/CapacitorControls";
+import { AndroidEmulatorPanel } from "@/components/AndroidEmulatorPanel";
 import { GithubCollaboratorManager } from "@/components/GithubCollaboratorManager";
 import { useAddAppToFavorite } from "@/hooks/useAddAppToFavorite";
 import { useTranslation } from "react-i18next";
@@ -348,7 +349,7 @@ export default function AppDetailsPage() {
 
   return (
     <div
-      className="relative min-h-screen p-4 w-full"
+      className="relative h-full w-full overflow-y-auto p-4"
       data-testid="app-details-page"
     >
       <Button
@@ -577,6 +578,7 @@ export default function AppDetailsPage() {
             </>
           )}
           {appId && <CapacitorControls appId={appId} />}
+          {appId && <AndroidEmulatorPanel appId={appId} />}
           <AppUpgrades appId={appId} />
         </div>
 

@@ -48,6 +48,18 @@ export function CapacitorControls({ appId }: CapacitorControlsProps) {
     enabled: appId !== undefined && appId !== null,
   });
 
+  // Whether the native IDEs are usable on this machine. We only show a
+  // "Sync & Open …" button when its IDE can actually be opened; if neither can,
+  // the whole card is hidden (the Android Test panel covers Android either way).
+  const { data: androidStudioAvailable, isLoading: androidLoading } = useQuery({
+    queryKey: ["capacitor", "androidStudioAvailable"],
+    queryFn: () => ipc.capacitor.isAndroidStudioAvailable(),
+  });
+  const { data: xcodeAvailable, isLoading: xcodeLoading } = useQuery({
+    queryKey: ["capacitor", "xcodeAvailable"],
+    queryFn: () => ipc.capacitor.isXcodeAvailable(),
+  });
+
   const showErrorDialog = (title: string, error: unknown) => {
     const errorMessage = error instanceof Error ? error.message : String(error);
     setErrorDetails({ title, message: errorMessage });
@@ -117,8 +129,18 @@ export function CapacitorControls({ appId }: CapacitorControlsProps) {
     }
   };
 
-  // Don't render anything if loading or if Capacitor is not installed
-  if (isLoading || !isCapacitor) {
+  // Don't render anything while loading or if Capacitor isn't installed.
+  if (isLoading || androidLoading || xcodeLoading || !isCapacitor) {
+    return null;
+  }
+
+  const showIos = !!xcodeAvailable;
+  const showAndroid = !!androidStudioAvailable;
+
+  // If neither native IDE can be opened, the whole "Mobile Development" card is
+  // useless on this machine — hide it. (Android testing lives in the separate
+  // "Android Test" panel.)
+  if (!showIos && !showAndroid) {
     return null;
   }
 
@@ -151,46 +173,56 @@ export function CapacitorControls({ appId }: CapacitorControlsProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              onClick={() => syncAndOpenIosMutation.mutate()}
-              disabled={syncAndOpenIosMutation.isPending}
-              variant="outline"
-              size="sm"
-              className="flex items-center gap-2 h-10"
-            >
-              {syncAndOpenIosMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Smartphone className="h-4 w-4" />
-              )}
-              <div className="text-left">
-                <div className="text-xs font-medium">{iosButtonText.main}</div>
-                <div className="text-xs text-gray-500">{iosButtonText.sub}</div>
-              </div>
-            </Button>
+          <div
+            className={`grid gap-2 ${showIos && showAndroid ? "grid-cols-2" : "grid-cols-1"}`}
+          >
+            {showIos && (
+              <Button
+                onClick={() => syncAndOpenIosMutation.mutate()}
+                disabled={syncAndOpenIosMutation.isPending}
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2 h-10"
+              >
+                {syncAndOpenIosMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Smartphone className="h-4 w-4" />
+                )}
+                <div className="text-left">
+                  <div className="text-xs font-medium">
+                    {iosButtonText.main}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {iosButtonText.sub}
+                  </div>
+                </div>
+              </Button>
+            )}
 
-            <Button
-              onClick={() => syncAndOpenAndroidMutation.mutate()}
-              disabled={syncAndOpenAndroidMutation.isPending}
-              variant="outline"
-              size="sm"
-              className="flex items-center gap-2 h-10"
-            >
-              {syncAndOpenAndroidMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <TabletSmartphone className="h-4 w-4" />
-              )}
-              <div className="text-left">
-                <div className="text-xs font-medium">
-                  {androidButtonText.main}
+            {showAndroid && (
+              <Button
+                onClick={() => syncAndOpenAndroidMutation.mutate()}
+                disabled={syncAndOpenAndroidMutation.isPending}
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2 h-10"
+              >
+                {syncAndOpenAndroidMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <TabletSmartphone className="h-4 w-4" />
+                )}
+                <div className="text-left">
+                  <div className="text-xs font-medium">
+                    {androidButtonText.main}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {androidButtonText.sub}
+                  </div>
                 </div>
-                <div className="text-xs text-gray-500">
-                  {androidButtonText.sub}
-                </div>
-              </div>
-            </Button>
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>

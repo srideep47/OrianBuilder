@@ -48,6 +48,7 @@ import {
 } from "./ipc/utils/process_manager";
 import { cleanupOldAiMessagesJson } from "./pro/main/ipc/handlers/local_agent/ai_messages_cleanup";
 import { cleanupOldMediaFiles } from "./ipc/utils/media_cleanup";
+import { stopEmulator } from "./main/android/android_sdk_manager";
 import fs from "fs";
 import { gitAddSafeDirectory } from "./ipc/utils/git_utils";
 import {
@@ -661,11 +662,12 @@ app.commandLine.appendSwitch("enable-zero-copy");
 
 // Out-of-process canvas rasterisation — canvas 2D draws run on the GPU thread
 // instead of blocking the main thread. Critical for any canvas element.
-app.commandLine.appendSwitch("enable-features",
+app.commandLine.appendSwitch(
+  "enable-features",
   [
-    "BackgroundTabFreezing",   // ≤1 fps when window is hidden (idle power)
-    "CanvasOopRasterization",  // canvas on GPU thread
-    "UseSkiaRenderer",         // Skia compositing backend (lower latency)
+    "BackgroundTabFreezing", // ≤1 fps when window is hidden (idle power)
+    "CanvasOopRasterization", // canvas on GPU thread
+    "UseSkiaRenderer", // Skia compositing backend (lower latency)
   ].join(","),
 );
 
@@ -879,6 +881,9 @@ app.on("will-quit", () => {
 
   // Stop the Media AI Python backend
   stopMediaAiBackend();
+
+  // Destroy the Android emulator so the session doesn't leak a running process.
+  stopEmulator();
 
   writeSettings({ isRunning: false });
 });
