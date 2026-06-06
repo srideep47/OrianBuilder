@@ -77,6 +77,29 @@ function LightboxImage({ src, alt, onClose }: { src: string; alt: string; onClos
   );
 }
 
+function LightboxVideo({ src, onClose }: { src: string; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 p-4"
+      onClick={onClose}
+    >
+      <button
+        className="absolute right-4 top-4 z-10 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
+        onClick={onClose}
+      >
+        <X className="h-5 w-5" />
+      </button>
+      <video
+        src={src}
+        className="max-h-full max-w-full rounded-lg shadow-2xl"
+        controls
+        autoPlay
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  );
+}
+
 export function GeneratedMediaCard({
   item,
   onDelete,
@@ -116,7 +139,10 @@ export function GeneratedMediaCard({
         {/* Preview */}
         <div
           className="relative flex aspect-video cursor-pointer items-center justify-center overflow-hidden bg-muted/40"
-          onClick={() => item.kind === "image" && !imgError && setLightboxOpen(true)}
+          onClick={() => {
+            if (item.kind === "image" && !imgError) setLightboxOpen(true);
+            else if (item.kind === "video") setLightboxOpen(true);
+          }}
         >
           {item.kind === "image" && !imgError ? (
             <>
@@ -133,18 +159,31 @@ export function GeneratedMediaCard({
               </div>
             </>
           ) : item.kind === "video" ? (
-            <video
-              src={src}
-              className="h-full w-full object-cover"
-              muted
-              loop
-              playsInline
-              onMouseEnter={(e) => void e.currentTarget.play().catch(() => undefined)}
-              onMouseLeave={(e) => {
-                e.currentTarget.pause();
-                e.currentTarget.currentTime = 0;
-              }}
-            />
+            <>
+              <video
+                src={src}
+                className="h-full w-full object-cover"
+                muted
+                loop
+                playsInline
+                onMouseEnter={(e) => void e.currentTarget.play().catch(() => undefined)}
+                onMouseLeave={(e) => {
+                  e.currentTarget.pause();
+                  e.currentTarget.currentTime = 0;
+                }}
+              />
+              <div
+                className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightboxOpen(true);
+                }}
+              >
+                <div className="rounded-full bg-black/60 p-2">
+                  <ZoomIn className="h-5 w-5 text-white" />
+                </div>
+              </div>
+            </>
           ) : item.kind === "audio" ? (
             <audio src={src} controls className="w-full px-3" />
           ) : (
@@ -218,8 +257,12 @@ export function GeneratedMediaCard({
         />
       )}
 
-      {lightboxOpen && (
+      {lightboxOpen && item.kind === "image" && (
         <LightboxImage src={src} alt={item.prompt ?? item.fileName} onClose={() => setLightboxOpen(false)} />
+      )}
+
+      {lightboxOpen && item.kind === "video" && (
+        <LightboxVideo src={src} onClose={() => setLightboxOpen(false)} />
       )}
     </>
   );

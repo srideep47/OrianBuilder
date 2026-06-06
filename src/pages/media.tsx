@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useAppMediaFiles } from "@/hooks/useAppMediaFiles";
 import { useLoadApps } from "@/hooks/useLoadApps";
 import { useGeneratedMedia } from "@/hooks/useGeneratedMedia";
@@ -10,14 +10,22 @@ import {
   Music,
   Box,
   Loader2,
+  Scissors,
+  CheckSquare,
+  Square,
+  X,
 } from "lucide-react";
 import { OrianBuilderAppMediaFolder } from "@/components/OrianBuilderAppMediaFolder";
 import { GeneratedMediaCard } from "@/components/GeneratedMediaCard";
 import { LibrarySearchBar } from "@/components/LibrarySearchBar";
+import { VideoEditDialog } from "@/components/VideoEditDialog";
 import { Button } from "@/components/ui/button";
 import { filterMediaAppsByQuery } from "@/lib/mediaUtils";
 import { useNavigate } from "@tanstack/react-router";
-import type { GeneratedMediaKind } from "@/ipc/types";
+import type { GeneratedMediaKind, GeneratedMediaItem } from "@/ipc/types";
+import { ipc } from "@/ipc/types";
+import { cn } from "@/lib/utils";
+import { generatedMediaUrl } from "@/ipc/types";
 
 const CATEGORIES: { kind: GeneratedMediaKind; label: string; icon: typeof ImageIcon }[] = [
   { kind: "image", label: "Images", icon: ImageIcon },
@@ -46,6 +54,12 @@ export default function MediaPage() {
 
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Video editing selection state — when non-empty the Videos section flips
+  // into a checkbox grid and a floating action bar shows up.
+  const [selecting, setSelecting] = useState(false);
+  const [selectedVideos, setSelectedVideos] = useState<string[]>([]);
+  const [editOpen, setEditOpen] = useState(false);
+
   const filteredMediaApps = useMemo(
     () => filterMediaAppsByQuery(mediaApps, searchQuery),
     [mediaApps, searchQuery],
@@ -72,6 +86,41 @@ export default function MediaPage() {
     return map;
   }, [filteredGenerated]);
 
+  const toggleSelect = useCallback((fileName: string) => {
+    setSelectedVideos((prev) =>
+      prev.includes(fileName)
+        ? prev.filter((f) => f !== fileName)
+        : [...prev, fileName],
+    );
+  }, []);
+
+  const enterSelection = () => {
+    setSelecting(true);
+    setSelectedVideos([]);
+    // Pre-warm the Media AI backend — ffmpeg concat lives there and the user
+    // will need it healthy by the time they hit Join. Fire-and-forget; the
+    // IPC handler also auto-starts as a fallback.
+    void ipc.mediaAi
+      .getStatus(undefined)
+      .then((s) => {
+        if (!s.healthy) return ipc.mediaAi.startBackend(undefined);
+      })
+      .catch(() => undefined);
+  };
+
+  const exitSelection = () => {
+    setSelecting(false);
+    setSelectedVideos([]);
+  };
+
+  const selectedItems: GeneratedMediaItem[] = useMemo(
+    () =>
+      selectedVideos
+        .map((fn) => byKind.video.find((v) => v.fileName === fn))
+        .filter((v): v is GeneratedMediaItem => Boolean(v)),
+    [selectedVideos, byKind.video],
+  );
+
   const isLoading = appMediaLoading || generatedLoading;
   const isEmpty =
     filteredMediaApps.length === 0 && filteredGenerated.length === 0;
@@ -96,7 +145,7 @@ export default function MediaPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 px-6 py-4">
+      <div className="flex-1 px-6 py-4 pb-24">
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -121,6 +170,8 @@ export default function MediaPage() {
             {CATEGORIES.map(({ kind, label, icon: Icon }) => {
               const items = byKind[kind];
               if (items.length === 0) return null;
+
+              const isVideoSection = kind === "video";
               return (
                 <section key={kind}>
                   <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
@@ -129,16 +180,85 @@ export default function MediaPage() {
                     <span className="text-xs font-normal text-muted-foreground">
                       ({items.length})
                     </span>
+                    {isVideoSection && items.length >= 2 && (
+                      <Button
+                        size="sm"
+                        variant={selecting ? "outline" : "default"}
+                        className="ml-auto h-8 gap-1.5 px-3 text-xs font-medium shadow-sm"
+                        onClick={selecting ? exitSelection : enterSelection}
+                      >
+                        {selecting ? (
+                          <>
+                            <X className="h-3.5 w-3.5" /> Cancel
+                          </>
+                        ) : (
+                          <>
+                            <Scissors className="h-3.5 w-3.5" />
+                            Edit (join clips)
+                          </>
+                        )}
+                      </Button>
+                    )}
                   </h2>
                   <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
-                    {items.map((item) => (
-                      <GeneratedMediaCard
-                        key={`gen-${item.fileName}`}
-                        item={item}
-                        onDelete={removeItem}
-                        isMutating={isMutating}
-                      />
-                    ))}
+                    {items.map((item) => {
+                      if (isVideoSection && selecting) {
+                        const checked = selectedVideos.includes(item.fileName);
+                        const order = checked
+                          ? selectedVideos.indexOf(item.fileName) + 1
+                          : null;
+                        return (
+                          <button
+                            key={`sel-${item.fileName}`}
+                            type="button"
+                            onClick={() => toggleSelect(item.fileName)}
+                            className={cn(
+                              "group relative flex flex-col overflow-hidden rounded-xl border bg-card text-left transition-all",
+                              checked
+                                ? "border-primary ring-2 ring-primary/40"
+                                : "hover:border-muted-foreground/40",
+                            )}
+                          >
+                            <div className="relative aspect-video overflow-hidden bg-muted/40">
+                              <video
+                                src={generatedMediaUrl(item.fileName)}
+                                className="h-full w-full object-cover"
+                                muted
+                                playsInline
+                              />
+                              <div className="absolute left-2 top-2 rounded-full bg-black/60 p-1 text-white">
+                                {checked ? (
+                                  <CheckSquare className="h-4 w-4" />
+                                ) : (
+                                  <Square className="h-4 w-4" />
+                                )}
+                              </div>
+                              {order !== null && (
+                                <div className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground shadow">
+                                  {order}
+                                </div>
+                              )}
+                            </div>
+                            <div className="p-3">
+                              <p
+                                className="truncate text-sm font-medium"
+                                title={item.prompt ?? item.fileName}
+                              >
+                                {item.prompt ?? item.fileName}
+                              </p>
+                            </div>
+                          </button>
+                        );
+                      }
+                      return (
+                        <GeneratedMediaCard
+                          key={`gen-${item.fileName}`}
+                          item={item}
+                          onDelete={removeItem}
+                          isMutating={isMutating}
+                        />
+                      );
+                    })}
                   </div>
                 </section>
               );
@@ -170,6 +290,39 @@ export default function MediaPage() {
           </div>
         )}
       </div>
+
+      {/* Floating action bar — appears while videos are being multi-selected. */}
+      {selecting && (
+        <div className="fixed inset-x-0 bottom-4 z-30 flex justify-center px-4">
+          <div className="flex items-center gap-3 rounded-full border bg-background/95 px-4 py-2 shadow-lg backdrop-blur">
+            <span className="text-sm">
+              <span className="font-semibold">{selectedVideos.length}</span>{" "}
+              {selectedVideos.length === 1 ? "video" : "videos"} selected
+            </span>
+            <Button size="sm" variant="ghost" onClick={exitSelection}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={selectedVideos.length < 2}
+              onClick={() => setEditOpen(true)}
+            >
+              <Scissors className="mr-1.5 h-4 w-4" />
+              Edit & join {selectedVideos.length >= 2 ? selectedVideos.length : ""} clips
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <VideoEditDialog
+        items={selectedItems}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        onDone={() => {
+          setEditOpen(false);
+          exitSelection();
+        }}
+      />
     </div>
   );
 }

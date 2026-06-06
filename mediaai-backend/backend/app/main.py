@@ -906,3 +906,126 @@ async def v1_download(req: V1DownloadRequest) -> V1DownloadResponse:
     except Exception as exc:  # noqa: BLE001
         return V1DownloadResponse(ok=False, error=f"download failed: {exc}")
     return V1DownloadResponse(ok=True, cached_path=cached)
+
+
+# ─── v1 video editing (ffmpeg concat) ────────────────────────────────────────
+
+
+class V1VideoConcatRequest(BaseModel):
+    input_paths: list[str]
+    output_path: str
+    # Re-encode mode normalizes codec/resolution/fps so clips from different
+    # generators concat cleanly. Concat-demuxer ("copy") is faster but only
+    # works when every clip already shares codec + timebase.
+    mode: str = "reencode"  # "reencode" | "copy"
+    target_width: int | None = None
+    target_height: int | None = None
+    target_fps: int = 24
+
+
+class V1VideoConcatResponse(BaseModel):
+    ok: bool
+    output_path: str
+    error: str | None = None
+
+
+def _resolve_ffmpeg_exe() -> str:
+    try:
+        import imageio_ffmpeg  # type: ignore
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"  # PATH fallback
+
+
+def _run_video_concat(req: V1VideoConcatRequest) -> str:
+    """Concatenate input_paths into output_path. Returns output_path on success,
+    raises RuntimeError otherwise. Runs in a threadpool by the caller."""
+    import subprocess
+    import tempfile
+
+    if len(req.input_paths) < 2:
+        raise RuntimeError("need at least 2 input videos to concatenate")
+    for p in req.input_paths:
+        if not Path(p).is_file():
+            raise RuntimeError(f"input not found: {p}")
+
+    out_path = Path(req.output_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    ffmpeg = _resolve_ffmpeg_exe()
+
+    if req.mode == "copy":
+        # Concat demuxer: requires uniform codec/timebase. Fast, no re-encode.
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".txt", delete=False, encoding="utf-8"
+        ) as f:
+            for p in req.input_paths:
+                # ffmpeg concat list requires escaped single-quoted paths.
+                escaped = p.replace("\\", "/").replace("'", r"'\''")
+                f.write(f"file '{escaped}'\n")
+            list_path = f.name
+        try:
+            cmd = [
+                ffmpeg, "-y", "-f", "concat", "-safe", "0",
+                "-i", list_path, "-c", "copy", str(out_path),
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"ffmpeg concat failed (rc={result.returncode}): "
+                    f"{result.stderr[-2000:]}"
+                )
+        finally:
+            try:
+                os.unlink(list_path)
+            except Exception:
+                pass
+        return str(out_path)
+
+    # Re-encode mode (default): normalize every clip to a uniform pixel format,
+    # resolution and fps via filter_complex, then concat in one pass.
+    w = req.target_width or 1280
+    h = req.target_height or 720
+    fps = req.target_fps or 24
+    cmd: list[str] = [ffmpeg, "-y"]
+    for p in req.input_paths:
+        cmd.extend(["-i", p])
+    n = len(req.input_paths)
+    filter_parts: list[str] = []
+    for i in range(n):
+        filter_parts.append(
+            f"[{i}:v]scale={w}:{h}:force_original_aspect_ratio=decrease,"
+            f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black,"
+            f"setsar=1,fps={fps},format=yuv420p[v{i}];"
+        )
+    concat_inputs = "".join(f"[v{i}]" for i in range(n))
+    filter_parts.append(f"{concat_inputs}concat=n={n}:v=1:a=0[outv]")
+    filter_complex = "".join(filter_parts)
+    cmd.extend([
+        "-filter_complex", filter_complex,
+        "-map", "[outv]",
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        "-preset", "veryfast",
+        "-movflags", "+faststart",
+        str(out_path),
+    ])
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg concat re-encode failed (rc={result.returncode}): "
+            f"{result.stderr[-2000:]}"
+        )
+    return str(out_path)
+
+
+@app.post("/v1/edit/concat", response_model=V1VideoConcatResponse)
+async def v1_video_concat(req: V1VideoConcatRequest) -> V1VideoConcatResponse:
+    """Concatenate a list of local video files into one mp4 at output_path."""
+    try:
+        out = await run_in_threadpool(_run_video_concat, req)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"video concat failed: {exc}") from exc
+    return V1VideoConcatResponse(ok=True, output_path=out)

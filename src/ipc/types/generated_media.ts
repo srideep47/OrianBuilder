@@ -59,6 +59,22 @@ export const generatedMediaContracts = {
     input: z.object({ fileName: z.string(), thumbnail: z.string() }),
     output: z.object({ ok: z.boolean() }),
   }),
+  /**
+   * Concatenate a sequence of videos (already in the global media pool) into
+   * a single new video. Order matters — `fileNames` plays in the order given.
+   */
+  concatVideos: defineContract({
+    channel: "generated-media:concat-videos",
+    input: z.object({
+      fileNames: z.array(z.string()).min(2),
+      mode: z.enum(["reencode", "copy"]).optional(),
+      targetWidth: z.number().optional(),
+      targetHeight: z.number().optional(),
+      targetFps: z.number().optional(),
+      prompt: z.string().nullable().optional(),
+    }),
+    output: GeneratedMediaItemSchema,
+  }),
 } as const;
 
 export const generatedMediaClient = createClient(generatedMediaContracts);
