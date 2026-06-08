@@ -68,11 +68,22 @@ async function pickTierForRequest(
 async function dispatch(
   request: MediaGenerationRequest,
 ): Promise<MediaGenerationResult> {
-  const tier = await pickTierForRequest(request);
-  if (tier) {
+  // An explicit modelId (Orion Factory user selection) wins over automatic
+  // VRAM-based tier selection; only `tier.id` is needed downstream.
+  let tierId: string | null;
+  if (request.modelId) {
+    tierId = request.modelId;
     logger.info(
-      `tier-selected ${request.modelType}: ${tier.id} (${tier.quality})`,
+      `tier-selected ${request.modelType}: ${tierId} (user-selected)`,
     );
+  } else {
+    const tier = await pickTierForRequest(request);
+    tierId = tier?.id ?? null;
+    if (tier) {
+      logger.info(
+        `tier-selected ${request.modelType}: ${tier.id} (${tier.quality})`,
+      );
+    }
   }
 
   switch (request.modelType) {
@@ -84,7 +95,7 @@ async function dispatch(
       const local = await generateImageViaLocalBackend(
         request.prompt,
         request.outputPath,
-        { tier: tier?.id ?? null },
+        { tier: tierId },
       );
       if (local.success) {
         logger.info(`local image gen succeeded (tier=${local.tier ?? "?"})`);
@@ -109,7 +120,7 @@ async function dispatch(
       const audio = await generateAudioViaLocalBackend(
         request.prompt,
         request.outputPath,
-        { tier: tier?.id ?? null },
+        { tier: tierId },
       );
       if (audio.success) {
         logger.info(`local audio gen succeeded (tier=${audio.tier ?? "?"})`);
@@ -126,7 +137,7 @@ async function dispatch(
       const video = await generateVideoViaLocalBackend(
         request.prompt,
         request.outputPath,
-        { tier: tier?.id ?? null },
+        { tier: tierId },
       );
       if (video.success) {
         logger.info(`local video gen succeeded (tier=${video.tier ?? "?"})`);

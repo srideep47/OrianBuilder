@@ -112,7 +112,13 @@ describe("groupAssetsByModality", () => {
     expect(groups[0].assets.map((a) => a.id)).toEqual(["img2", "img1"]);
   });
 
-  it("orders image before 3d before video before music", () => {
-    expect([...ASSET_TYPE_ORDER]).toEqual(["image", "3d", "video", "music"]);
+  it("orders image before 3d before speech before video before music", () => {
+    expect([...ASSET_TYPE_ORDER]).toEqual([
+      "image",
+      "3d",
+      "speech",
+      "video",
+      "music",
+    ]);
   });
 });

@@ -15,6 +15,7 @@ import {
   OrianBuilderErrorKind,
 } from "@/errors/orianbuilder_error";
 import { getOrchestrator } from "@/main/ipc/utils/model_orchestrator";
+import { ensureLlmSwapForMedia } from "@/main/ipc/utils/media_llm_guard";
 import { generateImageViaCloud } from "@/main/ipc/utils/cloud_image_generator";
 import { generateImageViaLocalBackend } from "@/main/ipc/utils/local_image_generator";
 import { initMediaDispatcher } from "@/main/ipc/utils/media_dispatcher";
@@ -94,8 +95,7 @@ export const generateImageTool: ToolDefinition<
 
     try {
       const orch = getOrchestrator();
-      const state = orch.getStatus().state;
-      const llmIsLoaded = state === "llm-loaded";
+      const llmIsLoaded = ensureLlmSwapForMedia();
 
       let success = false;
       let errMessage: string | undefined;

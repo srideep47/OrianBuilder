@@ -295,11 +295,25 @@ def get_pipeline(forced_tier_id: Optional[str] = None):
             pipe = pipe.to(device)
         _enable_memory_savers(pipe)
     elif tier["id"] == "z-image-turbo":
+        import torch  # type: ignore
         from diffusers import DiffusionPipeline  # type: ignore
+
+        # Z-Image is a Lumina-style flow model that produces all-black (NaN)
+        # images in float16 — it MUST run in bfloat16 (matches the GGUF path
+        # above and the official model card). get_torch_dtype() returns float16
+        # on CUDA, which is what caused the blank black images. Fall back to
+        # float32 on CPU (and on the rare CUDA device without bf16 support),
+        # never float16 for this model.
+        if get_backend() == "cpu":
+            zimg_dtype = torch.float32
+        elif device == "cuda" and not torch.cuda.is_bf16_supported():
+            zimg_dtype = torch.float32
+        else:
+            zimg_dtype = torch.bfloat16
 
         pipe = DiffusionPipeline.from_pretrained(
             tier["repo"],
-            torch_dtype=dtype,
+            torch_dtype=zimg_dtype,
         )
         # 6 GB GPUs are tight — use CPU offload so VRAM isn't exceeded.
         if get_vram_mb() <= 6500 and device == "cuda":

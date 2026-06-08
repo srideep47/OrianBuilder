@@ -52,9 +52,10 @@ export interface HardwareModelProfile {
   threeD: PipelineModelConfig;
   video: PipelineModelConfig;
   music: PipelineModelConfig;
+  speech: PipelineModelConfig;
   /**
-   * Asset/media modalities explicitly disabled for this flow. TTS speech and
-   * transcription are not part of the autonomous build pipeline by decision.
+   * Asset/media modalities explicitly disabled for this flow. Transcription is
+   * not part of the autonomous build pipeline; speech (TTS) IS supported.
    */
   disabledModalities: ("tts" | "transcribe")[];
 }
@@ -80,7 +81,8 @@ const RTX_4080S_16GB: HardwareModelProfile = {
     defaultSettings: { steps: 6, guidance: 4.0, width: 768, height: 768 },
   },
   threeD: {
-    modelId: "triposr",
+    // Must match the backend THREED_TIERS id (models/threed.py).
+    modelId: "triposr-6gb",
     label: "TripoSR",
     vramMb: 4000,
     defaultSettings: {},
@@ -92,12 +94,19 @@ const RTX_4080S_16GB: HardwareModelProfile = {
     defaultSettings: { seconds: 5 },
   },
   music: {
-    modelId: "ace-step-1.5-xl-turbo",
+    // Must match the backend MUSIC_TIERS id (models/music.py).
+    modelId: "ace-step-xl-turbo-12gb",
     label: "ACE-Step 1.5 XL Turbo",
     vramMb: 12000,
     defaultSettings: { seconds: 30 },
   },
-  disabledModalities: ["tts", "transcribe"],
+  speech: {
+    modelId: "speecht5-cpu",
+    label: "SpeechT5 (CPU)",
+    vramMb: 0,
+    defaultSettings: {},
+  },
+  disabledModalities: ["transcribe"],
 };
 
 /** All known profiles, ordered highest VRAM floor → lowest. */
@@ -150,7 +159,41 @@ export function modelConfigForAsset(
       return profile.video;
     case "music":
       return profile.music;
+    case "speech":
+      return profile.speech;
     case "3d":
       return profile.threeD;
   }
+}
+
+/**
+ * Return a copy of `profile` with each stage's `modelId` overridden by the
+ * user's media-model selection (tier ids). Unset selections keep the profile
+ * default. The image override also applies to the 3D reference-image stage so a
+ * chosen image model is used for 3D refs too. Pure.
+ */
+export function applySelectionToProfile(
+  profile: HardwareModelProfile,
+  selection: {
+    image?: string;
+    video?: string;
+    music?: string;
+    speech?: string;
+    threed?: string;
+  },
+): HardwareModelProfile {
+  const override = (
+    cfg: PipelineModelConfig,
+    tierId: string | undefined,
+  ): PipelineModelConfig => (tierId ? { ...cfg, modelId: tierId } : cfg);
+
+  return {
+    ...profile,
+    image: override(profile.image, selection.image),
+    threeDRef: override(profile.threeDRef, selection.image),
+    threeD: override(profile.threeD, selection.threed),
+    video: override(profile.video, selection.video),
+    music: override(profile.music, selection.music),
+    speech: override(profile.speech, selection.speech),
+  };
 }

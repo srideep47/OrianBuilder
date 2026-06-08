@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { defineContract, createClient } from "../contracts/core";
+import {
+  defineContract,
+  createClient,
+  defineEvent,
+  createEventClient,
+} from "../contracts/core";
 
 // =============================================================================
 // Orion Unification - Intent Bus & Flow Layer (Phase 1)
@@ -119,7 +124,7 @@ export const RunPipelineParamsSchema = z.object({
 export type RunPipelineParams = z.infer<typeof RunPipelineParamsSchema>;
 
 export const PipelinePhaseRecordSchema = z.object({
-  phase: z.enum(["plan-code", "assets", "verify"]),
+  phase: z.enum(["download", "plan-code", "assets", "verify"]),
   status: z.enum(["ok", "partial", "failed"]),
   detail: z.string(),
 });
@@ -191,3 +196,34 @@ export const flowContracts = {
 } as const;
 
 export const flowClient = createClient(flowContracts);
+
+// =============================================================================
+// Pipeline progress events (main → renderer live activity feed)
+// =============================================================================
+
+/**
+ * One live progress update from a running Orion Factory pipeline. Streamed so
+ * the renderer can show, in detail, what is happening: model downloads (incl.
+ * raw log lines), phase transitions (plan → assets → verify), and per-asset
+ * status — instead of a single static "working…" message.
+ */
+export const PipelineProgressSchema = z.object({
+  /** Build id once the pipeline has started (absent during pre-download). */
+  buildId: z.string().optional(),
+  kind: z.enum(["download", "phase", "asset", "log", "info"]),
+  /** Short headline for the step (e.g. "Generating assets"). */
+  label: z.string(),
+  /** Optional detail (e.g. a download log line, asset id, error text). */
+  detail: z.string().optional(),
+  status: z.enum(["running", "ok", "failed", "partial"]).optional(),
+});
+export type PipelineProgress = z.infer<typeof PipelineProgressSchema>;
+
+export const flowEvents = {
+  pipelineProgress: defineEvent({
+    channel: "flow:pipeline-progress",
+    payload: PipelineProgressSchema,
+  }),
+} as const;
+
+export const flowEventClient = createEventClient(flowEvents);

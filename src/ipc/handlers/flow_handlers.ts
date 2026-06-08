@@ -5,7 +5,9 @@ import log from "electron-log";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { apps, chats, designSessions } from "@/db/schema";
-import { flowContracts } from "@/ipc/types/intent";
+import { flowContracts, flowEvents } from "@/ipc/types/intent";
+import type { PipelineProgress } from "@/ipc/types/intent";
+import { safeSend } from "@/ipc/utils/safe_sender";
 import { createLoggedTypedHandler } from "./base";
 import { parseIntent } from "@/main/flow/intent_parser";
 import { runFlow } from "@/main/flow/flow_runner";
@@ -21,12 +23,22 @@ import { getModelLeaseManager, type ModelSpec } from "@/main/flow/model_lease";
 import { getCachedHardwareProfile } from "@/main/hardware/detect";
 import { getAvailableVramMb } from "@/main/ipc/utils/vram_accounting";
 import { ORIANBUILDER_MEDIA_DIR_NAME } from "@/ipc/utils/media_path_utils";
-import { selectProfileForVram } from "@/main/flow/model_profiles";
+import {
+  selectProfileForVram,
+  applySelectionToProfile,
+} from "@/main/flow/model_profiles";
 import { getModelGate } from "@/main/flow/model_gate";
 import {
   runPipeline,
   type PipelineWorkers,
+  type PhaseRecord,
 } from "@/main/flow/pipeline_orchestrator";
+import {
+  resolveSelection,
+  resolveDownloadPlan,
+} from "@/shared/orion_media_catalog";
+import { markFactoryBuildChat } from "@/main/flow/factory_build_registry";
+import { readSettings } from "@/main/settings";
 import { createMediaAssetWorker } from "@/main/flow/asset_worker";
 import { generateAssetManifest } from "@/main/flow/asset_planner";
 import {
@@ -40,6 +52,7 @@ import type { PipelineRunResult } from "@/ipc/types/intent";
 import {
   getMediaAiBackendStatus,
   startMediaAiBackend,
+  downloadMediaAiModels,
 } from "@/ipc/utils/media_ai_backend";
 import {
   watchdogBackend,
@@ -916,11 +929,116 @@ async function detectTotalVramMb(): Promise<number> {
  * time) → structural verify → return a build handoff so the renderer launches
  * the Autopilot coding pass against the now-generated assets.
  */
+/**
+ * Pre-download the weights for the user's selected media models that aren't
+ * present yet. Returns a "download" phase record for the run summary. Never
+ * throws: a failed/partial download is non-fatal (generation falls back to a
+ * placeholder), so the prompt is never lost. Runtime-install models (3D TripoSR,
+ * music ACE-Step) ship with the media backend setup and fetch weights on first
+ * use — they're surfaced here but not auto-installed mid-run.
+ */
+async function predownloadSelectedModels(
+  selection: ReturnType<typeof resolveSelection>,
+  backendReady: boolean,
+  emit?: (e: PipelineProgress) => void,
+): Promise<PhaseRecord> {
+  if (!backendReady) {
+    emit?.({
+      kind: "download",
+      label: "Media backend not ready",
+      detail: "skipping pre-download; assets may fall back to placeholders",
+      status: "partial",
+    });
+    return {
+      phase: "download",
+      status: "partial",
+      detail: "media backend not ready; skipped pre-download",
+    };
+  }
+  try {
+    emit?.({
+      kind: "download",
+      label: "Checking selected media models",
+      status: "running",
+    });
+    const status = await getMediaAiBackendStatus();
+    const downloaded = new Set(
+      status.models.filter((m) => m.downloaded).map((m) => m.id),
+    );
+    const plan = resolveDownloadPlan(selection, downloaded);
+    const notes: string[] = [];
+
+    if (plan.models.length > 0) {
+      logger.info(`pre-downloading selected models: ${plan.models.join(", ")}`);
+      emit?.({
+        kind: "download",
+        label: `Downloading ${plan.models.join(", ")}`,
+        detail: "this can take a while on first use",
+        status: "running",
+      });
+      // Forward the raw download log lines so the UI shows live progress.
+      await downloadMediaAiModels(plan.models, (chunk) => {
+        const line = chunk
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .pop();
+        if (line) emit?.({ kind: "log", label: "download", detail: line });
+      });
+      emit?.({
+        kind: "download",
+        label: `Downloaded ${plan.models.join(", ")}`,
+        status: "ok",
+      });
+      notes.push(`downloaded ${plan.models.join(", ")}`);
+    } else {
+      emit?.({
+        kind: "download",
+        label: "Selected model weights present",
+        status: "ok",
+      });
+      notes.push("selected weights present");
+    }
+    if (plan.runtimes.length > 0) {
+      emit?.({
+        kind: "download",
+        label: `${plan.runtimes.join("/")} runtime installs on first use`,
+        status: "partial",
+      });
+      notes.push(`${plan.runtimes.join("/")} runtime installs on first use`);
+    }
+    return { phase: "download", status: "ok", detail: notes.join("; ") };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    logger.warn(`pre-download failed (non-fatal): ${detail}`);
+    emit?.({
+      kind: "download",
+      label: "Pre-download issue",
+      detail,
+      status: "partial",
+    });
+    return {
+      phase: "download",
+      status: "partial",
+      detail: `pre-download issue: ${detail}`,
+    };
+  }
+}
+
 async function runOrionPipeline(params: {
   text: string;
   appId?: number;
+  emit?: (e: PipelineProgress) => void;
 }): Promise<PipelineRunResult> {
-  const profile = selectProfileForVram(await detectTotalVramMb());
+  const emit = params.emit;
+  // Resolve the user's per-modality model selection (Apps-screen config box) and
+  // bake it into the hardware profile, so generation uses the chosen models.
+  // Unset selections fall back to the profile defaults.
+  const selection = resolveSelection(readSettings().orionMediaModels);
+  const profile = applySelectionToProfile(
+    selectProfileForVram(await detectTotalVramMb()),
+    selection,
+  );
   configureModelGateHooks();
 
   // Auto-start the Media AI backend so local image/video/music/3D can actually
@@ -933,6 +1051,15 @@ async function runOrionPipeline(params: {
       `media backend not ready (${mediaBackend.reason ?? "unknown"}); media assets will fall back to placeholders. Set it up at ${mediaBackend.setupRoute ?? "/mediaai"}.`,
     );
   }
+
+  // Pre-download any selected media-model weights that aren't present yet, BEFORE
+  // planning, so the run proceeds straight through once they're ready. The prompt
+  // is never lost; failures are non-fatal (generation falls back to placeholder).
+  const downloadPhase = await predownloadSelectedModels(
+    selection,
+    mediaBackend.ready,
+    emit,
+  );
 
   // Ensure a workspace + build chat exist; resolve the app's media dir.
   let appId = params.appId;
@@ -1001,6 +1128,7 @@ async function runOrionPipeline(params: {
     workers,
     llmModelId: getLastLlmModelId(),
     maxVerifyAttempts: 2,
+    onProgress: emit,
   });
 
   // Collect the produced asset files (done or placeholder) for the build to use.
@@ -1021,10 +1149,16 @@ async function runOrionPipeline(params: {
     `orion pipeline ${result.buildId} → ${result.status}; assets done=${result.assetSummary.done} ph=${result.assetSummary.placeholder} failed=${result.assetSummary.failed}; handing off build app=${appId} chat=${chatId}`,
   );
 
+  // Mark this build chat so the Autopilot coding pass does NOT generate media
+  // itself — the pipeline already produced the assets with the LLM unloaded.
+  // Generating media during coding would load a media model alongside the
+  // resident LLM and run out of RAM/VRAM (the exact OOM we hit).
+  markFactoryBuildChat(chatId);
+
   return {
     buildId: result.buildId,
     status: result.status,
-    phases: result.phases,
+    phases: [downloadPhase, ...result.phases],
     assetSummary: result.assetSummary,
     verifyAttempts: result.verifyAttempts,
     assetPaths,
@@ -1062,7 +1196,10 @@ export function registerFlowHandlers(): void {
     return listCapabilities();
   });
 
-  handle(flowContracts.runPipeline, async (_event, { text, appId }) => {
-    return runOrionPipeline({ text, appId });
+  handle(flowContracts.runPipeline, async (event, { text, appId }) => {
+    const sender = event.sender;
+    const emit = (payload: PipelineProgress) =>
+      safeSend(sender, flowEvents.pipelineProgress.channel, payload);
+    return runOrionPipeline({ text, appId, emit });
   });
 }

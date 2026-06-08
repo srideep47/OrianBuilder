@@ -84,6 +84,46 @@ describe("runPipeline — happy path", () => {
   });
 });
 
+describe("runPipeline — progress events", () => {
+  it("emits phase, per-asset, and final info events via onProgress", async () => {
+    const events: string[] = [];
+    const progress: { kind: string; label: string; status?: string }[] = [];
+
+    const manifest = baseManifest([
+      { id: "hero", type: "image", targetFilename: "hero.png", prompt: "i" },
+    ]);
+    const workers: PipelineWorkers = {
+      planCode: async () => manifest,
+      generateAsset: async ({ asset }: GenerateAssetArgs) => ({
+        status: "done",
+        outputPath: `/out/${asset.targetFilename}`,
+      }),
+      verifyFix: async () => ({ ok: true, report: "ok" }),
+    };
+
+    await runPipeline(
+      makeConfig(
+        {
+          workers,
+          onProgress: (e) =>
+            progress.push({ kind: e.kind, label: e.label, status: e.status }),
+        },
+        events,
+      ),
+    );
+
+    const kinds = progress.map((p) => p.kind);
+    expect(kinds).toContain("phase"); // planning / assets / verify
+    // A per-asset running + result pair was emitted.
+    const assetEvents = progress.filter((p) => p.kind === "asset");
+    expect(assetEvents.length).toBeGreaterThanOrEqual(2);
+    expect(assetEvents.some((p) => p.status === "running")).toBe(true);
+    expect(assetEvents.some((p) => p.status === "ok")).toBe(true);
+    // Final summary event.
+    expect(progress.at(-1)).toMatchObject({ kind: "info", status: "ok" });
+  });
+});
+
 describe("runPipeline — 3D reference resolution", () => {
   it("passes the referenced image's output path to the 3D asset", async () => {
     const events: string[] = [];

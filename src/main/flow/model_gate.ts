@@ -22,7 +22,7 @@ import log from "electron-log";
 
 const logger = log.scope("model-gate");
 
-export type ModelKind = "llm" | "image" | "video" | "music" | "3d";
+export type ModelKind = "llm" | "image" | "video" | "music" | "speech" | "3d";
 
 /** A model the gate can make resident. `modelId` identifies the no-op case
  *  (entering the already-resident model does not reload it). */

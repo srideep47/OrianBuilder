@@ -1340,10 +1340,19 @@ export function isMediaAiDownloadActive(): boolean {
 
 export async function downloadMediaAiModels(
   models: MediaAiModelId[],
+  onLog?: (chunk: string) => void,
 ): Promise<string> {
   const backendPath = resolveMediaAiBackendPath();
   const scriptPath = path.join(backendPath, "scripts", "download_models.py");
   const env = getBackendEnvironment();
+
+  // If the download produces NO output for this long it is considered stalled
+  // (e.g. a hung HuggingFace socket on flaky Wi-Fi — exactly the case that froze
+  // an Orion run). We then kill it and reject so the caller can proceed (the
+  // model falls back to an on-demand download at generation time) rather than
+  // blocking forever. hf_transfer emits progress frequently while alive, so a
+  // multi-minute silence reliably means "stuck", not "slow".
+  const STALL_TIMEOUT_MS = 4 * 60 * 1000;
 
   return new Promise<string>((resolve, reject) => {
     const child = spawn(getPythonCommand(), [scriptPath, ...models], {
@@ -1354,21 +1363,42 @@ export async function downloadMediaAiModels(
     });
     activeDownloadProcess = child;
     appendLog(`Starting download: ${models.join(", ")}\n`);
+    onLog?.(`Starting download: ${models.join(", ")}`);
 
     let output = "";
-    child.stdout?.on("data", (chunk: Buffer) => {
+    let stalled = false;
+    let stallTimer: NodeJS.Timeout;
+    const resetStall = () => {
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => {
+        stalled = true;
+        const msg = `Download stalled: no progress for ${STALL_TIMEOUT_MS / 1000}s — aborting (will retry on demand).`;
+        appendLog(`\n${msg}\n`);
+        onLog?.(msg);
+        if (child.pid) treeKill(child.pid, "SIGKILL");
+        else child.kill();
+      }, STALL_TIMEOUT_MS);
+    };
+    const onData = (chunk: Buffer) => {
       const text = chunk.toString();
       output += text;
       appendLog(text);
-    });
-    child.stderr?.on("data", (chunk: Buffer) => {
-      const text = chunk.toString();
-      output += text;
-      appendLog(text);
-    });
+      onLog?.(text);
+      resetStall();
+    };
+    resetStall();
+    child.stdout?.on("data", onData);
+    child.stderr?.on("data", onData);
     child.on("close", (code) => {
+      clearTimeout(stallTimer);
       activeDownloadProcess = null;
-      if (code === 0 || code === null) {
+      if (stalled) {
+        reject(
+          new Error(
+            `Download stalled (no progress for ${STALL_TIMEOUT_MS / 1000}s) and was aborted.`,
+          ),
+        );
+      } else if (code === 0 || code === null) {
         resolve(trimOutput(output));
       } else {
         reject(
@@ -1379,6 +1409,7 @@ export async function downloadMediaAiModels(
       }
     });
     child.on("error", (err) => {
+      clearTimeout(stallTimer);
       activeDownloadProcess = null;
       reject(err);
     });

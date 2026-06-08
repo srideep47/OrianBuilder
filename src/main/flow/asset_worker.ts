@@ -88,13 +88,21 @@ export function createMediaAssetWorker(
         : { status: "failed", error: res.error ?? "3d generation failed" };
     }
 
-    const modelType =
-      asset.type === "music" ? "music" : (asset.type as "image" | "video");
+    // "speech" assets are produced by the TTS path ("audio"); music/image/video
+    // map straight through. The chosen model id (profile, user-overridden) is
+    // passed so the dispatcher uses exactly that model instead of a VRAM pick.
+    const modelType: "image" | "video" | "music" | "audio" =
+      asset.type === "music"
+        ? "music"
+        : asset.type === "speech"
+          ? "audio"
+          : (asset.type as "image" | "video");
     const result = await deps.dispatch({
       modelType,
       prompt: asset.prompt,
       outputPath,
       options: settings,
+      modelId: stageCfg.modelId,
     });
 
     if (result.success) {

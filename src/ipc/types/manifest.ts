@@ -15,14 +15,24 @@ import { z } from "zod";
 // See plans/orion-orchestrated-pipeline.md.
 // =============================================================================
 
-/** The four asset modalities the pipeline batches over, in load order. */
-export const AssetTypeSchema = z.enum(["image", "video", "music", "3d"]);
+/** The asset modalities the pipeline batches over, in load order. */
+export const AssetTypeSchema = z.enum([
+  "image",
+  "video",
+  "music",
+  "speech",
+  "3d",
+]);
 export type AssetType = z.infer<typeof AssetTypeSchema>;
 
-/** Fixed modality processing order for Phase B. Images first so 3D refs exist. */
+/**
+ * Fixed modality processing order for Phase B. Images first so 3D refs exist;
+ * speech (light/CPU-friendly TTS) before the heavier video/music pipelines.
+ */
 export const ASSET_TYPE_ORDER: readonly AssetType[] = [
   "image",
   "3d",
+  "speech",
   "video",
   "music",
 ] as const;

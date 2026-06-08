@@ -56,6 +56,9 @@ export interface MediaGenerationRequest {
   /** Cap selected tier to this quality or lower. The floor tier ("slow")
    *  is always reachable, so passing "good" never disables CPU fallback. */
   preferredQuality?: MediaQuality;
+  /** Explicit tier id to use, bypassing automatic VRAM-based tier selection.
+   *  Set by the Orion Factory when the user has chosen a model for the modality. */
+  modelId?: string;
 }
 
 export interface MediaGenerationResult {

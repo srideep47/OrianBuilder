@@ -93,6 +93,27 @@ export interface PipelineWorkers {
   verifyFix: VerifyFixWorker;
 }
 
+/** A single live progress update emitted as the pipeline advances. */
+export interface PipelineProgressEvent {
+  buildId: string;
+  kind: "phase" | "asset" | "info";
+  label: string;
+  detail?: string;
+  status?: "running" | "ok" | "failed" | "partial";
+}
+
+export type PipelineProgressFn = (event: PipelineProgressEvent) => void;
+
+/** Map an asset status to a coarse progress status. */
+function assetProgressStatus(
+  status: AssetStatus,
+): "running" | "ok" | "failed" | "partial" {
+  if (status === "done") return "ok";
+  if (status === "placeholder") return "partial";
+  if (status === "failed") return "failed";
+  return "running";
+}
+
 // ─── Pipeline config + result ─────────────────────────────────────────────────
 
 export interface PipelineConfig {
@@ -109,9 +130,11 @@ export interface PipelineConfig {
   llmVramMb?: number;
   /** Max verify→regen passes before giving up. Default 3. */
   maxVerifyAttempts?: number;
+  /** Optional live progress sink (streamed to the renderer's activity feed). */
+  onProgress?: PipelineProgressFn;
 }
 
-export type PipelinePhase = "plan-code" | "assets" | "verify";
+export type PipelinePhase = "download" | "plan-code" | "assets" | "verify";
 export type PipelineStatus = "completed" | "partial" | "failed";
 
 export interface PhaseRecord {
@@ -172,11 +195,19 @@ async function runModalityBatch(
   assets: AssetSpec[],
   config: PipelineConfig,
   outputPaths: Map<string, string>,
+  buildId: string,
 ): Promise<void> {
   const slot = modalitySlot(config.profile, type);
   await config.gate.enter(slot);
 
   for (const asset of assets) {
+    config.onProgress?.({
+      buildId,
+      kind: "asset",
+      label: `${type}: ${asset.id}`,
+      detail: `generating with ${slot.modelId}`,
+      status: "running",
+    });
     const refImagePath =
       asset.refAssetId != null ? outputPaths.get(asset.refAssetId) : undefined;
     try {
@@ -189,11 +220,24 @@ async function runModalityBatch(
       asset.status = res.status;
       if (res.outputPath) outputPaths.set(asset.id, res.outputPath);
       logger.info(`asset ${asset.id} (${type}) → ${res.status}`);
+      config.onProgress?.({
+        buildId,
+        kind: "asset",
+        label: `${type}: ${asset.id}`,
+        detail: res.error ? `${res.status} — ${res.error}` : res.status,
+        status: assetProgressStatus(res.status),
+      });
     } catch (err) {
       asset.status = "failed";
-      logger.error(
-        `asset ${asset.id} (${type}) threw: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(`asset ${asset.id} (${type}) threw: ${message}`);
+      config.onProgress?.({
+        buildId,
+        kind: "asset",
+        label: `${type}: ${asset.id}`,
+        detail: `failed — ${message}`,
+        status: "failed",
+      });
     }
   }
 }
@@ -203,10 +247,17 @@ async function runAssetPhase(
   assets: AssetSpec[],
   config: PipelineConfig,
   outputPaths: Map<string, string>,
+  buildId: string,
 ): Promise<void> {
   const groups = groupAssetsByModality({ buildId: "", assets });
   for (const group of groups) {
-    await runModalityBatch(group.type, group.assets, config, outputPaths);
+    await runModalityBatch(
+      group.type,
+      group.assets,
+      config,
+      outputPaths,
+      buildId,
+    );
   }
   // Leave Phase B with nothing resident so Phase A/C LLM load is unobstructed.
   await config.gate.exit();
@@ -229,9 +280,17 @@ export async function runPipeline(
   const maxAttempts = config.maxVerifyAttempts ?? 3;
   const phases: PhaseRecord[] = [];
   const outputPaths = new Map<string, string>();
+  const report = config.onProgress;
   logger.info(`pipeline ${buildId} start: "${config.goal}"`);
 
   // ── PHASE A — plan & code (LLM resident) ──
+  report?.({
+    buildId,
+    kind: "phase",
+    label: "Planning & writing the asset manifest",
+    detail: "language model resident",
+    status: "running",
+  });
   let manifest: AssetManifest;
   try {
     await config.gate.enter(llmSlot(config));
@@ -245,6 +304,13 @@ export async function runPipeline(
     await config.gate.exit().catch(() => {});
     const detail = err instanceof Error ? err.message : String(err);
     logger.error(`pipeline ${buildId} plan-code failed: ${detail}`);
+    report?.({
+      buildId,
+      kind: "phase",
+      label: "Planning failed",
+      detail,
+      status: "failed",
+    });
     return {
       buildId,
       status: "failed",
@@ -270,17 +336,38 @@ export async function runPipeline(
       ? `manifest with ${manifest.assets.length} assets`
       : `manifest issues: ${validation.errors.join("; ")}`,
   });
+  report?.({
+    buildId,
+    kind: "phase",
+    label: "Plan ready",
+    detail: `${manifest.assets.length} asset(s) to generate`,
+    status: validation.ok ? "ok" : "partial",
+  });
 
   // Unload the LLM before asset generation.
   await config.gate.exit();
 
   // ── PHASE B — assets (LLM unloaded, batched by modality) ──
-  await runAssetPhase(manifest.assets, config, outputPaths);
+  report?.({
+    buildId,
+    kind: "phase",
+    label: "Generating assets",
+    detail: "language model unloaded; one media model resident at a time",
+    status: "running",
+  });
+  await runAssetPhase(manifest.assets, config, outputPaths, buildId);
   const afterGen = summarize(manifest.assets);
   phases.push({
     phase: "assets",
     status: afterGen.failed > 0 || afterGen.placeholder > 0 ? "partial" : "ok",
     detail: `done=${afterGen.done} placeholder=${afterGen.placeholder} failed=${afterGen.failed}`,
+  });
+  report?.({
+    buildId,
+    kind: "phase",
+    label: "Assets complete",
+    detail: `done=${afterGen.done} placeholder=${afterGen.placeholder} failed=${afterGen.failed}`,
+    status: afterGen.failed > 0 || afterGen.placeholder > 0 ? "partial" : "ok",
   });
 
   // ── PHASE C — verify / fix / (bounded) regen (LLM resident) ──
@@ -288,6 +375,13 @@ export async function runPipeline(
   let lastVerify: VerifyResult = { ok: false };
   while (verifyAttempts < maxAttempts) {
     verifyAttempts++;
+    report?.({
+      buildId,
+      kind: "phase",
+      label: `Verifying${verifyAttempts > 1 ? ` (attempt ${verifyAttempts})` : ""}`,
+      detail: "language model reloaded",
+      status: "running",
+    });
     await config.gate.enter(llmSlot(config));
     lastVerify = await config.workers.verifyFix({
       buildId,
@@ -314,7 +408,14 @@ export async function runPipeline(
     const regenAssets = manifest.assets.filter((a) => regenIds.includes(a.id));
     for (const a of regenAssets) a.status = "pending";
     logger.info(`pipeline ${buildId} regen pass for [${regenIds.join(", ")}]`);
-    await runAssetPhase(regenAssets, config, outputPaths);
+    report?.({
+      buildId,
+      kind: "phase",
+      label: "Regenerating failed assets",
+      detail: regenIds.join(", "),
+      status: "running",
+    });
+    await runAssetPhase(regenAssets, config, outputPaths, buildId);
   }
   await config.gate.exit();
 
@@ -322,6 +423,13 @@ export async function runPipeline(
     phase: "verify",
     status: lastVerify.ok ? "ok" : "partial",
     detail: lastVerify.report ?? (lastVerify.ok ? "verified" : "not verified"),
+  });
+  report?.({
+    buildId,
+    kind: "phase",
+    label: lastVerify.ok ? "Verified" : "Verify incomplete",
+    detail: lastVerify.report ?? undefined,
+    status: lastVerify.ok ? "ok" : "partial",
   });
 
   const finalSummary = summarize(manifest.assets);
@@ -332,6 +440,13 @@ export async function runPipeline(
     : "partial";
 
   logger.info(`pipeline ${buildId} done: ${status}`);
+  report?.({
+    buildId,
+    kind: "info",
+    label: `Pipeline ${status}`,
+    detail: `assets done=${finalSummary.done} placeholder=${finalSummary.placeholder} failed=${finalSummary.failed}`,
+    status: status === "completed" ? "ok" : "partial",
+  });
   return {
     buildId,
     status,

@@ -83,6 +83,16 @@ export default defineConfig({
       "@tanstack/react-query",
       "jotai",
       "framer-motion",
+      // @react-three/fiber + drei are excluded below (lazy per route), but they
+      // depend on zustand, whose `traditional` entry imports the CommonJS module
+      // `use-sync-external-store/shim/with-selector`. Because the parents are
+      // excluded, Vite doesn't pre-bundle this CJS leaf into ESM, so the browser
+      // load fails with "does not provide an export named 'default'" and the
+      // /3dassets route won't load. Per Vite docs, the fix is to add the CJS leaf
+      // of an excluded dependency to `include` so its CJS→ESM (default-export)
+      // interop is generated. (Both subpaths resolve via the package exports map.)
+      "use-sync-external-store/shim",
+      "use-sync-external-store/shim/with-selector",
     ],
     // Exclude huge deps from pre-bundle — they're lazy-loaded per route
     exclude: ["three", "@react-three/fiber", "@react-three/drei", "konva"],

@@ -342,6 +342,18 @@ const BaseUserSettingsFields = {
   maxToolCallSteps: z.number().optional(),
   thinkingBudget: z.enum(["low", "medium", "high"]).optional(),
   autonomousMode: z.boolean().optional(),
+  // Orion Factory: user-selected media models per modality. Stores tier ids
+  // only — selecting does NOT load a model (the ModelGate loads on demand during
+  // a run). Falls back to the hardware profile defaults when unset.
+  orionMediaModels: z
+    .object({
+      image: z.string().optional(),
+      video: z.string().optional(),
+      music: z.string().optional(),
+      speech: z.string().optional(),
+      threed: z.string().optional(),
+    })
+    .optional(),
   defaultMissionAutonomyProfile: z
     .enum(["supervised", "trusted-workspace", "full-autopilot-sandbox"])
     .optional(),

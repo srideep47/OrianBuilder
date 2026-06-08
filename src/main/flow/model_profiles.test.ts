@@ -3,6 +3,7 @@ import {
   selectProfileForVram,
   getProfileById,
   modelConfigForAsset,
+  applySelectionToProfile,
   HARDWARE_MODEL_PROFILES,
 } from "./model_profiles";
 
@@ -34,22 +35,51 @@ describe("modelConfigForAsset", () => {
   it("maps video → LTX", () => {
     expect(modelConfigForAsset(p, "video").modelId).toBe("ltx-video");
   });
-  it("maps music → ACE-Step", () => {
+  it("maps music → ACE-Step (backend tier id)", () => {
     expect(modelConfigForAsset(p, "music").modelId).toBe(
-      "ace-step-1.5-xl-turbo",
+      "ace-step-xl-turbo-12gb",
     );
   });
   it("maps 3d → TripoSR (mesh), with a separate image ref model", () => {
-    expect(modelConfigForAsset(p, "3d").modelId).toBe("triposr");
+    expect(modelConfigForAsset(p, "3d").modelId).toBe("triposr-6gb");
     expect(p.threeDRef.modelId).toBe("z-image-turbo");
   });
 });
 
 describe("profile invariants", () => {
-  it("disables TTS and transcribe in the build flow", () => {
+  it("disables transcribe but supports speech (TTS) in the build flow", () => {
     expect(HARDWARE_MODEL_PROFILES[0].disabledModalities).toEqual([
-      "tts",
       "transcribe",
     ]);
+  });
+
+  it("provides a speech stage config", () => {
+    expect(HARDWARE_MODEL_PROFILES[0].speech.modelId).toBeTruthy();
+  });
+});
+
+describe("applySelectionToProfile", () => {
+  const base = HARDWARE_MODEL_PROFILES[0];
+
+  it("overrides each stage's modelId with the user's selection", () => {
+    const p = applySelectionToProfile(base, {
+      image: "sd-turbo",
+      video: "wan-2.1-14b",
+      music: "my-music",
+      speech: "kokoro-82m",
+      threed: "my-3d",
+    });
+    expect(p.image.modelId).toBe("sd-turbo");
+    expect(p.threeDRef.modelId).toBe("sd-turbo"); // 3D ref uses the image model
+    expect(p.video.modelId).toBe("wan-2.1-14b");
+    expect(p.music.modelId).toBe("my-music");
+    expect(p.speech.modelId).toBe("kokoro-82m");
+    expect(p.threeD.modelId).toBe("my-3d");
+  });
+
+  it("keeps profile defaults for unset selections and does not mutate base", () => {
+    const p = applySelectionToProfile(base, { image: "sd-turbo" });
+    expect(p.video.modelId).toBe(base.video.modelId);
+    expect(base.image.modelId).not.toBe("sd-turbo");
   });
 });

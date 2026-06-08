@@ -57,6 +57,27 @@ describe("createMediaAssetWorker — routing + mapping", () => {
     expect(captured!.outputPath).toBe(path.join(mediaDir, "assets/a.png"));
   });
 
+  it("routes speech asset to the audio (TTS) path with the profile model id", async () => {
+    let captured: MediaGenerationRequest | null = null;
+    const worker = createMediaAssetWorker({
+      dispatch: async (req) => {
+        captured = req;
+        return { success: true, outputPath: req.outputPath, durationMs: 1 };
+      },
+    });
+    await worker(
+      args({
+        asset: asset({
+          type: "speech",
+          targetFilename: "vo.wav",
+          prompt: "narration",
+        }),
+      }),
+    );
+    expect(captured!.modelType).toBe("audio");
+    expect(captured!.modelId).toBe(PROFILE.speech.modelId);
+  });
+
   it("maps music asset to modelType music", async () => {
     let captured: MediaGenerationRequest | null = null;
     const worker = createMediaAssetWorker({

@@ -15,6 +15,8 @@ import { getOrchestrator } from "@/main/ipc/utils/model_orchestrator";
 import {
   MEDIA_AI_SERVER_URL,
   isMediaAiBackendHealthy,
+  startMediaAiBackend,
+  stopMediaAiBackend,
 } from "@/ipc/utils/media_ai_backend";
 import { getModelGate, type ResidentSlot } from "./model_gate";
 import type { GenerateTextFn } from "./asset_planner";
@@ -29,12 +31,13 @@ import type { ThreeDGenerator } from "./asset_worker";
 // load/unload), and the Media AI backend (for 3D / TripoSR).
 //
 // VRAM reality: the Media AI backend (port from MEDIA_AI_SERVER_URL) loads media
-// models on-demand per request and exposes no per-model unload API. The thing we
-// CAN gate deterministically is the LLM (llama.cpp): unloading it before Phase B
-// frees the VRAM the media pipelines need, and reloading it for Phase C. So the
-// gate's LLM hooks are real; media hooks are best-effort (the backend manages its
-// own residency, and entering a media slot after the LLM is already unloaded is
-// the load that matters).
+// models on-demand per request and exposes NO working per-model unload API, so a
+// loaded media model stays resident until the process dies. To enforce true
+// single-residency the gate therefore (a) unloads the LLM before a media slot and
+// (b) STOPS the media backend process when leaving a media slot — freeing its
+// VRAM before the next media model or the LLM reload. Without (b), reloading the
+// large LLM after generation hits CUDA out-of-memory and crashes llama-server.
+// The backend is restarted (and waited-on for health) on the next media slot.
 // See plans/orion-orchestrated-pipeline.md.
 // =============================================================================
 
@@ -132,9 +135,13 @@ export function configureModelGateHooks(): void {
           contextSize: 4096,
         });
       } else {
+        // We stop the media backend on slot exit to free its VRAM (it has no
+        // per-model unload API), so it may not be running here — start it and
+        // wait until healthy before generation.
         logger.info(
-          `gate: media slot ${slot.kind}:${slot.modelId} (on-demand)`,
+          `gate: media slot ${slot.kind}:${slot.modelId} — starting backend`,
         );
+        await ensureMediaBackendHealthy();
       }
     },
     unload: async (slot: ResidentSlot) => {
@@ -142,28 +149,36 @@ export function configureModelGateHooks(): void {
         logger.info(`gate: unloading LLM ${slot.modelId}`);
         await getOrchestrator().releaseAll();
       } else {
-        // Best-effort: ask the media backend to free models if it supports it.
-        await freeMediaBackendModels().catch((err) =>
-          logger.debug(`media free best-effort failed: ${String(err)}`),
+        // The media backend exposes NO working per-model unload endpoint, so the
+        // model it loaded stays resident in VRAM/RAM. Reloading the (large) LLM
+        // afterwards then hits CUDA out-of-memory and crashes llama-server. The
+        // only reliable way to free that VRAM is to stop the backend process; it
+        // is restarted on the next media slot. This is what enforces true
+        // single-residency on the media side.
+        logger.info(
+          `gate: stopping media backend to free VRAM after ${slot.kind}:${slot.modelId}`,
         );
+        stopMediaAiBackend();
+        // Give the OS/driver a moment to reclaim the freed VRAM before the next
+        // model (or the LLM reload) tries to allocate it.
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       }
     },
   });
 }
 
-/** Best-effort request to free media-backend VRAM between modality batches.
- *  Tolerates a missing endpoint (older backends just manage residency
- *  themselves). */
-async function freeMediaBackendModels(): Promise<void> {
-  if (!(await isMediaAiBackendHealthy())) return;
-  try {
-    await fetch(`${MEDIA_AI_SERVER_URL}/v1/models/unload`, {
-      method: "POST",
-      signal: AbortSignal.timeout(5000),
-    });
-  } catch {
-    // endpoint may not exist — backend handles its own residency.
+/** Start the media backend (if not running) and wait until it is healthy.
+ *  Used by the gate's media load hook because we stop the backend between
+ *  modalities to free VRAM. Mirrors the flow handler's readiness wait. */
+async function ensureMediaBackendHealthy(): Promise<void> {
+  if (await isMediaAiBackendHealthy()) return;
+  await startMediaAiBackend();
+  const started = Date.now();
+  while (Date.now() - started < 30_000) {
+    if (await isMediaAiBackendHealthy()) return;
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
+  logger.warn("media backend did not become healthy within 30s");
 }
 
 // ─── 3D generator (TripoSR via the Media AI backend) ─────────────────────────

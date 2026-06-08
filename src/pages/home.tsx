@@ -13,6 +13,7 @@ import { useState, useEffect, useRef } from "react";
 import { useStreamChat } from "@/hooks/useStreamChat";
 import { HomeChatInput } from "@/components/chat/HomeChatInput";
 import { OrionCommandBar } from "@/components/orion/OrionCommandBar";
+import { OrionModelConfig } from "@/components/orion/OrionModelConfig";
 import {
   HowItWorksPanel,
   ModelEnginePanel,
@@ -444,6 +445,7 @@ export default function HomePage() {
             isStreaming={isReplying}
             onCancel={handleCancelReply}
           />
+          <OrionModelConfig />
           <OrionCommandBar appId={appId ?? undefined} />
           <ModelEnginePanel />
           <OrionSessionsPanel />

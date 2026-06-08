@@ -29,6 +29,9 @@ import {
   VolumeX,
   Zap,
   Hand,
+  DownloadCloud,
+  Activity,
+  Terminal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ipc } from "@/ipc/types";
@@ -41,10 +44,12 @@ import { showError } from "@/lib/toast";
 import { ensureSelectedEmbeddedModelReady } from "@/lib/embeddedModelAutoload";
 import { queryKeys } from "@/lib/queryKeys";
 import { useQueryClient } from "@tanstack/react-query";
+import { flowEventClient } from "@/ipc/types/intent";
 import type {
   CapabilityDescriptor,
   CapabilityId,
   FlowRunResult,
+  PipelineProgress,
   PipelineRunResult,
   StepResult,
 } from "@/ipc/types/intent";
@@ -130,6 +135,55 @@ function formatFlowTranscript(result: FlowRunResult): string {
   return lines.join("\n");
 }
 
+function formatPipelineTranscript(
+  command: string,
+  result: PipelineRunResult,
+): string {
+  const lines = [
+    `Orion Factory ${result.status}.`,
+    "",
+    `Goal: ${command}`,
+    "",
+    "Phases:",
+  ];
+
+  for (const phase of result.phases) {
+    lines.push(`- ${phase.phase}: ${phase.status} (${phase.detail})`);
+  }
+
+  lines.push("");
+  lines.push(
+    `Assets: ${result.assetSummary.done} ready, ` +
+      `${result.assetSummary.placeholder} placeholder, ` +
+      `${result.assetSummary.failed} failed.`,
+  );
+
+  if (result.runBuild) {
+    lines.push("");
+    lines.push("Build launched - continue in the linked build session.");
+  }
+
+  return lines.join("\n");
+}
+
+/** Icon for one live activity-feed row, by kind + status. */
+function ProgressIcon({ event }: { event: PipelineProgress }) {
+  if (event.status === "running")
+    return <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />;
+  if (event.status === "failed")
+    return <XCircle className="h-3.5 w-3.5 text-red-400" />;
+  if (event.status === "partial")
+    return <MinusCircle className="h-3.5 w-3.5 text-amber-300" />;
+  if (event.status === "ok")
+    return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />;
+  // No explicit status → icon by kind.
+  if (event.kind === "download")
+    return <DownloadCloud className="h-3.5 w-3.5 text-sky-300" />;
+  if (event.kind === "log")
+    return <Terminal className="h-3.5 w-3.5 text-white/40" />;
+  return <Activity className="h-3.5 w-3.5 text-white/50" />;
+}
+
 function StepStatusIcon({ status }: { status: StepResult["status"] }) {
   if (status === "success")
     return <CheckCircle2 className="w-4 h-4 text-emerald-400" />;
@@ -152,12 +206,16 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
   // verify → autonomous build). "flow" = the lighter chained-capability runner.
   const [mode, setMode] = useState<"factory" | "flow">("factory");
   const [capabilities, setCapabilities] = useState<CapabilityDescriptor[]>([]);
+  // Live activity feed streamed from the running pipeline (downloads, phases,
+  // per-asset status). Cleared at the start of each run.
+  const [progress, setProgress] = useState<PipelineProgress[]>([]);
   const [muted, setMuted] = useState(false);
   // Autonomous by default: after the first prompt the agent runs end-to-end with
   // no approval prompts. Toggle off ("Ask me") to get blocking approvals on
   // risky steps. Drives the global `autonomousMode` setting the agent reads.
   const [autonomous, setAutonomous] = useState(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const feedRef = useRef<HTMLDivElement>(null);
   const { streamMessage } = useStreamChat({ hasChatId: false });
   const { selectChat } = useSelectChat();
   const initialChatMode = useInitialChatMode();
@@ -201,6 +259,19 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
       active = false;
     };
   }, []);
+
+  // Subscribe to the live pipeline progress stream (downloads + phases + assets).
+  useEffect(() => {
+    const off = flowEventClient.onPipelineProgress((p) => {
+      setProgress((prev) => [...prev, p].slice(-80));
+    });
+    return off;
+  }, []);
+
+  // Keep the activity feed scrolled to the latest line.
+  useEffect(() => {
+    feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
+  }, [progress]);
 
   const handleTranscription = useCallback((transcribed: string) => {
     setText((prev) => (prev ? `${prev} ${transcribed}` : transcribed));
@@ -330,6 +401,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
     if (!command || isRunning) return;
     setIsRunning(true);
     setResult(null);
+    setProgress([]);
     let commandSession: { appId: number; chatId: number } | null = null;
     // Persist the autonomy choice so the agent-build (which reads
     // `autonomousMode`) runs hands-free or asks on risky steps accordingly.
@@ -425,7 +497,14 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
     setIsRunning(true);
     setResult(null);
     setPipelineResult(null);
+    setProgress([]);
+    // Persist the prompt as a session up front so it stays accessible from the
+    // Sessions panel even if you navigate to another screen mid-run. The
+    // pipeline is long-running (plan -> assets -> build); without this the chat
+    // only existed after it finished.
+    let commandSession: { appId: number; chatId: number } | null = null;
     try {
+      commandSession = await createCommandSession(command);
       try {
         await updateSettings({ autonomousMode: autonomous });
       } catch {
@@ -435,6 +514,13 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
 
       const pr = await ipc.flow.runPipeline({ text: command, appId });
       setPipelineResult(pr);
+      await ipc.chat.appendMessages({
+        chatId: commandSession.chatId,
+        messages: [
+          { role: "assistant", content: formatPipelineTranscript(command, pr) },
+        ],
+      });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
       speak(
         `Pipeline ${pr.status}. ${pr.assetSummary.done} asset${
           pr.assetSummary.done === 1 ? "" : "s"
@@ -454,6 +540,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
         });
         void queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
         speak("Starting the build.");
+        markCommandSessionStreaming(commandSession.chatId, false);
         streamMessage({
           prompt: pr.buildGoal,
           chatId: pr.chatId,
@@ -463,9 +550,18 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
         selectChat({ chatId: pr.chatId, appId: pr.appId });
       }
     } catch (err) {
-      showError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      if (commandSession) {
+        await appendFlowErrorToSession(commandSession.chatId, message).catch(
+          () => undefined,
+        );
+      }
+      showError(message);
       speak("Sorry, the build failed.");
     } finally {
+      if (commandSession) {
+        markCommandSessionStreaming(commandSession.chatId, false);
+      }
       setIsRunning(false);
     }
   }, [
@@ -480,6 +576,9 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
     updateSettings,
     settings,
     queryClient,
+    createCommandSession,
+    appendFlowErrorToSession,
+    markCommandSessionStreaming,
   ]);
 
   const launch = useCallback(() => {
@@ -682,6 +781,54 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
           {mode === "factory"
             ? "Planning, generating assets, and building..."
             : "Orchestrating your command..."}
+        </div>
+      )}
+
+      {/* Live activity feed - downloads, phase transitions, per-asset status */}
+      {progress.length > 0 && (
+        <div className="mt-3 rounded-xl border border-white/10 bg-black/30 p-2.5">
+          <div className="mb-1.5 flex items-center gap-1.5 px-1 text-xs font-medium text-white/55">
+            <Activity className="h-3.5 w-3.5" />
+            Activity
+          </div>
+          <div
+            ref={feedRef}
+            className="flex max-h-48 flex-col gap-1 overflow-y-auto pr-1"
+          >
+            {progress.map((p, i) => (
+              <div
+                key={i}
+                className="flex items-start gap-2 rounded-md px-1 py-0.5 text-xs"
+              >
+                <span className="mt-0.5 flex-shrink-0">
+                  <ProgressIcon event={p} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span
+                    className={
+                      p.status === "failed"
+                        ? "text-red-300/90"
+                        : "text-white/75"
+                    }
+                  >
+                    {p.label}
+                  </span>
+                  {p.detail && (
+                    <span
+                      className={
+                        "ml-1.5 break-all " +
+                        (p.kind === "log"
+                          ? "font-mono text-[11px] text-white/35"
+                          : "text-white/40")
+                      }
+                    >
+                      {p.detail}
+                    </span>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

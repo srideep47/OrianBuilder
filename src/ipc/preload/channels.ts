@@ -56,7 +56,7 @@ import {
 import { missionContracts } from "../types/mission";
 import { hardwareContracts } from "../types/hardware";
 import { orchestratorContracts } from "../types/model_orchestrator";
-import { flowContracts } from "../types/intent";
+import { flowContracts, flowEvents } from "../types/intent";
 import { llamaBinaryContracts, llamaBinaryEvents } from "../types/llama_binary";
 import { identityContracts } from "../types/identity";
 import { networkContracts, networkEvents } from "../types/network";
@@ -189,6 +189,7 @@ export const VALID_RECEIVE_CHANNELS = [
   ...getReceiveChannels(sharedMediaEvents),
   ...getReceiveChannels(youtubeEvents),
   ...getReceiveChannels(androidEmulatorEvents),
+  ...getReceiveChannels(flowEvents),
 ] as const;
 
 // =============================================================================

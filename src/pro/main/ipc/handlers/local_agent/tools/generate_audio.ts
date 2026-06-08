@@ -15,6 +15,7 @@ import {
   OrianBuilderErrorKind,
 } from "@/errors/orianbuilder_error";
 import { getOrchestrator } from "@/main/ipc/utils/model_orchestrator";
+import { ensureLlmSwapForMedia } from "@/main/ipc/utils/media_llm_guard";
 import { generateAudioViaLocalBackend } from "@/main/ipc/utils/local_audio_generator";
 import { initMediaDispatcher } from "@/main/ipc/utils/media_dispatcher";
 
@@ -91,7 +92,7 @@ export const generateAudioTool: ToolDefinition<
 
     try {
       const orch = getOrchestrator();
-      const llmIsLoaded = orch.getStatus().state === "llm-loaded";
+      const llmIsLoaded = ensureLlmSwapForMedia();
 
       let success = false;
       let errMessage: string | undefined;
