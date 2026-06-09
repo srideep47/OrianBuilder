@@ -9,12 +9,25 @@ import {
   ZoomIn,
   Share2,
   Youtube,
+  Instagram,
+  Send,
+  ChevronDown,
 } from "lucide-react";
 import { ipc, generatedMediaUrl, type GeneratedMediaItem } from "@/ipc/types";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { PublishToYouTubeDialog } from "@/components/PublishToYouTubeDialog";
+import { PublishToInstagramDialog } from "@/components/PublishToInstagramDialog";
+import { ScheduledPostsDialog } from "@/components/ScheduledPostsDialog";
 import { toast } from "sonner";
+import { Calendar } from "lucide-react";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -113,6 +126,8 @@ export function GeneratedMediaCard({
   const [imgError, setImgError] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [instagramOpen, setInstagramOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   const src = generatedMediaUrl(item.fileName);
   const KindIcon = KIND_ICON[item.kind];
 
@@ -234,27 +249,54 @@ export function GeneratedMediaCard({
             />
           </div>
 
-          {/* Publish — videos only (YouTube is video-only). */}
+          {/* Publish — videos only. YouTube uploads directly; Instagram
+              opens a share-assist flow because IG has no desktop upload API. */}
           {item.kind === "video" && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-full justify-center gap-1.5"
-              onClick={() => setPublishOpen(true)}
-            >
-              <Youtube className="h-3.5 w-3.5 text-red-600" />
-              Publish to YouTube
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-input bg-transparent px-3 text-xs font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+              >
+                <Send className="h-3.5 w-3.5" />
+                Publish
+                <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem onClick={() => setPublishOpen(true)}>
+                  <Youtube className="h-4 w-4 text-red-600" />
+                  YouTube
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setInstagramOpen(true)}>
+                  <Instagram className="h-4 w-4 text-pink-500" />
+                  Instagram
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setScheduleOpen(true)}>
+                  <Calendar className="h-4 w-4" />
+                  Scheduled posts…
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </div>
 
       {item.kind === "video" && (
-        <PublishToYouTubeDialog
-          item={item}
-          open={publishOpen}
-          onOpenChange={setPublishOpen}
-        />
+        <>
+          <PublishToYouTubeDialog
+            item={item}
+            open={publishOpen}
+            onOpenChange={setPublishOpen}
+          />
+          <PublishToInstagramDialog
+            item={item}
+            open={instagramOpen}
+            onOpenChange={setInstagramOpen}
+          />
+          <ScheduledPostsDialog
+            open={scheduleOpen}
+            onOpenChange={setScheduleOpen}
+          />
+        </>
       )}
 
       {lightboxOpen && item.kind === "image" && (

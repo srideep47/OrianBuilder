@@ -4,6 +4,7 @@ import { useLoadApps } from "@/hooks/useLoadApps";
 import { useRouter } from "@tanstack/react-router";
 import { useSettings } from "@/hooks/useSettings";
 import { Button } from "@/components/ui/button";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 // @ts-ignore
 import logo from "../../assets/logo.svg";
 import { providerSettingsRoute } from "@/routes/settings/providers/$provider";
@@ -82,6 +83,8 @@ export const TitleBar = () => {
     <>
       <div className="@container z-11 w-full h-11 pt-3 bg-(--sidebar) absolute top-0 left-0 app-region-drag flex items-center">
         <div className={`${showWindowControls ? "pl-2" : "pl-18"}`}></div>
+
+        <SidebarTrigger className="h-8 w-8 -mt-3 ml-1 no-app-region-drag" />
 
         <img
           src={logo}

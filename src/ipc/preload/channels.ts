@@ -76,6 +76,7 @@ import {
   androidEmulatorContracts,
   androidEmulatorEvents,
 } from "../types/android_emulator";
+import { scheduleContracts, scheduleEvents } from "../types/schedule";
 
 // =============================================================================
 // Invoke Channels (derived from all contracts)
@@ -154,6 +155,7 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(sharedMediaContracts),
   ...getInvokeChannels(youtubeContracts),
   ...getInvokeChannels(androidEmulatorContracts),
+  ...getInvokeChannels(scheduleContracts),
 
   // Test-only channels
   ...TEST_INVOKE_CHANNELS,
@@ -190,6 +192,7 @@ export const VALID_RECEIVE_CHANNELS = [
   ...getReceiveChannels(youtubeEvents),
   ...getReceiveChannels(androidEmulatorEvents),
   ...getReceiveChannels(flowEvents),
+  ...getReceiveChannels(scheduleEvents),
 ] as const;
 
 // =============================================================================

@@ -110,7 +110,7 @@ export function AppSidebar() {
   );
 
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="offcanvas">
       <SidebarContent className="overflow-y-auto overflow-x-hidden group-data-[collapsible=icon]:overflow-y-auto group-data-[collapsible=icon]:overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="mt-11 flex flex-1 flex-col min-h-0">
           <AppIcons
@@ -156,7 +156,7 @@ function AppIcons({
   return (
     <SidebarGroup className="px-1 py-0 flex flex-1 flex-col min-h-0">
       <SidebarGroupContent className="flex flex-1 flex-col min-h-0">
-        <SidebarMenu className="flex flex-1 flex-col justify-evenly gap-0">
+        <SidebarMenu className="flex flex-col justify-start gap-2">
           {items.map((item) => {
             const isActive =
               (item.to === "/" && pathname === "/") ||

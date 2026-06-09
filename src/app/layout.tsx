@@ -5,7 +5,7 @@ import { ThemeProvider } from "../contexts/ThemeContext";
 import { DeepLinkProvider } from "../contexts/DeepLinkContext";
 import { Toaster } from "sonner";
 import { TitleBar } from "./TitleBar";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { useRunApp, useAppOutputSubscription } from "@/hooks/useRunApp";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useRouterState, useNavigate } from "@tanstack/react-router";
@@ -23,6 +23,8 @@ import { useQueueProcessor } from "@/hooks/useQueueProcessor";
 import { useMissionAutoResume } from "@/hooks/useMissionAutoResume";
 import i18n from "@/i18n";
 import { LanguageSchema } from "@/lib/schemas";
+import { ipc, type GeneratedMediaItem } from "@/ipc/types";
+import { PublishToInstagramDialog } from "@/components/PublishToInstagramDialog";
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   const { refreshAppIframe } = useRunApp();
@@ -130,6 +132,25 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     setConsoleEntries([]);
   }, [selectedAppId]);
 
+  // When a scheduled Instagram job fires (the engine can't auto-upload IG),
+  // open the share-assist dialog so the user finishes in two clicks.
+  const [firedIgItem, setFiredIgItem] = useState<GeneratedMediaItem | null>(
+    null,
+  );
+  useEffect(() => {
+    const unsub = ipc.events.schedule.onFired(async (p) => {
+      if (p.platform !== "instagram") return;
+      try {
+        const items = await ipc.generatedMedia.list(undefined);
+        const item = items.find((i) => i.fileName === p.fileName);
+        if (item) setFiredIgItem(item);
+      } catch {
+        // List failed — silently ignore; the desktop notif still showed.
+      }
+    });
+    return unsub;
+  }, []);
+
   useEffect(() => {
     document.body.classList.add("galaxy-mode");
     document.body.setAttribute("data-route", currentRoute);
@@ -143,7 +164,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <>
       <ThemeProvider>
         <DeepLinkProvider>
-          <SidebarProvider defaultOpen={false}>
+          <SidebarProvider
+            defaultOpen={true}
+            style={{ "--sidebar-width": "5rem" } as CSSProperties}
+          >
             <TitleBar />
             <AppSidebar />
             <SidebarPanel />
@@ -157,6 +181,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               richColors
               duration={settings?.isTestMode ? 500 : undefined}
             />
+            {firedIgItem && (
+              <PublishToInstagramDialog
+                item={firedIgItem}
+                open={true}
+                onOpenChange={(o) => {
+                  if (!o) setFiredIgItem(null);
+                }}
+              />
+            )}
           </SidebarProvider>
         </DeepLinkProvider>
       </ThemeProvider>

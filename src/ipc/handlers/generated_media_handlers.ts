@@ -51,6 +51,15 @@ export function registerGeneratedMediaHandlers(): void {
   });
 
   createTypedHandler(
+    generatedMediaContracts.getFilePath,
+    async (_e, { fileName }) => {
+      // `store.getFilePath` enforces the same directory-traversal guard the
+      // store uses for read/write — passing a malicious filename throws.
+      return { path: store.getFilePath(fileName) };
+    },
+  );
+
+  createTypedHandler(
     generatedMediaContracts.setShared,
     async (_e, { fileName, shared }) => {
       store.setShared(fileName, shared);

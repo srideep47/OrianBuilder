@@ -325,6 +325,30 @@ export async function onReady() {
   createWindow();
   createApplicationMenu();
 
+  // --- Scheduled posts ---
+  // Start the schedule engine and, if the user opted into background mode,
+  // attach the system tray + window-close interceptor. This must run after
+  // `createWindow()` so we have a window reference to wire close-to-tray.
+  try {
+    const { startScheduleEngine } = await import(
+      "./main/schedule/engine"
+    );
+    const { enableBackgroundMode, shouldStartHidden } = await import(
+      "./main/schedule/tray"
+    );
+    startScheduleEngine();
+    if (settings.runInBackground === true && mainWindow) {
+      enableBackgroundMode(mainWindow);
+      if (shouldStartHidden()) {
+        // OS-auto-launched us with --hidden: stay invisible until the user
+        // clicks the tray icon or a scheduled job fires.
+        mainWindow.hide();
+      }
+    }
+  } catch (err) {
+    logger.warn("Schedule engine / tray init failed:", err);
+  }
+
   logger.info("Auto-update enabled=", settings.enableAutoUpdate);
   if (settings.enableAutoUpdate) {
     // Technically we could just pass the releaseChannel directly to the host,
@@ -853,6 +877,20 @@ async function handleDeepLinkReturn(url: string) {
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
 app.on("window-all-closed", () => {
+  // In background-tray mode, the close button only hides the window, so
+  // `window-all-closed` shouldn't fire under normal use. If it does fire
+  // (last window destroyed via dev-tools, crash, etc.) we still want to
+  // keep the main process alive so the scheduler can keep running.
+  try {
+    // Lazy require to avoid a hard dep cycle.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const tray = require("./main/schedule/tray") as {
+      isTrayActive: () => boolean;
+    };
+    if (tray.isTrayActive()) return;
+  } catch {
+    /* tray module not loaded yet — fall through to normal quit */
+  }
   if (process.platform !== "darwin") {
     app.quit();
   }
@@ -881,6 +919,17 @@ app.on("will-quit", () => {
 
   // Stop the Media AI Python backend
   stopMediaAiBackend();
+
+  // Stop the schedule engine timer.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { stopScheduleEngine } = require("./main/schedule/engine") as {
+      stopScheduleEngine: () => void;
+    };
+    stopScheduleEngine();
+  } catch {
+    /* engine not started — nothing to stop */
+  }
 
   // Destroy the Android emulator so the session doesn't leak a running process.
   stopEmulator();

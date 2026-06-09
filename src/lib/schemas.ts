@@ -417,6 +417,14 @@ const BaseUserSettingsFields = {
   previewIdleTimeoutPolicy: z.enum(["default", "never"]).optional(),
   braveSearchApiKey: SecretSchema.optional(),
 
+  /**
+   * "Run in background": when true, closing the window minimises to the
+   * system tray and Electron auto-launches at login. Required for the
+   * scheduled-posts engine to fire jobs while the user isn't actively
+   * using the app. See main/schedule/tray.ts.
+   */
+  runInBackground: z.boolean().optional(),
+
   // Orion Network
   onboardingCompleted: z.boolean().optional(),
   orionDeviceName: z.string().optional(),
