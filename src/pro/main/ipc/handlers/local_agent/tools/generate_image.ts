@@ -19,8 +19,20 @@ import { ensureLlmSwapForMedia } from "@/main/ipc/utils/media_llm_guard";
 import { generateImageViaCloud } from "@/main/ipc/utils/cloud_image_generator";
 import { generateImageViaLocalBackend } from "@/main/ipc/utils/local_image_generator";
 import { initMediaDispatcher } from "@/main/ipc/utils/media_dispatcher";
+import { readSettings } from "@/main/settings";
+import { resolveSelection } from "@/shared/orion_media_catalog";
 
 const logger = log.scope("generate_image");
+
+/** The user's selected image model (Orion Media Models), or undefined to let
+ *  the backend pick by VRAM. */
+function selectedImageTier(): string | undefined {
+  try {
+    return resolveSelection(readSettings().orionMediaModels).image;
+  } catch {
+    return undefined;
+  }
+}
 
 const generateImageSchema = z.object({
   prompt: z
@@ -100,25 +112,29 @@ export const generateImageTool: ToolDefinition<
       let success = false;
       let errMessage: string | undefined;
 
+      const tier = selectedImageTier();
+
       if (llmIsLoaded) {
         // Drive through the orchestrator so the embedded LLM is unloaded
         // before generation and reloaded after. The orchestrator's media
         // provider (initialized via initMediaDispatcher) handles the actual
-        // image synthesis.
+        // image synthesis. The selected model wins over VRAM-based tiering.
         initMediaDispatcher();
         const result = await orch.runMediaGeneration({
           modelType: "image",
           prompt: args.prompt,
           outputPath: absolutePath,
+          modelId: tier,
         });
         success = result.success;
         errMessage = result.error;
       } else {
         // No embedded LLM is loaded — no swap needed. Try local Python
-        // backend first, then cloud.
+        // backend first (with the selected model), then cloud.
         const local = await generateImageViaLocalBackend(
           args.prompt,
           absolutePath,
+          { tier },
         );
         if (local.success) {
           success = true;

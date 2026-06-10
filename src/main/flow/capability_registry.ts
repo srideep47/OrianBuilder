@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import log from "electron-log";
 import {
   getOrchestrator,
+  type MediaGenerationRequest,
   type MediaGenerationResult,
 } from "@/main/ipc/utils/model_orchestrator";
 import {
@@ -14,6 +15,11 @@ import {
   type Lease,
   type ModelSpec,
 } from "@/main/flow/model_lease";
+import {
+  modelConfigForAsset,
+  type HardwareModelProfile,
+} from "@/main/flow/model_profiles";
+import type { AssetType } from "@/ipc/types/manifest";
 import type { CapabilityId, CapabilityDescriptor } from "@/ipc/types/intent";
 
 const logger = log.scope("flow-capabilities");
@@ -40,6 +46,13 @@ export interface FlowContext {
   constraints?: Record<string, unknown>;
   /** Structured outputs of already-completed steps, keyed by step id. */
   priorOutputs: Record<string, Record<string, unknown>>;
+  /**
+   * Device hardware/model profile (selected models + best per-stage settings).
+   * When present, media capabilities use the user's chosen model per modality at
+   * the device's best settings instead of automatic VRAM-based tiering. Resolved
+   * by the IPC layer via `applySelectionToProfile(selectProfileForVram(...))`.
+   */
+  mediaProfile?: HardwareModelProfile;
 }
 
 /** A flow-level capability. Pure async function over (input, ctx). */
@@ -144,6 +157,7 @@ const CAPABILITY_MODEL_SPECS: Partial<Record<CapabilityId, ModelSpec>> = {
   generate_design: { key: "design:html", vramMb: 1024, priority: 5 },
   generate_image: { key: "media:image", vramMb: 4096, priority: 10 },
   generate_audio: { key: "media:audio", vramMb: 2048, priority: 8 },
+  generate_music: { key: "media:music", vramMb: 8192, priority: 11 },
   generate_video: { key: "media:video", vramMb: 8192, priority: 12 },
   generate_3d_asset: { key: "media:3d", vramMb: 8192, priority: 12 },
   research_news: { key: "network:news", vramMb: 256, priority: 2 },
@@ -195,19 +209,29 @@ function reserveMediaPath(mediaDir: string, ext: string): string {
 
 /**
  * Run a media request through the orchestrator (with LLM swap) when an embedded
- * LLM is loaded, otherwise straight through the provider chain.
+ * LLM is loaded, otherwise straight through the provider chain. `modelId` (the
+ * user-selected model) and `options` (best per-stage settings) are forwarded so
+ * the dispatcher uses exactly that model instead of an automatic VRAM pick.
  */
 async function runMedia(
-  modelType: "image" | "audio" | "video",
+  modelType: "image" | "audio" | "video" | "music",
   prompt: string,
   outputPath: string,
+  opts?: { modelId?: string; options?: Record<string, unknown> },
 ): Promise<MediaGenerationResult> {
   initMediaDispatcher();
   const orch = getOrchestrator();
+  const request: MediaGenerationRequest = {
+    modelType,
+    prompt,
+    outputPath,
+    modelId: opts?.modelId,
+    options: opts?.options,
+  };
   if (orch.getStatus().state === "llm-loaded") {
-    return orch.runMediaGeneration({ modelType, prompt, outputPath });
+    return orch.runMediaGeneration(request);
   }
-  return dispatchMediaGeneration({ modelType, prompt, outputPath });
+  return dispatchMediaGeneration(request);
 }
 
 function requirePrompt(input: Record<string, unknown>): string {
@@ -221,9 +245,11 @@ function requirePrompt(input: Record<string, unknown>): string {
 function makeMediaCapability(
   id: Extract<
     CapabilityId,
-    "generate_image" | "generate_audio" | "generate_video"
+    "generate_image" | "generate_audio" | "generate_music" | "generate_video"
   >,
-  modelType: "image" | "audio" | "video",
+  /** Modality used to look up the selected model + best settings in the profile. */
+  assetType: AssetType,
+  modelType: "image" | "audio" | "video" | "music",
   ext: string,
   label: string,
   description: string,
@@ -235,12 +261,28 @@ function makeMediaCapability(
     async execute(input, ctx) {
       const prompt = requirePrompt(input);
       const outputPath = reserveMediaPath(ctx.mediaDir, ext);
-      logger.info(`[${id}] generating -> ${outputPath}`);
+      // When a hardware profile is threaded in (Orion media generation), use the
+      // user's selected model for this modality at the device's best settings —
+      // mirroring asset_worker.ts. Otherwise fall back to automatic VRAM tiering.
+      const stageCfg = ctx.mediaProfile
+        ? modelConfigForAsset(ctx.mediaProfile, assetType)
+        : undefined;
+      logger.info(
+        `[${id}] generating -> ${outputPath}` +
+          (stageCfg ? ` (model=${stageCfg.modelId})` : " (auto tier)"),
+      );
       const result = await withModelLease(CAPABILITY_MODEL_SPECS[id], () =>
-        runMedia(modelType, prompt, outputPath),
+        runMedia(modelType, prompt, outputPath, {
+          modelId: stageCfg?.modelId,
+          options: stageCfg?.defaultSettings,
+        }),
       );
       if (!result.success) {
-        if (modelType === "audio" || modelType === "video") {
+        if (
+          modelType === "audio" ||
+          modelType === "music" ||
+          modelType === "video"
+        ) {
           return {
             setupRequired: true,
             setupRoute: "/mediaai",
@@ -251,6 +293,20 @@ function makeMediaCapability(
           };
         }
         throw new Error(result.error ?? `${id} failed`);
+      }
+      // A "placeholder" success means NO real provider produced the asset (a 1×1
+      // PNG was written as a last resort). Surface it as needs-setup so the UI
+      // shows a clear message instead of rendering a blank image.
+      if ((result.error ?? "").toLowerCase().includes("placeholder")) {
+        return {
+          setupRequired: true,
+          setupRoute: "/mediaai",
+          reason:
+            "No media model produced output — make sure the Media AI backend is running and the selected model is downloaded.",
+          modelType,
+          prompt,
+          plannedOutputPath: result.outputPath,
+        };
       }
       return {
         outputPath: result.outputPath,
@@ -303,25 +359,37 @@ const generateDesignCapability: Capability = {
 const generateImageCapability = makeMediaCapability(
   "generate_image",
   "image",
+  "image",
   "png",
   "Generate image",
-  "Generate an image from a text prompt (VRAM-aware, local-first, cloud fallback).",
+  "Generate an image from a text prompt using the selected image model at best settings (local-first, cloud fallback).",
 );
 
 const generateAudioCapability = makeMediaCapability(
   "generate_audio",
+  "speech",
   "audio",
   "wav",
-  "Generate audio",
-  "Generate speech/audio from a text prompt using the local audio backend.",
+  "Generate speech",
+  "Generate spoken audio/narration from text using the selected speech (TTS) model.",
+);
+
+const generateMusicCapability = makeMediaCapability(
+  "generate_music",
+  "music",
+  "music",
+  "wav",
+  "Generate music",
+  "Generate music or a song from a text prompt using the selected music model.",
 );
 
 const generateVideoCapability = makeMediaCapability(
   "generate_video",
   "video",
+  "video",
   "mp4",
   "Generate video",
-  "Generate a short video from a text prompt using the local video backend.",
+  "Generate a short video from a text prompt using the selected video model.",
 );
 
 function firstPriorOutputPath(ctx: FlowContext): string | undefined {
@@ -516,6 +584,7 @@ const CAPABILITIES: Record<CapabilityId, Capability> = {
   generate_design: generateDesignCapability,
   generate_image: generateImageCapability,
   generate_audio: generateAudioCapability,
+  generate_music: generateMusicCapability,
   generate_video: generateVideoCapability,
   generate_3d_asset: generate3dAssetCapability,
   research_news: researchNewsCapability,

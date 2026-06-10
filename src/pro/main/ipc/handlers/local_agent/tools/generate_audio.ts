@@ -18,8 +18,19 @@ import { getOrchestrator } from "@/main/ipc/utils/model_orchestrator";
 import { ensureLlmSwapForMedia } from "@/main/ipc/utils/media_llm_guard";
 import { generateAudioViaLocalBackend } from "@/main/ipc/utils/local_audio_generator";
 import { initMediaDispatcher } from "@/main/ipc/utils/media_dispatcher";
+import { readSettings } from "@/main/settings";
+import { resolveSelection } from "@/shared/orion_media_catalog";
 
 const logger = log.scope("generate_audio");
+
+/** The user's selected speech (TTS) model (Orion Media Models), or undefined. */
+function selectedSpeechTier(): string | undefined {
+  try {
+    return resolveSelection(readSettings().orionMediaModels).speech;
+  } catch {
+    return undefined;
+  }
+}
 
 const generateAudioSchema = z.object({
   text: z
@@ -97,12 +108,15 @@ export const generateAudioTool: ToolDefinition<
       let success = false;
       let errMessage: string | undefined;
 
+      const tier = selectedSpeechTier();
+
       if (llmIsLoaded) {
         initMediaDispatcher();
         const result = await orch.runMediaGeneration({
           modelType: "audio",
           prompt: args.text,
           outputPath: absolutePath,
+          modelId: tier,
           options: args.voice ? { voice: args.voice } : undefined,
         });
         success = result.success;
@@ -111,7 +125,7 @@ export const generateAudioTool: ToolDefinition<
         const local = await generateAudioViaLocalBackend(
           args.text,
           absolutePath,
-          { voice: args.voice },
+          { voice: args.voice, tier },
         );
         success = local.success;
         errMessage = local.error;

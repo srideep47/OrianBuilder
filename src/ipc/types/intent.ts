@@ -28,6 +28,7 @@ export const CapabilityIdSchema = z.enum([
   "generate_design",
   "generate_image",
   "generate_audio",
+  "generate_music",
   "generate_video",
   "generate_3d_asset",
   "research_news",
@@ -156,6 +157,44 @@ export const PipelineRunResultSchema = z.object({
 export type PipelineRunResult = z.infer<typeof PipelineRunResultSchema>;
 
 // =============================================================================
+// Direct media generation (single Orion input → media reply rendered in a chat)
+// =============================================================================
+
+/** One generated media asset, described so the renderer can build a chat tag
+ *  that renders it inline (image/video/audio) via the orian-media:// protocol. */
+export const MediaReplyAssetSchema = z.object({
+  capability: CapabilityIdSchema,
+  /** Coarse media kind the chat renderer switches on. */
+  kind: z.enum(["image", "video", "audio", "model"]),
+  /** Path of the generated file relative to its app dir (forward slashes),
+   *  e.g. ".orianbuilder/media/flow-….png". Absent when generation failed. */
+  relativePath: z.string().optional(),
+  /** Absolute path on disk (for "open file" affordances). */
+  absolutePath: z.string().optional(),
+  mimeType: z.string(),
+  prompt: z.string(),
+  durationMs: z.number().optional(),
+  /** Set when this asset could not be generated. */
+  error: z.string().optional(),
+  /** Route to the setup screen when the backend/runtime needs installing. */
+  setupRoute: z.string().optional(),
+});
+export type MediaReplyAsset = z.infer<typeof MediaReplyAssetSchema>;
+
+export const GenerateMediaParamsSchema = z.object({
+  /** A parsed, media-only intent. `appId` (when set) is the app the generated
+   *  files are written under so the chat can resolve them by relative path. */
+  intent: CommandIntentSchema,
+});
+export type GenerateMediaParams = z.infer<typeof GenerateMediaParamsSchema>;
+
+export const MediaReplyResultSchema = z.object({
+  status: FlowRunStatusSchema,
+  assets: z.array(MediaReplyAssetSchema),
+});
+export type MediaReplyResult = z.infer<typeof MediaReplyResultSchema>;
+
+// =============================================================================
 // Contracts
 // =============================================================================
 
@@ -192,6 +231,16 @@ export const flowContracts = {
     channel: "flow:run-pipeline",
     input: RunPipelineParamsSchema,
     output: PipelineRunResultSchema,
+  }),
+  /**
+   * Generate the media for a parsed media-only intent using the user's selected
+   * model per modality at the device's best settings, and return descriptors the
+   * renderer renders inline as a ChatGPT-style reply.
+   */
+  generateMedia: defineContract({
+    channel: "flow:generate-media",
+    input: GenerateMediaParamsSchema,
+    output: MediaReplyResultSchema,
   }),
 } as const;
 

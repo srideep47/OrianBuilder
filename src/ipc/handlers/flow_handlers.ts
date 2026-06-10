@@ -6,7 +6,13 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { apps, chats, designSessions } from "@/db/schema";
 import { flowContracts, flowEvents } from "@/ipc/types/intent";
-import type { PipelineProgress } from "@/ipc/types/intent";
+import type {
+  PipelineProgress,
+  CommandIntent,
+  CapabilityId,
+  MediaReplyAsset,
+  MediaReplyResult,
+} from "@/ipc/types/intent";
 import { safeSend } from "@/ipc/utils/safe_sender";
 import { createLoggedTypedHandler } from "./base";
 import { parseIntent } from "@/main/flow/intent_parser";
@@ -26,6 +32,7 @@ import { ORIANBUILDER_MEDIA_DIR_NAME } from "@/ipc/utils/media_path_utils";
 import {
   selectProfileForVram,
   applySelectionToProfile,
+  type HardwareModelProfile,
 } from "@/main/flow/model_profiles";
 import { getModelGate } from "@/main/flow/model_gate";
 import {
@@ -1170,6 +1177,125 @@ async function runOrionPipeline(params: {
   };
 }
 
+/** Resolve the device model profile with the user's per-modality selection
+ *  baked in (selected models + best per-stage settings). */
+async function resolveMediaProfile(): Promise<HardwareModelProfile> {
+  const selection = resolveSelection(readSettings().orionMediaModels);
+  return applySelectionToProfile(
+    selectProfileForVram(await detectTotalVramMb()),
+    selection,
+  );
+}
+
+/** Capability → coarse media kind + default mime, for the chat reply. */
+const MEDIA_REPLY_KINDS: Partial<
+  Record<CapabilityId, { kind: MediaReplyAsset["kind"]; mimeType: string }>
+> = {
+  generate_image: { kind: "image", mimeType: "image/png" },
+  generate_video: { kind: "video", mimeType: "video/mp4" },
+  generate_audio: { kind: "audio", mimeType: "audio/wav" },
+  generate_music: { kind: "audio", mimeType: "audio/wav" },
+  generate_3d_asset: { kind: "model", mimeType: "model/gltf-binary" },
+};
+
+/** Path of `abs` relative to `appPath` (forward slashes), or undefined if it
+ *  escapes the app dir / no app path is known (chat can't resolve it then). */
+function toAppRelativePath(
+  appPath: string | undefined,
+  abs: string,
+): string | undefined {
+  if (!appPath) return undefined;
+  const rel = path.relative(appPath, abs);
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return undefined;
+  return rel.split(path.sep).join("/");
+}
+
+/**
+ * Generate the media for a parsed media-only intent and return descriptors the
+ * renderer renders inline as a chat reply. Uses the user's selected model per
+ * modality at the device's best settings (the profile), writing files under the
+ * intent's app dir so the chat's orian-media:// protocol can resolve them.
+ */
+async function runOrionMediaReply(
+  intent: CommandIntent,
+): Promise<MediaReplyResult> {
+  // Best-effort: bring the local media backend up so generation isn't degraded.
+  const backend = await ensureMediaBackendReadyForFlow();
+  if (!backend.ready) {
+    logger.warn(
+      `media backend not ready (${backend.reason ?? "unknown"}); media may fall back. Set it up at ${backend.setupRoute ?? "/mediaai"}.`,
+    );
+  }
+
+  const mediaProfile = await resolveMediaProfile();
+  const flow = await runFlow(intent, { mediaProfile });
+
+  let appPath: string | undefined;
+  if (intent.appId != null) {
+    const appRow = await db.query.apps.findFirst({
+      where: eq(apps.id, intent.appId),
+    });
+    appPath = appRow ? getOrianBuilderAppPath(appRow.path) : undefined;
+  }
+
+  // The prompt for each rendered asset comes from the intent step's input.
+  const promptByStepId = new Map(
+    intent.steps.map((s) => [
+      s.id,
+      typeof s.input.prompt === "string" ? s.input.prompt : undefined,
+    ]),
+  );
+
+  const assets: MediaReplyAsset[] = [];
+  for (const step of flow.steps) {
+    const meta = MEDIA_REPLY_KINDS[step.capability];
+    if (!meta) continue; // non-media step (e.g. a design artifact) — skip
+
+    const out = step.output;
+    const prompt = promptByStepId.get(step.stepId) || intent.goal;
+
+    if (step.status === "failed") {
+      assets.push({
+        capability: step.capability,
+        kind: meta.kind,
+        mimeType: meta.mimeType,
+        prompt,
+        error: step.error ?? `${step.capability} failed`,
+      });
+      continue;
+    }
+    if (out.setupRequired === true) {
+      assets.push({
+        capability: step.capability,
+        kind: meta.kind,
+        mimeType: meta.mimeType,
+        prompt,
+        error: typeof out.reason === "string" ? out.reason : "setup required",
+        setupRoute:
+          typeof out.setupRoute === "string" ? out.setupRoute : "/mediaai",
+      });
+      continue;
+    }
+
+    const abs = typeof out.outputPath === "string" ? out.outputPath : undefined;
+    if (!abs) continue; // skipped / produced no file
+    assets.push({
+      capability: step.capability,
+      kind: meta.kind,
+      mimeType: meta.mimeType,
+      prompt,
+      absolutePath: abs,
+      relativePath: toAppRelativePath(appPath, abs),
+      durationMs: step.durationMs,
+    });
+  }
+
+  logger.info(
+    `orion media reply: ${assets.length} asset(s) for "${intent.goal}" (status=${flow.status})`,
+  );
+  return { status: flow.status, assets };
+}
+
 export function registerFlowHandlers(): void {
   configureModelLeaseHooks();
   // Wire the build_app capability to the Autopilot agent-build handoff.
@@ -1184,12 +1310,14 @@ export function registerFlowHandlers(): void {
   });
 
   handle(flowContracts.runFlow, async (_event, intent) => {
-    return runFlow(intent);
+    const mediaProfile = await resolveMediaProfile();
+    return runFlow(intent, { mediaProfile });
   });
 
   handle(flowContracts.runCommand, async (_event, { text, appId }) => {
     const intent = await parseIntent(text, appId);
-    return runFlow(intent);
+    const mediaProfile = await resolveMediaProfile();
+    return runFlow(intent, { mediaProfile });
   });
 
   handle(flowContracts.listCapabilities, async () => {
@@ -1201,5 +1329,9 @@ export function registerFlowHandlers(): void {
     const emit = (payload: PipelineProgress) =>
       safeSend(sender, flowEvents.pipelineProgress.channel, payload);
     return runOrionPipeline({ text, appId, emit });
+  });
+
+  handle(flowContracts.generateMedia, async (_event, { intent }) => {
+    return runOrionMediaReply(intent);
   });
 }

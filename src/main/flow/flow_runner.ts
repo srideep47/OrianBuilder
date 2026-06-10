@@ -8,12 +8,19 @@ import { eq } from "drizzle-orm";
 import { getOrianBuilderAppPath, getUserDataPath } from "@/paths/paths";
 import { ORIANBUILDER_MEDIA_DIR_NAME } from "@/ipc/utils/media_path_utils";
 import { getCapability, type FlowContext } from "./capability_registry";
+import type { HardwareModelProfile } from "./model_profiles";
 import type {
   CommandIntent,
   FlowRunResult,
   StepResult,
   FlowRunStatus,
 } from "@/ipc/types/intent";
+
+/** Optional run-time wiring for a flow (e.g. the resolved media model profile). */
+export interface RunFlowOptions {
+  /** Selected models + best per-stage settings; threaded to media capabilities. */
+  mediaProfile?: HardwareModelProfile;
+}
 
 const logger = log.scope("flow-runner");
 
@@ -51,7 +58,10 @@ function aggregateStatus(steps: StepResult[]): FlowRunStatus {
  * capability registry; the build step escalates to the Mission System. Steps
  * whose dependencies failed or were skipped are themselves skipped.
  */
-export async function runFlow(intent: CommandIntent): Promise<FlowRunResult> {
+export async function runFlow(
+  intent: CommandIntent,
+  options: RunFlowOptions = {},
+): Promise<FlowRunResult> {
   const flowId = crypto.randomUUID();
   const startedAt = Date.now();
   logger.info(
@@ -91,6 +101,7 @@ export async function runFlow(intent: CommandIntent): Promise<FlowRunResult> {
       mediaDir,
       constraints: intent.constraints,
       priorOutputs,
+      mediaProfile: options.mediaProfile,
     };
 
     try {

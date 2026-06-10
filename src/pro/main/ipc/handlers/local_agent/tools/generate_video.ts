@@ -18,8 +18,19 @@ import { getOrchestrator } from "@/main/ipc/utils/model_orchestrator";
 import { ensureLlmSwapForMedia } from "@/main/ipc/utils/media_llm_guard";
 import { generateVideoViaLocalBackend } from "@/main/ipc/utils/local_video_generator";
 import { initMediaDispatcher } from "@/main/ipc/utils/media_dispatcher";
+import { readSettings } from "@/main/settings";
+import { resolveSelection } from "@/shared/orion_media_catalog";
 
 const logger = log.scope("generate_video");
+
+/** The user's selected video model (Orion Media Models), or undefined. */
+function selectedVideoTier(): string | undefined {
+  try {
+    return resolveSelection(readSettings().orionMediaModels).video;
+  } catch {
+    return undefined;
+  }
+}
 
 const generateVideoSchema = z.object({
   prompt: z
@@ -92,12 +103,15 @@ export const generateVideoTool: ToolDefinition<
       let success = false;
       let errMessage: string | undefined;
 
+      const tier = selectedVideoTier();
+
       if (llmIsLoaded) {
         initMediaDispatcher();
         const result = await orch.runMediaGeneration({
           modelType: "video",
           prompt: args.prompt,
           outputPath: absolutePath,
+          modelId: tier,
         });
         success = result.success;
         errMessage = result.error;
@@ -105,6 +119,7 @@ export const generateVideoTool: ToolDefinition<
         const local = await generateVideoViaLocalBackend(
           args.prompt,
           absolutePath,
+          { tier },
         );
         success = local.success;
         errMessage = local.error;

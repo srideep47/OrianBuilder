@@ -81,6 +81,20 @@ describe("fallbackParse", () => {
     expect(intent.steps[1].dependsOn).toEqual(["image-1"]);
   });
 
+  it("routes music/song commands to generate_music, not speech", () => {
+    const intent = fallbackParse("make a lo-fi song with a chill beat");
+    const caps = intent.steps.map((s) => s.capability);
+    expect(caps).toContain("generate_music");
+    expect(caps).not.toContain("generate_audio");
+  });
+
+  it("routes narration/voice commands to generate_audio (speech)", () => {
+    const intent = fallbackParse("narrate a calm voiceover welcoming the user");
+    const caps = intent.steps.map((s) => s.capability);
+    expect(caps).toContain("generate_audio");
+    expect(caps).not.toContain("generate_music");
+  });
+
   it("routes news commands to the digest capability", () => {
     const intent = fallbackParse("show me latest AI news headlines");
     expect(intent.steps.some((s) => s.capability === "research_news")).toBe(

@@ -1,5 +1,6 @@
 import { Orbit, Sparkles } from "lucide-react";
 import { OrionCommandBar } from "@/components/orion/OrionCommandBar";
+import { OrionModelConfig } from "@/components/orion/OrionModelConfig";
 import {
   ModelEnginePanel,
   OrionSessionsPanel,
@@ -28,6 +29,7 @@ export default function OrionPage() {
 
         <OrionCommandBar />
 
+        <OrionModelConfig />
         <ModelEnginePanel />
         <OrionSessionsPanel />
         <WorkflowsPanel />

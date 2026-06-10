@@ -32,6 +32,7 @@ vi.mock("@/main/ipc/utils/model_orchestrator", () => ({
 }));
 
 import { getCapability } from "./capability_registry";
+import { selectProfileForVram } from "./model_profiles";
 
 function makeCtx(): FlowContext {
   return {
@@ -87,6 +88,48 @@ describe("capability registry", () => {
       durationMs: 12,
       modelType: "image",
     });
+  });
+
+  it("passes the selected model + best settings when a media profile is present", async () => {
+    mocks.dispatchMediaGeneration.mockResolvedValueOnce({
+      success: true,
+      outputPath: "C:\\tmp\\coffee-logo.png",
+      durationMs: 9,
+    });
+
+    await getCapability("generate_image").execute(
+      { prompt: "coffee logo" },
+      { ...makeCtx(), mediaProfile: selectProfileForVram(16000) },
+    );
+
+    expect(mocks.dispatchMediaGeneration).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelType: "image",
+        modelId: "z-image-turbo",
+        options: expect.objectContaining({ steps: 6 }),
+      }),
+    );
+  });
+
+  it("routes generate_music to the music model in the profile", async () => {
+    mocks.dispatchMediaGeneration.mockResolvedValueOnce({
+      success: true,
+      outputPath: "C:\\tmp\\theme.wav",
+      durationMs: 20,
+    });
+
+    const output = await getCapability("generate_music").execute(
+      { prompt: "a lo-fi theme" },
+      { ...makeCtx(), mediaProfile: selectProfileForVram(16000) },
+    );
+
+    expect(mocks.dispatchMediaGeneration).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelType: "music",
+        modelId: "ace-step-xl-turbo-12gb",
+      }),
+    );
+    expect(output).toMatchObject({ modelType: "music" });
   });
 
   it("returns setupRequired for unavailable video backends without failing the step", async () => {

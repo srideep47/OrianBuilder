@@ -48,7 +48,9 @@ import { flowEventClient } from "@/ipc/types/intent";
 import type {
   CapabilityDescriptor,
   CapabilityId,
+  CommandIntent,
   FlowRunResult,
+  MediaReplyAsset,
   PipelineProgress,
   PipelineRunResult,
   StepResult,
@@ -61,7 +63,8 @@ import {
 const CAPABILITY_ICON: Record<CapabilityId, ReactNode> = {
   generate_design: <Palette className="w-3.5 h-3.5" />,
   generate_image: <ImageIcon className="w-3.5 h-3.5" />,
-  generate_audio: <Music className="w-3.5 h-3.5" />,
+  generate_audio: <Mic className="w-3.5 h-3.5" />,
+  generate_music: <Music className="w-3.5 h-3.5" />,
   generate_video: <Video className="w-3.5 h-3.5" />,
   generate_3d_asset: <Box className="w-3.5 h-3.5" />,
   research_news: <Newspaper className="w-3.5 h-3.5" />,
@@ -70,10 +73,55 @@ const CAPABILITY_ICON: Record<CapabilityId, ReactNode> = {
   build_app: <Hammer className="w-3.5 h-3.5" />,
 };
 
+/** Capabilities whose output is media we render inline as a chat reply. */
+const MEDIA_CAPABILITIES = new Set<CapabilityId>([
+  "generate_image",
+  "generate_video",
+  "generate_audio",
+  "generate_music",
+  "generate_3d_asset",
+]);
+
+function escAttr(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * Turn the generated media descriptors into an assistant chat message that
+ * renders each asset inline (ChatGPT/Gemini-style) via the custom media tags.
+ */
+function formatMediaReply(command: string, assets: MediaReplyAsset[]): string {
+  const parts: string[] = [];
+  for (const asset of assets) {
+    if (asset.error || !asset.relativePath) {
+      parts.push(
+        `Couldn't generate ${asset.kind}${asset.error ? `: ${asset.error}` : ""}.` +
+          (asset.setupRoute
+            ? " Set up the media backend, then try again."
+            : ""),
+      );
+      continue;
+    }
+    // All kinds (image/video/audio/model) render large + inline via the media
+    // tag — ChatGPT/Gemini-style — rather than the small image-generation card.
+    parts.push(
+      `<orianbuilder-media-generation kind="${escAttr(asset.kind)}" prompt="${escAttr(asset.prompt)}" path="${escAttr(asset.relativePath)}" mime-type="${escAttr(asset.mimeType)}" state="finished"></orianbuilder-media-generation>`,
+    );
+  }
+  return parts.length
+    ? parts.join("\n\n")
+    : `No media was generated for: ${command}`;
+}
+
 const EXAMPLES = [
-  "Build a todo app with a custom hero image and a Node backend",
   "Generate a cinematic hero image of a mountain sunrise",
-  "Create a landing page for a coffee brand with a logo and a promo video",
+  "Make a 10-second lo-fi music track",
+  "Generate a 3D model of a low-poly tree",
+  "Build a todo app with a custom hero image and a Node backend",
 ];
 
 const ORION_SESSION_APP_NAME = "Orion Sessions";
@@ -202,9 +250,6 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
   const [result, setResult] = useState<FlowRunResult | null>(null);
   const [pipelineResult, setPipelineResult] =
     useState<PipelineRunResult | null>(null);
-  // "factory" = orchestrated single-prompt pipeline (plan → batch assets →
-  // verify → autonomous build). "flow" = the lighter chained-capability runner.
-  const [mode, setMode] = useState<"factory" | "flow">("factory");
   const [capabilities, setCapabilities] = useState<CapabilityDescriptor[]>([]);
   // Live activity feed streamed from the running pipeline (downloads, phases,
   // per-asset status). Cleared at the start of each run.
@@ -344,14 +389,17 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
   const createCommandSession = useCallback(
     async (command: string) => {
       const sessionAppId = await getOrCreateSessionAppId();
+      // Create the session in local-agent (Agent) mode so FOLLOW-UP prompts the
+      // user types in this chat are classified by the LLM and routed to the right
+      // media/build tool — instead of being answered as plain conversation.
       const chatId = await ipc.chat.createChat({
         appId: sessionAppId,
-        initialChatMode: "conversational",
+        initialChatMode: "local-agent",
       });
       await ipc.chat.updateChat({
         chatId,
         title: titleFromCommand(command),
-        chatMode: "conversational",
+        chatMode: "local-agent",
       });
       await ipc.chat.appendMessages({
         chatId,
@@ -396,28 +444,56 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
     [queryClient],
   );
 
-  const run = useCallback(async () => {
-    const command = text.trim();
-    if (!command || isRunning) return;
-    setIsRunning(true);
-    setResult(null);
-    setProgress([]);
-    let commandSession: { appId: number; chatId: number } | null = null;
-    // Persist the autonomy choice so the agent-build (which reads
-    // `autonomousMode`) runs hands-free or asks on risky steps accordingly.
-    try {
-      commandSession = await createCommandSession(command);
-      try {
-        await updateSettings({ autonomousMode: autonomous });
-      } catch {
-        /* non-fatal: fall back to whatever the setting already was */
-      }
+  // ── Routed cores (lifecycle owned by `launch`) ──────────────────────────────
 
-      await ensureSelectedEmbeddedModelReady(settings);
+  /**
+   * Media-only command: generate each asset with the user's selected model at
+   * the device's best settings, then post an assistant reply that renders the
+   * media inline (ChatGPT/Gemini-style) in the command's chat.
+   */
+  const runMediaCore = useCallback(
+    async (
+      command: string,
+      intent: CommandIntent,
+      session: { appId: number; chatId: number },
+    ) => {
+      // Write files under the session's app so the chat can resolve them.
+      const reply = await ipc.flow.generateMedia({
+        intent: { ...intent, appId: session.appId },
+      });
+      await ipc.chat.appendMessages({
+        chatId: session.chatId,
+        messages: [
+          {
+            role: "assistant",
+            content: formatMediaReply(command, reply.assets),
+          },
+        ],
+      });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
+      const ok = reply.assets.filter((a) => a.relativePath && !a.error).length;
+      speak(
+        ok > 0
+          ? `Generated ${ok} ${ok === 1 ? "asset" : "assets"}.`
+          : "Sorry, nothing was generated.",
+      );
+      markCommandSessionStreaming(session.chatId, false);
+      selectChat({ chatId: session.chatId, appId: session.appId });
+    },
+    [queryClient, speak, markCommandSessionStreaming, selectChat],
+  );
 
-      const flowResult = await ipc.flow.runCommand({ text: command, appId });
+  /** Lighter chained-capability runner (news, tracking, mixed flows). Reuses
+   *  the already-parsed intent so there's no redundant LLM parse. */
+  const runFlowCore = useCallback(
+    async (
+      command: string,
+      intent: CommandIntent,
+      session: { appId: number; chatId: number },
+    ) => {
+      const flowResult = await ipc.flow.runFlow({ ...intent, appId });
       setResult(flowResult);
-      await appendFlowResultToSession(commandSession.chatId, flowResult);
+      await appendFlowResultToSession(session.chatId, flowResult);
       const ok = flowResult.steps.filter((s) => s.status === "success").length;
       speak(
         `Command ${flowResult.status}. ${ok} of ${flowResult.steps.length} steps succeeded.`,
@@ -444,7 +520,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
         });
         void queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
         speak("Starting the build.");
-        markCommandSessionStreaming(commandSession.chatId, false);
+        markCommandSessionStreaming(session.chatId, false);
         streamMessage({
           prompt: handoff.buildGoal,
           chatId: handoff.chatId,
@@ -453,69 +529,30 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
         });
         selectChat({ chatId: handoff.chatId, appId: handoff.appId });
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (commandSession) {
-        await appendFlowErrorToSession(commandSession.chatId, message).catch(
-          () => undefined,
-        );
-      }
-      showError(message);
-      speak("Sorry, the command failed.");
-    } finally {
-      if (commandSession) {
-        markCommandSessionStreaming(commandSession.chatId, false);
-      }
-      setIsRunning(false);
-    }
-  }, [
-    text,
-    appId,
-    isRunning,
-    speak,
-    streamMessage,
-    selectChat,
-    initialChatMode,
-    autonomous,
-    updateSettings,
-    settings,
-    queryClient,
-    createCommandSession,
-    appendFlowResultToSession,
-    appendFlowErrorToSession,
-    markCommandSessionStreaming,
-  ]);
+    },
+    [
+      appId,
+      speak,
+      streamMessage,
+      selectChat,
+      initialChatMode,
+      queryClient,
+      appendFlowResultToSession,
+      markCommandSessionStreaming,
+    ],
+  );
 
   /**
    * Orchestrated single-prompt pipeline: the main process plans the asset
    * manifest, batch-generates assets one pipeline at a time (LLM unloaded), then
    * hands off an autonomous Autopilot build that references the generated assets.
    */
-  const runFactory = useCallback(async () => {
-    const command = text.trim();
-    if (!command || isRunning) return;
-    setIsRunning(true);
-    setResult(null);
-    setPipelineResult(null);
-    setProgress([]);
-    // Persist the prompt as a session up front so it stays accessible from the
-    // Sessions panel even if you navigate to another screen mid-run. The
-    // pipeline is long-running (plan -> assets -> build); without this the chat
-    // only existed after it finished.
-    let commandSession: { appId: number; chatId: number } | null = null;
-    try {
-      commandSession = await createCommandSession(command);
-      try {
-        await updateSettings({ autonomousMode: autonomous });
-      } catch {
-        /* non-fatal */
-      }
-      await ensureSelectedEmbeddedModelReady(settings);
-
+  const runFactoryCore = useCallback(
+    async (command: string, session: { appId: number; chatId: number }) => {
       const pr = await ipc.flow.runPipeline({ text: command, appId });
       setPipelineResult(pr);
       await ipc.chat.appendMessages({
-        chatId: commandSession.chatId,
+        chatId: session.chatId,
         messages: [
           { role: "assistant", content: formatPipelineTranscript(command, pr) },
         ],
@@ -540,7 +577,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
         });
         void queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
         speak("Starting the build.");
-        markCommandSessionStreaming(commandSession.chatId, false);
+        markCommandSessionStreaming(session.chatId, false);
         streamMessage({
           prompt: pr.buildGoal,
           chatId: pr.chatId,
@@ -549,18 +586,79 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
         });
         selectChat({ chatId: pr.chatId, appId: pr.appId });
       }
+    },
+    [
+      appId,
+      speak,
+      streamMessage,
+      selectChat,
+      initialChatMode,
+      queryClient,
+      markCommandSessionStreaming,
+    ],
+  );
+
+  /**
+   * Single entry for the one Orion input: create the command's chat, parse the
+   * intent, and route — media-only → inline media reply; an app build → the
+   * Factory pipeline; everything else → the chained flow. Build/parse failures
+   * fall back to the Factory pipeline so a prompt is never dropped.
+   */
+  const launch = useCallback(async () => {
+    const command = text.trim();
+    if (!command || isRunning) return;
+    setIsRunning(true);
+    setResult(null);
+    setPipelineResult(null);
+    setProgress([]);
+    let session: { appId: number; chatId: number } | null = null;
+    try {
+      session = await createCommandSession(command);
+      // Enter the chat immediately so the user sees their prompt right away,
+      // instead of waiting on the (slow) parse + generation before navigating.
+      selectChat({ chatId: session.chatId, appId: session.appId });
+      // Persist the autonomy choice so the agent-build (which reads
+      // `autonomousMode`) runs hands-free or asks on risky steps accordingly.
+      try {
+        await updateSettings({ autonomousMode: autonomous });
+      } catch {
+        /* non-fatal: keep whatever the setting already was */
+      }
+      await ensureSelectedEmbeddedModelReady(settings);
+
+      let intent: CommandIntent | null = null;
+      try {
+        intent = await ipc.flow.parseCommand({ text: command, appId });
+      } catch {
+        /* parse failed → fall through to the Factory build path */
+      }
+
+      const hasBuild = !!intent?.steps.some(
+        (s) => s.capability === "build_app",
+      );
+      const hasMedia = !!intent?.steps.some((s) =>
+        MEDIA_CAPABILITIES.has(s.capability),
+      );
+
+      if (intent && hasMedia && !hasBuild) {
+        await runMediaCore(command, intent, session);
+      } else if (intent && !hasBuild && intent.steps.length > 0) {
+        await runFlowCore(command, intent, session);
+      } else {
+        await runFactoryCore(command, session);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (commandSession) {
-        await appendFlowErrorToSession(commandSession.chatId, message).catch(
+      if (session) {
+        await appendFlowErrorToSession(session.chatId, message).catch(
           () => undefined,
         );
       }
       showError(message);
-      speak("Sorry, the build failed.");
+      speak("Sorry, the command failed.");
     } finally {
-      if (commandSession) {
-        markCommandSessionStreaming(commandSession.chatId, false);
+      if (session) {
+        markCommandSessionStreaming(session.chatId, false);
       }
       setIsRunning(false);
     }
@@ -568,27 +666,23 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
     text,
     appId,
     isRunning,
-    speak,
-    streamMessage,
-    selectChat,
-    initialChatMode,
     autonomous,
     updateSettings,
     settings,
-    queryClient,
     createCommandSession,
+    selectChat,
+    runMediaCore,
+    runFlowCore,
+    runFactoryCore,
     appendFlowErrorToSession,
     markCommandSessionStreaming,
+    speak,
   ]);
-
-  const launch = useCallback(() => {
-    void (mode === "factory" ? runFactory() : run());
-  }, [mode, runFactory, run]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
-      launch();
+      void launch();
     }
   };
 
@@ -653,7 +747,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
             type="button"
             size="icon"
             title="Run command (Cmd/Ctrl + Enter)"
-            onClick={launch}
+            onClick={() => void launch()}
             disabled={isRunning || !text.trim()}
             className="h-8 w-8"
           >
@@ -663,42 +757,6 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
               <Send className="h-4 w-4" />
             )}
           </Button>
-        </div>
-      </div>
-
-      {/* Mode toggle - Factory (orchestrated pipeline) vs Flow (chained run) */}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-lg border border-white/10 bg-black/20 p-0.5 text-xs">
-          <button
-            type="button"
-            onClick={() => setMode("factory")}
-            disabled={isRunning}
-            className={
-              "inline-flex items-center gap-1 rounded-md px-2.5 py-1 transition-colors " +
-              (mode === "factory"
-                ? "bg-primary/20 text-primary"
-                : "text-white/50 hover:text-white/80")
-            }
-            title="Plan → batch-generate assets (one model at a time) → autonomous build"
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            Factory
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("flow")}
-            disabled={isRunning}
-            className={
-              "inline-flex items-center gap-1 rounded-md px-2.5 py-1 transition-colors " +
-              (mode === "flow"
-                ? "bg-primary/20 text-primary"
-                : "text-white/50 hover:text-white/80")
-            }
-            title="Lighter chained-capability runner"
-          >
-            <Hammer className="h-3.5 w-3.5" />
-            Flow
-          </button>
         </div>
       </div>
 
@@ -778,9 +836,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
       {isRunning && (
         <div className="mt-3 flex items-center gap-2 text-sm text-white/60">
           <Loader2 className="h-4 w-4 animate-spin text-primary" />
-          {mode === "factory"
-            ? "Planning, generating assets, and building..."
-            : "Orchestrating your command..."}
+          Understanding your command and getting to work...
         </div>
       )}
 

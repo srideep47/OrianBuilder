@@ -30,6 +30,7 @@ import { OrianBuilderWebSearch } from "./OrianBuilderWebSearch";
 import { OrianBuilderWebCrawl } from "./OrianBuilderWebCrawl";
 import { OrianBuilderWebFetch } from "./OrianBuilderWebFetch";
 import { OrianBuilderImageGeneration } from "./OrianBuilderImageGeneration";
+import { OrianBuilderMediaGeneration } from "./OrianBuilderMediaGeneration";
 import { OrianBuilderCodeSearchResult } from "./OrianBuilderCodeSearchResult";
 import { OrianBuilderCodeSearch } from "./OrianBuilderCodeSearch";
 import { OrianBuilderRead } from "./OrianBuilderRead";
@@ -1061,6 +1062,27 @@ function renderCustomTag(
         >
           {content}
         </OrianBuilderImageGeneration>
+      );
+
+    case "orianbuilder-media-generation":
+      return (
+        <OrianBuilderMediaGeneration
+          node={{
+            properties: {
+              kind: attributes.kind || "",
+              prompt: attributes.prompt || "",
+              path: attributes.path || "",
+              mimeType: attributes["mime-type"] || "",
+              state: getState({
+                isStreaming,
+                inProgress,
+                explicitState: attributes.state,
+              }),
+            },
+          }}
+        >
+          {content}
+        </OrianBuilderMediaGeneration>
       );
 
     case "orianbuilder-status":

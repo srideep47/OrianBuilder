@@ -46,6 +46,8 @@ Rules:
 - Use "generate_3d_asset" for 3D model, GLB, mesh, object, or game asset
   requests. If the user only gives text, create a "generate_image" reference
   step first and make the 3D step depend on it.
+- Use "generate_music" for music, songs, soundtracks, beats, or jingles. Use
+  "generate_audio" only for speech, narration, or voiceover.
 - Use "research_news" for current news, headlines, digest, market/sports/science
   news, or research-current-events requests.
 - Use "track_website" for website monitoring/change detection requests.
@@ -126,7 +128,10 @@ const PRICE_TRACKING_KEYWORDS = [
 ];
 
 const MEDIA_KEYWORDS: Record<
-  Extract<CapabilityId, "generate_image" | "generate_audio" | "generate_video">,
+  Extract<
+    CapabilityId,
+    "generate_image" | "generate_audio" | "generate_music" | "generate_video"
+  >,
   string[]
 > = {
   generate_image: [
@@ -141,15 +146,28 @@ const MEDIA_KEYWORDS: Record<
     "graphic",
     "artwork",
   ],
+  // Speech / TTS only — music lives in generate_music so each uses its own model.
   generate_audio: [
-    "audio",
     "voice",
     "voiceover",
     "narration",
+    "narrate",
     "speech",
-    "sound",
+    "speak",
+    "say",
+    "tts",
+    "dialogue",
+  ],
+  generate_music: [
     "music",
     "song",
+    "track",
+    "melody",
+    "beat",
+    "soundtrack",
+    "jingle",
+    "tune",
+    "instrumental",
   ],
   generate_video: ["video", "animation", "clip", "movie", "trailer"],
 };
