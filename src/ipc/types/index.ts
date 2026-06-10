@@ -93,6 +93,19 @@ export {
   sharedMediaEvents,
   sharedMediaEventClient,
 } from "./shared_media";
+export {
+  mediaQueueContracts,
+  mediaQueueClient,
+  mediaQueueEvents,
+  mediaQueueEventClient,
+} from "./media_queue";
+export type {
+  MediaJob,
+  MediaJobKind,
+  MediaJobStatus,
+  MediaAspectRatio,
+  EnqueueMediaJobParams,
+} from "./media_queue";
 export type {
   SharedMediaMeta,
   SharedPeerCatalog,
@@ -628,6 +641,7 @@ import {
   generatedMediaEventClient,
 } from "./generated_media";
 import { sharedMediaClient, sharedMediaEventClient } from "./shared_media";
+import { mediaQueueClient, mediaQueueEventClient } from "./media_queue";
 import { youtubeClient, youtubeEventClient } from "./youtube";
 import {
   androidEmulatorClient,
@@ -711,6 +725,7 @@ export const ipc = {
   watchdog: watchdogClient,
   generatedMedia: generatedMediaClient,
   sharedMedia: sharedMediaClient,
+  mediaQueue: mediaQueueClient,
   youtube: youtubeClient,
   androidEmulator: androidEmulatorClient,
   designStudio: designStudioClient,
@@ -730,6 +745,7 @@ export const ipc = {
     watchdog: watchdogEventClient,
     generatedMedia: generatedMediaEventClient,
     sharedMedia: sharedMediaEventClient,
+    mediaQueue: mediaQueueEventClient,
     youtube: youtubeEventClient,
     androidEmulator: androidEmulatorEventClient,
   },

@@ -92,10 +92,12 @@ async function dispatch(
       // The local backend is preferred because it respects the chosen tier
       // and doesn't require an API key. It silently returns success:false
       // when the Python server isn't running, so we can chain cleanly.
+      // Caller-supplied options (size, steps, …) ride along with the tier so
+      // requests like "9:16 portrait" actually reach the backend.
       const local = await generateImageViaLocalBackend(
         request.prompt,
         request.outputPath,
-        { tier: tierId },
+        { ...request.options, tier: tierId },
       );
       if (local.success) {
         logger.info(`local image gen succeeded (tier=${local.tier ?? "?"})`);
@@ -120,7 +122,7 @@ async function dispatch(
       const audio = await generateAudioViaLocalBackend(
         request.prompt,
         request.outputPath,
-        { tier: tierId },
+        { ...request.options, tier: tierId },
       );
       if (audio.success) {
         logger.info(`local audio gen succeeded (tier=${audio.tier ?? "?"})`);
@@ -137,7 +139,7 @@ async function dispatch(
       const video = await generateVideoViaLocalBackend(
         request.prompt,
         request.outputPath,
-        { tier: tierId },
+        { ...request.options, tier: tierId },
       );
       if (video.success) {
         logger.info(`local video gen succeeded (tier=${video.tier ?? "?"})`);

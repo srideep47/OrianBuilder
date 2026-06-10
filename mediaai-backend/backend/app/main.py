@@ -1029,3 +1029,66 @@ async def v1_video_concat(req: V1VideoConcatRequest) -> V1VideoConcatResponse:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"video concat failed: {exc}") from exc
     return V1VideoConcatResponse(ok=True, output_path=out)
+
+
+# ─── v1 audio mux (video + audio track → one mp4) ────────────────────────────
+
+
+class V1AudioMuxRequest(BaseModel):
+    video_path: str
+    audio_path: str
+    output_path: str
+
+
+class V1AudioMuxResponse(BaseModel):
+    ok: bool
+    output_path: str
+    error: str | None = None
+
+
+def _run_audio_mux(req: V1AudioMuxRequest) -> str:
+    """Mux an audio file onto a video. The output always has the video's
+    duration: shorter audio is padded with silence (apad), longer audio is
+    trimmed (-shortest ends at the video stream). Video stream is copied."""
+    import subprocess
+
+    if not Path(req.video_path).is_file():
+        raise RuntimeError(f"video not found: {req.video_path}")
+    if not Path(req.audio_path).is_file():
+        raise RuntimeError(f"audio not found: {req.audio_path}")
+
+    out_path = Path(req.output_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    ffmpeg = _resolve_ffmpeg_exe()
+    cmd = [
+        ffmpeg, "-y",
+        "-i", req.video_path,
+        "-i", req.audio_path,
+        "-filter_complex", "[1:a]apad[aout]",
+        "-map", "0:v:0",
+        "-map", "[aout]",
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-shortest",
+        "-movflags", "+faststart",
+        str(out_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg mux failed (rc={result.returncode}): {result.stderr[-2000:]}"
+        )
+    return str(out_path)
+
+
+@app.post("/v1/edit/mux", response_model=V1AudioMuxResponse)
+async def v1_audio_mux(req: V1AudioMuxRequest) -> V1AudioMuxResponse:
+    """Combine a video file and an audio file into one mp4 at output_path."""
+    try:
+        out = await run_in_threadpool(_run_audio_mux, req)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"audio mux failed: {exc}") from exc
+    return V1AudioMuxResponse(ok=True, output_path=out)

@@ -71,6 +71,7 @@ import {
   generatedMediaEvents,
 } from "../types/generated_media";
 import { sharedMediaContracts, sharedMediaEvents } from "../types/shared_media";
+import { mediaQueueContracts, mediaQueueEvents } from "../types/media_queue";
 import { youtubeContracts, youtubeEvents } from "../types/youtube";
 import {
   androidEmulatorContracts,
@@ -152,6 +153,7 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(designStudioContracts),
   ...getInvokeChannels(generatedMediaContracts),
   ...getInvokeChannels(sharedMediaContracts),
+  ...getInvokeChannels(mediaQueueContracts),
   ...getInvokeChannels(youtubeContracts),
   ...getInvokeChannels(androidEmulatorContracts),
 
@@ -187,6 +189,7 @@ export const VALID_RECEIVE_CHANNELS = [
   ...getReceiveChannels(watchdogEvents),
   ...getReceiveChannels(generatedMediaEvents),
   ...getReceiveChannels(sharedMediaEvents),
+  ...getReceiveChannels(mediaQueueEvents),
   ...getReceiveChannels(youtubeEvents),
   ...getReceiveChannels(androidEmulatorEvents),
   ...getReceiveChannels(flowEvents),

@@ -41,6 +41,28 @@ export type ChannelMessage =
   /** One base64 chunk of the generated file; eof marks the last chunk. */
   | { type: "MEDIA_GEN_CHUNK"; requestId: string; data: string; eof: boolean }
   | { type: "MEDIA_GEN_ERROR"; requestId: string; error: string }
+  // ── Media job queue (friends submit prompts to a host device's queue) ─────
+  /** Submit a job to the remote device's media queue. jobId is requester-made. */
+  | {
+      type: "MEDIA_JOB_SUBMIT";
+      jobId: string;
+      kind: "image" | "video" | "music" | "speech" | "video_audio";
+      prompt: string;
+      audioPrompt?: string;
+      audioKind?: "music" | "speech";
+      aspectRatio?: "16:9" | "9:16" | "1:1" | "4:3" | "3:4";
+      durationSec?: number;
+    }
+  /** Host → requester status updates for a submitted job. */
+  | {
+      type: "MEDIA_JOB_STATUS";
+      jobId: string;
+      status: "queued" | "running" | "done" | "failed" | "cancelled";
+      stage?: string;
+      error?: string;
+      /** Generated-media fileNames on the host (downloadable via media share). */
+      fileNames?: string[];
+    }
   /** Ask the remote side to send a fresh LOAD_UPDATE right now. */
   | { type: "REQUEST_LOAD" }
   | {

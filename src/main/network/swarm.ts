@@ -495,6 +495,39 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
       return;
     }
 
+    if (msg.type === "MEDIA_JOB_SUBMIT") {
+      // Same trust gate: only accept queue jobs from trusted friends.
+      if (!isTrustedPeer(remoteKeyHex)) {
+        logger.warn(
+          `Rejecting MEDIA_JOB_SUBMIT from untrusted ${remoteKeyHex.slice(0, 16)}…`,
+        );
+        channel.send({
+          type: "MEDIA_JOB_STATUS",
+          jobId: msg.jobId,
+          status: "failed",
+          error: "Peer is not in your trusted list",
+        });
+        return;
+      }
+      const entry = connectedPeers.get(remoteKeyHex);
+      const { handlePeerJobSubmit } =
+        await import("@/ipc/handlers/media_queue_handlers");
+      handlePeerJobSubmit(
+        remoteKeyHex,
+        entry?.peer.displayName ?? remoteKeyHex.slice(0, 8),
+        msg,
+      );
+      return;
+    }
+
+    if (msg.type === "MEDIA_JOB_STATUS") {
+      if (!isTrustedPeer(remoteKeyHex)) return;
+      const { handlePeerJobStatus } =
+        await import("@/ipc/handlers/media_queue_handlers");
+      handlePeerJobStatus(msg);
+      return;
+    }
+
     if (msg.type === "MEDIA_GEN_REQUEST") {
       // Same trust gate as inference: only generate media for trusted peers.
       if (!isTrustedPeer(remoteKeyHex)) {
@@ -645,6 +678,34 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
   cancelInferenceRequest(peerId: string, requestId: string): void {
     const entry = connectedPeers.get(peerId);
     entry?.channel.send({ type: "INFERENCE_CANCEL", requestId });
+  }
+
+  /** Submit a job to a peer's media queue (fire-and-forget; status comes back
+   *  as MEDIA_JOB_STATUS messages). Returns false when the peer is unreachable. */
+  sendMediaJobSubmit(
+    peerId: string,
+    msg: Extract<
+      import("./peer-channel").ChannelMessage,
+      { type: "MEDIA_JOB_SUBMIT" }
+    >,
+  ): boolean {
+    const entry = connectedPeers.get(peerId);
+    if (!entry || entry.channel.isClosed()) return false;
+    return entry.channel.send(msg);
+  }
+
+  /** Report job progress back to the friend who submitted it (best-effort —
+   *  they re-sync from our MEDIA_ANNOUNCE when offline). */
+  sendMediaJobStatus(
+    peerId: string,
+    msg: Extract<
+      import("./peer-channel").ChannelMessage,
+      { type: "MEDIA_JOB_STATUS" }
+    >,
+  ): boolean {
+    const entry = connectedPeers.get(peerId);
+    if (!entry || entry.channel.isClosed()) return false;
+    return entry.channel.send(msg);
   }
 
   /**

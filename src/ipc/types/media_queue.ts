@@ -1,0 +1,142 @@
+import { z } from "zod";
+import {
+  defineContract,
+  defineEvent,
+  createClient,
+  createEventClient,
+} from "../contracts/core";
+
+// =============================================================================
+// Orion Media Queue — batch prompts → assets, generated one at a time
+// =============================================================================
+//
+// You (and trusted friends over P2P) queue generation requests: each job is a
+// prompt plus targets (kind, aspect ratio, duration, optional matched audio).
+// A single worker on the host device processes jobs sequentially — exactly one
+// model resident at a time — and finished assets land in the generated-media
+// store (Library → Media), auto-shared back to the friend who asked.
+// =============================================================================
+
+export const MediaJobKindSchema = z.enum([
+  "image",
+  "video",
+  "music",
+  "speech",
+  /** Video plus a matched audio track (music or narration), muxed into one mp4. */
+  "video_audio",
+]);
+export type MediaJobKind = z.infer<typeof MediaJobKindSchema>;
+
+export const MediaAspectRatioSchema = z.enum([
+  "16:9",
+  "9:16",
+  "1:1",
+  "4:3",
+  "3:4",
+]);
+export type MediaAspectRatio = z.infer<typeof MediaAspectRatioSchema>;
+
+export const MediaJobStatusSchema = z.enum([
+  "queued",
+  "running",
+  "done",
+  "failed",
+  "cancelled",
+]);
+export type MediaJobStatus = z.infer<typeof MediaJobStatusSchema>;
+
+/** Who asked for this job. */
+export const MediaJobRequesterSchema = z.object({
+  source: z.enum(["local", "peer"]),
+  /** Peer publicKey when source === "peer". */
+  peerKey: z.string().optional(),
+  displayName: z.string().optional(),
+});
+export type MediaJobRequester = z.infer<typeof MediaJobRequesterSchema>;
+
+export const MediaJobSchema = z.object({
+  id: z.string(),
+  kind: MediaJobKindSchema,
+  /** Main generation prompt (visual prompt for video_audio). */
+  prompt: z.string(),
+  /** For video_audio: music style prompt, or the narration text for speech. */
+  audioPrompt: z.string().optional(),
+  /** For video_audio: which audio goes under the video. Default music. */
+  audioKind: z.enum(["music", "speech"]).optional(),
+  aspectRatio: MediaAspectRatioSchema,
+  /** Target duration in seconds (video/music/speech). */
+  durationSec: z.number().optional(),
+  status: MediaJobStatusSchema,
+  /** Present while running: which stage is active (e.g. "video", "audio", "mux"). */
+  stage: z.string().optional(),
+  error: z.string().optional(),
+  /** Files in the generated-media store produced by this job. */
+  outputFileNames: z.array(z.string()).optional(),
+  requestedBy: MediaJobRequesterSchema,
+  /**
+   * Where the job runs. "local" = this device hosts it. A peer publicKey means
+   * this entry mirrors a job we submitted to that peer's queue; its status is
+   * updated from their MEDIA_JOB_STATUS messages.
+   */
+  hostedBy: z.string(),
+  /** Friendly label of the hosting device (for mirror entries). */
+  hostLabel: z.string().optional(),
+  createdAt: z.number(),
+  startedAt: z.number().optional(),
+  finishedAt: z.number().optional(),
+});
+export type MediaJob = z.infer<typeof MediaJobSchema>;
+
+export const EnqueueMediaJobParamsSchema = z.object({
+  kind: MediaJobKindSchema,
+  prompt: z.string().min(1),
+  audioPrompt: z.string().optional(),
+  audioKind: z.enum(["music", "speech"]).optional(),
+  aspectRatio: MediaAspectRatioSchema.optional(),
+  durationSec: z.number().positive().max(600).optional(),
+  /** Submit to a trusted peer's queue instead of running locally. */
+  targetPeerId: z.string().optional(),
+});
+export type EnqueueMediaJobParams = z.infer<typeof EnqueueMediaJobParamsSchema>;
+
+export const mediaQueueContracts = {
+  enqueue: defineContract({
+    channel: "media-queue:enqueue",
+    input: EnqueueMediaJobParamsSchema,
+    output: MediaJobSchema,
+  }),
+  list: defineContract({
+    channel: "media-queue:list",
+    input: z.void(),
+    output: z.array(MediaJobSchema),
+  }),
+  /** Cancel a queued job (a running job finishes its current stage first). */
+  cancel: defineContract({
+    channel: "media-queue:cancel",
+    input: z.object({ jobId: z.string() }),
+    output: z.object({ ok: z.boolean() }),
+  }),
+  /** Re-queue a failed or cancelled job. */
+  retry: defineContract({
+    channel: "media-queue:retry",
+    input: z.object({ jobId: z.string() }),
+    output: z.object({ ok: z.boolean() }),
+  }),
+  /** Remove a finished/failed/cancelled job from the list. */
+  remove: defineContract({
+    channel: "media-queue:remove",
+    input: z.object({ jobId: z.string() }),
+    output: z.object({ ok: z.boolean() }),
+  }),
+} as const;
+
+export const mediaQueueClient = createClient(mediaQueueContracts);
+
+export const mediaQueueEvents = {
+  changed: defineEvent({
+    channel: "media-queue:changed",
+    payload: z.object({ jobs: z.array(MediaJobSchema) }),
+  }),
+} as const;
+
+export const mediaQueueEventClient = createEventClient(mediaQueueEvents);
