@@ -46,7 +46,13 @@ export type ChannelMessage =
   | {
       type: "MEDIA_JOB_SUBMIT";
       jobId: string;
-      kind: "image" | "video" | "music" | "speech" | "video_audio";
+      kind:
+        | "image"
+        | "video"
+        | "music"
+        | "speech"
+        | "video_audio"
+        | "storyboard";
       prompt: string;
       audioPrompt?: string;
       audioKind?: "music" | "speech";

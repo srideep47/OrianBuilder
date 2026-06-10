@@ -44,6 +44,7 @@ const KIND_META: Record<
   music: { label: "Music", icon: Music },
   speech: { label: "Speech", icon: Mic },
   video_audio: { label: "Video + Audio", icon: Clapperboard },
+  storyboard: { label: "Storyboard (script → video)", icon: ListVideo },
 };
 
 const ASPECT_RATIOS: MediaAspectRatio[] = ["16:9", "9:16", "1:1", "4:3", "3:4"];
@@ -135,6 +136,30 @@ function JobRow({
             {job.audioPrompt}
           </p>
         ) : null}
+        {job.scenes?.length ? (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1">
+            {job.scenes.map((s) => (
+              <span
+                key={s.index}
+                title={`${s.index}. ${s.title}`}
+                className={cn(
+                  "h-2.5 w-2.5 rounded-full",
+                  s.status === "done"
+                    ? "bg-green-500"
+                    : s.status === "generating"
+                      ? "animate-pulse bg-primary"
+                      : s.status === "failed"
+                        ? "bg-destructive"
+                        : "bg-muted-foreground/30",
+                )}
+              />
+            ))}
+            <span className="ml-1 text-[11px] text-muted-foreground">
+              {job.scenes.filter((s) => s.status === "done").length}/
+              {job.scenes.length} scenes
+            </span>
+          </div>
+        ) : null}
         {job.error ? (
           <p className="mt-1 text-xs text-destructive">{job.error}</p>
         ) : null}
@@ -207,8 +232,9 @@ export default function MediaQueuePage() {
   );
 
   const jobs = jobsQuery.data ?? [];
-  const needsAudio = kind === "video_audio";
-  const needsDuration = kind !== "image";
+  const isStoryboard = kind === "storyboard";
+  const needsAudio = kind === "video_audio" || isStoryboard;
+  const needsDuration = kind !== "image" && !isStoryboard;
 
   const submit = async () => {
     if (!prompt.trim()) {
@@ -318,15 +344,17 @@ export default function MediaQueuePage() {
           <Label>Prompt</Label>
           <Textarea
             placeholder={
-              kind === "speech"
-                ? "Text to speak…"
-                : kind === "music"
-                  ? "Music style, mood, instruments…"
-                  : "Describe what to generate…"
+              isStoryboard
+                ? `Paste a multi-scene script. Example:\n\nStyle: Bright 2D cartoon animation, vibrant colors\nScene 1: Intro (0:08 - 0:24)\nPrompt: A bright underwater coral reef with friendly fish…\nScene 2: Baby Shark (0:24 - 0:32)\nPrompt: A cute yellow cartoon baby shark swimming…\n\nEach scene is generated separately, auto-edited together in order, and a matched soundtrack is added.`
+                : kind === "speech"
+                  ? "Text to speak…"
+                  : kind === "music"
+                    ? "Music style, mood, instruments…"
+                    : "Describe what to generate…"
             }
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            rows={3}
+            rows={isStoryboard ? 10 : 3}
           />
         </div>
 

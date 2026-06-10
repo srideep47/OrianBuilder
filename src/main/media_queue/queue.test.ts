@@ -27,11 +27,17 @@ function makeDeps(overrides: Partial<MediaQueueDeps> = {}): {
   deps: MediaQueueDeps;
   generated: MediaGenerationRequest[];
   muxCalls: Array<{ video: string; audio: string; out: string }>;
+  concatCalls: Array<{ inputs: string[]; width: number; height: number }>;
   imported: Array<{ src: string; share: boolean }>;
   updates: MediaJob[];
 } {
   const generated: MediaGenerationRequest[] = [];
   const muxCalls: Array<{ video: string; audio: string; out: string }> = [];
+  const concatCalls: Array<{
+    inputs: string[];
+    width: number;
+    height: number;
+  }> = [];
   const imported: Array<{ src: string; share: boolean }> = [];
   const updates: MediaJob[] = [];
   const deps: MediaQueueDeps = {
@@ -49,6 +55,13 @@ function makeDeps(overrides: Partial<MediaQueueDeps> = {}): {
       muxCalls.push({ video, audio, out });
       await fs.writeFile(out, "muxed-bytes");
     },
+    concat: async (inputs, target, out) => {
+      concatCalls.push({ inputs: [...inputs], ...target });
+      await fs.writeFile(out, "concat-bytes");
+    },
+    parseScript: async () => {
+      throw new Error("parseScript not stubbed for this test");
+    },
     importToStore: async (src, opts) => {
       imported.push({ src, share: opts.share });
       return `stored-${path.basename(src)}`;
@@ -58,7 +71,7 @@ function makeDeps(overrides: Partial<MediaQueueDeps> = {}): {
     },
     ...overrides,
   };
-  return { deps, generated, muxCalls, imported, updates };
+  return { deps, generated, muxCalls, concatCalls, imported, updates };
 }
 
 beforeEach(async () => {
@@ -229,6 +242,100 @@ describe("MediaJobQueue", () => {
     await queue.init();
     // The recovered job re-runs to completion.
     await waitFor(() => queue.list()[0]?.status === "done");
+  });
+
+  it("runs a storyboard: scenes in order → concat → soundtrack → mux", async () => {
+    const queue = new MediaJobQueue();
+    const { deps, generated, muxCalls, concatCalls, imported } = makeDeps({
+      parseScript: async () => ({
+        style: "Bright 2D cartoon",
+        scenes: [
+          { index: 1, title: "Intro", prompt: "coral reef", durationSec: 16 },
+          {
+            index: 2,
+            title: "Baby Shark",
+            prompt: "yellow shark",
+            durationSec: 8,
+          },
+          {
+            index: 3,
+            title: "Outro",
+            prompt: "the end bubbles",
+            durationSec: 8,
+          },
+        ],
+      }),
+    });
+    queue.setDeps(deps);
+
+    queue.enqueue(
+      {
+        kind: "storyboard",
+        prompt: "the full script text",
+        aspectRatio: "16:9",
+      },
+      { source: "local" },
+    );
+    await waitFor(() => queue.list()[0]?.status === "done", 5_000);
+
+    // Three video clips in scene order, style prepended, durations threaded.
+    const videos = generated.filter((g) => g.modelType === "video");
+    expect(videos).toHaveLength(3);
+    expect(videos[0]!.prompt).toBe("Bright 2D cartoon. coral reef");
+    expect(videos[1]!.prompt).toContain("yellow shark");
+    expect(videos[0]!.options).toMatchObject({ duration_s: 16 });
+
+    // Auto-edit: one concat of the three clips at the final 16:9 resolution.
+    expect(concatCalls).toHaveLength(1);
+    expect(concatCalls[0]!.inputs).toHaveLength(3);
+    expect(concatCalls[0]).toMatchObject({ width: 1280, height: 720 });
+
+    // One matched soundtrack over the total duration (16+8+8), then mux.
+    const music = generated.filter((g) => g.modelType === "music");
+    expect(music).toHaveLength(1);
+    expect(music[0]!.options).toMatchObject({ duration_s: 32 });
+    expect(muxCalls).toHaveLength(1);
+
+    // One final file imported; per-scene progress all done.
+    expect(imported).toHaveLength(1);
+    const job = queue.list()[0]!;
+    expect(job.scenes?.map((s) => s.status)).toEqual(["done", "done", "done"]);
+    expect(job.outputFileNames).toHaveLength(1);
+  });
+
+  it("skips concat for a single-scene storyboard and fails cleanly on parse errors", async () => {
+    const queue = new MediaJobQueue();
+    const { deps, concatCalls, muxCalls } = makeDeps({
+      parseScript: async (script) => {
+        if (script === "bad script")
+          throw new Error("Could not parse the script");
+        return {
+          scenes: [
+            { index: 1, title: "Only", prompt: "one scene", durationSec: 5 },
+          ],
+        };
+      },
+    });
+    queue.setDeps(deps);
+
+    queue.enqueue(
+      { kind: "storyboard", prompt: "bad script" },
+      { source: "local" },
+    );
+    await waitFor(() => queue.list()[0]?.status === "failed");
+    expect(queue.list()[0]!.error).toContain("Could not parse");
+
+    queue.enqueue(
+      { kind: "storyboard", prompt: "good single scene" },
+      { source: "local" },
+    );
+    await waitFor(() =>
+      queue
+        .list()
+        .some((j) => j.prompt === "good single scene" && j.status === "done"),
+    );
+    expect(concatCalls).toHaveLength(0); // single scene → no concat
+    expect(muxCalls).toHaveLength(1); // soundtrack still muxed
   });
 
   it("applies peer status updates to mirror entries only", async () => {

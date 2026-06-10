@@ -19,6 +19,8 @@ import {
   type MediaJob,
 } from "@/ipc/types/media_queue";
 import { getMediaJobQueue } from "@/main/media_queue/queue";
+import { createScriptParser } from "@/main/media_queue/script_parser";
+import { defaultGenerateText } from "@/main/flow/pipeline_wiring";
 import * as store from "@/main/generated_media/store";
 import { mediaShare } from "@/main/network/media-share";
 import { networkSwarm } from "@/main/network/swarm";
@@ -158,6 +160,32 @@ async function muxForQueue(
   }
 }
 
+async function concatForQueue(
+  inputPaths: string[],
+  target: { width: number; height: number; fps: number },
+  outputPath: string,
+): Promise<void> {
+  await ensureBackendHealthy();
+  const res = await fetch(`${MEDIA_AI_SERVER_URL}/v1/edit/concat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      input_paths: inputPaths,
+      output_path: outputPath,
+      mode: "reencode",
+      target_width: target.width,
+      target_height: target.height,
+      target_fps: target.fps,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `clip assembly failed (${res.status}): ${text.slice(0, 300)}`,
+    );
+  }
+}
+
 async function importToStore(
   srcPath: string,
   opts: { prompt: string; share: boolean },
@@ -237,6 +265,8 @@ export function registerMediaQueueHandlers(): void {
   queue.setDeps({
     generate: generateForQueue,
     mux: muxForQueue,
+    concat: concatForQueue,
+    parseScript: createScriptParser(defaultGenerateText),
     importToStore,
     onJobUpdate,
   });

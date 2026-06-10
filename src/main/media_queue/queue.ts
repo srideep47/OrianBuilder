@@ -14,6 +14,7 @@ import type {
   MediaGenerationRequest,
   MediaGenerationResult,
 } from "@/main/ipc/utils/model_orchestrator";
+import type { ParsedStoryboard } from "./script_parser";
 
 // =============================================================================
 // Orion Media Queue — core store + sequential worker
@@ -49,6 +50,14 @@ export interface MediaQueueDeps {
   ) => Promise<string>;
   /** Called on every job state change (renderer events + peer status updates). */
   onJobUpdate: (job: MediaJob) => void;
+  /** Parse a storyboard script into ordered scenes. Throws on unparseable input. */
+  parseScript: (script: string) => Promise<ParsedStoryboard>;
+  /** Concatenate ordered clips into one normalized mp4 at outputPath. */
+  concat: (
+    inputPaths: string[],
+    target: { width: number; height: number; fps: number },
+    outputPath: string,
+  ) => Promise<void>;
 }
 
 /** Per-kind dimensions for each aspect ratio, sized to the local backend's
@@ -74,6 +83,19 @@ const VIDEO_DIMENSIONS: Record<
   "1:1": { width: 448, height: 448 },
   "4:3": { width: 512, height: 384 },
   "3:4": { width: 384, height: 512 },
+};
+
+/** Final assembled-video resolution per aspect ratio (concat re-encode target;
+ *  individual clips are upscaled/padded to this). */
+const FINAL_DIMENSIONS: Record<
+  MediaAspectRatio,
+  { width: number; height: number }
+> = {
+  "16:9": { width: 1280, height: 720 },
+  "9:16": { width: 720, height: 1280 },
+  "1:1": { width: 1024, height: 1024 },
+  "4:3": { width: 1152, height: 864 },
+  "3:4": { width: 864, height: 1152 },
 };
 
 const EXT_BY_MODEL_TYPE: Record<string, string> = {
@@ -197,6 +219,7 @@ export class MediaJobQueue {
     job.status = "queued";
     job.stage = undefined;
     job.error = undefined;
+    job.scenes = undefined;
     job.startedAt = undefined;
     job.finishedAt = undefined;
     this.touch(job);
@@ -290,6 +313,126 @@ export class MediaJobQueue {
     return result.outputPath;
   }
 
+  /**
+   * Storyboard pipeline: parse the script → generate every scene's clip in
+   * playback order → auto-edit (concat, normalized to the final resolution)
+   * → lay one matched soundtrack over the whole video → import the final mp4.
+   * Returns the stored fileName, or null when the job was cancelled mid-way.
+   */
+  private async runStoryboard(
+    job: MediaJob,
+    cleanupPaths: string[],
+    share: boolean,
+  ): Promise<string | null> {
+    const deps = this.deps!;
+
+    // 1. Parse the script into ordered scenes (deterministic, LLM fallback).
+    job.stage = "parsing script";
+    this.touch(job);
+    const storyboard = await deps.parseScript(job.prompt);
+    const jobScenes: NonNullable<MediaJob["scenes"]> = storyboard.scenes.map(
+      (s) => ({
+        index: s.index,
+        title: s.title,
+        prompt: s.prompt,
+        durationSec: s.durationSec,
+        status: "pending",
+      }),
+    );
+    job.scenes = jobScenes;
+    this.touch(job);
+
+    // 2. Generate each scene clip in order. The global style is prepended to
+    //    every prompt so characters/palette stay consistent across clips.
+    const clipDims = VIDEO_DIMENSIONS[job.aspectRatio];
+    const clipPaths: string[] = [];
+    const total = storyboard.scenes.length;
+    for (let i = 0; i < total; i++) {
+      if (this.cancelled(job.id)) return null;
+      const scene = storyboard.scenes[i];
+      const jobScene = jobScenes[i];
+      jobScene.status = "generating";
+      try {
+        const fullPrompt = storyboard.style
+          ? `${storyboard.style}. ${scene.prompt}`
+          : scene.prompt;
+        const clipPath = await this.generateStage(
+          job,
+          `scene ${i + 1}/${total}`,
+          "video",
+          fullPrompt,
+          {
+            ...clipDims,
+            ...(scene.durationSec ? { duration_s: scene.durationSec } : {}),
+          },
+        );
+        cleanupPaths.push(clipPath);
+        clipPaths.push(clipPath);
+        jobScene.status = "done";
+        this.touch(job);
+      } catch (err) {
+        jobScene.status = "failed";
+        this.touch(job);
+        throw err;
+      }
+    }
+    if (this.cancelled(job.id)) return null;
+
+    // 3. Auto-edit: concat the clips in scene order, normalized to the final
+    //    resolution/fps. A single-scene storyboard skips the concat.
+    const finalDims = FINAL_DIMENSIONS[job.aspectRatio];
+    let assembledPath: string;
+    if (clipPaths.length === 1) {
+      assembledPath = clipPaths[0];
+    } else {
+      job.stage = "editing";
+      this.touch(job);
+      assembledPath = this.tmpPath("mp4");
+      await fs.mkdir(path.dirname(assembledPath), { recursive: true });
+      await deps.concat(clipPaths, { ...finalDims, fps: 24 }, assembledPath);
+      cleanupPaths.push(assembledPath);
+    }
+    if (this.cancelled(job.id)) return null;
+
+    // 4. Soundtrack: one matched audio track over the whole video (video
+    //    duration wins in the mux — short audio padded, long audio trimmed).
+    const totalDuration = storyboard.scenes.reduce(
+      (sum, s) => sum + (s.durationSec ?? 6),
+      0,
+    );
+    const audioKind = job.audioKind ?? "music";
+    const audioPrompt =
+      job.audioPrompt?.trim() ||
+      (audioKind === "music"
+        ? `Soundtrack for this video: ${storyboard.style ?? storyboard.scenes[0].prompt}`
+        : undefined);
+    let finalPath = assembledPath;
+    if (audioPrompt) {
+      const audioPath = await this.generateStage(
+        job,
+        "soundtrack",
+        audioKind === "music" ? "music" : "audio",
+        audioPrompt,
+        { duration_s: Math.min(totalDuration, 600) },
+      );
+      cleanupPaths.push(audioPath);
+      if (this.cancelled(job.id)) return null;
+
+      job.stage = "mux";
+      this.touch(job);
+      finalPath = this.tmpPath("mp4");
+      await fs.mkdir(path.dirname(finalPath), { recursive: true });
+      await deps.mux(assembledPath, audioPath, finalPath);
+      cleanupPaths.push(finalPath);
+    }
+
+    // 5. Import the finished video into the library.
+    const title = storyboard.style
+      ? `storyboard: ${storyboard.style.slice(0, 60)}`
+      : `storyboard: ${jobScenes[0].title}`;
+    return deps.importToStore(finalPath, { prompt: title, share });
+  }
+
   private async runJob(job: MediaJob): Promise<void> {
     const deps = this.deps!;
     job.status = "running";
@@ -302,7 +445,11 @@ export class MediaJobQueue {
       const share = job.requestedBy.source === "peer";
       const outputs: string[] = [];
 
-      if (job.kind === "video_audio") {
+      if (job.kind === "storyboard") {
+        const fileName = await this.runStoryboard(job, cleanupPaths, share);
+        if (fileName === null) return; // cancelled between scenes
+        outputs.push(fileName);
+      } else if (job.kind === "video_audio") {
         const dims = VIDEO_DIMENSIONS[job.aspectRatio];
         const videoPath = await this.generateStage(
           job,

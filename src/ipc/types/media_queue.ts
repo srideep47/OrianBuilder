@@ -24,8 +24,21 @@ export const MediaJobKindSchema = z.enum([
   "speech",
   /** Video plus a matched audio track (music or narration), muxed into one mp4. */
   "video_audio",
+  /** A whole multi-scene script: parse → per-scene clips → auto-edit in order
+   *  → one final video with a matched soundtrack. */
+  "storyboard",
 ]);
 export type MediaJobKind = z.infer<typeof MediaJobKindSchema>;
+
+/** One parsed scene of a storyboard job (progress surfaced to the UI). */
+export const MediaJobSceneSchema = z.object({
+  index: z.number(),
+  title: z.string(),
+  prompt: z.string(),
+  durationSec: z.number().optional(),
+  status: z.enum(["pending", "generating", "done", "failed"]),
+});
+export type MediaJobScene = z.infer<typeof MediaJobSceneSchema>;
 
 export const MediaAspectRatioSchema = z.enum([
   "16:9",
@@ -67,8 +80,10 @@ export const MediaJobSchema = z.object({
   /** Target duration in seconds (video/music/speech). */
   durationSec: z.number().optional(),
   status: MediaJobStatusSchema,
-  /** Present while running: which stage is active (e.g. "video", "audio", "mux"). */
+  /** Present while running: which stage is active (e.g. "video", "scene 3/12", "mux"). */
   stage: z.string().optional(),
+  /** Storyboard jobs: the parsed scenes with per-scene progress. */
+  scenes: z.array(MediaJobSceneSchema).optional(),
   error: z.string().optional(),
   /** Files in the generated-media store produced by this job. */
   outputFileNames: z.array(z.string()).optional(),
