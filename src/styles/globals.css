@@ -226,15 +226,22 @@ body[data-scroll-locked] .app-region-drag {
   will-change: transform;
 }
 
-/* Galaxy mode — card glass */
+/* Galaxy mode — card glass.
+   Heavy blur (18px) + saturate on every card was the dominant scroll-jank
+   source: pages like Apps / Models / 3D Assets render many cards, and the
+   browser had to re-rasterize each blurred region on every scroll frame.
+   Dropping to 6px keeps the glass look but is ~5× cheaper per frame, and
+   `contain: paint` isolates each card's repaint so scrolling no longer
+   invalidates off-screen ones. */
 body.galaxy-mode [data-slot="card"],
 body.galaxy-mode .bg-card {
-  backdrop-filter: blur(18px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(18px) saturate(180%) !important;
+  backdrop-filter: blur(6px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(6px) saturate(140%) !important;
   position: relative;
   z-index: 2;
   transform: translateZ(0);
   will-change: transform;
+  contain: paint;
 }
 
 /* Dark glass for the main content container */
@@ -527,11 +534,13 @@ body.galaxy-mode [data-slot="sidebar-wrapper"] {
   z-index: 1;
 }
 
-/* Sidebar — opaque dark so sidebar chrome doesn't compete with rays */
+/* Sidebar — opaque dark so sidebar chrome doesn't compete with rays.
+   Background is already 95% opaque, so the heavy blur was doing very little
+   visually but cost the GPU on every scroll. Dropped to a tiny blur. */
 body.galaxy-mode [data-sidebar="sidebar"] {
   background: rgba(6, 4, 14, 0.95) !important;
-  backdrop-filter: blur(20px) !important;
-  -webkit-backdrop-filter: blur(20px) !important;
+  backdrop-filter: blur(4px) !important;
+  -webkit-backdrop-filter: blur(4px) !important;
 }
 
 /* ── Sidebar: force cream text on ALL children ────────────────── */
@@ -552,8 +561,9 @@ body.galaxy-mode [data-sidebar="group-label"] * {
 
 /* ── Sidebar panel (Recent Chats / App List / etc.) ───────────── */
 body.galaxy-mode [data-panel="sidebar-panel"] {
-  backdrop-filter: blur(20px) saturate(160%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(160%) !important;
+  backdrop-filter: blur(8px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(8px) saturate(140%) !important;
+  contain: paint;
 }
 body.galaxy-mode [data-panel="sidebar-panel"],
 body.galaxy-mode [data-panel="sidebar-panel"] span,

@@ -62,6 +62,7 @@ import { registerSharedMediaHandlers } from "./handlers/shared_media_handlers";
 import { registerMediaQueueHandlers } from "./handlers/media_queue_handlers";
 import { registerYouTubeHandlers } from "./handlers/youtube_handlers";
 import { registerAndroidEmulatorHandlers } from "./handlers/android_emulator_handlers";
+import { registerScheduleHandlers } from "./handlers/schedule_handlers";
 
 export function registerIpcHandlers() {
   // Register all IPC handlers by category
@@ -129,4 +130,5 @@ export function registerIpcHandlers() {
   registerMediaQueueHandlers();
   registerYouTubeHandlers();
   registerAndroidEmulatorHandlers();
+  registerScheduleHandlers();
 }

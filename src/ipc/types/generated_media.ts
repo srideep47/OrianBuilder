@@ -47,6 +47,17 @@ export const generatedMediaContracts = {
     input: z.object({ fileName: z.string() }),
     output: z.object({ ok: z.boolean() }),
   }),
+  /**
+   * Resolve the absolute on-disk path of a stored media item. The renderer
+   * uses this for share-to-X-platform flows that need to hand the local file
+   * off to the OS (e.g. `shell.showItemInFolder` for the Instagram share).
+   * The store already validates the filename against directory traversal.
+   */
+  getFilePath: defineContract({
+    channel: "generated-media:get-file-path",
+    input: z.object({ fileName: z.string() }),
+    output: z.object({ path: z.string() }),
+  }),
   /** Toggle whether an item is shared with trusted peers. */
   setShared: defineContract({
     channel: "generated-media:set-shared",

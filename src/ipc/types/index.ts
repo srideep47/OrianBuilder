@@ -124,6 +124,17 @@ export {
   androidEmulatorEvents,
   androidEmulatorEventClient,
 } from "./android_emulator";
+export {
+  scheduleContracts,
+  scheduleClient,
+  scheduleEvents,
+  scheduleEventClient,
+} from "./schedule";
+export type {
+  ScheduleJob,
+  SchedulePlatform,
+  ScheduleStatus,
+} from "./schedule";
 export type {
   AndroidEmulatorStatus,
   AndroidSetupProgress,
@@ -651,6 +662,7 @@ import {
   designStudioClient,
   designStudioChatStreamClient,
 } from "./design_studio";
+import { scheduleClient, scheduleEventClient } from "./schedule";
 
 /**
  * Unified IPC client with all domains organized by namespace.
@@ -730,6 +742,7 @@ export const ipc = {
   androidEmulator: androidEmulatorClient,
   designStudio: designStudioClient,
   designStudioStream: designStudioChatStreamClient,
+  schedule: scheduleClient,
 
   // Event clients for main->renderer pub/sub
   events: {
@@ -748,5 +761,6 @@ export const ipc = {
     mediaQueue: mediaQueueEventClient,
     youtube: youtubeEventClient,
     androidEmulator: androidEmulatorEventClient,
+    schedule: scheduleEventClient,
   },
 } as const;
