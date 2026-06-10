@@ -31,8 +31,9 @@ vi.mock("@/main/ipc/utils/model_orchestrator", () => ({
   }),
 }));
 
-import { getCapability } from "./capability_registry";
+import { getCapability, setRemoteMediaDispatcher } from "./capability_registry";
 import { selectProfileForVram } from "./model_profiles";
+import { afterEach } from "vitest";
 
 function makeCtx(): FlowContext {
   return {
@@ -158,5 +159,91 @@ describe("capability registry", () => {
       prompt: "promo video",
     });
     expect(output.outputPath).toBeUndefined();
+  });
+});
+
+describe("P2P media dispatch", () => {
+  afterEach(() => {
+    setRemoteMediaDispatcher(null);
+  });
+
+  it("uses a remote peer's result without touching the local chain", async () => {
+    const remote = vi.fn().mockResolvedValue({
+      success: true,
+      outputPath: "C:\\tmp\\remote-logo.png",
+      durationMs: 30,
+    });
+    setRemoteMediaDispatcher(remote);
+
+    const output = await getCapability("generate_image").execute(
+      { prompt: "coffee logo" },
+      makeCtx(),
+    );
+
+    expect(remote).toHaveBeenCalledWith(
+      expect.objectContaining({ modelType: "image", prompt: "coffee logo" }),
+    );
+    expect(output).toMatchObject({ outputPath: "C:\\tmp\\remote-logo.png" });
+    expect(mocks.dispatchMediaGeneration).not.toHaveBeenCalled();
+  });
+
+  it("requeues locally when the remote peer fails", async () => {
+    setRemoteMediaDispatcher(
+      vi.fn().mockResolvedValue({
+        success: false,
+        outputPath: "x",
+        durationMs: 1,
+        error: "peer disconnected during media generation",
+      }),
+    );
+    mocks.dispatchMediaGeneration.mockResolvedValueOnce({
+      success: true,
+      outputPath: "C:\\tmp\\local-logo.png",
+      durationMs: 12,
+    });
+
+    const output = await getCapability("generate_image").execute(
+      { prompt: "coffee logo" },
+      makeCtx(),
+    );
+
+    expect(output).toMatchObject({ outputPath: "C:\\tmp\\local-logo.png" });
+    expect(mocks.dispatchMediaGeneration).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs locally when placement declines (returns null)", async () => {
+    const remote = vi.fn().mockResolvedValue(null);
+    setRemoteMediaDispatcher(remote);
+    mocks.dispatchMediaGeneration.mockResolvedValueOnce({
+      success: true,
+      outputPath: "C:\\tmp\\local.png",
+      durationMs: 8,
+    });
+
+    const output = await getCapability("generate_image").execute(
+      { prompt: "coffee logo" },
+      makeCtx(),
+    );
+
+    expect(remote).toHaveBeenCalledTimes(1);
+    expect(output).toMatchObject({ outputPath: "C:\\tmp\\local.png" });
+  });
+
+  it("requeues locally when the remote dispatcher throws", async () => {
+    setRemoteMediaDispatcher(
+      vi.fn().mockRejectedValue(new Error("network exploded")),
+    );
+    mocks.dispatchMediaGeneration.mockResolvedValueOnce({
+      success: true,
+      outputPath: "C:\\tmp\\local.png",
+      durationMs: 8,
+    });
+
+    const output = await getCapability("generate_image").execute(
+      { prompt: "coffee logo" },
+      makeCtx(),
+    );
+
+    expect(output).toMatchObject({ outputPath: "C:\\tmp\\local.png" });
   });
 });

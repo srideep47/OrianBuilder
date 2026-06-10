@@ -25,6 +25,13 @@ import type {
 export interface RunFlowOptions {
   /** Selected models + best per-stage settings; threaded to media capabilities. */
   mediaProfile?: HardwareModelProfile;
+  /**
+   * Maximum dependency-independent steps to run concurrently. Default 1 keeps
+   * the proven sequential order (and per-modality review batches). Values >1
+   * pay off when steps are dispatched to different peers; local model use is
+   * still serialized by the lease manager / single-residency gate.
+   */
+  maxParallel?: number;
 }
 
 const logger = log.scope("flow-runner");
@@ -135,6 +142,24 @@ async function runReviewCheckpoint(
   }
 }
 
+/** Run `fn` over `items` with at most `limit` in flight at once. */
+async function runPool<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  const queue = [...items];
+  const workers = Array.from(
+    { length: Math.max(1, Math.min(limit, queue.length)) },
+    async () => {
+      for (let item = queue.shift(); item !== undefined; item = queue.shift()) {
+        await fn(item);
+      }
+    },
+  );
+  await Promise.all(workers);
+}
+
 /**
  * Core executor shared by fresh runs and resumes. `seededResults` carries the
  * successful step results of a previous attempt; those steps are not re-run,
@@ -147,9 +172,11 @@ async function executeFlow(
   seededResults: Map<string, StepResult>,
   startedAt: number,
 ): Promise<FlowRunResult> {
+  const maxParallel = Math.max(1, options.maxParallel ?? 1);
   logger.info(
     `flow ${flowId} ${seededResults.size > 0 ? "resuming" : "starting"}: ` +
-      `"${intent.goal}" (${intent.steps.length} steps, ${seededResults.size} already done)`,
+      `"${intent.goal}" (${intent.steps.length} steps, ${seededResults.size} already done` +
+      `${maxParallel > 1 ? `, maxParallel=${maxParallel}` : ""})`,
   );
 
   // Clone steps so review-checkpoint prompt revisions never mutate the caller's
@@ -158,13 +185,22 @@ async function executeFlow(
     ...s,
     input: { ...s.input },
   }));
+  const stepIds = new Set(steps.map((s) => s.id));
 
   const { appPath, mediaDir } = await resolveMediaContext(intent.appId);
   const priorOutputs: Record<string, Record<string, unknown>> = {};
-  const stepResults: StepResult[] = [];
+  const resultsById = new Map<string, StepResult>();
   const nonSuccessfulStepIds = new Set<string>();
-  /** Contiguous same-capability media steps since the last checkpoint. */
-  let batch: Array<{ step: FlowStep; output: Record<string, unknown> }> = [];
+
+  for (const [id, seeded] of seededResults) {
+    resultsById.set(id, seeded);
+    priorOutputs[id] = seeded.output;
+  }
+
+  const orderedResults = () =>
+    steps
+      .filter((s) => resultsById.has(s.id))
+      .map((s) => resultsById.get(s.id)!);
 
   const persist = (status: "running" | FlowRunStatus) =>
     saveFlowRunSafe({
@@ -173,43 +209,28 @@ async function executeFlow(
       status,
       startedAt,
       updatedAt: Date.now(),
-      steps: stepResults,
+      steps: orderedResults(),
     });
 
-  await persist("running");
+  const recordSkip = (step: FlowStep, reason: string) => {
+    nonSuccessfulStepIds.add(step.id);
+    resultsById.set(step.id, {
+      stepId: step.id,
+      capability: step.capability,
+      status: "skipped",
+      output: {},
+      error: reason,
+      durationMs: 0,
+    });
+    logger.warn(`flow ${flowId} skip step ${step.id}: ${reason}`);
+  };
 
-  for (let i = 0; i < steps.length; i++) {
-    const step = steps[i];
-
-    // Resume path: keep the previous successful result, re-thread its output.
-    const seeded = seededResults.get(step.id);
-    if (seeded) {
-      priorOutputs[step.id] = seeded.output;
-      stepResults.push(seeded);
-      continue;
-    }
-
+  /** Execute one step; returns its output, or null when it failed. Swap events
+   *  drained after the step are attributed to it (approximate when parallel). */
+  const executeStep = async (
+    step: FlowStep,
+  ): Promise<Record<string, unknown> | null> => {
     const stepStarted = Date.now();
-
-    // Skip if a dependency did not succeed.
-    const unmetDep = (step.dependsOn ?? []).find((d) =>
-      nonSuccessfulStepIds.has(d),
-    );
-    if (unmetDep) {
-      nonSuccessfulStepIds.add(step.id);
-      stepResults.push({
-        stepId: step.id,
-        capability: step.capability,
-        status: "skipped",
-        output: {},
-        error: `Skipped: dependency "${unmetDep}" did not succeed`,
-        durationMs: 0,
-      });
-      logger.warn(`flow ${flowId} skip step ${step.id} (dep ${unmetDep})`);
-      await persist("running");
-      continue;
-    }
-
     const ctx: FlowContext = {
       goal: intent.goal,
       appId: intent.appId,
@@ -219,18 +240,12 @@ async function executeFlow(
       priorOutputs,
       mediaProfile: options.mediaProfile,
     };
-
-    // Drain stale swap events so this step only reports its own swaps.
-    getModelLeaseManager().drainSwapTelemetry();
-
-    let executedOutput: Record<string, unknown> | null = null;
     try {
       const capability = getCapability(step.capability);
       const output = await capability.execute(step.input, ctx);
-      executedOutput = output;
       priorOutputs[step.id] = output;
       const swaps = getModelLeaseManager().drainSwapTelemetry();
-      stepResults.push({
+      resultsById.set(step.id, {
         stepId: step.id,
         capability: step.capability,
         status: "success",
@@ -239,11 +254,12 @@ async function executeFlow(
         swaps: swaps.length > 0 ? swaps : undefined,
       });
       logger.info(`flow ${flowId} step ${step.id} ok`);
+      return output;
     } catch (err) {
       nonSuccessfulStepIds.add(step.id);
       const message = err instanceof Error ? err.message : String(err);
       const swaps = getModelLeaseManager().drainSwapTelemetry();
-      stepResults.push({
+      resultsById.set(step.id, {
         stepId: step.id,
         capability: step.capability,
         status: "failed",
@@ -253,29 +269,116 @@ async function executeFlow(
         swaps: swaps.length > 0 ? swaps : undefined,
       });
       logger.error(`flow ${flowId} step ${step.id} failed: ${message}`);
+      return null;
     }
-    await persist("running");
+  };
 
-    // Modality-batch tracking + review checkpoint at the batch boundary.
-    if (executedOutput !== null && MEDIA_CAPABILITIES.has(step.capability)) {
-      batch.push({ step, output: executedOutput });
-      const next = steps[i + 1];
-      const atBoundary = !next || next.capability !== step.capability;
-      if (atBoundary) {
-        await runReviewCheckpoint(
-          flowId,
-          intent.goal,
-          batch,
-          steps.slice(i + 1).filter((s) => !seededResults.has(s.id)),
-        );
+  await persist("running");
+
+  if (maxParallel <= 1) {
+    // ── Sequential path: original order, per-modality review batches ────────
+    /** Contiguous same-capability media steps since the last checkpoint. */
+    let batch: Array<{ step: FlowStep; output: Record<string, unknown> }> = [];
+
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+      if (seededResults.has(step.id)) continue;
+
+      const unmetDep = (step.dependsOn ?? []).find((d) =>
+        nonSuccessfulStepIds.has(d),
+      );
+      if (unmetDep) {
+        recordSkip(step, `Skipped: dependency "${unmetDep}" did not succeed`);
+        await persist("running");
+        continue;
+      }
+
+      // Drain stale swap events so this step only reports its own swaps.
+      getModelLeaseManager().drainSwapTelemetry();
+      const output = await executeStep(step);
+      await persist("running");
+
+      // Modality-batch tracking + review checkpoint at the batch boundary.
+      if (output !== null && MEDIA_CAPABILITIES.has(step.capability)) {
+        batch.push({ step, output });
+        const next = steps[i + 1];
+        const atBoundary = !next || next.capability !== step.capability;
+        if (atBoundary) {
+          await runReviewCheckpoint(
+            flowId,
+            intent.goal,
+            batch,
+            steps.slice(i + 1).filter((s) => !seededResults.has(s.id)),
+          );
+          batch = [];
+        }
+      } else if (output === null) {
+        // A failed step ends the current batch without a review.
         batch = [];
       }
-    } else if (executedOutput === null) {
-      // A failed step ends the current batch without a review.
-      batch = [];
+    }
+  } else {
+    // ── Parallel path: dependency waves, bounded concurrency ────────────────
+    const succeeded = new Set<string>(seededResults.keys());
+    // A dependency is satisfiable only by a successful step; references to
+    // unknown step ids are ignored (matching the sequential path's behavior).
+    const depSatisfied = (d: string) => succeeded.has(d) || !stepIds.has(d);
+    let pending = steps.filter((s) => !seededResults.has(s.id));
+
+    while (pending.length > 0) {
+      // Propagate failures: skip anything depending on a non-successful step.
+      const skipped = new Set<string>();
+      for (const step of pending) {
+        const unmetDep = (step.dependsOn ?? []).find((d) =>
+          nonSuccessfulStepIds.has(d),
+        );
+        if (unmetDep) {
+          recordSkip(step, `Skipped: dependency "${unmetDep}" did not succeed`);
+          skipped.add(step.id);
+        }
+      }
+      if (skipped.size > 0) {
+        pending = pending.filter((s) => !skipped.has(s.id));
+      }
+      if (pending.length === 0) break;
+
+      const ready = pending.filter((s) =>
+        (s.dependsOn ?? []).every(depSatisfied),
+      );
+      if (ready.length === 0) {
+        for (const step of pending) {
+          recordSkip(step, "Skipped: unresolvable dependencies");
+        }
+        break;
+      }
+
+      getModelLeaseManager().drainSwapTelemetry();
+      const waveBatch: Array<{
+        step: FlowStep;
+        output: Record<string, unknown>;
+      }> = [];
+      await runPool(ready, maxParallel, async (step) => {
+        const output = await executeStep(step);
+        if (output !== null && MEDIA_CAPABILITIES.has(step.capability)) {
+          waveBatch.push({ step, output });
+        }
+      });
+
+      const readyIds = new Set(ready.map((s) => s.id));
+      pending = pending.filter((s) => !readyIds.has(s.id));
+      for (const step of ready) {
+        if (resultsById.get(step.id)?.status === "success") {
+          succeeded.add(step.id);
+        }
+      }
+      await persist("running");
+
+      // One review checkpoint per wave: the wave's media output is the batch.
+      await runReviewCheckpoint(flowId, intent.goal, waveBatch, pending);
     }
   }
 
+  const stepResults = orderedResults();
   const result: FlowRunResult = {
     flowId,
     goal: intent.goal,

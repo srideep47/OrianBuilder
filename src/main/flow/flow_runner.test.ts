@@ -285,6 +285,114 @@ describe("resumeFlow", () => {
   });
 });
 
+describe("parallel execution (maxParallel > 1)", () => {
+  it("runs independent steps concurrently while honoring dependencies", async () => {
+    let inFlight = 0;
+    let peakInFlight = 0;
+    const track = async <T>(fn: () => Promise<T>): Promise<T> => {
+      inFlight += 1;
+      peakInFlight = Math.max(peakInFlight, inFlight);
+      await new Promise((r) => setTimeout(r, 20));
+      inFlight -= 1;
+      return fn();
+    };
+
+    const buildSeenAt: { value: number } = { value: 0 };
+    executeMocks["generate_image"] = vi.fn(() =>
+      track(async () => ({ outputPath: "/tmp/a.png" })),
+    );
+    executeMocks["generate_video"] = vi.fn(() =>
+      track(async () => ({ outputPath: "/tmp/b.mp4" })),
+    );
+    executeMocks["build_app"] = vi.fn(async (_input, ctx) => {
+      buildSeenAt.value = Object.keys(ctx.priorOutputs).length;
+      return { missionId: 1 };
+    });
+
+    const result = await runFlow(
+      makeIntent([
+        { id: "img", capability: "generate_image", input: { prompt: "x" } },
+        { id: "vid", capability: "generate_video", input: { prompt: "y" } },
+        {
+          id: "build",
+          capability: "build_app",
+          input: {},
+          dependsOn: ["img", "vid"],
+        },
+      ]),
+      { maxParallel: 2 },
+    );
+
+    expect(result.status).toBe("completed");
+    expect(peakInFlight).toBe(2); // img + vid overlapped
+    expect(buildSeenAt.value).toBe(2); // build only ran after both finished
+  });
+
+  it("skips dependents of failed steps and reports partial", async () => {
+    executeMocks["generate_image"] = vi.fn(async () => {
+      throw new Error("gen boom");
+    });
+    executeMocks["generate_video"] = vi.fn(async () => ({
+      outputPath: "/b",
+    }));
+    executeMocks["build_app"] = vi.fn(async () => ({ missionId: 1 }));
+
+    const result = await runFlow(
+      makeIntent([
+        { id: "img", capability: "generate_image", input: { prompt: "x" } },
+        { id: "vid", capability: "generate_video", input: { prompt: "y" } },
+        {
+          id: "build",
+          capability: "build_app",
+          input: {},
+          dependsOn: ["img"],
+        },
+      ]),
+      { maxParallel: 2 },
+    );
+
+    expect(result.status).toBe("partial");
+    const byId = new Map(result.steps.map((s) => [s.stepId, s.status]));
+    expect(byId.get("img")).toBe("failed");
+    expect(byId.get("vid")).toBe("success");
+    expect(byId.get("build")).toBe("skipped");
+    expect(executeMocks["build_app"]).not.toHaveBeenCalled();
+  });
+
+  it("runs the review checkpoint once per wave with pending steps", async () => {
+    executeMocks["generate_image"] = vi.fn(async () => ({
+      outputPath: "/a.png",
+    }));
+    const videoPrompts: string[] = [];
+    executeMocks["generate_video"] = vi.fn(async (input) => {
+      videoPrompts.push(input.prompt);
+      return { outputPath: "/b.mp4" };
+    });
+
+    const reviewer = vi.fn(async (_cp: FlowReviewCheckpoint) => ({
+      promptRevisions: { vid: "revised video prompt" },
+    }));
+    setFlowReviewer(reviewer);
+
+    const result = await runFlow(
+      makeIntent([
+        { id: "img", capability: "generate_image", input: { prompt: "x" } },
+        {
+          id: "vid",
+          capability: "generate_video",
+          input: { prompt: "original video prompt" },
+          dependsOn: ["img"],
+        },
+      ]),
+      { maxParallel: 2 },
+    );
+
+    expect(result.status).toBe("completed");
+    expect(reviewer).toHaveBeenCalledTimes(1); // wave 2 has no pending steps
+    expect(videoPrompts).toEqual(["revised video prompt"]);
+  });
+});
+
 describe("swap telemetry", () => {
   it("attaches per-step swap events and aggregates flow totals", async () => {
     const manager = getModelLeaseManager();

@@ -149,6 +149,25 @@ export function setTrackingExecutor(fn: TrackingExecutor | null): void {
   trackingExecutor = fn;
 }
 
+/**
+ * P2P job dispatch hook (Orion network). Consulted before local generation:
+ * returns `null` when the job should run locally, a success result when a
+ * trusted peer generated the asset, or a failure result when the chosen peer
+ * could not — in which case the local chain runs as the fallback ("requeue").
+ * Injected by the IPC layer so this registry stays free of network imports.
+ */
+export type RemoteMediaDispatcher = (
+  request: MediaGenerationRequest,
+) => Promise<MediaGenerationResult | null>;
+
+let remoteMediaDispatcher: RemoteMediaDispatcher | null = null;
+
+export function setRemoteMediaDispatcher(
+  fn: RemoteMediaDispatcher | null,
+): void {
+  remoteMediaDispatcher = fn;
+}
+
 // =============================================================================
 // Media helpers
 // =============================================================================
@@ -219,8 +238,6 @@ async function runMedia(
   outputPath: string,
   opts?: { modelId?: string; options?: Record<string, unknown> },
 ): Promise<MediaGenerationResult> {
-  initMediaDispatcher();
-  const orch = getOrchestrator();
   const request: MediaGenerationRequest = {
     modelType,
     prompt,
@@ -228,6 +245,29 @@ async function runMedia(
     modelId: opts?.modelId,
     options: opts?.options,
   };
+
+  // P2P placement first: a trusted peer may be better suited (or explicitly
+  // selected). A remote failure is NOT final — the job is requeued locally by
+  // simply continuing into the local chain below.
+  if (remoteMediaDispatcher) {
+    try {
+      const remote = await remoteMediaDispatcher(request);
+      if (remote?.success) return remote;
+      if (remote) {
+        logger.warn(
+          `remote ${modelType} generation failed (${remote.error ?? "unknown"}); requeueing locally`,
+        );
+      }
+    } catch (err) {
+      logger.warn(
+        `remote ${modelType} dispatch threw; requeueing locally`,
+        err,
+      );
+    }
+  }
+
+  initMediaDispatcher();
+  const orch = getOrchestrator();
   if (orch.getStatus().state === "llm-loaded") {
     return orch.runMediaGeneration(request);
   }

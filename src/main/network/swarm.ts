@@ -495,6 +495,25 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
       return;
     }
 
+    if (msg.type === "MEDIA_GEN_REQUEST") {
+      // Same trust gate as inference: only generate media for trusted peers.
+      if (!isTrustedPeer(remoteKeyHex)) {
+        logger.warn(
+          `Rejecting MEDIA_GEN_REQUEST from untrusted ${remoteKeyHex.slice(0, 16)}…`,
+        );
+        channel.send({
+          type: "MEDIA_GEN_ERROR",
+          requestId: msg.requestId,
+          error: "Peer is not in your trusted list",
+        });
+        return;
+      }
+      const { handleMediaGenerationRequest } =
+        await import("@/main/compute/media-node");
+      void handleMediaGenerationRequest(channel, msg);
+      return;
+    }
+
     if (msg.type === "FRIEND_ACCEPT") {
       addTrustedPeer({
         publicKey: msg.fromPublicKey,
@@ -626,6 +645,69 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
   cancelInferenceRequest(peerId: string, requestId: string): void {
     const entry = connectedPeers.get(peerId);
     entry?.channel.send({ type: "INFERENCE_CANCEL", requestId });
+  }
+
+  /**
+   * Dispatch a media-generation job to a specific peer. `onChunk` receives
+   * base64 file chunks (eof marks the last one); `onDone` fires exactly once
+   * with an error string on failure/disconnect. Returns a cleanup fn, or null
+   * when the peer isn't connected (onDone already called).
+   */
+  sendMediaGenRequest(
+    peerId: string,
+    request: Extract<
+      import("./peer-channel").ChannelMessage,
+      { type: "MEDIA_GEN_REQUEST" }
+    >,
+    onChunk: (data: string, eof: boolean) => void,
+    onDone: (err?: string) => void,
+  ): (() => void) | null {
+    const entry = connectedPeers.get(peerId);
+    if (!entry || entry.channel.isClosed()) {
+      onDone(
+        entry
+          ? "Peer connection closed"
+          : "Peer not connected — try selecting a different device",
+      );
+      return null;
+    }
+
+    let finished = false;
+    const finish = (err?: string) => {
+      if (finished) return;
+      finished = true;
+      entry.channel.off("message", handler);
+      entry.channel.off("close", onClose);
+      onDone(err);
+    };
+
+    const onClose = () => finish("Peer disconnected during media generation");
+
+    const handler = (msg: import("./peer-channel").ChannelMessage) => {
+      if (
+        msg.type === "MEDIA_GEN_CHUNK" &&
+        msg.requestId === request.requestId
+      ) {
+        onChunk(msg.data, msg.eof);
+        if (msg.eof) finish();
+      } else if (
+        msg.type === "MEDIA_GEN_ERROR" &&
+        msg.requestId === request.requestId
+      ) {
+        finish(msg.error);
+      }
+    };
+
+    entry.channel.on("message", handler);
+    entry.channel.on("close", onClose);
+
+    const sent = entry.channel.send(request);
+    if (!sent) {
+      finish("Failed to send request — peer channel closed");
+      return null;
+    }
+
+    return () => finish();
   }
 
   getStatus() {

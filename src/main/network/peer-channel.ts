@@ -24,6 +24,23 @@ export type ChannelMessage =
   | { type: "INFERENCE_DONE"; requestId: string }
   | { type: "INFERENCE_ERROR"; requestId: string; error: string }
   | { type: "INFERENCE_CANCEL"; requestId: string }
+  // ── Distributed media generation (Orion P2P job dispatch) ─────────────────
+  /** Ask a trusted peer to generate one media asset on its hardware. */
+  | {
+      type: "MEDIA_GEN_REQUEST";
+      requestId: string;
+      modelType: "image" | "audio" | "video" | "music";
+      prompt: string;
+      /** Explicit model id (the requester's selection), when set. */
+      modelId?: string;
+      /** Generation settings forwarded to the dispatcher. */
+      options?: Record<string, unknown>;
+      /** File extension the requester expects, e.g. "png". */
+      ext: string;
+    }
+  /** One base64 chunk of the generated file; eof marks the last chunk. */
+  | { type: "MEDIA_GEN_CHUNK"; requestId: string; data: string; eof: boolean }
+  | { type: "MEDIA_GEN_ERROR"; requestId: string; error: string }
   /** Ask the remote side to send a fresh LOAD_UPDATE right now. */
   | { type: "REQUEST_LOAD" }
   | {

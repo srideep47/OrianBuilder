@@ -29,7 +29,9 @@ import {
   setNewsExecutor,
   setThreeDExecutor,
   setTrackingExecutor,
+  setRemoteMediaDispatcher,
 } from "@/main/flow/capability_registry";
+import { maybeGenerateMediaOnPeer } from "@/main/compute/media-remote";
 import { getModelLeaseManager, type ModelSpec } from "@/main/flow/model_lease";
 import { getCachedHardwareProfile } from "@/main/hardware/detect";
 import { getAvailableVramMb } from "@/main/ipc/utils/vram_accounting";
@@ -1312,6 +1314,10 @@ export function registerFlowHandlers(): void {
   // Mid-flow review checkpoints: at each modality-batch boundary the selected
   // model may repair the prompts of still-pending steps (never fails a flow).
   setFlowReviewer(createLlmFlowReviewer(defaultGenerateText));
+  // P2P job dispatch: media steps may run on a better-suited trusted peer
+  // (explicit compute target, or local VRAM can't fit the modality's model).
+  // A remote failure falls back to the local generation chain.
+  setRemoteMediaDispatcher(maybeGenerateMediaOnPeer);
 
   handle(flowContracts.parseCommand, async (_event, { text, appId }) => {
     return parseIntent(text, appId);

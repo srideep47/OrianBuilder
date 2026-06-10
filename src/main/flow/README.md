@@ -58,6 +58,29 @@ command text -> intent_parser.parseIntent()  (LLM, keyword fallback)
   (`StepResult.swaps`) and aggregates `FlowRunResult.swapTotals`. The
   orchestrator also logs LLM unload/reload durations for the media swap path.
 
+## P2P job dispatch (Phase 1)
+
+Media steps can run on a trusted peer instead of locally:
+
+- `capability_registry.setRemoteMediaDispatcher(fn)` is consulted before the
+  local chain. `null` = run locally; a failed remote result "requeues" the job
+  locally (the local chain simply runs as the fallback).
+- The real hook is `media-remote.ts` (src/main/compute): the pure policy in
+  `media_placement.ts` keeps jobs local unless the user explicitly routed
+  compute to a peer, or the local GPU cannot fit the modality's model while a
+  capable trusted peer can. Capable peers are ranked: requested model already
+  resident > LAN > least-busy GPU > lowest latency.
+- Transport: `MEDIA_GEN_REQUEST` / `MEDIA_GEN_CHUNK` / `MEDIA_GEN_ERROR` over
+  the Noise-encrypted peer channel (same trust gate as LLM inference). The
+  serving side (`media-node.ts`) runs the request through its own media
+  dispatcher and streams the file back base64-chunked; placeholders are
+  reported as errors so the requester's own fallback chain takes over.
+- **Parallel steps** — `runFlow(intent, { maxParallel: N })` executes
+  dependency-independent steps concurrently in waves (review checkpoint once
+  per wave). Default stays 1 (sequential, per-modality checkpoints); local
+  model use is still serialized by the lease manager / single-residency gate,
+  so >1 pays off when steps land on different peers.
+
 ## Capabilities (9)
 
 | Id                  | Backend                        | Executor hook         |
