@@ -112,7 +112,10 @@ class MediaShare {
   }
 
   // ── Download initiation (for IPC) ──────────────────────────────────────────
-  requestDownload(peerKey: string, fileName: string): { ok: boolean; message: string } {
+  requestDownload(
+    peerKey: string,
+    fileName: string,
+  ): { ok: boolean; message: string } {
     if (!this.bridge) return { ok: false, message: "Network not ready" };
     const catalog = this.remoteCatalogs.get(peerKey);
     const meta = catalog?.items.find((i) => i.fileName === fileName);
@@ -168,7 +171,10 @@ class MediaShare {
       }
 
       case "MEDIA_LIST_REQUEST": {
-        channel.send({ type: "MEDIA_ANNOUNCE", items: this.buildLocalAnnounce() });
+        channel.send({
+          type: "MEDIA_ANNOUNCE",
+          items: this.buildLocalAnnounce(),
+        });
         return;
       }
 
@@ -263,7 +269,9 @@ class MediaShare {
       this.broadcastToRenderer("generated-media:changed", {
         count: store.list().length,
       });
-      logger.info(`Downloaded shared media ${p.meta.fileName} from ${p.peerKey.slice(0, 12)}…`);
+      logger.info(
+        `Downloaded shared media ${p.meta.fileName} from ${p.peerKey.slice(0, 12)}…`,
+      );
     } catch (err) {
       this.emitProgress(
         requestId,

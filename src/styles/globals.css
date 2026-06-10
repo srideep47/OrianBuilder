@@ -205,13 +205,13 @@ body[data-scroll-locked] .app-region-drag {
    All durations are defined as custom properties so they can be overridden in
    one place if we ever change the target refresh rate.             */
 :root {
-  --dur-instant:  60ms;
-  --dur-fast:     80ms;
-  --dur-normal:   150ms;
-  --dur-slow:     200ms;
-  --ease-out:     cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  --ease-spring:  cubic-bezier(0.34, 1.56, 0.64, 1);   /* slight overshoot */
-  --ease-smooth:  cubic-bezier(0.4,  0,    0.2, 1);    /* material standard */
+  --dur-instant: 60ms;
+  --dur-fast: 80ms;
+  --dur-normal: 150ms;
+  --dur-slow: 200ms;
+  --ease-out: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* slight overshoot */
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1); /* material standard */
 }
 
 /* Allow the galaxy background to bleed through card surfaces in dark mode.
@@ -222,7 +222,7 @@ body[data-scroll-locked] .app-region-drag {
 .dark .bg-card {
   backdrop-filter: blur(14px) saturate(160%);
   -webkit-backdrop-filter: blur(14px) saturate(160%);
-  transform: translateZ(0);          /* GPU layer promotion */
+  transform: translateZ(0); /* GPU layer promotion */
   will-change: transform;
 }
 
@@ -465,7 +465,6 @@ body.galaxy-mode .bg-card {
     background-color: transparent;
   }
 }
-
 
 /* ════════════════════════════════════════════════════════════════
    GALAXY MODE — UI OVERRIDES
@@ -1011,7 +1010,7 @@ body.galaxy-mode .galaxy-card {
     0 8px 32px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
   animation: galaxyFadeInUp 0.2s var(--ease-out) both;
-  transform: translateZ(0);        /* own GPU layer — blur composites correctly */
+  transform: translateZ(0); /* own GPU layer — blur composites correctly */
   will-change: transform;
   transition:
     border-color var(--dur-fast) var(--ease-smooth),

@@ -98,7 +98,10 @@ export async function publishVideo(
     // and causes ERR_INVALID_ARGUMENT in Chromium/Electron).
     // Copy into a clean ArrayBuffer first to avoid the SharedArrayBuffer/ArrayBuffer
     // type mismatch that Node Buffer<ArrayBufferLike> causes with strict TS.
-    const ab = chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength) as ArrayBuffer;
+    const ab = chunk.buffer.slice(
+      chunk.byteOffset,
+      chunk.byteOffset + chunk.byteLength,
+    ) as ArrayBuffer;
     const body = new Blob([ab], { type: item.mimeType });
     const res = await net.fetch(sessionUrl, {
       method: "PUT",
@@ -121,7 +124,8 @@ export async function publishVideo(
 
     if (res.status === 200 || res.status === 201) {
       const data = (await res.json()) as { id?: string };
-      if (!data.id) throw new Error("YouTube upload finished without a video ID.");
+      if (!data.id)
+        throw new Error("YouTube upload finished without a video ID.");
       opts.onProgress?.(100);
       logger.info(`Published video ${data.id} (${opts.title})`);
       return {

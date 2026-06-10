@@ -2,7 +2,7 @@
 
 Universal color rules applied on top of the active `DESIGN.md`. The
 design system supplies the palette tokens; this file enforces how to
-*use* them.
+_use_ them.
 
 > Adapted from [refero_skill](https://github.com/referodesign/refero_skill)
 > (MIT). All examples reference Open Design's standard tokens
@@ -12,12 +12,12 @@ design system supplies the palette tokens; this file enforces how to
 
 A coherent palette has four layers. Plan all four before writing any CSS.
 
-| Layer | Share of pixels | Tokens |
-|---|---|---|
-| **Neutrals** | 70–90% | `--bg`, `--surface`, `--fg`, `--muted`, `--border` |
-| **Accent** (one) | 5–10% | `--accent` only — never invent a second accent |
-| **Semantic** | 0–5% | `--success`, `--warn`, `--danger` |
-| **Effect** | <1% | gradients, glows; rarely justified |
+| Layer            | Share of pixels | Tokens                                             |
+| ---------------- | --------------- | -------------------------------------------------- |
+| **Neutrals**     | 70–90%          | `--bg`, `--surface`, `--fg`, `--muted`, `--border` |
+| **Accent** (one) | 5–10%           | `--accent` only — never invent a second accent     |
+| **Semantic**     | 0–5%            | `--success`, `--warn`, `--danger`                  |
+| **Effect**       | <1%             | gradients, glows; rarely justified                 |
 
 ## Accent discipline
 
@@ -35,11 +35,11 @@ overuse. Hard caps:
 
 Run these as gates, not goals:
 
-| Pair | Minimum |
-|---|---|
-| Body text (≤16 px) on background | **4.5:1** |
-| Large text (>18 px or 14 px bold) | **3:1** |
-| UI components against adjacent surfaces | **3:1** |
+| Pair                                    | Minimum   |
+| --------------------------------------- | --------- |
+| Body text (≤16 px) on background        | **4.5:1** |
+| Large text (>18 px or 14 px bold)       | **3:1**   |
+| UI components against adjacent surfaces | **3:1**   |
 
 When the brand color clashes (low-contrast indigo on light background is
 common), darken the accent to a `600`-level shade for text use; reserve
@@ -49,8 +49,8 @@ the brand-bright variant for fills only.
 
 Avoid pure black and pure white — both cause vibration and eye strain.
 
-| Token | Dark theme | Light theme |
-|---|---|---|
+| Token      | Dark theme             | Light theme            |
+| ---------- | ---------------------- | ---------------------- |
 | Background | `#0f0f0f` (not `#000`) | `#fafafa` (not `#fff`) |
 | Foreground | `#f0f0f0` (not `#fff`) | `#111111` (not `#000`) |
 

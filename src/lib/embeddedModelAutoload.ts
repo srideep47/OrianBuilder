@@ -29,7 +29,7 @@ const DEFAULT_EMBEDDED_MODEL_CONFIG: EmbeddedModelConfig = {
 
   // 90 % of 6 GB = 5 530 MB allocated; safer than 98 % on a 6 GB card.
   // Prevents OOM when the driver + CUDA runtime also occupy VRAM at startup.
-  gpuMemoryUtilization: 0.90,
+  gpuMemoryUtilization: 0.9,
 
   // 768 MB headroom: CUDA context + cuBLAS workspace on RTX 3060 uses ~600 MB.
   // 512 was too tight and caused random OOM on the first large prompt.

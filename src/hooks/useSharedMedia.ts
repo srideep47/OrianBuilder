@@ -17,7 +17,9 @@ function dlKey(peerKey: string, fileName: string): string {
  */
 export function useSharedMedia() {
   const queryClient = useQueryClient();
-  const [downloads, setDownloads] = useState<Record<string, SharedDownloadProgress>>({});
+  const [downloads, setDownloads] = useState<
+    Record<string, SharedDownloadProgress>
+  >({});
 
   const query = useQuery({
     queryKey: SHARED_MEDIA_KEY,

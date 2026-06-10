@@ -886,7 +886,7 @@ export function registerEmbeddedModelHandlers(): void {
       inferenceBackend: cfg.inferenceBackend ?? "llama-cpp",
       tensorRtEngineDir: cfg.tensorRtEngineDir ?? null,
       // 90 % utilisation — safer than 98 % on a 6 GB card (driver + CUDA ~600 MB overhead)
-      gpuMemoryUtilization: cfg.gpuMemoryUtilization ?? 0.90,
+      gpuMemoryUtilization: cfg.gpuMemoryUtilization ?? 0.9,
       // 768 MB headroom — prevents OOM on first large prompt on RTX 3060
       vramHeadroomMb: cfg.vramHeadroomMb ?? 768,
       // 32 K is the OrianBuilder minimum for the full codebase system prompt

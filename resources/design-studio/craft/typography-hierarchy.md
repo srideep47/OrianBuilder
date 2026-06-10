@@ -2,7 +2,7 @@
 
 Shared hierarchy contracts that layer on top of `typography.md`. This file does
 not repeat scale ranges or tracking values — those live in `typography.md`.
-This file defines how hierarchy *behaves*: entry points, rhythm, tension, and
+This file defines how hierarchy _behaves_: entry points, rhythm, tension, and
 the conditions under which controlled violations are allowed. This contract
 applies per-surface (a page with multiple pacing resets may establish new
 primaries at intentional intervals), not globally.
@@ -19,7 +19,7 @@ Every typographic surface must satisfy all three:
 1. **One dominant entry point.** The eye needs a place to start. One element
    wins the hierarchy — not two, not three. If everything competes, nothing leads.
 2. **Intentional rhythm between levels.** Hierarchy is not a list of sizes.
-   It is the *contrast* between them. Adjacent levels that are too close
+   It is the _contrast_ between them. Adjacent levels that are too close
    in scale, weight, or spacing produce a flat, undifferentiated surface.
 3. **Recoverable information flow.** Hierarchy may be inverted, collapsed,
    or disrupted — but a reader must still be able to reconstruct the content
@@ -31,13 +31,13 @@ Every typographic surface must satisfy all three:
 
 Scale is one lever. Use all five.
 
-| Vector | What it controls | Hierarchy direction |
-|---|---|---|
-| Scale | Size contrast between levels | Large → small reads as primary → secondary |
-| Weight | Mass contrast between levels | Heavier reads as primary (see Controlled violations for weight inversion) |
-| Spacing | Breathing room around an element | More space = more visual importance |
-| Tracking | Tension and velocity | Tighter = faster; wider = ceremonial, slower |
-| Alignment | Relationship to the grid/edge | Breaking alignment signals importance |
+| Vector    | What it controls                 | Hierarchy direction                                                       |
+| --------- | -------------------------------- | ------------------------------------------------------------------------- |
+| Scale     | Size contrast between levels     | Large → small reads as primary → secondary                                |
+| Weight    | Mass contrast between levels     | Heavier reads as primary (see Controlled violations for weight inversion) |
+| Spacing   | Breathing room around an element | More space = more visual importance                                       |
+| Tracking  | Tension and velocity             | Tighter = faster; wider = ceremonial, slower                              |
+| Alignment | Relationship to the grid/edge    | Breaking alignment signals importance                                     |
 
 No single vector is required. A heading may lead through spacing alone if
 scale is deliberately suppressed. A pull quote may lead through alignment
@@ -66,6 +66,7 @@ what is incidental — regardless of which element "wins" visually.
 
 Everything lands at roughly the same visual weight. The surface reads as
 a wall. Usually caused by:
+
 - Scale steps that are too close (e.g. 18 / 20 / 22 px for three levels)
 - Weight used only once (everything is regular, or everything is medium)
 - Uniform spacing between all elements
@@ -86,15 +87,16 @@ things that feel important. Hierarchy is relative, not absolute.
 
 The following are explicitly allowed when the three core contracts are met:
 
-| Violation | Allowed when |
-|---|---|
-| Body copy at display scale | It is the intended entry point and nothing else competes |
-| Heading rendered lighter than body | Intentional visual inversion with intact information flow |
-| Zero scale contrast between levels | Hierarchy is carried entirely by spacing or tracking |
-| No heading-level element visible | Hierarchy is emergent from layout/spacing alone |
+| Violation                                          | Allowed when                                                  |
+| -------------------------------------------------- | ------------------------------------------------------------- |
+| Body copy at display scale                         | It is the intended entry point and nothing else competes      |
+| Heading rendered lighter than body                 | Intentional visual inversion with intact information flow     |
+| Zero scale contrast between levels                 | Hierarchy is carried entirely by spacing or tracking          |
+| No heading-level element visible                   | Hierarchy is emergent from layout/spacing alone               |
 | Primary-level spacing applied to secondary element | Creates deliberate tension while maintaining information flow |
 
 **"Information flow remains intact" safeguards:**
+
 - DOM/reading order still matches content meaning (no layout inversion breaks narrative)
 - Proximity groups the inverted element with its parent/context
 - Only one primary exists in the visual region (no competing co-primaries)
@@ -108,6 +110,7 @@ Spacing is a full hierarchy vector. A typographic level can be elevated
 entirely through surrounding whitespace without changing its size or weight.
 
 Rules:
+
 - Space above an element signals its relationship to what came before.
 - Space below an element signals its relationship to what follows.
 - An isolated element with large surrounding space reads as display-level
@@ -120,11 +123,11 @@ Rules:
 
 Most surfaces can be mapped to three functional levels:
 
-| Level | Role | Typical vectors |
-|---|---|---|
-| **Primary** | Entry point. One at a time per visual region; long-form surfaces may re-establish at intentional pacing resets. | Scale, spacing, or alignment break |
-| **Secondary** | Structure. Subdivides or supports primary. | Weight, scale step, or tracking shift |
-| **Tertiary** | Incidental. Labels, captions, metadata. | Scale reduction, weight reduction, or positive tracking |
+| Level         | Role                                                                                                            | Typical vectors                                         |
+| ------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| **Primary**   | Entry point. One at a time per visual region; long-form surfaces may re-establish at intentional pacing resets. | Scale, spacing, or alignment break                      |
+| **Secondary** | Structure. Subdivides or supports primary.                                                                      | Weight, scale step, or tracking shift                   |
+| **Tertiary**  | Incidental. Labels, captions, metadata.                                                                         | Scale reduction, weight reduction, or positive tracking |
 
 More than three visible levels above the fold is usually a composition problem,
 not a hierarchy opportunity. Collapse or demote before adding a fourth level.

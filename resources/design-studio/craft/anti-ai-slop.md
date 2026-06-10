@@ -43,7 +43,7 @@ These are the patterns the linter blocks at P0 (must-fix):
 ## Soft tells (P1 — should fix)
 
 - **Standard "Hero → Features → Pricing → FAQ → CTA" sequence with no
-  variation** *(guidance, not auto-checked)*. This is the AI-template
+  variation** _(guidance, not auto-checked)_. This is the AI-template
   skeleton; introduce at least one unconventional section (testimonial
   wall as full-bleed quote, pricing as comparison-against-status-quo,
   an inline mini-product-demo).
@@ -58,10 +58,10 @@ These are the patterns the linter blocks at P0 (must-fix):
 ## Polish tells (P2 — nice to fix)
 
 - **Sections without `data-od-id`** — comment mode can't target them.
-- **Decorative blob / wave SVG backgrounds** *(guidance, not
-  auto-checked)* — meaningless geometry.
-- **Perfect symmetric layout with no visual tension** *(guidance, not
-  auto-checked)* — alternating density (one tight section, one
+- **Decorative blob / wave SVG backgrounds** _(guidance, not
+  auto-checked)_ — meaningless geometry.
+- **Perfect symmetric layout with no visual tension** _(guidance, not
+  auto-checked)_ — alternating density (one tight section, one
   breathing section) reads as intentional.
 
 ## How to add soul without breaking the rules

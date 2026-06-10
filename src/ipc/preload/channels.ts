@@ -72,6 +72,7 @@ import {
 } from "../types/generated_media";
 import { sharedMediaContracts, sharedMediaEvents } from "../types/shared_media";
 import { mediaQueueContracts, mediaQueueEvents } from "../types/media_queue";
+import { orionSetupContracts, orionSetupEvents } from "../types/orion_setup";
 import { youtubeContracts, youtubeEvents } from "../types/youtube";
 import {
   androidEmulatorContracts,
@@ -155,6 +156,7 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(generatedMediaContracts),
   ...getInvokeChannels(sharedMediaContracts),
   ...getInvokeChannels(mediaQueueContracts),
+  ...getInvokeChannels(orionSetupContracts),
   ...getInvokeChannels(youtubeContracts),
   ...getInvokeChannels(androidEmulatorContracts),
   ...getInvokeChannels(scheduleContracts),
@@ -192,6 +194,7 @@ export const VALID_RECEIVE_CHANNELS = [
   ...getReceiveChannels(generatedMediaEvents),
   ...getReceiveChannels(sharedMediaEvents),
   ...getReceiveChannels(mediaQueueEvents),
+  ...getReceiveChannels(orionSetupEvents),
   ...getReceiveChannels(youtubeEvents),
   ...getReceiveChannels(androidEmulatorEvents),
   ...getReceiveChannels(flowEvents),

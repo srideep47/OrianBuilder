@@ -3,9 +3,9 @@
 Universal rules for form validation lifecycle, error wiring beyond the
 accessibility baseline, and the schema-as-contract layer that makes
 the same validation work on the server and the client. The active
-`DESIGN.md` decides how the field looks; this file decides *when* the
-field tells the user it's wrong, *how* the error reaches assistive
-tech, and *where* the rule lives.
+`DESIGN.md` decides how the field looks; this file decides _when_ the
+field tells the user it's wrong, _how_ the error reaches assistive
+tech, and _where_ the rule lives.
 
 > Grounded in primary sources: WHATWG HTML Living Standard
 > (Constraint Validation section under "Form control infrastructure"),
@@ -31,20 +31,20 @@ this file picks up where that ends.
 ## The input state machine
 
 Every input passes through these states. The names trace back to RHF /
-Formik vocabulary on web; the *shape* applies regardless of stack.
+Formik vocabulary on web; the _shape_ applies regardless of stack.
 Drive error chrome off the state, not off raw `:invalid` or
 focus/blur booleans.
 
-| State | Meaning | UI |
-|---|---|---|
-| `pristine` | User has not interacted | No error chrome, no green check |
-| `dirty` | User has typed but not committed (still focused) | No error chrome yet |
-| `touched` | User has blurred at least once after editing | Field-level constraint runs |
-| `invalid-after-touched` | Constraint failed after blur | Show error, link via `aria-describedby` |
-| `invalid-after-submit` | Submit attempted, field still invalid | Same plus focus management to summary or first invalid field |
-| `recovering` | User editing an already-invalid field | Re-validate on `input`, not on next blur |
-| `submitting` | Action in flight | Disable submit, announce status via a polite live region |
-| `server-error` | Server returned an error for this field | Use server's message text; treat as `invalid-after-submit` |
+| State                   | Meaning                                          | UI                                                           |
+| ----------------------- | ------------------------------------------------ | ------------------------------------------------------------ |
+| `pristine`              | User has not interacted                          | No error chrome, no green check                              |
+| `dirty`                 | User has typed but not committed (still focused) | No error chrome yet                                          |
+| `touched`               | User has blurred at least once after editing     | Field-level constraint runs                                  |
+| `invalid-after-touched` | Constraint failed after blur                     | Show error, link via `aria-describedby`                      |
+| `invalid-after-submit`  | Submit attempted, field still invalid            | Same plus focus management to summary or first invalid field |
+| `recovering`            | User editing an already-invalid field            | Re-validate on `input`, not on next blur                     |
+| `submitting`            | Action in flight                                 | Disable submit, announce status via a polite live region     |
+| `server-error`          | Server returned an error for this field          | Use server's message text; treat as `invalid-after-submit`   |
 
 Decision rule that collapses validation-timing debates: errors appear
 on transition into `invalid-after-touched`, clear on transition out
@@ -56,9 +56,9 @@ of any invalid state, and never appear from `pristine` or plain
 
 Baymard's checkout-UX benchmark (2024-01-09 inline-validation article):
 **31% of sites have no inline validation, and most of the rest fire
-too early.** The participant quote that anchors the research: *"Why
+too early.** The participant quote that anchors the research: _"Why
 are you telling me my email address is wrong, I haven't had a chance
-to fill it all out yet?"* Premature firing is the loudest UX failure
+to fill it all out yet?"_ Premature firing is the loudest UX failure
 in this space.
 
 The four rules:
@@ -66,7 +66,7 @@ The four rules:
 1. **First blur after edit** runs the field-level constraint. Not on focus, not on first keystroke, not on every keystroke.
 2. **Once a field is invalid, switch to `input`-event re-validation** so the error clears the moment input becomes valid. Don't make the user blur again to dismiss it.
 3. **On submit**, run the schema parse. Move focus to the error summary at the top of the form (a heading-led container with `tabindex="-1"`, no `role="alert"` — see the wiring section), or to the first invalid field if no summary exists. Don't move focus on every keystroke.
-4. **Async checks** split into two paths. *Background preflight* (uniqueness while typing, address lookup) debounces 250-500 ms, announces via a polite live region, and never gates typing or keeps the submit button disabled indefinitely. *Authoritative server validation on submit* is different: the submit path must await the server's response and surface field errors from it, since the server is the truth. Don't conflate the two — the rule is "don't let a slow background check freeze the form," not "don't ever wait for the server."
+4. **Async checks** split into two paths. _Background preflight_ (uniqueness while typing, address lookup) debounces 250-500 ms, announces via a polite live region, and never gates typing or keeps the submit button disabled indefinitely. _Authoritative server validation on submit_ is different: the submit path must await the server's response and surface field errors from it, since the server is the truth. Don't conflate the two — the rule is "don't let a slow background check freeze the form," not "don't ever wait for the server."
 
 CSS gets you most of timing rule 1 for free: style off `:user-invalid`
 not `:invalid`. The `:user-invalid` selector is Baseline Newly
@@ -83,7 +83,7 @@ failure, they integrate with autofill, and they are what
 `reportValidity()` and screen-reader native announcements key off.
 
 ```html
-<input type="email" name="email" required>
+<input type="email" name="email" required />
 ```
 
 Use these declaratively for every field that has them: `required`,
@@ -133,7 +133,7 @@ submit:
 ```
 
 The container is heading-led with `tabindex="-1"` so JS can move
-focus to it on submit (render the summary into the DOM, *then*
+focus to it on submit (render the summary into the DOM, _then_
 `.focus()` it; a `hidden` element can't take focus). It does **not**
 carry `role="alert"` because combining a moved-focus target with an
 alert role causes double-announcement: alert fires on insertion,
@@ -163,7 +163,7 @@ validator middleware, Nuxt UForm, and any other consumer that reads
 
 ```ts
 const Signup = z.object({
-  email: z.email(),                  // Zod 4 top-level form
+  email: z.email(), // Zod 4 top-level form
   password: z.string().min(12),
 });
 // Same schema parses on the Server Action and on the Conform client.
@@ -193,17 +193,17 @@ own validity machinery and its own AT path. Skills that emit web-only
 artifacts can skim this section; it's the entry point for skills
 that ship to mobile (mobile-onboarding, mobile-app, etc.).
 
-| Platform | Validity primitive | Error announcement |
-|---|---|---|
-| iOS UIKit | Hand-rolled state on the view controller; `UITextField` doesn't carry a built-in invalid flag | `UIAccessibility.post(notification: .announcement, argument: "Email is required")` |
-| iOS SwiftUI | `TextField` + `@State`-driven validation; no built-in `Form`-level validity API as of iOS 18 | `AccessibilityNotification.Announcement("…").post()` (iOS 17+) |
-| Android Compose | `OutlinedTextField(isError = true, supportingText = { Text("…") })` — `isError` wires the AT error semantic for you | `Modifier.semantics { liveRegion = LiveRegionMode.Polite }` on the supporting-text node, or `LocalView.current.announceForAccessibility(message)` |
-| Flutter | `TextFormField(validator: (v) => …)` inside a `Form`, `formKey.currentState!.validate()` | `SemanticsService.announce(message, Directionality.of(context))` — never hardcode `TextDirection.ltr`; pull ambient direction so Arabic / Hebrew / Persian flows announce correctly |
-| React Native | Hand-rolled per field; no platform validity flag | `accessibilityLiveRegion="polite"` on the error node (Android) + `AccessibilityInfo.announceForAccessibility(...)` (iOS) |
+| Platform        | Validity primitive                                                                                                  | Error announcement                                                                                                                                                                  |
+| --------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| iOS UIKit       | Hand-rolled state on the view controller; `UITextField` doesn't carry a built-in invalid flag                       | `UIAccessibility.post(notification: .announcement, argument: "Email is required")`                                                                                                  |
+| iOS SwiftUI     | `TextField` + `@State`-driven validation; no built-in `Form`-level validity API as of iOS 18                        | `AccessibilityNotification.Announcement("…").post()` (iOS 17+)                                                                                                                      |
+| Android Compose | `OutlinedTextField(isError = true, supportingText = { Text("…") })` — `isError` wires the AT error semantic for you | `Modifier.semantics { liveRegion = LiveRegionMode.Polite }` on the supporting-text node, or `LocalView.current.announceForAccessibility(message)`                                   |
+| Flutter         | `TextFormField(validator: (v) => …)` inside a `Form`, `formKey.currentState!.validate()`                            | `SemanticsService.announce(message, Directionality.of(context))` — never hardcode `TextDirection.ltr`; pull ambient direction so Arabic / Hebrew / Persian flows announce correctly |
+| React Native    | Hand-rolled per field; no platform validity flag                                                                    | `accessibilityLiveRegion="polite"` on the error node (Android) + `AccessibilityInfo.announceForAccessibility(...)` (iOS)                                                            |
 
 Two parity rules that catch most AI-generated mobile forms:
 
-- **Use the platform's native validation flag — and pair it with the platform's error-message semantic where one exists.** On Compose, `isError = true` is the right boolean state for the field visuals and AT error-state cue, but it does *not* carry the localized error message. Pair it with `Modifier.semantics { error(message) }` so accessibility services get the actual text — the same string you render in `supportingText`. The trap is duplication: a hand-rolled `Modifier.semantics { error("Email is required") }` next to a different supporting-text string desyncs. Source `error()` from the same state field as `supportingText` so they stay in sync.
+- **Use the platform's native validation flag — and pair it with the platform's error-message semantic where one exists.** On Compose, `isError = true` is the right boolean state for the field visuals and AT error-state cue, but it does _not_ carry the localized error message. Pair it with `Modifier.semantics { error(message) }` so accessibility services get the actual text — the same string you render in `supportingText`. The trap is duplication: a hand-rolled `Modifier.semantics { error("Email is required") }` next to a different supporting-text string desyncs. Source `error()` from the same state field as `supportingText` so they stay in sync.
 - **Don't mirror web ARIA into mobile semantics.** `aria-describedby` on a SwiftUI `TextField` is a no-op. Use the platform announcement primitive (`AccessibilityNotification.Announcement` on SwiftUI, `UIAccessibility.post` on UIKit, `announceForAccessibility` on Android, `SemanticsService.announce` on Flutter) for state-change events that need to reach the screen reader.
 
 ## Common mistakes (lint these)

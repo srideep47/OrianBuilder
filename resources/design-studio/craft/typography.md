@@ -1,7 +1,7 @@
 # Typography craft rules
 
 Universal typography rules that apply on top of any `DESIGN.md`. The
-active design system decides *which* fonts; this file decides *how* they
+active design system decides _which_ fonts; this file decides _how_ they
 behave at every size.
 
 > Adapted from [refero_skill](https://github.com/referodesign/refero_skill)
@@ -11,37 +11,37 @@ behave at every size.
 
 Use a multiplicative scale (1.2 or 1.25). Cap at 6–8 sizes per artifact.
 
-| Role | Range |
-|---|---|
+| Role    | Range    |
+| ------- | -------- |
 | Display | 48–72 px |
-| H1 | 32–48 px |
-| H2 | 24–32 px |
-| H3 | 20–24 px |
-| Body | 15–18 px |
-| Small | 13–14 px |
+| H1      | 32–48 px |
+| H2      | 24–32 px |
+| H3      | 20–24 px |
+| Body    | 15–18 px |
+| Small   | 13–14 px |
 | Caption | 11–12 px |
 
 ## Line height (leading)
 
-| Text size | Line height |
-|---|---|
+| Text size             | Line height         |
+| --------------------- | ------------------- |
 | Display / H1 (≥32 px) | `1.0`–`1.2` (tight) |
-| Body (15–18 px) | `1.5`–`1.6` |
-| Small (≤14 px) | `1.5` |
+| Body (15–18 px)       | `1.5`–`1.6`         |
+| Small (≤14 px)        | `1.5`               |
 
 ## Letter-spacing — the rule that makes or breaks craft
 
 This is the single most-skipped rule in AI-generated design. **No
 exceptions.**
 
-| Context | Letter-spacing |
-|---|---|
-| Body text (14–18 px) | `0` (default) |
-| Small text (11–13 px) | `0.01em` to `0.02em` (positive) |
-| UI labels and button text | `0.02em` |
-| **ALL CAPS** | **`0.06em` to `0.1em` (required)** |
-| Headings 32 px+ | `-0.01em` to `-0.02em` |
-| Display 48 px+ | `-0.02em` to `-0.03em` |
+| Context                   | Letter-spacing                     |
+| ------------------------- | ---------------------------------- |
+| Body text (14–18 px)      | `0` (default)                      |
+| Small text (11–13 px)     | `0.01em` to `0.02em` (positive)    |
+| UI labels and button text | `0.02em`                           |
+| **ALL CAPS**              | **`0.06em` to `0.1em` (required)** |
+| Headings 32 px+           | `-0.01em` to `-0.02em`             |
+| Display 48 px+            | `-0.02em` to `-0.03em`             |
 
 ALL CAPS without positive tracking looks cramped and amateur. Display
 text without negative tracking looks loose and weak. These two failures
@@ -49,7 +49,7 @@ are the most reliable AI-slop tells.
 
 The `0.06em` floor is not arbitrary: it is the empirical lower bound
 that print and web typographers have converged on for uppercase
-tracking (cf. Bringhurst's *Elements of Typographic Style* §3.2.7,
+tracking (cf. Bringhurst's _Elements of Typographic Style_ §3.2.7,
 which recommends 5–10% of the em for caps; modern screen practice
 rounds the lower end to 0.06em). Anything tighter and the counters
 collide on screen; the upper bound `0.1em` keeps the word from
@@ -72,6 +72,7 @@ Limit body copy to **50–75 characters** per line. In CSS:
 ## Three-weight system
 
 Most well-crafted UIs use exactly 3 weights:
+
 - **Read** (400 / 450) — body copy
 - **Emphasize** (510 / 550) — UI text, labels, navigation
 - **Announce** (590 / 600) — headlines, buttons

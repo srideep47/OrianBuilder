@@ -35,7 +35,12 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-const KIND_ICON = { image: ImageIcon, video: Film, audio: Music, model: Box } as const;
+const KIND_ICON = {
+  image: ImageIcon,
+  video: Film,
+  audio: Music,
+  model: Box,
+} as const;
 
 /** Downscale an image/video element to a small JPEG data URL for peer announce. */
 async function generateThumbnail(
@@ -68,7 +73,11 @@ async function generateThumbnail(
         video.onloadeddata = () => res();
         video.onerror = () => rej(new Error("video load"));
       });
-      const scale = Math.min(maxDim / video.videoWidth, maxDim / video.videoHeight, 1);
+      const scale = Math.min(
+        maxDim / video.videoWidth,
+        maxDim / video.videoHeight,
+        1,
+      );
       canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
       canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -79,13 +88,32 @@ async function generateThumbnail(
   }
 }
 
-function LightboxImage({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+function LightboxImage({
+  src,
+  alt,
+  onClose,
+}: {
+  src: string;
+  alt: string;
+  onClose: () => void;
+}) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4" onClick={onClose}>
-      <button className="absolute right-4 top-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+      onClick={onClose}
+    >
+      <button
+        className="absolute right-4 top-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
+        onClick={onClose}
+      >
         <X className="h-5 w-5" />
       </button>
-      <img src={src} alt={alt} className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" onClick={(e) => e.stopPropagation()} />
+      <img
+        src={src}
+        alt={alt}
+        className="max-h-full max-w-full rounded-lg object-contain shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      />
     </div>
   );
 }
@@ -135,11 +163,22 @@ export function GeneratedMediaCard({
     setSharing(true);
     try {
       // When enabling sharing, attach a thumbnail so peers can preview it.
-      if (next && !item.thumbnail && (item.kind === "image" || item.kind === "video")) {
+      if (
+        next &&
+        !item.thumbnail &&
+        (item.kind === "image" || item.kind === "video")
+      ) {
         const thumb = await generateThumbnail(src, item.kind);
-        if (thumb) await ipc.generatedMedia.setThumbnail({ fileName: item.fileName, thumbnail: thumb });
+        if (thumb)
+          await ipc.generatedMedia.setThumbnail({
+            fileName: item.fileName,
+            thumbnail: thumb,
+          });
       }
-      await ipc.generatedMedia.setShared({ fileName: item.fileName, shared: next });
+      await ipc.generatedMedia.setShared({
+        fileName: item.fileName,
+        shared: next,
+      });
       toast.success(next ? "Shared with your network" : "Stopped sharing");
     } catch {
       toast.error("Failed to update sharing");
@@ -181,7 +220,9 @@ export function GeneratedMediaCard({
                 muted
                 loop
                 playsInline
-                onMouseEnter={(e) => void e.currentTarget.play().catch(() => undefined)}
+                onMouseEnter={(e) =>
+                  void e.currentTarget.play().catch(() => undefined)
+                }
                 onMouseLeave={(e) => {
                   e.currentTarget.pause();
                   e.currentTarget.currentTime = 0;
@@ -205,7 +246,9 @@ export function GeneratedMediaCard({
             // model / broken image → icon placeholder
             <div className="flex flex-col items-center gap-2 text-muted-foreground">
               <KindIcon className="h-8 w-8 opacity-50" />
-              <p className="text-xs">{item.kind === "model" ? "3D model" : "Preview unavailable"}</p>
+              <p className="text-xs">
+                {item.kind === "model" ? "3D model" : "Preview unavailable"}
+              </p>
             </div>
           )}
 
@@ -219,10 +262,15 @@ export function GeneratedMediaCard({
         <div className="flex flex-col gap-2 p-3">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium" title={item.prompt ?? item.fileName}>
+              <p
+                className="truncate text-sm font-medium"
+                title={item.prompt ?? item.fileName}
+              >
                 {item.prompt ?? item.fileName}
               </p>
-              <p className="text-xs text-muted-foreground">{formatBytes(item.sizeBytes)}</p>
+              <p className="text-xs text-muted-foreground">
+                {formatBytes(item.sizeBytes)}
+              </p>
             </div>
             <Button
               size="sm"
@@ -300,7 +348,11 @@ export function GeneratedMediaCard({
       )}
 
       {lightboxOpen && item.kind === "image" && (
-        <LightboxImage src={src} alt={item.prompt ?? item.fileName} onClose={() => setLightboxOpen(false)} />
+        <LightboxImage
+          src={src}
+          alt={item.prompt ?? item.fileName}
+          onClose={() => setLightboxOpen(false)}
+        />
       )}
 
       {lightboxOpen && item.kind === "video" && (

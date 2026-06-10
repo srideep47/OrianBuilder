@@ -38,22 +38,23 @@ interface Sidecar {
   thumbnail?: string | null;
 }
 
-const MIME_BY_EXT: Record<string, { mime: string; kind: GeneratedMediaKind }> = {
-  ".png": { mime: "image/png", kind: "image" },
-  ".jpg": { mime: "image/jpeg", kind: "image" },
-  ".jpeg": { mime: "image/jpeg", kind: "image" },
-  ".webp": { mime: "image/webp", kind: "image" },
-  ".gif": { mime: "image/gif", kind: "image" },
-  ".mp4": { mime: "video/mp4", kind: "video" },
-  ".webm": { mime: "video/webm", kind: "video" },
-  ".mov": { mime: "video/quicktime", kind: "video" },
-  ".wav": { mime: "audio/wav", kind: "audio" },
-  ".mp3": { mime: "audio/mpeg", kind: "audio" },
-  ".glb": { mime: "model/gltf-binary", kind: "model" },
-  ".gltf": { mime: "model/gltf+json", kind: "model" },
-  ".obj": { mime: "model/obj", kind: "model" },
-  ".stl": { mime: "model/stl", kind: "model" },
-};
+const MIME_BY_EXT: Record<string, { mime: string; kind: GeneratedMediaKind }> =
+  {
+    ".png": { mime: "image/png", kind: "image" },
+    ".jpg": { mime: "image/jpeg", kind: "image" },
+    ".jpeg": { mime: "image/jpeg", kind: "image" },
+    ".webp": { mime: "image/webp", kind: "image" },
+    ".gif": { mime: "image/gif", kind: "image" },
+    ".mp4": { mime: "video/mp4", kind: "video" },
+    ".webm": { mime: "video/webm", kind: "video" },
+    ".mov": { mime: "video/quicktime", kind: "video" },
+    ".wav": { mime: "audio/wav", kind: "audio" },
+    ".mp3": { mime: "audio/mpeg", kind: "audio" },
+    ".glb": { mime: "model/gltf-binary", kind: "model" },
+    ".gltf": { mime: "model/gltf+json", kind: "model" },
+    ".obj": { mime: "model/obj", kind: "model" },
+    ".stl": { mime: "model/stl", kind: "model" },
+  };
 
 export function getStoreDir(): string {
   const dir = path.join(app.getPath("userData"), "generated-media");
@@ -89,7 +90,8 @@ function sidecarPath(fileName: string): string {
 function readSidecar(fileName: string): Sidecar {
   try {
     const p = sidecarPath(fileName);
-    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, "utf-8")) as Sidecar;
+    if (fs.existsSync(p))
+      return JSON.parse(fs.readFileSync(p, "utf-8")) as Sidecar;
   } catch {
     /* ignore */
   }
@@ -130,7 +132,8 @@ export async function saveFromUrl(
   if (!res.ok) throw new Error(`Failed to fetch media (${res.status})`);
   const buf = Buffer.from(await res.arrayBuffer());
   const ext =
-    (opts.ext ?? path.extname(new URL(url).pathname) ?? "").toLowerCase() || ".bin";
+    (opts.ext ?? path.extname(new URL(url).pathname) ?? "").toLowerCase() ||
+    ".bin";
   return saveBuffer(buf, {
     ext,
     promptOrStem: opts.promptOrStem,
@@ -141,12 +144,18 @@ export async function saveFromUrl(
 /** Save raw bytes into the store (used by generation + peer downloads). */
 export async function saveBuffer(
   buf: Buffer,
-  opts: { ext: string; promptOrStem?: string; prompt?: string | null; fileName?: string } = {
+  opts: {
+    ext: string;
+    promptOrStem?: string;
+    prompt?: string | null;
+    fileName?: string;
+  } = {
     ext: ".bin",
   },
 ): Promise<GeneratedMediaItem> {
   const ext = opts.ext.toLowerCase();
-  const fileName = opts.fileName ?? uniqueName(opts.promptOrStem ?? "media", ext);
+  const fileName =
+    opts.fileName ?? uniqueName(opts.promptOrStem ?? "media", ext);
   fs.writeFileSync(getFilePath(fileName), buf);
   if (opts.prompt) writeSidecar(fileName, { prompt: opts.prompt });
   logger.info(`Saved generated media: ${fileName} (${buf.length} bytes)`);
@@ -158,7 +167,10 @@ export async function saveFromPath(
   opts: { promptOrStem?: string; prompt?: string | null } = {},
 ): Promise<GeneratedMediaItem> {
   const ext = path.extname(srcPath).toLowerCase() || ".bin";
-  const fileName = uniqueName(opts.promptOrStem ?? path.basename(srcPath, ext), ext);
+  const fileName = uniqueName(
+    opts.promptOrStem ?? path.basename(srcPath, ext),
+    ext,
+  );
   fs.copyFileSync(srcPath, getFilePath(fileName));
   if (opts.prompt) writeSidecar(fileName, { prompt: opts.prompt });
   logger.info(`Copied generated media: ${fileName}`);

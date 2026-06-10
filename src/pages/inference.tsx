@@ -635,21 +635,21 @@ const DEFAULT_CONFIG: EmbeddedModelConfig = {
   modelPath: "",
   inferenceBackend: "llama-cpp",
   tensorRtEngineDir: null,
-  gpuMemoryUtilization: 0.90,   // 90 % of 6 144 MB = 5 530 MB allocated
-  vramHeadroomMb: 768,          // CUDA ctx + cuBLAS workspace on RTX 3060
-  contextSize: 32768,           // OrianBuilder min (codebase system prompt)
-  batchSize: 512,               // good for 3060's 360 GB/s bandwidth
+  gpuMemoryUtilization: 0.9, // 90 % of 6 144 MB = 5 530 MB allocated
+  vramHeadroomMb: 768, // CUDA ctx + cuBLAS workspace on RTX 3060
+  contextSize: 32768, // OrianBuilder min (codebase system prompt)
+  batchSize: 512, // good for 3060's 360 GB/s bandwidth
   temperature: 0.6,
   topP: 0.95,
   topK: 20,
   repeatPenalty: 1.0,
   seed: null,
-  flashAttention: true,         // Ampere SM 8.6 — full FA2 support; required for KV quant
+  flashAttention: true, // Ampere SM 8.6 — full FA2 support; required for KV quant
   aggressiveMemory: true,
   gpuLayersMode: "auto",
   manualGpuLayers: null,
   selectedGpuModel: null,
-  cacheTypeK: "q8_0",           // halves KV cache → ~2× more context for same VRAM
+  cacheTypeK: "q8_0", // halves KV cache → ~2× more context for same VRAM
   cacheTypeV: "q8_0",
 };
 

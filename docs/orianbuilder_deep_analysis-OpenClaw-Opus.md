@@ -70,19 +70,19 @@ The app follows a **strict main ↔ renderer IPC boundary** with 65+ handler fil
 
 ### Key Handler Groups
 
-| Handler File | Purpose |
-|---|---|
-| [mission_handlers.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/mission_handlers.ts) | Multi-worker mission orchestration (1312 lines) |
-| [github_handlers.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/github_handlers.ts) | Full GitHub integration (54K) |
-| [embedded_model_handler.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/embedded_model_handler.ts) | Local model loading/serving |
-| [design_studio_handler.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/design_studio_handler.ts) | Design Studio AI sessions |
-| [image_generation_handlers.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/image_generation_handlers.ts) | AI image generation |
-| [media_ai_handlers.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/media_ai_handlers.ts) | Media AI backend lifecycle |
-| [network_handlers.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/network_handlers.ts) | P2P network operations |
-| [watchdog_handlers.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/watchdog_handlers.ts) | Website/price tracker |
-| [vercel_handlers.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/vercel_handlers.ts) | Vercel deployment |
-| [neon_handlers.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/neon_handlers.ts) | Neon database management |
-| [supabase_handlers.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/supabase_handlers.ts) | Supabase integration |
+| Handler File                                                                                                            | Purpose                                         |
+| ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| [mission_handlers.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/mission_handlers.ts)                   | Multi-worker mission orchestration (1312 lines) |
+| [github_handlers.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/github_handlers.ts)                     | Full GitHub integration (54K)                   |
+| [embedded_model_handler.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/embedded_model_handler.ts)       | Local model loading/serving                     |
+| [design_studio_handler.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/design_studio_handler.ts)         | Design Studio AI sessions                       |
+| [image_generation_handlers.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/image_generation_handlers.ts) | AI image generation                             |
+| [media_ai_handlers.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/media_ai_handlers.ts)                 | Media AI backend lifecycle                      |
+| [network_handlers.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/network_handlers.ts)                   | P2P network operations                          |
+| [watchdog_handlers.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/watchdog_handlers.ts)                 | Website/price tracker                           |
+| [vercel_handlers.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/vercel_handlers.ts)                     | Vercel deployment                               |
+| [neon_handlers.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/neon_handlers.ts)                         | Neon database management                        |
+| [supabase_handlers.ts](file:///c:/Work/legionStudio/OrianBuilder/src/ipc/handlers/supabase_handlers.ts)                 | Supabase integration                            |
 
 ### IPC Contract System
 
@@ -96,16 +96,17 @@ Contracts are defined in [src/ipc/contracts/](file:///c:/Work/legionStudio/Orian
 
 Located in [src/main/llm/](file:///c:/Work/legionStudio/OrianBuilder/src/main/llm):
 
-| File | Purpose |
-|---|---|
-| [llama_server_backend.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/llm/llama_server_backend.ts) | Manages llama.cpp server process |
-| [llama_server_args.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/llm/llama_server_args.ts) | CLI argument builder (VRAM, layers, context) |
-| [llama_server_binary.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/llm/llama_server_binary.ts) | Binary download and management |
-| [llama_server_downloader.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/llm/llama_server_downloader.ts) | GGUF model downloader from HuggingFace |
+| File                                                                                                                | Purpose                                           |
+| ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| [llama_server_backend.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/llm/llama_server_backend.ts)           | Manages llama.cpp server process                  |
+| [llama_server_args.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/llm/llama_server_args.ts)                 | CLI argument builder (VRAM, layers, context)      |
+| [llama_server_binary.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/llm/llama_server_binary.ts)             | Binary download and management                    |
+| [llama_server_downloader.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/llm/llama_server_downloader.ts)     | GGUF model downloader from HuggingFace            |
 | [llama_server_stats_poller.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/llm/llama_server_stats_poller.ts) | Real-time inference stats (tok/s, VRAM, GPU temp) |
-| [backend_resolver.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/llm/backend_resolver.ts) | Resolves which backend to use |
+| [backend_resolver.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/llm/backend_resolver.ts)                   | Resolves which backend to use                     |
 
 **Key Features:**
+
 - GGUF-format model support
 - Smart VRAM management with automatic GPU-layer detection
 - Flash Attention & context tuning (context size, batch size, temperature, top-p/k, repeat penalty)
@@ -116,10 +117,10 @@ Located in [src/main/llm/](file:///c:/Work/legionStudio/OrianBuilder/src/main/ll
 
 Located in [native/](file:///c:/Work/legionStudio/OrianBuilder/native):
 
-| Directory | Purpose |
-|---|---|
-| [native/tensorrt-runner/](file:///c:/Work/legionStudio/OrianBuilder/native/tensorrt-runner) | TensorRT plan-based runner |
-| [native/trt-llm-runner/](file:///c:/Work/legionStudio/OrianBuilder/native/trt-llm-runner) | TensorRT-LLM Python sidecar (runner.py) |
+| Directory                                                                                   | Purpose                                 |
+| ------------------------------------------------------------------------------------------- | --------------------------------------- |
+| [native/tensorrt-runner/](file:///c:/Work/legionStudio/OrianBuilder/native/tensorrt-runner) | TensorRT plan-based runner              |
+| [native/trt-llm-runner/](file:///c:/Work/legionStudio/OrianBuilder/native/trt-llm-runner)   | TensorRT-LLM Python sidecar (runner.py) |
 
 - One-click engine build (HF download → ONNX export → trtexec compile)
 - fp16/fp32 precision selection
@@ -130,18 +131,18 @@ Located in [native/](file:///c:/Work/legionStudio/OrianBuilder/native):
 
 Via [Vercel AI SDK](file:///c:/Work/legionStudio/OrianBuilder/package.json#L92) (`ai@^6.0.68`):
 
-| Provider | Package |
-|---|---|
-| Anthropic (Claude) | `@ai-sdk/anthropic` |
-| OpenAI (GPT-4, o1/o3/o4) | `@ai-sdk/openai` |
-| Google (Gemini) | `@ai-sdk/google` |
-| Google Vertex | `@ai-sdk/google-vertex` |
-| Azure OpenAI | `@ai-sdk/azure` |
-| Amazon Bedrock | `@ai-sdk/amazon-bedrock` |
-| xAI (Grok) | `@ai-sdk/xai` |
-| OpenAI-compatible (custom) | `@ai-sdk/openai-compatible` |
-| Local (Ollama / LM Studio) | Custom handlers |
-| MCP Protocol | `@ai-sdk/mcp` + `@modelcontextprotocol/sdk` |
+| Provider                   | Package                                     |
+| -------------------------- | ------------------------------------------- |
+| Anthropic (Claude)         | `@ai-sdk/anthropic`                         |
+| OpenAI (GPT-4, o1/o3/o4)   | `@ai-sdk/openai`                            |
+| Google (Gemini)            | `@ai-sdk/google`                            |
+| Google Vertex              | `@ai-sdk/google-vertex`                     |
+| Azure OpenAI               | `@ai-sdk/azure`                             |
+| Amazon Bedrock             | `@ai-sdk/amazon-bedrock`                    |
+| xAI (Grok)                 | `@ai-sdk/xai`                               |
+| OpenAI-compatible (custom) | `@ai-sdk/openai-compatible`                 |
+| Local (Ollama / LM Studio) | Custom handlers                             |
+| MCP Protocol               | `@ai-sdk/mcp` + `@modelcontextprotocol/sdk` |
 
 ---
 
@@ -151,18 +152,19 @@ Via [Vercel AI SDK](file:///c:/Work/legionStudio/OrianBuilder/package.json#L92) 
 
 Defined in [system_prompt.ts](file:///c:/Work/legionStudio/OrianBuilder/src/prompts/system_prompt.ts) and [local_agent_prompt.ts](file:///c:/Work/legionStudio/OrianBuilder/src/prompts/local_agent_prompt.ts):
 
-| Mode | Description |
-|---|---|
-| **Build** | Writes code via `<orianbuilder-write>` tags, creates/modifies files |
-| **Ask** | Read-only explanations, NO code generation |
-| **Local Agent (Pro)** | Full tool-calling agent with `search_replace`, `write_file`, `edit_ast`, `take_screenshot`, `deploy_preview`, etc. |
-| **Local Agent (Basic)** | Free-tier agent with limited tools (no `code_search`, `web_search`, `web_crawl`) |
-| **Plan** | Agent drafts a plan before executing |
-| **Autopilot** | Full autonomous end-to-end execution from a single prompt — no questions asked |
+| Mode                    | Description                                                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Build**               | Writes code via `<orianbuilder-write>` tags, creates/modifies files                                                |
+| **Ask**                 | Read-only explanations, NO code generation                                                                         |
+| **Local Agent (Pro)**   | Full tool-calling agent with `search_replace`, `write_file`, `edit_ast`, `take_screenshot`, `deploy_preview`, etc. |
+| **Local Agent (Basic)** | Free-tier agent with limited tools (no `code_search`, `web_search`, `web_crawl`)                                   |
+| **Plan**                | Agent drafts a plan before executing                                                                               |
+| **Autopilot**           | Full autonomous end-to-end execution from a single prompt — no questions asked                                     |
 
 ### 4.2 Agent Tool System
 
 The local agent has a rich set of tools including:
+
 - `read_file`, `write_file`, `search_replace`, `edit_ast` (TypeScript AST operations)
 - `grep`, `list_files`, `get_repo_map`, `code_search`
 - `start_dev_server`, `run_type_checks`, `run_terminal_command`
@@ -205,7 +207,7 @@ erDiagram
     missions ||--o{ missionPermissionRequests : has
     apps ||--o{ missions : has
     chats ||--o{ missions : linkedTo
-    
+
     missions {
         int id PK
         int appId FK
@@ -215,7 +217,7 @@ erDiagram
         enum status "queued|running|paused|completed|failed|cancelled"
         enum autonomyProfile "supervised|trusted-workspace|full-autopilot-sandbox"
     }
-    
+
     missionWorkers {
         int id PK
         int missionId FK
@@ -228,13 +230,13 @@ erDiagram
         json fileScopes
         json dependsOn
     }
-    
+
     missionArtifacts {
         int id PK
         int missionId FK
         enum artifactType "screenshot|image|audio|video|deployment|accessibility_tree|console_output|runtime"
     }
-    
+
     missionMemories {
         int id PK
         int appId FK
@@ -247,6 +249,7 @@ erDiagram
 Workers go through: `queued → ready → running → completed/failed/blocked`
 
 Key features:
+
 - **Parallel execution** with configurable parallelism (`DEFAULT_MAX_PARALLEL_WORKERS`)
 - **Dependency graphs** — workers can `dependsOn` other workers
 - **Stale detection** — workers that run too long are marked stale with interrupts
@@ -260,13 +263,13 @@ Key features:
 
 ### 5.3 Worker Roles
 
-| Role | Purpose |
-|---|---|
-| `planner` | Decomposes the mission goal into tasks |
-| `architect` | Designs the technical approach |
-| `builder` | Implements the code changes |
-| `qa` | Tests and validates the implementation |
-| `reviewer` | Reviews code for quality and correctness |
+| Role         | Purpose                                    |
+| ------------ | ------------------------------------------ |
+| `planner`    | Decomposes the mission goal into tasks     |
+| `architect`  | Designs the technical approach             |
+| `builder`    | Implements the code changes                |
+| `qa`         | Tests and validates the implementation     |
+| `reviewer`   | Reviews code for quality and correctness   |
 | `integrator` | Merges worker outputs into the main branch |
 
 ---
@@ -292,6 +295,7 @@ Services Layer (services/*.py)
 ```
 
 Multi-backend support via separate requirements files:
+
 - `requirements-cuda.txt` (NVIDIA)
 - `requirements-rocm.txt` (AMD)
 - `requirements-mps.txt` (Apple Silicon)
@@ -303,12 +307,12 @@ Multi-backend support via separate requirements files:
 
 The [Media AI page](file:///c:/Work/legionStudio/OrianBuilder/src/pages/mediaai.tsx) (5141 lines!) supports multiple tiers:
 
-| Tier | Model | VRAM | Speed |
-|---|---|---|---|
-| SD Turbo | Stability AI SD Turbo | ~4 GB | Very fast |
-| Z-Image Turbo | Z-Image Turbo | ~6 GB | Fast |
-| SD 1.5 ONNX | Stable Diffusion 1.5 | ~4 GB | Medium |
-| Cloud (Pollinations) | Flux (free API) | 0 | Fast (cloud) |
+| Tier                 | Model                 | VRAM  | Speed        |
+| -------------------- | --------------------- | ----- | ------------ |
+| SD Turbo             | Stability AI SD Turbo | ~4 GB | Very fast    |
+| Z-Image Turbo        | Z-Image Turbo         | ~6 GB | Fast         |
+| SD 1.5 ONNX          | Stable Diffusion 1.5  | ~4 GB | Medium       |
+| Cloud (Pollinations) | Flux (free API)       | 0     | Fast (cloud) |
 
 Features: width/height/steps/guidance/seed/negative-prompt controls, per-tier persisted settings.
 
@@ -323,14 +327,14 @@ Features: width/height/steps/guidance/seed/negative-prompt controls, per-tier pe
 
 Multiple tiers (from [mediaai.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/mediaai.tsx#L131-L144)):
 
-| Tier | Model | VRAM | Download |
-|---|---|---|---|
-| Wan 2.1 14B | Alibaba Wan 2.1 | 14+ GB | ~30 GB |
-| LTX Video | Lightricks LTX | ~10 GB | ~18 GB |
-| Wan 2.1 1.3B | Budget Wan 2.1 | 5 GB | ~14 GB |
-| CogVideoX 2B | THUDM CogVideoX | 7 GB | ~11 GB |
-| AnimateDiff SD15 | AnimateDiff | 4 GB | ~6 GB |
-| CPU fallback | MS 1.7B | 0 | ~8 GB |
+| Tier             | Model           | VRAM   | Download |
+| ---------------- | --------------- | ------ | -------- |
+| Wan 2.1 14B      | Alibaba Wan 2.1 | 14+ GB | ~30 GB   |
+| LTX Video        | Lightricks LTX  | ~10 GB | ~18 GB   |
+| Wan 2.1 1.3B     | Budget Wan 2.1  | 5 GB   | ~14 GB   |
+| CogVideoX 2B     | THUDM CogVideoX | 7 GB   | ~11 GB   |
+| AnimateDiff SD15 | AnimateDiff     | 4 GB   | ~6 GB    |
+| CPU fallback     | MS 1.7B         | 0      | ~8 GB    |
 
 ### 6.5 Music Generation
 
@@ -361,24 +365,24 @@ Located in [threedassets.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/page
 
 Located in [src/main/network/](file:///c:/Work/legionStudio/OrianBuilder/src/main/network):
 
-| File | Purpose |
-|---|---|
-| [swarm.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/network/swarm.ts) (23K) | Hyperswarm-based P2P networking |
-| [lan-discovery.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/network/lan-discovery.ts) | LAN peer auto-discovery |
-| [peer-channel.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/network/peer-channel.ts) | Peer communication channels |
-| [friends.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/network/friends.ts) | Friend/trust management |
-| [invite.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/network/invite.ts) | Invite code system |
+| File                                                                                            | Purpose                         |
+| ----------------------------------------------------------------------------------------------- | ------------------------------- |
+| [swarm.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/network/swarm.ts) (23K)           | Hyperswarm-based P2P networking |
+| [lan-discovery.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/network/lan-discovery.ts) | LAN peer auto-discovery         |
+| [peer-channel.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/network/peer-channel.ts)   | Peer communication channels     |
+| [friends.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/network/friends.ts)             | Friend/trust management         |
+| [invite.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/network/invite.ts)               | Invite code system              |
 
 ### 7.2 Compute Routing
 
 Located in [src/main/compute/](file:///c:/Work/legionStudio/OrianBuilder/src/main/compute):
 
-| File | Purpose |
-|---|---|
-| [compute-node.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/compute/compute-node.ts) | This device as a compute provider |
-| [compute-proxy.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/compute/compute-proxy.ts) | Routes inference to peers |
-| [load-monitor.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/compute/load-monitor.ts) | GPU utilization monitoring |
-| [routing.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/compute/routing.ts) | Smart load-based routing |
+| File                                                                                            | Purpose                           |
+| ----------------------------------------------------------------------------------------------- | --------------------------------- |
+| [compute-node.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/compute/compute-node.ts)   | This device as a compute provider |
+| [compute-proxy.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/compute/compute-proxy.ts) | Routes inference to peers         |
+| [load-monitor.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/compute/load-monitor.ts)   | GPU utilization monitoring        |
+| [routing.ts](file:///c:/Work/legionStudio/OrianBuilder/src/main/compute/routing.ts)             | Smart load-based routing          |
 
 ### 7.3 Network UI
 
@@ -395,6 +399,7 @@ The [Network page](file:///c:/Work/legionStudio/OrianBuilder/src/pages/network.t
 ### 7.4 Identity System
 
 Database-backed identity in [schema.ts](file:///c:/Work/legionStudio/OrianBuilder/src/db/schema.ts#L713-L767):
+
 - `deviceIdentity` — Ed25519 keypair, device name/type
 - `trustedPeers` — public key, fingerprint, display name, compute permissions, allowed models
 - `friendRequests` — invite-based trust establishment
@@ -411,6 +416,7 @@ The [Watchdog system](file:///c:/Work/legionStudio/OrianBuilder/src/pages/watchd
 2. **Price Monitor** ([PriceMonitor](file:///c:/Work/legionStudio/OrianBuilder/src/components/watchdog/PriceMonitor.tsx)) — Track product price changes
 
 ### Backend lifecycle:
+
 - Python detection → venv creation → pip install → FastAPI start
 - Managed via [src/main/watchdog/](file:///c:/Work/legionStudio/OrianBuilder/src/main/watchdog)
 - Uses `cloudscraper` + `apscheduler` for periodic scraping
@@ -423,17 +429,21 @@ The [Watchdog system](file:///c:/Work/legionStudio/OrianBuilder/src/pages/watchd
 The [Daily AI Digest](file:///c:/Work/legionStudio/OrianBuilder/src/pages/dailyaidigest.tsx) (2214 lines) is a full news/finance dashboard:
 
 ### News Categories (live RSS feeds)
+
 - Top Stories, Technology, Business, Sports, Entertainment, Science, World, India, AI
 - Sources: BBC, TechCrunch, The Verge, The Guardian, CNBC, ESPN, Variety, Wired, The Hindu, NDTV, MIT Tech Review
 
 ### Finance Widgets
+
 - Market indices: NIFTY, SENSEX, Nifty Bank, Nifty MidCap, USD/INR
 - Commodities: Gold, Silver, Crude Oil, Natural Gas (live USD→INR conversion via frankfurter.app)
 
 ### Live Sports (ESPN API)
+
 - Cricket (IPL), Football (EPL), NBA, NFL, Tennis (ATP), F1
 
 ### Optional AI Backend
+
 - Python backend on :8010 for AI-powered article summaries (uses Ollama + qwen3.5:4b)
 
 ---
@@ -442,13 +452,14 @@ The [Daily AI Digest](file:///c:/Work/legionStudio/OrianBuilder/src/pages/dailya
 
 The [Design Studio](file:///c:/Work/legionStudio/OrianBuilder/src/pages/design-studio) is a Claude Artifacts-like system:
 
-| File | Purpose |
-|---|---|
-| [index.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/design-studio/index.tsx) (112K!) | Main Design Studio component |
-| [constants.ts](file:///c:/Work/legionStudio/OrianBuilder/src/pages/design-studio/constants.ts) | Design system definitions |
-| [prompt-builder.ts](file:///c:/Work/legionStudio/OrianBuilder/src/pages/design-studio/prompt-builder.ts) | AI prompt construction |
+| File                                                                                                     | Purpose                      |
+| -------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| [index.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/design-studio/index.tsx) (112K!)         | Main Design Studio component |
+| [constants.ts](file:///c:/Work/legionStudio/OrianBuilder/src/pages/design-studio/constants.ts)           | Design system definitions    |
+| [prompt-builder.ts](file:///c:/Work/legionStudio/OrianBuilder/src/pages/design-studio/prompt-builder.ts) | AI prompt construction       |
 
 **Features:**
+
 - Chat-based UI generation with live artifact preview
 - Design sessions persisted to DB ([designSessions table](file:///c:/Work/legionStudio/OrianBuilder/src/db/schema.ts#L770-L793))
 - Skill selection and design system integration
@@ -460,32 +471,32 @@ The [Design Studio](file:///c:/Work/legionStudio/OrianBuilder/src/pages/design-s
 
 Using **Drizzle ORM + SQLite** ([schema.ts](file:///c:/Work/legionStudio/OrianBuilder/src/db/schema.ts)):
 
-| Table | Purpose |
-|---|---|
-| `apps` | Projects with GitHub/Vercel/Supabase/Neon links |
-| `chats` | Chat sessions with compaction support |
-| `messages` | Chat messages with AI SDK v6 envelope |
-| `missions` | Autonomous mission goals |
-| `missionWorkers` | Parallel workers with role/status/workspace |
-| `missionEvents` | Event log for mission observability |
-| `missionTasks` | TODO items within a mission |
-| `missionRuns` | Individual execution runs |
-| `missionCheckpoints` | Resumable checkpoints |
-| `missionArtifacts` | Screenshots, deployments, media |
-| `missionInterrupts` | User/system/worker interrupts |
-| `missionMemories` | Cross-mission learning |
-| `missionPermissionRequests` | Risk-assessed permissions |
-| `versions` | Git commit-based versioning |
-| `prompts` | Saved prompt templates |
-| `language_model_providers` | Custom API providers |
-| `language_models` | Custom model definitions |
-| `mcpServers` | MCP server configurations |
-| `mcpToolConsents` | Per-tool consent policies |
-| `deviceIdentity` | Ed25519 keypair for P2P |
-| `trustedPeers` | Friend list with compute permissions |
-| `friendRequests` | Pending friend invites |
-| `designSessions` | Design Studio chat history |
-| `customThemes` | User-created design themes |
+| Table                       | Purpose                                         |
+| --------------------------- | ----------------------------------------------- |
+| `apps`                      | Projects with GitHub/Vercel/Supabase/Neon links |
+| `chats`                     | Chat sessions with compaction support           |
+| `messages`                  | Chat messages with AI SDK v6 envelope           |
+| `missions`                  | Autonomous mission goals                        |
+| `missionWorkers`            | Parallel workers with role/status/workspace     |
+| `missionEvents`             | Event log for mission observability             |
+| `missionTasks`              | TODO items within a mission                     |
+| `missionRuns`               | Individual execution runs                       |
+| `missionCheckpoints`        | Resumable checkpoints                           |
+| `missionArtifacts`          | Screenshots, deployments, media                 |
+| `missionInterrupts`         | User/system/worker interrupts                   |
+| `missionMemories`           | Cross-mission learning                          |
+| `missionPermissionRequests` | Risk-assessed permissions                       |
+| `versions`                  | Git commit-based versioning                     |
+| `prompts`                   | Saved prompt templates                          |
+| `language_model_providers`  | Custom API providers                            |
+| `language_models`           | Custom model definitions                        |
+| `mcpServers`                | MCP server configurations                       |
+| `mcpToolConsents`           | Per-tool consent policies                       |
+| `deviceIdentity`            | Ed25519 keypair for P2P                         |
+| `trustedPeers`              | Friend list with compute permissions            |
+| `friendRequests`            | Pending friend invites                          |
+| `designSessions`            | Design Studio chat history                      |
+| `customThemes`              | User-created design themes                      |
 
 ---
 
@@ -503,41 +514,41 @@ Located in [src/main/hardware/detect.ts](file:///c:/Work/legionStudio/OrianBuild
 
 ## 13. UI Pages Map
 
-| Page | File | Size | Purpose |
-|---|---|---|---|
-| Home | [home.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/home.tsx) | 17K | App dashboard |
-| Chat | [chat.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/chat.tsx) | 5K | Active chat interface |
-| App Details | [app-details.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/app-details.tsx) | 35K | Project management |
-| Inference | [inference.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/inference.tsx) | 92K | Local model engine UI |
-| Media AI | [mediaai.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/mediaai.tsx) | 203K | Image/Audio/Video/Music/Transcribe |
-| 3D Assets | [threedassets.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/threedassets.tsx) | 49K | 3D model generation |
-| Network | [network.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/network.tsx) | 39K | P2P compute hub |
-| Daily Digest | [dailyaidigest.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/dailyaidigest.tsx) | 70K | News/finance dashboard |
-| Watchdog | [watchdog.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/watchdog.tsx) | 21K | Website/price tracking |
-| Design Studio | [design-studio/](file:///c:/Work/legionStudio/OrianBuilder/src/pages/design-studio) | 131K | Artifacts-style UI builder |
-| Marketplace | [marketplace.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/marketplace.tsx) | 26K | HuggingFace model browser |
-| Settings | [settings.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/settings.tsx) | 19K | Provider keys & app settings |
-| Onboarding | [onboarding.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/onboarding.tsx) | 10K | First-run setup |
+| Page          | File                                                                                       | Size | Purpose                            |
+| ------------- | ------------------------------------------------------------------------------------------ | ---- | ---------------------------------- |
+| Home          | [home.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/home.tsx)                   | 17K  | App dashboard                      |
+| Chat          | [chat.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/chat.tsx)                   | 5K   | Active chat interface              |
+| App Details   | [app-details.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/app-details.tsx)     | 35K  | Project management                 |
+| Inference     | [inference.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/inference.tsx)         | 92K  | Local model engine UI              |
+| Media AI      | [mediaai.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/mediaai.tsx)             | 203K | Image/Audio/Video/Music/Transcribe |
+| 3D Assets     | [threedassets.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/threedassets.tsx)   | 49K  | 3D model generation                |
+| Network       | [network.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/network.tsx)             | 39K  | P2P compute hub                    |
+| Daily Digest  | [dailyaidigest.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/dailyaidigest.tsx) | 70K  | News/finance dashboard             |
+| Watchdog      | [watchdog.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/watchdog.tsx)           | 21K  | Website/price tracking             |
+| Design Studio | [design-studio/](file:///c:/Work/legionStudio/OrianBuilder/src/pages/design-studio)        | 131K | Artifacts-style UI builder         |
+| Marketplace   | [marketplace.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/marketplace.tsx)     | 26K  | HuggingFace model browser          |
+| Settings      | [settings.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/settings.tsx)           | 19K  | Provider keys & app settings       |
+| Onboarding    | [onboarding.tsx](file:///c:/Work/legionStudio/OrianBuilder/src/pages/onboarding.tsx)       | 10K  | First-run setup                    |
 
 ---
 
 ## 14. Key Technical Decisions
 
-| Decision | Choice | Rationale |
-|---|---|---|
-| Frontend Framework | React 19 + TanStack Router | Modern, file-based routing |
-| State Management | Jotai (atoms) + TanStack Query | Fine-grained reactivity + server-state caching |
-| UI Components | Base UI (`@base-ui/react`) | Headless, accessible primitives |
-| Database | SQLite + Drizzle ORM | Local-first, zero-config |
-| LLM SDK | Vercel AI SDK v6 | Unified provider interface |
-| Local Inference | llama.cpp server | Best GGUF support |
-| P2P Networking | Hyperswarm | NAT-traversal, DHT-based discovery |
-| Media AI Backend | Python (FastAPI) sidecar | HuggingFace ecosystem compatibility |
-| Git Operations | isomorphic-git + dugite | Pure-JS git + native git fallback |
-| Code Editor | Monaco Editor | VS Code engine |
-| 3D Rendering | React Three Fiber + Drei | Declarative Three.js |
-| Packaging | Electron Forge | Official Electron packager |
-| Type Checking | `tsgo` (native TypeScript) | Faster than `tsc` |
+| Decision           | Choice                         | Rationale                                      |
+| ------------------ | ------------------------------ | ---------------------------------------------- |
+| Frontend Framework | React 19 + TanStack Router     | Modern, file-based routing                     |
+| State Management   | Jotai (atoms) + TanStack Query | Fine-grained reactivity + server-state caching |
+| UI Components      | Base UI (`@base-ui/react`)     | Headless, accessible primitives                |
+| Database           | SQLite + Drizzle ORM           | Local-first, zero-config                       |
+| LLM SDK            | Vercel AI SDK v6               | Unified provider interface                     |
+| Local Inference    | llama.cpp server               | Best GGUF support                              |
+| P2P Networking     | Hyperswarm                     | NAT-traversal, DHT-based discovery             |
+| Media AI Backend   | Python (FastAPI) sidecar       | HuggingFace ecosystem compatibility            |
+| Git Operations     | isomorphic-git + dugite        | Pure-JS git + native git fallback              |
+| Code Editor        | Monaco Editor                  | VS Code engine                                 |
+| 3D Rendering       | React Three Fiber + Drei       | Declarative Three.js                           |
+| Packaging          | Electron Forge                 | Official Electron packager                     |
+| Type Checking      | `tsgo` (native TypeScript)     | Faster than `tsc`                              |
 
 ---
 
@@ -545,15 +556,15 @@ Located in [src/main/hardware/detect.ts](file:///c:/Work/legionStudio/OrianBuild
 
 Located in [worker/](file:///c:/Work/legionStudio/OrianBuilder/worker):
 
-| File | Purpose |
-|---|---|
-| `proxy_server.js` | Dev server proxy |
-| `orianbuilder-shim.js` | Runtime shim for previewed apps |
-| `orianbuilder-sw.js` | Service worker for offline preview |
-| `orianbuilder-screenshot-client.js` | Screenshot capture from preview |
-| `orianbuilder-component-selector-client.js` | Visual component picker |
-| `orianbuilder-visual-editor-client.js` | Visual editing overlay |
-| `orianbuilder_logs.js` | Console log forwarding |
+| File                                        | Purpose                            |
+| ------------------------------------------- | ---------------------------------- |
+| `proxy_server.js`                           | Dev server proxy                   |
+| `orianbuilder-shim.js`                      | Runtime shim for previewed apps    |
+| `orianbuilder-sw.js`                        | Service worker for offline preview |
+| `orianbuilder-screenshot-client.js`         | Screenshot capture from preview    |
+| `orianbuilder-component-selector-client.js` | Visual component picker            |
+| `orianbuilder-visual-editor-client.js`      | Visual editing overlay             |
+| `orianbuilder_logs.js`                      | Console log forwarding             |
 
 ---
 

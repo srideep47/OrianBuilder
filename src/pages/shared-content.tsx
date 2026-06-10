@@ -17,7 +17,12 @@ import { cn } from "@/lib/utils";
 import { useSharedMedia } from "@/hooks/useSharedMedia";
 import type { SharedMediaMeta, SharedPeerCatalog } from "@/ipc/types";
 
-const KIND_ICON = { image: ImageIcon, video: Film, audio: Music, model: Box } as const;
+const KIND_ICON = {
+  image: ImageIcon,
+  video: Film,
+  audio: Music,
+  model: Box,
+} as const;
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -51,7 +56,11 @@ function SharedItemCard({
     <div className="group flex flex-col overflow-hidden rounded-xl border bg-card">
       <div className="relative flex aspect-video items-center justify-center overflow-hidden bg-muted/40">
         {item.thumbnail ? (
-          <img src={item.thumbnail} alt={item.prompt ?? item.fileName} className="h-full w-full object-cover" />
+          <img
+            src={item.thumbnail}
+            alt={item.prompt ?? item.fileName}
+            className="h-full w-full object-cover"
+          />
         ) : (
           <KindIcon className="h-8 w-8 text-muted-foreground/50" />
         )}
@@ -63,10 +72,15 @@ function SharedItemCard({
 
       <div className="flex flex-col gap-2 p-3">
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium" title={item.prompt ?? item.fileName}>
+          <p
+            className="truncate text-sm font-medium"
+            title={item.prompt ?? item.fileName}
+          >
             {item.prompt ?? item.fileName}
           </p>
-          <p className="text-xs text-muted-foreground">{formatBytes(item.sizeBytes)}</p>
+          <p className="text-xs text-muted-foreground">
+            {formatBytes(item.sizeBytes)}
+          </p>
         </div>
 
         {isDone ? (
@@ -77,7 +91,10 @@ function SharedItemCard({
         ) : isDownloading ? (
           <div className="flex flex-col gap-1">
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-              <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+              <div
+                className="h-full bg-primary transition-all"
+                style={{ width: `${pct}%` }}
+              />
             </div>
             <span className="text-center text-[11px] text-muted-foreground">
               Downloading… {pct}%
@@ -105,7 +122,10 @@ function PeerSection({
   onDownload,
 }: {
   catalog: SharedPeerCatalog;
-  getDownload: (peerKey: string, fileName: string) => ReturnType<typeof useSharedMedia>["downloads"][string] | undefined;
+  getDownload: (
+    peerKey: string,
+    fileName: string,
+  ) => ReturnType<typeof useSharedMedia>["downloads"][string] | undefined;
   onDownload: (peerKey: string, fileName: string) => void;
 }) {
   if (catalog.items.length === 0) return null;
@@ -164,8 +184,15 @@ export default function SharedContentPage() {
             </p>
           </div>
         </div>
-        <Button size="sm" variant="ghost" onClick={() => void handleRefresh()} disabled={refreshing}>
-          <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => void handleRefresh()}
+          disabled={refreshing}
+        >
+          <RefreshCw
+            className={cn("h-3.5 w-3.5", refreshing && "animate-spin")}
+          />
         </Button>
       </div>
 
@@ -180,9 +207,9 @@ export default function SharedContentPage() {
             <div>
               <p className="text-sm font-medium">Nothing shared yet</p>
               <p className="mt-1 max-w-sm text-xs text-muted-foreground">
-                When people in your network (Network tab) mark media as sharable,
-                it appears here. You must both be online and connected as trusted
-                peers.
+                When people in your network (Network tab) mark media as
+                sharable, it appears here. You must both be online and connected
+                as trusted peers.
               </p>
             </div>
           </div>

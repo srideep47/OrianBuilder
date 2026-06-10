@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ipc } from "@/ipc/types";
+import type { MediaJob } from "@/ipc/types";
 import { useVoiceToText } from "@/hooks/useVoiceToText";
 import { useStreamChat } from "@/hooks/useStreamChat";
 import { useSelectChat } from "@/hooks/useSelectChat";
@@ -59,6 +60,7 @@ import {
   isStreamingByIdAtom,
   pushRecentViewedChatIdAtom,
 } from "@/atoms/chatAtoms";
+import { looksLikeStoryboardScript } from "./storyboard_script";
 
 const CAPABILITY_ICON: Record<CapabilityId, ReactNode> = {
   generate_design: <Palette className="w-3.5 h-3.5" />,
@@ -239,6 +241,32 @@ function StepStatusIcon({ status }: { status: StepResult["status"] }) {
   return <MinusCircle className="w-4 h-4 text-white/40" />;
 }
 
+/** Per-scene status dot for the inline storyboard progress view. */
+function sceneDotClass(
+  status: NonNullable<MediaJob["scenes"]>[number]["status"],
+) {
+  const base =
+    "flex h-5 min-w-[1.25rem] items-center justify-center rounded px-1 text-[10px] font-semibold ";
+  switch (status) {
+    case "generating":
+      return base + "bg-primary/30 text-primary animate-pulse";
+    case "done":
+      return base + "bg-emerald-500/20 text-emerald-300";
+    case "failed":
+      return base + "bg-red-500/20 text-red-300";
+    default:
+      return base + "bg-white/10 text-white/40";
+  }
+}
+
+function jobStatusPillClass(status: MediaJob["status"]): string {
+  const base = "rounded-full px-2 py-0.5 text-xs font-medium ";
+  if (status === "done") return base + "bg-emerald-500/15 text-emerald-300";
+  if (status === "failed") return base + "bg-red-500/15 text-red-300";
+  if (status === "cancelled") return base + "bg-white/10 text-white/50";
+  return base + "bg-primary/15 text-primary";
+}
+
 /**
  * Orion command surface: one box that turns a typed or spoken command into a
  * chained flow via `ipc.flow.runCommand`, and renders the live step results.
@@ -254,6 +282,9 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
   // Live activity feed streamed from the running pipeline (downloads, phases,
   // per-asset status). Cleared at the start of each run.
   const [progress, setProgress] = useState<PipelineProgress[]>([]);
+  // Live storyboard job (script → video) dispatched to the media queue.
+  const [storyboardJobId, setStoryboardJobId] = useState<string | null>(null);
+  const [storyboardJob, setStoryboardJob] = useState<MediaJob | null>(null);
   const [muted, setMuted] = useState(false);
   // Autonomous by default: after the first prompt the agent runs end-to-end with
   // no approval prompts. Toggle off ("Ask me") to get blocking approvals on
@@ -317,6 +348,16 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
   useEffect(() => {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
   }, [progress]);
+
+  // Track the dispatched storyboard job so its per-scene progress renders inline.
+  useEffect(() => {
+    if (!storyboardJobId) return;
+    const off = ipc.events.mediaQueue.onChanged(({ jobs }) => {
+      const j = jobs.find((x) => x.id === storyboardJobId);
+      if (j) setStoryboardJob(j);
+    });
+    return off;
+  }, [storyboardJobId]);
 
   const handleTranscription = useCallback((transcribed: string) => {
     setText((prev) => (prev ? `${prev} ${transcribed}` : transcribed));
@@ -483,6 +524,64 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
     [queryClient, speak, markCommandSessionStreaming, selectChat],
   );
 
+  /**
+   * Script command: a multi-scene script becomes a storyboard job (parse →
+   * per-scene clips → auto-edit → soundtrack), dispatched to the media queue so
+   * it runs unattended. If the media backend isn't set up yet, keep the prompt
+   * and point the user at "Set up Orion" instead of silently failing.
+   */
+  const runStoryboardCore = useCallback(
+    async (command: string, session: { appId: number; chatId: number }) => {
+      const status = await ipc.mediaAi.getStatus().catch(() => null);
+      const usable =
+        !!status &&
+        (status.healthy || (status.venvExists && status.depsInstalled));
+      if (!usable) {
+        await ipc.chat.appendMessages({
+          chatId: session.chatId,
+          messages: [
+            {
+              role: "assistant",
+              content:
+                "This looks like a multi-scene script, but Orion's media backend isn't set up yet. " +
+                "Open Orion → **Set up Orion** to install it (one click, resumes if interrupted), then send this again — it'll render the whole video unattended.",
+            },
+          ],
+        });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
+        speak("Set up Orion first.");
+        markCommandSessionStreaming(session.chatId, false);
+        selectChat({ chatId: session.chatId, appId: session.appId });
+        return;
+      }
+
+      const job = await ipc.mediaQueue.enqueue({
+        kind: "storyboard",
+        prompt: command,
+        aspectRatio: "16:9",
+      });
+      setStoryboardJobId(job.id);
+      setStoryboardJob(job);
+      await ipc.chat.appendMessages({
+        chatId: session.chatId,
+        messages: [
+          {
+            role: "assistant",
+            content:
+              "Storyboard queued. Orion will parse this into scenes, render each clip in order, " +
+              "auto-edit them together and lay a matched soundtrack over the result. Progress shows " +
+              "here and in Library → Media Queue; the finished video lands in Library → Media.",
+          },
+        ],
+      });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
+      speak("Storyboard queued.");
+      markCommandSessionStreaming(session.chatId, false);
+      selectChat({ chatId: session.chatId, appId: session.appId });
+    },
+    [queryClient, speak, markCommandSessionStreaming, selectChat],
+  );
+
   /** Lighter chained-capability runner (news, tracking, mixed flows). Reuses
    *  the already-parsed intent so there's no redundant LLM parse. */
   const runFlowCore = useCallback(
@@ -611,6 +710,8 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
     setResult(null);
     setPipelineResult(null);
     setProgress([]);
+    setStoryboardJob(null);
+    setStoryboardJobId(null);
     let session: { appId: number; chatId: number } | null = null;
     try {
       session = await createCommandSession(command);
@@ -624,6 +725,16 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
       } catch {
         /* non-fatal: keep whatever the setting already was */
       }
+
+      // A multi-scene script → storyboard job. Routed BEFORE the LLM preload
+      // because the authored scene format parses deterministically (no model
+      // needed), and before intent parsing because a long script would
+      // otherwise be misread as a single-clip request.
+      if (looksLikeStoryboardScript(command)) {
+        await runStoryboardCore(command, session);
+        return;
+      }
+
       await ensureSelectedEmbeddedModelReady(settings);
 
       let intent: CommandIntent | null = null;
@@ -674,6 +785,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
     runMediaCore,
     runFlowCore,
     runFactoryCore,
+    runStoryboardCore,
     appendFlowErrorToSession,
     markCommandSessionStreaming,
     speak,
@@ -885,6 +997,49 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Storyboard job (script → video) progress */}
+      {storyboardJob && (
+        <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="inline-flex items-center gap-1.5 text-sm font-medium text-white/85">
+              <Video className="h-4 w-4" /> Storyboard
+            </span>
+            <span className={jobStatusPillClass(storyboardJob.status)}>
+              {storyboardJob.stage ?? storyboardJob.status}
+            </span>
+          </div>
+          {storyboardJob.scenes && storyboardJob.scenes.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {storyboardJob.scenes.map((s) => (
+                <span
+                  key={s.index}
+                  title={`${s.title} - ${s.status}`}
+                  className={sceneDotClass(s.status)}
+                >
+                  {s.index + 1}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-white/45">
+              {storyboardJob.status === "queued"
+                ? "Queued - parsing the script into scenes..."
+                : (storyboardJob.stage ?? "Working...")}
+            </p>
+          )}
+          {storyboardJob.error && (
+            <p className="mt-2 text-xs text-red-300/80">
+              {storyboardJob.error}
+            </p>
+          )}
+          {storyboardJob.status === "done" && (
+            <p className="mt-2 text-xs text-emerald-300/80">
+              Finished - open Library &rarr; Media to view the video.
+            </p>
+          )}
         </div>
       )}
 

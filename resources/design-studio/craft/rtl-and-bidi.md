@@ -6,9 +6,10 @@ how that language behaves when the script reads from the right or
 mixes direction within a line.
 
 > Grounded in primary sources: Unicode UAX #9 revision 51 (Sept 2025)
-> + Unicode 17.0, CSS Logical Properties Level 1, HTML Living Standard
-> (`dir`, `<bdi>`), Tailwind v4.0/v4.2 changelogs, W3C alreq,
-> Material 3 RTL guidance, Apple HIG internationalization.
+>
+> - Unicode 17.0, CSS Logical Properties Level 1, HTML Living Standard
+>   (`dir`, `<bdi>`), Tailwind v4.0/v4.2 changelogs, W3C alreq,
+>   Material 3 RTL guidance, Apple HIG internationalization.
 
 ## Base direction and language
 
@@ -36,14 +37,14 @@ Hardcoded `left` / `right` is a bug for any layout that might render
 RTL. Use logical properties on the inline axis. Use them on the block
 axis when the writing-mode varies; physical otherwise.
 
-| Logical | LTR resolves to | RTL resolves to |
-|---|---|---|
-| `margin-inline-start` / `padding-inline-start` / `inset-inline-start` | left | right |
-| `margin-inline-end` / `padding-inline-end` / `inset-inline-end` | right | left |
-| `border-inline-start` | border-left | border-right |
-| `border-start-start-radius` | border-top-left-radius | border-top-right-radius |
-| `text-align: start` / `text-align: end` | left / right | right / left |
-| `inline-size` / `block-size` | width / height | width / height |
+| Logical                                                               | LTR resolves to        | RTL resolves to         |
+| --------------------------------------------------------------------- | ---------------------- | ----------------------- |
+| `margin-inline-start` / `padding-inline-start` / `inset-inline-start` | left                   | right                   |
+| `margin-inline-end` / `padding-inline-end` / `inset-inline-end`       | right                  | left                    |
+| `border-inline-start`                                                 | border-left            | border-right            |
+| `border-start-start-radius`                                           | border-top-left-radius | border-top-right-radius |
+| `text-align: start` / `text-align: end`                               | left / right           | right / left            |
+| `inline-size` / `block-size`                                          | width / height         | width / height          |
 
 Browser support: core inline-axis logical properties are Baseline
 Widely Available (Chrome 87, Safari 14.1, Firefox 66; ≥95% global as
@@ -69,8 +70,8 @@ that solve different problems:
 - **Embedding / override controls** (legacy): U+202A LRE, U+202B RLE, U+202D LRO, U+202E RLO — all closed with U+202C PDF. These nest within the surrounding paragraph rather than isolating from it; LRO/RLO additionally force a direction onto neutral characters. Newer code should use isolates; touch embeddings only when interoperating with text from systems that emit them.
 
 **Use `<bdi>` in HTML; in plain text, pick the isolate that matches
-what you know about the run.** UAX #9 §2.7: *"where available, markup
-should be used instead of the explicit formatting characters."*
+what you know about the run.** UAX #9 §2.7: _"where available, markup
+should be used instead of the explicit formatting characters."_
 `<bdi>` has been Baseline Widely Available since January 2020.
 Reach for control characters only in plain-text contexts (logs,
 plain-text emails, terminal output). When you do:
@@ -137,13 +138,13 @@ its own direction primitive. Skills that emit web-only artifacts can
 skim this section; it's the entry point for skills that ship to
 mobile (mobile-onboarding, mobile-app, etc.).
 
-| Platform | Direction primitive | Spacing |
-|---|---|---|
-| iOS UIKit | `semanticContentAttribute = .forceRightToLeft` | `NSDirectionalEdgeInsets` |
-| iOS SwiftUI | `.environment(\.layoutDirection, .rightToLeft)` | `EdgeInsets` with `leading` / `trailing` |
-| Android Compose | `CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl)` | `PaddingValues` accepts start / end |
-| Flutter | `Directionality(textDirection: TextDirection.rtl)` | `EdgeInsetsDirectional.fromSTEB(...)` |
-| React Native | `I18nManager.forceRTL(true)` (requires native reload; no `forceLTR` parity, no `react-native-web` support) | `marginStart` / `marginEnd` |
+| Platform        | Direction primitive                                                                                        | Spacing                                  |
+| --------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| iOS UIKit       | `semanticContentAttribute = .forceRightToLeft`                                                             | `NSDirectionalEdgeInsets`                |
+| iOS SwiftUI     | `.environment(\.layoutDirection, .rightToLeft)`                                                            | `EdgeInsets` with `leading` / `trailing` |
+| Android Compose | `CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl)`                              | `PaddingValues` accepts start / end      |
+| Flutter         | `Directionality(textDirection: TextDirection.rtl)`                                                         | `EdgeInsetsDirectional.fromSTEB(...)`    |
+| React Native    | `I18nManager.forceRTL(true)` (requires native reload; no `forceLTR` parity, no `react-native-web` support) | `marginStart` / `marginEnd`              |
 
 The rule across all platforms: prefer the directional primitive over
 the absolute one. `EdgeInsets.left/right` in Flutter, `paddingLeft` /

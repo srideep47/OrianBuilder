@@ -27,7 +27,7 @@ Goal: a stable base. No new features until the current branch is solid.
 3. **Flow resume.** A flow that dies mid-way (crash, power) should resume from
    `priorOutputs` instead of regenerating everything. The missions
    checkpoint/auto-resume infrastructure is the template — either persist flow
-   state the same way or run long flows *as* missions.
+   state the same way or run long flows _as_ missions.
 4. **Swap telemetry.** Log model load/unload durations and VRAM watermarks per
    step so we know the real cost on the 4 GB-GPU minimum target. Document NVMe
    as a practical requirement for low-RAM devices.
@@ -91,7 +91,7 @@ with a human approval gate before anything goes public.
    generation window.
 3. **Approval queue UI.** Generated content lands in a review queue
    (thumbnail, metadata, scheduled slot); one click approves or edits.
-   Full autopilot is a per-channel opt-in *after* the pipeline has a track
+   Full autopilot is a per-channel opt-in _after_ the pipeline has a track
    record. This is also the platform-policy shield: YouTube demonetizes
    mass-produced inauthentic content, so quality-per-post beats volume.
 4. **Platform rollout order:** YouTube (exists, free API) → X (paid API,

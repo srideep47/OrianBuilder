@@ -31,7 +31,9 @@ export const SharedDownloadProgressSchema = z.object({
   status: z.enum(["downloading", "done", "error"]),
   error: z.string().nullable(),
 });
-export type SharedDownloadProgress = z.infer<typeof SharedDownloadProgressSchema>;
+export type SharedDownloadProgress = z.infer<
+  typeof SharedDownloadProgressSchema
+>;
 
 export const sharedMediaContracts = {
   /** All peers' advertised shared catalogs (grouped by peer). */

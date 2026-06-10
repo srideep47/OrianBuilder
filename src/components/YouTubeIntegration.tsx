@@ -126,11 +126,7 @@ export function YouTubeIntegration() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            onClick={() => setShowForm(true)}
-            variant="outline"
-            size="sm"
-          >
+          <Button onClick={() => setShowForm(true)} variant="outline" size="sm">
             Edit keys
           </Button>
           <Button onClick={handleConnect} size="sm" disabled={connecting}>
@@ -169,9 +165,9 @@ export function YouTubeIntegration() {
     <div className="space-y-3">
       {title}
       <p className="text-xs text-gray-500 dark:text-gray-400">
-        Create a <span className="font-medium">Desktop app</span> OAuth client in
-        the Google Cloud Console (enable the “YouTube Data API v3”), then paste
-        its credentials below.{" "}
+        Create a <span className="font-medium">Desktop app</span> OAuth client
+        in the Google Cloud Console (enable the “YouTube Data API v3”), then
+        paste its credentials below.{" "}
         <a
           href="https://console.cloud.google.com/apis/credentials"
           target="_blank"

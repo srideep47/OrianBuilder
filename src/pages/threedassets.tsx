@@ -200,7 +200,9 @@ export default function ThreeDAssetsPage() {
   const [imageTiers, setImageTiers] = useState<ImageTierInfo[]>([]);
   const [imageTiersLoading, setImageTiersLoading] = useState(false);
   const [imageTiersExpanded, setImageTiersExpanded] = useState(true);
-  const [imageDownloadTierId, setImageDownloadTierId] = useState<string | null>(null);
+  const [imageDownloadTierId, setImageDownloadTierId] = useState<string | null>(
+    null,
+  );
   const imageDownloadPollRef = useRef<number | null>(null);
 
   const serverUrl = status?.serverUrl ?? "http://127.0.0.1:8000";
@@ -231,34 +233,33 @@ export default function ThreeDAssetsPage() {
     if (next) setStatus(next);
   }, []);
 
-  const fetchImageTiers = useCallback(
-    async (): Promise<ImageTierInfo[] | null> => {
-      if (!isBackendOnline) return null;
-      setImageTiersLoading(true);
-      try {
-        const res = await fetch(`${serverUrl}/v1/generate/image/tiers`);
-        if (res.ok) {
-          const data = (await res.json()) as {
-            tiers: ImageTierInfo[];
-            selected_tier_id: string;
-          };
-          setImageTiers(data.tiers);
-          // Auto-collapse the picker once we confirm a model is already ready —
-          // no need to show all options when generation is already possible.
-          if (data.tiers.some((t) => t.status === "downloaded")) {
-            setImageTiersExpanded(false);
-          }
-          return data.tiers;
+  const fetchImageTiers = useCallback(async (): Promise<
+    ImageTierInfo[] | null
+  > => {
+    if (!isBackendOnline) return null;
+    setImageTiersLoading(true);
+    try {
+      const res = await fetch(`${serverUrl}/v1/generate/image/tiers`);
+      if (res.ok) {
+        const data = (await res.json()) as {
+          tiers: ImageTierInfo[];
+          selected_tier_id: string;
+        };
+        setImageTiers(data.tiers);
+        // Auto-collapse the picker once we confirm a model is already ready —
+        // no need to show all options when generation is already possible.
+        if (data.tiers.some((t) => t.status === "downloaded")) {
+          setImageTiersExpanded(false);
         }
-      } catch {
-        // Backend not running
-      } finally {
-        setImageTiersLoading(false);
+        return data.tiers;
       }
-      return null;
-    },
-    [isBackendOnline, serverUrl],
-  );
+    } catch {
+      // Backend not running
+    } finally {
+      setImageTiersLoading(false);
+    }
+    return null;
+  }, [isBackendOnline, serverUrl]);
 
   const fetchTiers = useCallback(
     async (allowBackendProbe = false): Promise<ThreeDTierInfo[] | null> => {
@@ -709,8 +710,7 @@ export default function ThreeDAssetsPage() {
         //   2. Long qualifier-heavy prompts confuse turbo models. A short,
         //      noun-led prompt (subject + "isolated on white background") is
         //      what they were trained on. We keep the augmentation minimal.
-        const augmentedPrompt =
-          `${prompt.trim()}, isolated on pure white background, centered`;
+        const augmentedPrompt = `${prompt.trim()}, isolated on pure white background, centered`;
         const imageResponse = await fetch(`${serverUrl}/v1/generate/image`, {
           method: "POST",
           signal: ctrl.signal,
@@ -852,824 +852,840 @@ export default function ThreeDAssetsPage() {
     // (Generate button, 3D viewer, Download button) is clipped on shorter
     // displays and the user can't scroll to reach it.
     <div className="h-full w-full overflow-y-auto">
-    <div className="container mx-auto py-6 px-6 pb-12 space-y-6 max-w-5xl">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-          <Box className="h-6 w-6 text-primary" />
-          3D Assets
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Generate 3D models from a text prompt or a reference image — locally,
-          hardware-accelerated.
-        </p>
-      </header>
+      <div className="container mx-auto py-6 px-6 pb-12 space-y-6 max-w-5xl">
+        <header className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+            <Box className="h-6 w-6 text-primary" />
+            3D Assets
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Generate 3D models from a text prompt or a reference image —
+            locally, hardware-accelerated.
+          </p>
+        </header>
 
-      <div className="rounded-lg border border-border bg-card px-4 py-2 flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2 text-sm">
-          {isBackendOnline ? (
-            <>
-              <Server className="h-4 w-4 text-emerald-500" />
-              <span className="font-medium">Backend online</span>
-            </>
-          ) : (
-            <>
-              <ServerOff className="h-4 w-4 text-muted-foreground" />
-              <span className="text-muted-foreground">Backend stopped</span>
-            </>
-          )}
-        </div>
-        <div className="flex gap-2">
-          {!isBackendOnline && status?.venvExists && (
+        <div className="rounded-lg border border-border bg-card px-4 py-2 flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2 text-sm">
+            {isBackendOnline ? (
+              <>
+                <Server className="h-4 w-4 text-emerald-500" />
+                <span className="font-medium">Backend online</span>
+              </>
+            ) : (
+              <>
+                <ServerOff className="h-4 w-4 text-muted-foreground" />
+                <span className="text-muted-foreground">Backend stopped</span>
+              </>
+            )}
+          </div>
+          <div className="flex gap-2">
+            {!isBackendOnline && status?.venvExists && (
+              <Button
+                size="sm"
+                onClick={() => void handleStartBackend()}
+                disabled={startingBackend}
+              >
+                {startingBackend ? (
+                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Play className="mr-2 h-3.5 w-3.5" />
+                )}
+                {startingBackend ? "Starting…" : "Start Backend"}
+              </Button>
+            )}
             <Button
               size="sm"
-              onClick={() => void handleStartBackend()}
-              disabled={startingBackend}
+              variant="outline"
+              onClick={() => void refreshStatus()}
             >
-              {startingBackend ? (
-                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Play className="mr-2 h-3.5 w-3.5" />
-              )}
-              {startingBackend ? "Starting…" : "Start Backend"}
+              <RefreshCw className="mr-2 h-3.5 w-3.5" />
+              Refresh
             </Button>
-          )}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void refreshStatus()}
-          >
-            <RefreshCw className="mr-2 h-3.5 w-3.5" />
-            Refresh
-          </Button>
+          </div>
         </div>
-      </div>
 
-      {(!status?.venvExists || runtimeMissing) && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2">
-              <Wrench className="h-4 w-4" />
-              {runtimeMissing && status?.venvExists
-                ? "Install 3D Runtime"
-                : "Setup 3D AI"}
-            </CardTitle>
-            <CardDescription>
-              {runtimeMissing && status?.venvExists
-                ? "TripoSR isn't installed in your Media AI Python environment yet. Click below to add it — your other Media AI setup stays untouched."
-                : "Install the TripoSR runtime and start the local backend. The first run installs Python dependencies and may take several minutes."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {setupError && (
-              <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                {setupError}
-              </div>
-            )}
-            <div className="flex flex-wrap gap-2">
-              <Button
-                onClick={() => void handleSetup()}
-                disabled={setupRunning}
-              >
-                {setupRunning ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Wrench className="mr-2 h-4 w-4" />
-                )}
-                {setupRunning
-                  ? "Installing TripoSR…"
-                  : runtimeMissing && status?.venvExists
-                    ? "Install TripoSR Runtime"
-                    : "Setup 3D AI"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
+        {(!status?.venvExists || runtimeMissing) && (
+          <Card>
+            <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2">
-                <HardDrive className="h-5 w-5" />
-                3D Model
+                <Wrench className="h-4 w-4" />
+                {runtimeMissing && status?.venvExists
+                  ? "Install 3D Runtime"
+                  : "Setup 3D AI"}
               </CardTitle>
               <CardDescription>
-                Download TripoSR once, then use it for any number of
-                generations.
+                {runtimeMissing && status?.venvExists
+                  ? "TripoSR isn't installed in your Media AI Python environment yet. Click below to add it — your other Media AI setup stays untouched."
+                  : "Install the TripoSR runtime and start the local backend. The first run installs Python dependencies and may take several minutes."}
               </CardDescription>
-            </div>
-            <div className="flex gap-2">
-              {status?.venvExists && (
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {setupError && (
+                <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                  {setupError}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={() => void handleSetup()}
+                  disabled={setupRunning}
+                >
+                  {setupRunning ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Wrench className="mr-2 h-4 w-4" />
+                  )}
+                  {setupRunning
+                    ? "Installing TripoSR…"
+                    : runtimeMissing && status?.venvExists
+                      ? "Install TripoSR Runtime"
+                      : "Setup 3D AI"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <HardDrive className="h-5 w-5" />
+                  3D Model
+                </CardTitle>
+                <CardDescription>
+                  Download TripoSR once, then use it for any number of
+                  generations.
+                </CardDescription>
+              </div>
+              <div className="flex gap-2">
+                {status?.venvExists && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handleSetup()}
+                    disabled={setupRunning}
+                    title="Reinstall the TripoSR Python runtime. Stops and restarts the backend automatically."
+                  >
+                    {setupRunning ? (
+                      <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Wrench className="mr-2 h-3.5 w-3.5" />
+                    )}
+                    Reinstall Runtime
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => void handleSetup()}
-                  disabled={setupRunning}
-                  title="Reinstall the TripoSR Python runtime. Stops and restarts the backend automatically."
+                  onClick={() => void fetchTiers(true)}
+                  disabled={!isBackendOnline || tiersLoading}
                 >
-                  {setupRunning ? (
+                  {tiersLoading ? (
                     <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <Wrench className="mr-2 h-3.5 w-3.5" />
+                    <RefreshCw className="mr-2 h-3.5 w-3.5" />
                   )}
-                  Reinstall Runtime
+                  Refresh
                 </Button>
-              )}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => void fetchTiers(true)}
-                disabled={!isBackendOnline || tiersLoading}
-              >
-                {tiersLoading ? (
-                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="mr-2 h-3.5 w-3.5" />
-                )}
-                Refresh
-              </Button>
+              </div>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid gap-3">
-            {tierList.map((tier) => {
-              const isChosen = selectedTierId === tier.id;
-              const isDownloading =
-                tier.status === "downloading" || downloadTierId === tier.id;
-              const statusLabel = !isBackendOnline
-                ? "Needs backend"
-                : tier.status === "downloaded"
-                  ? "Downloaded"
-                  : isDownloading
-                    ? "Downloading"
-                    : "Not downloaded";
-              const statusColor =
-                tier.status === "downloaded"
-                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
-                  : isDownloading
-                    ? "border-sky-500/30 bg-sky-500/10 text-sky-600"
-                    : "border-border bg-background/50 text-muted-foreground";
-              return (
-                <div
-                  key={tier.id}
-                  className={cn(
-                    "rounded-lg border p-3 space-y-3 transition-colors",
-                    isChosen
-                      ? "border-primary/40 bg-primary/5"
-                      : "border-border",
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {tier.selected && (
-                        <span className="shrink-0 rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-primary">
-                          Recommended
-                        </span>
-                      )}
-                      {isChosen && (
-                        <span className="shrink-0 rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase">
-                          Selected
-                        </span>
-                      )}
-                      <span className="text-sm font-medium">{tier.label}</span>
-                    </div>
-                    <span
-                      className={cn(
-                        "shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase",
-                        statusColor,
-                      )}
-                    >
-                      {statusLabel}
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    {tier.description}
-                  </p>
-                  <div className="flex flex-wrap gap-1.5 text-[10px] text-muted-foreground">
-                    <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
-                      {tier.vram_mb >= 1000
-                        ? `${tier.vram_mb / 1000} GB VRAM`
-                        : `${tier.vram_mb} MB VRAM`}
-                    </span>
-                    <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
-                      ~{(tier.download_size_mb / 1024).toFixed(2)} GB
-                    </span>
-                    <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
-                      Image → 3D
-                    </span>
-                    <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
-                      .glb output
-                    </span>
-                  </div>
-
-                  {isDownloading && (
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between text-[10px] text-sky-600 font-medium">
-                        <span>Download progress</span>
-                        <span>
-                          {tier.download_progress != null
-                            ? `${tier.download_progress}%`
-                            : "Preparing"}
-                        </span>
-                      </div>
-                      <div className="w-full h-1.5 bg-sky-500/10 rounded-full overflow-hidden">
-                        {tier.download_progress != null ? (
-                          <div
-                            className="h-full bg-sky-500 rounded-full transition-all duration-300"
-                            style={{ width: `${tier.download_progress}%` }}
-                          />
-                        ) : (
-                          <div className="h-full w-1/3 animate-pulse rounded-full bg-sky-500" />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-3">
+              {tierList.map((tier) => {
+                const isChosen = selectedTierId === tier.id;
+                const isDownloading =
+                  tier.status === "downloading" || downloadTierId === tier.id;
+                const statusLabel = !isBackendOnline
+                  ? "Needs backend"
+                  : tier.status === "downloaded"
+                    ? "Downloaded"
+                    : isDownloading
+                      ? "Downloading"
+                      : "Not downloaded";
+                const statusColor =
+                  tier.status === "downloaded"
+                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
+                    : isDownloading
+                      ? "border-sky-500/30 bg-sky-500/10 text-sky-600"
+                      : "border-border bg-background/50 text-muted-foreground";
+                return (
+                  <div
+                    key={tier.id}
+                    className={cn(
+                      "rounded-lg border p-3 space-y-3 transition-colors",
+                      isChosen
+                        ? "border-primary/40 bg-primary/5"
+                        : "border-border",
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {tier.selected && (
+                          <span className="shrink-0 rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-primary">
+                            Recommended
+                          </span>
                         )}
+                        {isChosen && (
+                          <span className="shrink-0 rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase">
+                            Selected
+                          </span>
+                        )}
+                        <span className="text-sm font-medium">
+                          {tier.label}
+                        </span>
                       </div>
-                    </div>
-                  )}
-
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant={isChosen ? "default" : "outline"}
-                      className="h-8 px-3 text-xs"
-                      onClick={() => setSelectedTierId(tier.id)}
-                    >
-                      <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-                      {isChosen ? "Selected" : "Use Model"}
-                    </Button>
-                    {tier.status === "downloaded" ? (
-                      <span className="inline-flex h-8 items-center rounded border border-emerald-500/30 bg-emerald-500/10 px-2 text-xs font-medium text-emerald-600">
-                        Ready to generate
+                      <span
+                        className={cn(
+                          "shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase",
+                          statusColor,
+                        )}
+                      >
+                        {statusLabel}
                       </span>
-                    ) : !isBackendOnline ? (
-                      status?.venvExists ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 px-3 text-xs"
-                          onClick={() => void handleStartBackend()}
-                          disabled={startingBackend}
-                        >
-                          {startingBackend ? (
-                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      {tier.description}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 text-[10px] text-muted-foreground">
+                      <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                        {tier.vram_mb >= 1000
+                          ? `${tier.vram_mb / 1000} GB VRAM`
+                          : `${tier.vram_mb} MB VRAM`}
+                      </span>
+                      <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                        ~{(tier.download_size_mb / 1024).toFixed(2)} GB
+                      </span>
+                      <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                        Image → 3D
+                      </span>
+                      <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                        .glb output
+                      </span>
+                    </div>
+
+                    {isDownloading && (
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[10px] text-sky-600 font-medium">
+                          <span>Download progress</span>
+                          <span>
+                            {tier.download_progress != null
+                              ? `${tier.download_progress}%`
+                              : "Preparing"}
+                          </span>
+                        </div>
+                        <div className="w-full h-1.5 bg-sky-500/10 rounded-full overflow-hidden">
+                          {tier.download_progress != null ? (
+                            <div
+                              className="h-full bg-sky-500 rounded-full transition-all duration-300"
+                              style={{ width: `${tier.download_progress}%` }}
+                            />
                           ) : (
-                            <Play className="mr-1.5 h-3.5 w-3.5" />
+                            <div className="h-full w-1/3 animate-pulse rounded-full bg-sky-500" />
                           )}
-                          {startingBackend
-                            ? "Starting…"
-                            : "Start Backend to Download"}
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 px-3 text-xs"
-                          onClick={() => void handleSetup()}
-                          disabled={setupRunning}
-                        >
-                          <Wrench className="mr-1.5 h-3.5 w-3.5" />
-                          Set Up to Download
-                        </Button>
-                      )
-                    ) : (
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-2">
                       <Button
                         size="sm"
-                        variant="outline"
+                        variant={isChosen ? "default" : "outline"}
                         className="h-8 px-3 text-xs"
-                        onClick={() => void handleDownload(tier.id)}
-                        disabled={isDownloading || !tier.available_for_backend}
+                        onClick={() => setSelectedTierId(tier.id)}
                       >
-                        {isDownloading ? (
-                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Download className="mr-1.5 h-3.5 w-3.5" />
-                        )}
-                        {isDownloading ? "Downloading" : "Download Model"}
+                        <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                        {isChosen ? "Selected" : "Use Model"}
                       </Button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
-      {inputMode === "text" && (
-        <Card>
-          {/* Clickable header row — acts as the dropdown trigger */}
-          <button
-            type="button"
-            onClick={() => setImageTiersExpanded((v) => !v)}
-            className="w-full text-left"
-          >
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <ImageIcon className="h-5 w-5 shrink-0" />
-                  <div className="min-w-0">
-                    <CardTitle className="text-base">Image Model</CardTitle>
-                    <CardDescription className="mt-0.5">
-                      {hasImageModelReady
-                        ? (() => {
-                            const ready = imageTiers.find(
-                              (t) => t.status === "downloaded",
-                            );
-                            return (
-                              <span className="flex items-center gap-1.5">
-                                <span className="font-medium text-emerald-600">
-                                  {ready?.label ?? "Model ready"}
-                                </span>
-                                <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-emerald-600">
-                                  Ready
-                                </span>
-                              </span>
-                            );
-                          })()
-                        : "Download a model to enable text prompts"}
-                    </CardDescription>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {imageTiersLoading && (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                  )}
-                  <ChevronDown
-                    className={cn(
-                      "h-4 w-4 text-muted-foreground transition-transform",
-                      imageTiersExpanded && "rotate-180",
-                    )}
-                  />
-                </div>
-              </div>
-            </CardHeader>
-          </button>
-
-          {imageTiersExpanded && (
-            <CardContent className="space-y-3 pt-0">
-              <div className="flex items-center justify-between pb-1">
-                <p className="text-xs text-muted-foreground">
-                  Text-to-3D generates a reference image first — pick a model
-                  that fits your hardware.
-                </p>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void fetchImageTiers();
-                  }}
-                  disabled={!isBackendOnline || imageTiersLoading}
-                  className="shrink-0 text-[10px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 ml-3"
-                >
-                  {imageTiersLoading ? "Refreshing…" : "Refresh"}
-                </button>
-              </div>
-
-              {!isBackendOnline && (
-                <p className="text-sm text-muted-foreground">
-                  Start the backend to see available image models.
-                </p>
-              )}
-              {isBackendOnline && imageTiers.length === 0 && !imageTiersLoading && (
-                <p className="text-sm text-muted-foreground">
-                  No image models found. Click Refresh to check again.
-                </p>
-              )}
-
-              <div className="grid gap-2 md:grid-cols-2">
-                {imageTiers.map((tier) => {
-                  const isDownloading =
-                    tier.status === "downloading" ||
-                    imageDownloadTierId === tier.id;
-                  const isReady = tier.status === "downloaded";
-                  return (
-                    <div
-                      key={tier.id}
-                      className={cn(
-                        "rounded-lg border p-3 space-y-2.5 transition-colors",
-                        isReady
-                          ? "border-emerald-500/30 bg-emerald-500/5"
-                          : isDownloading
-                            ? "border-sky-500/30 bg-sky-500/5"
-                            : "border-border bg-muted/10",
-                      )}
-                    >
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          {tier.selected && (
-                            <span className="shrink-0 rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-primary">
-                              Recommended
-                            </span>
-                          )}
-                          <span className="text-sm font-medium truncate">
-                            {tier.label}
-                          </span>
-                        </div>
-                        <span
-                          className={cn(
-                            "shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase",
-                            isReady
-                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
-                              : isDownloading
-                                ? "border-sky-500/30 bg-sky-500/10 text-sky-600"
-                                : "border-border bg-muted/20 text-muted-foreground",
-                          )}
-                        >
-                          {!isBackendOnline
-                            ? "Needs backend"
-                            : isReady
-                              ? "Downloaded"
-                              : isDownloading
-                                ? "Downloading"
-                                : "Not downloaded"}
+                      {tier.status === "downloaded" ? (
+                        <span className="inline-flex h-8 items-center rounded border border-emerald-500/30 bg-emerald-500/10 px-2 text-xs font-medium text-emerald-600">
+                          Ready to generate
                         </span>
-                      </div>
-
-                      {tier.description && (
-                        <p className="text-xs text-muted-foreground leading-relaxed">
-                          {tier.description}
-                        </p>
-                      )}
-
-                      <div className="flex flex-wrap gap-1 text-[10px] text-muted-foreground">
-                        {/* VRAM chip */}
-                        <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
-                          {tier.vram_mb === 0
-                            ? tier.backends?.some((b) =>
-                                ["cuda", "rocm", "metal", "mps"].includes(b),
-                              )
-                              ? "GGUF · CPU+GPU"
-                              : "CPU only"
-                            : tier.vram_mb >= 1000
-                              ? `${tier.vram_mb / 1000} GB VRAM`
-                              : `${tier.vram_mb} MB VRAM`}
-                        </span>
-                        {/* For GGUF tiers show approx GPU VRAM usage alongside the
-                            file size — they're roughly equal for Q4 quants */}
-                        {tier.id.toLowerCase().includes("gguf") &&
-                          tier.download_size_mb > 0 && (
-                            <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
-                              ~{(tier.download_size_mb / 1024).toFixed(1)} GB VRAM (GPU)
-                            </span>
-                          )}
-                        {tier.download_size_mb > 0 && (
-                          <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
-                            ~{(tier.download_size_mb / 1024).toFixed(1)} GB
-                            {tier.id.toLowerCase().includes("gguf")
-                              ? " file"
-                              : " download"}
-                          </span>
-                        )}
-                        <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
-                          Text → Image
-                        </span>
-                      </div>
-
-                      {isDownloading && (
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between text-[10px] text-sky-600 font-medium">
-                            <span>Downloading</span>
-                            <span>
-                              {tier.download_progress != null
-                                ? `${tier.download_progress}%`
-                                : "Preparing…"}
-                            </span>
-                          </div>
-                          <div className="w-full h-1.5 bg-sky-500/10 rounded-full overflow-hidden">
-                            {tier.download_progress != null ? (
-                              <div
-                                className="h-full bg-sky-500 rounded-full transition-all duration-300"
-                                style={{ width: `${tier.download_progress}%` }}
-                              />
+                      ) : !isBackendOnline ? (
+                        status?.venvExists ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 px-3 text-xs"
+                            onClick={() => void handleStartBackend()}
+                            disabled={startingBackend}
+                          >
+                            {startingBackend ? (
+                              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                             ) : (
-                              <div className="h-full w-1/3 animate-pulse rounded-full bg-sky-500" />
+                              <Play className="mr-1.5 h-3.5 w-3.5" />
                             )}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="flex flex-wrap gap-2">
-                        {isReady ? (
-                          <span className="inline-flex h-8 items-center rounded border border-emerald-500/30 bg-emerald-500/10 px-2 text-xs font-medium text-emerald-600">
-                            Ready
-                          </span>
+                            {startingBackend
+                              ? "Starting…"
+                              : "Start Backend to Download"}
+                          </Button>
                         ) : (
                           <Button
                             size="sm"
                             variant="outline"
                             className="h-8 px-3 text-xs"
-                            onClick={() =>
-                              void handleImageModelDownload(tier.id)
-                            }
-                            disabled={
-                              isDownloading ||
-                              !isBackendOnline ||
-                              !tier.available_for_backend
-                            }
+                            onClick={() => void handleSetup()}
+                            disabled={setupRunning}
                           >
-                            {isDownloading ? (
-                              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Download className="mr-1.5 h-3.5 w-3.5" />
-                            )}
-                            {isDownloading ? "Downloading…" : "Download Model"}
+                            <Wrench className="mr-1.5 h-3.5 w-3.5" />
+                            Set Up to Download
                           </Button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          )}
-        </Card>
-      )}
-
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5" />
-                Generate 3D Model
-              </CardTitle>
-              <CardDescription>
-                {selectedTier
-                  ? `Using ${selectedTier.label}`
-                  : "Download a model to begin."}
-              </CardDescription>
-            </div>
-            {!isBackendOnline && (
-              <span className="text-xs text-amber-600 border border-amber-500/30 bg-amber-500/10 rounded px-2 py-1">
-                Backend offline
-              </span>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {selectedTier?.status === "not_downloaded" && (
-            <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
-              <Download className="h-4 w-4 mt-0.5 shrink-0" />
-              <span>
-                Download the selected model before generating (~
-                {((selectedTier.download_size_mb ?? 1700) / 1024).toFixed(
-                  2,
-                )}{" "}
-                GB).
-              </span>
-            </div>
-          )}
-
-          {inputMode === "text" && isBackendOnline && !hasImageModelReady && imageTiers.length > 0 && (
-            <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
-              <Download className="h-4 w-4 mt-0.5 shrink-0" />
-              <span>
-                Text-to-3D requires an image model to generate the reference
-                image. Download one from the <strong>Image Model</strong>{" "}
-                section above.
-              </span>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label>Input</Label>
-            <div className="inline-flex rounded-lg border border-border bg-background/50 p-0.5">
-              <button
-                type="button"
-                onClick={() => setInputMode("text")}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                  inputMode === "text"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <TypeIcon className="h-3.5 w-3.5" />
-                Text Prompt
-              </button>
-              <button
-                type="button"
-                onClick={() => setInputMode("image")}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                  inputMode === "image"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <ImageIcon className="h-3.5 w-3.5" />
-                Upload Image
-              </button>
-            </div>
-          </div>
-
-          {inputMode === "text" ? (
-            <div className="space-y-2">
-              <Label htmlFor="threed-prompt">Prompt</Label>
-              <Textarea
-                id="threed-prompt"
-                placeholder="A cute red robot toy with round eyes, isometric, plain background"
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                rows={4}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
-                    void handleGenerate();
-                }}
-              />
-              <p className="text-[11px] text-muted-foreground">
-                Text prompts are first turned into a 512×512 reference image,
-                then reconstructed into 3D. TripoSR rebuilds whatever it sees,
-                so describe a single object — &ldquo;a cute red teddy bear,
-                full body, plain background&rdquo; reconstructs much better
-                than &ldquo;a teddy bear in a forest&rdquo;.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Label>Reference Image</Label>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                onChange={(e) =>
-                  handleImageFileChange(e.target.files?.[0] ?? null)
-                }
-                className="hidden"
-              />
-              {imagePreviewUrl ? (
-                <div className="flex items-start gap-3 rounded-lg border border-border bg-background/50 p-3">
-                  <img
-                    src={imagePreviewUrl}
-                    alt="reference"
-                    className="h-24 w-24 rounded object-cover"
-                  />
-                  <div className="flex-1 min-w-0 space-y-1">
-                    <p className="text-sm font-medium truncate">
-                      {imageFile?.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {imageFile
-                        ? `${(imageFile.size / 1024).toFixed(1)} KB`
-                        : ""}
-                    </p>
-                    <div className="flex gap-2 pt-1">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        <Upload className="mr-1.5 h-3.5 w-3.5" />
-                        Replace
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleImageFileChange(null)}
-                      >
-                        Remove
-                      </Button>
+                        )
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-3 text-xs"
+                          onClick={() => void handleDownload(tier.id)}
+                          disabled={
+                            isDownloading || !tier.available_for_backend
+                          }
+                        >
+                          {isDownloading ? (
+                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Download className="mr-1.5 h-3.5 w-3.5" />
+                          )}
+                          {isDownloading ? "Downloading" : "Download Model"}
+                        </Button>
+                      )}
                     </div>
                   </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        {inputMode === "text" && (
+          <Card>
+            {/* Clickable header row — acts as the dropdown trigger */}
+            <button
+              type="button"
+              onClick={() => setImageTiersExpanded((v) => !v)}
+              className="w-full text-left"
+            >
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <ImageIcon className="h-5 w-5 shrink-0" />
+                    <div className="min-w-0">
+                      <CardTitle className="text-base">Image Model</CardTitle>
+                      <CardDescription className="mt-0.5">
+                        {hasImageModelReady
+                          ? (() => {
+                              const ready = imageTiers.find(
+                                (t) => t.status === "downloaded",
+                              );
+                              return (
+                                <span className="flex items-center gap-1.5">
+                                  <span className="font-medium text-emerald-600">
+                                    {ready?.label ?? "Model ready"}
+                                  </span>
+                                  <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-emerald-600">
+                                    Ready
+                                  </span>
+                                </span>
+                              );
+                            })()
+                          : "Download a model to enable text prompts"}
+                      </CardDescription>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {imageTiersLoading && (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                    )}
+                    <ChevronDown
+                      className={cn(
+                        "h-4 w-4 text-muted-foreground transition-transform",
+                        imageTiersExpanded && "rotate-180",
+                      )}
+                    />
+                  </div>
                 </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-background/30 py-8 text-sm text-muted-foreground hover:bg-background/60 transition-colors"
-                >
-                  <Upload className="h-6 w-6" />
-                  <span>Click to upload a reference image</span>
-                  <span className="text-[11px]">
-                    PNG / JPG / WEBP — single object on a plain white (or
-                    transparent) background. Removing the background yourself
-                    before uploading gives the cleanest mesh.
-                  </span>
-                </button>
+              </CardHeader>
+            </button>
+
+            {imageTiersExpanded && (
+              <CardContent className="space-y-3 pt-0">
+                <div className="flex items-center justify-between pb-1">
+                  <p className="text-xs text-muted-foreground">
+                    Text-to-3D generates a reference image first — pick a model
+                    that fits your hardware.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void fetchImageTiers();
+                    }}
+                    disabled={!isBackendOnline || imageTiersLoading}
+                    className="shrink-0 text-[10px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 ml-3"
+                  >
+                    {imageTiersLoading ? "Refreshing…" : "Refresh"}
+                  </button>
+                </div>
+
+                {!isBackendOnline && (
+                  <p className="text-sm text-muted-foreground">
+                    Start the backend to see available image models.
+                  </p>
+                )}
+                {isBackendOnline &&
+                  imageTiers.length === 0 &&
+                  !imageTiersLoading && (
+                    <p className="text-sm text-muted-foreground">
+                      No image models found. Click Refresh to check again.
+                    </p>
+                  )}
+
+                <div className="grid gap-2 md:grid-cols-2">
+                  {imageTiers.map((tier) => {
+                    const isDownloading =
+                      tier.status === "downloading" ||
+                      imageDownloadTierId === tier.id;
+                    const isReady = tier.status === "downloaded";
+                    return (
+                      <div
+                        key={tier.id}
+                        className={cn(
+                          "rounded-lg border p-3 space-y-2.5 transition-colors",
+                          isReady
+                            ? "border-emerald-500/30 bg-emerald-500/5"
+                            : isDownloading
+                              ? "border-sky-500/30 bg-sky-500/5"
+                              : "border-border bg-muted/10",
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {tier.selected && (
+                              <span className="shrink-0 rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-primary">
+                                Recommended
+                              </span>
+                            )}
+                            <span className="text-sm font-medium truncate">
+                              {tier.label}
+                            </span>
+                          </div>
+                          <span
+                            className={cn(
+                              "shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase",
+                              isReady
+                                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
+                                : isDownloading
+                                  ? "border-sky-500/30 bg-sky-500/10 text-sky-600"
+                                  : "border-border bg-muted/20 text-muted-foreground",
+                            )}
+                          >
+                            {!isBackendOnline
+                              ? "Needs backend"
+                              : isReady
+                                ? "Downloaded"
+                                : isDownloading
+                                  ? "Downloading"
+                                  : "Not downloaded"}
+                          </span>
+                        </div>
+
+                        {tier.description && (
+                          <p className="text-xs text-muted-foreground leading-relaxed">
+                            {tier.description}
+                          </p>
+                        )}
+
+                        <div className="flex flex-wrap gap-1 text-[10px] text-muted-foreground">
+                          {/* VRAM chip */}
+                          <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                            {tier.vram_mb === 0
+                              ? tier.backends?.some((b) =>
+                                  ["cuda", "rocm", "metal", "mps"].includes(b),
+                                )
+                                ? "GGUF · CPU+GPU"
+                                : "CPU only"
+                              : tier.vram_mb >= 1000
+                                ? `${tier.vram_mb / 1000} GB VRAM`
+                                : `${tier.vram_mb} MB VRAM`}
+                          </span>
+                          {/* For GGUF tiers show approx GPU VRAM usage alongside the
+                            file size — they're roughly equal for Q4 quants */}
+                          {tier.id.toLowerCase().includes("gguf") &&
+                            tier.download_size_mb > 0 && (
+                              <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                                ~{(tier.download_size_mb / 1024).toFixed(1)} GB
+                                VRAM (GPU)
+                              </span>
+                            )}
+                          {tier.download_size_mb > 0 && (
+                            <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                              ~{(tier.download_size_mb / 1024).toFixed(1)} GB
+                              {tier.id.toLowerCase().includes("gguf")
+                                ? " file"
+                                : " download"}
+                            </span>
+                          )}
+                          <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                            Text → Image
+                          </span>
+                        </div>
+
+                        {isDownloading && (
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-[10px] text-sky-600 font-medium">
+                              <span>Downloading</span>
+                              <span>
+                                {tier.download_progress != null
+                                  ? `${tier.download_progress}%`
+                                  : "Preparing…"}
+                              </span>
+                            </div>
+                            <div className="w-full h-1.5 bg-sky-500/10 rounded-full overflow-hidden">
+                              {tier.download_progress != null ? (
+                                <div
+                                  className="h-full bg-sky-500 rounded-full transition-all duration-300"
+                                  style={{
+                                    width: `${tier.download_progress}%`,
+                                  }}
+                                />
+                              ) : (
+                                <div className="h-full w-1/3 animate-pulse rounded-full bg-sky-500" />
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex flex-wrap gap-2">
+                          {isReady ? (
+                            <span className="inline-flex h-8 items-center rounded border border-emerald-500/30 bg-emerald-500/10 px-2 text-xs font-medium text-emerald-600">
+                              Ready
+                            </span>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 px-3 text-xs"
+                              onClick={() =>
+                                void handleImageModelDownload(tier.id)
+                              }
+                              disabled={
+                                isDownloading ||
+                                !isBackendOnline ||
+                                !tier.available_for_backend
+                              }
+                            >
+                              {isDownloading ? (
+                                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Download className="mr-1.5 h-3.5 w-3.5" />
+                              )}
+                              {isDownloading
+                                ? "Downloading…"
+                                : "Download Model"}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            )}
+          </Card>
+        )}
+
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5" />
+                  Generate 3D Model
+                </CardTitle>
+                <CardDescription>
+                  {selectedTier
+                    ? `Using ${selectedTier.label}`
+                    : "Download a model to begin."}
+                </CardDescription>
+              </div>
+              {!isBackendOnline && (
+                <span className="text-xs text-amber-600 border border-amber-500/30 bg-amber-500/10 rounded px-2 py-1">
+                  Backend offline
+                </span>
               )}
             </div>
-          )}
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {selectedTier?.status === "not_downloaded" && (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+                <Download className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>
+                  Download the selected model before generating (~
+                  {((selectedTier.download_size_mb ?? 1700) / 1024).toFixed(
+                    2,
+                  )}{" "}
+                  GB).
+                </span>
+              </div>
+            )}
 
-          {genStatus === "error" && (
-            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-              <Square className="h-4 w-4 mt-0.5 shrink-0" />
-              {genError}
-            </div>
-          )}
+            {inputMode === "text" &&
+              isBackendOnline &&
+              !hasImageModelReady &&
+              imageTiers.length > 0 && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+                  <Download className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>
+                    Text-to-3D requires an image model to generate the reference
+                    image. Download one from the <strong>Image Model</strong>{" "}
+                    section above.
+                  </span>
+                </div>
+              )}
 
-          {isBusy && genStage && (
-            <div className="flex items-center gap-2 rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-sm text-sky-700 dark:text-sky-400">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              {genStage}
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label>Quality</Label>
-            <div className="inline-flex rounded-lg border border-border bg-background/50 p-0.5">
-              {([
-                { v: 256, label: "Fast" },
-                { v: 320, label: "Balanced" },
-                { v: 384, label: "High" },
-                { v: 512, label: "Max" },
-              ] as const).map((opt) => (
+            <div className="space-y-2">
+              <Label>Input</Label>
+              <div className="inline-flex rounded-lg border border-border bg-background/50 p-0.5">
                 <button
-                  key={opt.v}
                   type="button"
-                  onClick={() => setMeshResolution(opt.v)}
+                  onClick={() => setInputMode("text")}
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                    meshResolution === opt.v
+                    inputMode === "text"
                       ? "bg-primary text-primary-foreground"
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  {opt.label}
+                  <TypeIcon className="h-3.5 w-3.5" />
+                  Text Prompt
                 </button>
-              ))}
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              Marching-cubes resolution ({meshResolution}). Higher captures
-              fine detail like ears and fingers but takes longer and uses more
-              VRAM. <span className="font-medium">Max (512)</span> needs ~6 GB
-              VRAM headroom.
-            </p>
-          </div>
-
-          {/* Generate button stays above the result viewer so it's always
-              visible — otherwise the 420px-tall preview from a previous run
-              pushes the button below the fold and looks like it's gone. */}
-          <div className="flex gap-2">
-            <Button
-              onClick={() => void handleGenerate()}
-              disabled={
-                !isBackendOnline ||
-                selectedTier?.status !== "downloaded" ||
-                isBusy ||
-                (inputMode === "text" && !prompt.trim()) ||
-                (inputMode === "text" && !hasImageModelReady) ||
-                (inputMode === "image" && !imageFile)
-              }
-              aria-busy={isBusy}
-              className={cn(
-                "flex-1",
-                isBusy && "pointer-events-none cursor-wait",
-              )}
-            >
-              {isBusy ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Box className="mr-2 h-4 w-4" />
-              )}
-              {isBusy
-                ? genStatus === "image-gen"
-                  ? "Generating reference image…"
-                  : "Reconstructing 3D mesh…"
-                : selectedTier?.status !== "downloaded"
-                  ? "Download 3D Model First"
-                  : inputMode === "text" && !hasImageModelReady
-                    ? "Download Image Model First"
-                    : "Generate 3D Model"}
-            </Button>
-            {isBusy && (
-              <Button variant="outline" onClick={handleStopGen}>
-                <Square className="mr-2 h-4 w-4" />
-                Stop
-              </Button>
-            )}
-          </div>
-
-          {genStatus === "done" && glbUrl && (
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-green-600 dark:text-green-400 flex items-center gap-1.5">
-                <Sparkles className="h-4 w-4" />
-                3D model ready
-              </p>
-              <ModelViewer url={glbUrl} />
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    const a = document.createElement("a");
-                    a.href = glbUrl;
-                    a.download = `model-${Date.now()}.glb`;
-                    a.click();
-                  }}
+                <button
+                  type="button"
+                  onClick={() => setInputMode("image")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                    inputMode === "image"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
                 >
-                  <Download className="mr-2 h-3.5 w-3.5" />
-                  Download .glb
-                </Button>
-                <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <BookMarked className="h-3.5 w-3.5" />
-                  Saved to Library
-                </span>
+                  <ImageIcon className="h-3.5 w-3.5" />
+                  Upload Image
+                </button>
               </div>
             </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+
+            {inputMode === "text" ? (
+              <div className="space-y-2">
+                <Label htmlFor="threed-prompt">Prompt</Label>
+                <Textarea
+                  id="threed-prompt"
+                  placeholder="A cute red robot toy with round eyes, isometric, plain background"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  rows={4}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
+                      void handleGenerate();
+                  }}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Text prompts are first turned into a 512×512 reference image,
+                  then reconstructed into 3D. TripoSR rebuilds whatever it sees,
+                  so describe a single object — &ldquo;a cute red teddy bear,
+                  full body, plain background&rdquo; reconstructs much better
+                  than &ldquo;a teddy bear in a forest&rdquo;.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Reference Image</Label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(e) =>
+                    handleImageFileChange(e.target.files?.[0] ?? null)
+                  }
+                  className="hidden"
+                />
+                {imagePreviewUrl ? (
+                  <div className="flex items-start gap-3 rounded-lg border border-border bg-background/50 p-3">
+                    <img
+                      src={imagePreviewUrl}
+                      alt="reference"
+                      className="h-24 w-24 rounded object-cover"
+                    />
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <p className="text-sm font-medium truncate">
+                        {imageFile?.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {imageFile
+                          ? `${(imageFile.size / 1024).toFixed(1)} KB`
+                          : ""}
+                      </p>
+                      <div className="flex gap-2 pt-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => fileInputRef.current?.click()}
+                        >
+                          <Upload className="mr-1.5 h-3.5 w-3.5" />
+                          Replace
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleImageFileChange(null)}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-background/30 py-8 text-sm text-muted-foreground hover:bg-background/60 transition-colors"
+                  >
+                    <Upload className="h-6 w-6" />
+                    <span>Click to upload a reference image</span>
+                    <span className="text-[11px]">
+                      PNG / JPG / WEBP — single object on a plain white (or
+                      transparent) background. Removing the background yourself
+                      before uploading gives the cleanest mesh.
+                    </span>
+                  </button>
+                )}
+              </div>
+            )}
+
+            {genStatus === "error" && (
+              <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                <Square className="h-4 w-4 mt-0.5 shrink-0" />
+                {genError}
+              </div>
+            )}
+
+            {isBusy && genStage && (
+              <div className="flex items-center gap-2 rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-sm text-sky-700 dark:text-sky-400">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {genStage}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Quality</Label>
+              <div className="inline-flex rounded-lg border border-border bg-background/50 p-0.5">
+                {(
+                  [
+                    { v: 256, label: "Fast" },
+                    { v: 320, label: "Balanced" },
+                    { v: 384, label: "High" },
+                    { v: 512, label: "Max" },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.v}
+                    type="button"
+                    onClick={() => setMeshResolution(opt.v)}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                      meshResolution === opt.v
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Marching-cubes resolution ({meshResolution}). Higher captures
+                fine detail like ears and fingers but takes longer and uses more
+                VRAM. <span className="font-medium">Max (512)</span> needs ~6 GB
+                VRAM headroom.
+              </p>
+            </div>
+
+            {/* Generate button stays above the result viewer so it's always
+              visible — otherwise the 420px-tall preview from a previous run
+              pushes the button below the fold and looks like it's gone. */}
+            <div className="flex gap-2">
+              <Button
+                onClick={() => void handleGenerate()}
+                disabled={
+                  !isBackendOnline ||
+                  selectedTier?.status !== "downloaded" ||
+                  isBusy ||
+                  (inputMode === "text" && !prompt.trim()) ||
+                  (inputMode === "text" && !hasImageModelReady) ||
+                  (inputMode === "image" && !imageFile)
+                }
+                aria-busy={isBusy}
+                className={cn(
+                  "flex-1",
+                  isBusy && "pointer-events-none cursor-wait",
+                )}
+              >
+                {isBusy ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Box className="mr-2 h-4 w-4" />
+                )}
+                {isBusy
+                  ? genStatus === "image-gen"
+                    ? "Generating reference image…"
+                    : "Reconstructing 3D mesh…"
+                  : selectedTier?.status !== "downloaded"
+                    ? "Download 3D Model First"
+                    : inputMode === "text" && !hasImageModelReady
+                      ? "Download Image Model First"
+                      : "Generate 3D Model"}
+              </Button>
+              {isBusy && (
+                <Button variant="outline" onClick={handleStopGen}>
+                  <Square className="mr-2 h-4 w-4" />
+                  Stop
+                </Button>
+              )}
+            </div>
+
+            {genStatus === "done" && glbUrl && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-green-600 dark:text-green-400 flex items-center gap-1.5">
+                  <Sparkles className="h-4 w-4" />
+                  3D model ready
+                </p>
+                <ModelViewer url={glbUrl} />
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const a = document.createElement("a");
+                      a.href = glbUrl;
+                      a.download = `model-${Date.now()}.glb`;
+                      a.click();
+                    }}
+                  >
+                    <Download className="mr-2 h-3.5 w-3.5" />
+                    Download .glb
+                  </Button>
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <BookMarked className="h-3.5 w-3.5" />
+                    Saved to Library
+                  </span>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

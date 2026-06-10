@@ -27,7 +27,9 @@ function emitProgress(fileName: string, percent: number): void {
 }
 
 export function registerYouTubeHandlers(): void {
-  createTypedHandler(youtubeContracts.getStatus, async () => ytStore.getStatus());
+  createTypedHandler(youtubeContracts.getStatus, async () =>
+    ytStore.getStatus(),
+  );
 
   // DO NOT LOG — carries the client secret.
   createTypedHandler(

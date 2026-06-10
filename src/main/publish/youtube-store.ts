@@ -97,7 +97,10 @@ export function saveCredentials(clientId: string, clientSecret: string): void {
 }
 
 /** Returns the decrypted client credentials, or null if not configured. */
-export function getCredentials(): { clientId: string; clientSecret: string } | null {
+export function getCredentials(): {
+  clientId: string;
+  clientSecret: string;
+} | null {
   const raw = readRaw();
   const clientSecret = decryptOrNull(raw.clientSecret);
   if (!raw.clientId || !clientSecret) return null;

@@ -27,13 +27,13 @@ Editorial type scales are not gradual. The gap between display and body
 is large — often 3–5× — because the display element is not just a heading,
 it is a visual event.
 
-| Level | Typical range | Notes |
-|---|---|---|
-| Display / lede | 56–96 px | (editorial override) May intentionally exceed the default `typography.md` display range |
-| Deck / standfirst | 18–24 px | Large jump down — intentional |
-| Body | 16–18 px | Close to deck is fine; they're in the same reading register |
-| Pull quote | 28–40 px | Disrupts body rhythm; treated as a visual break, not a heading |
-| Caption / label | 11–13 px | Minimal — never competes with body |
+| Level             | Typical range | Notes                                                                                   |
+| ----------------- | ------------- | --------------------------------------------------------------------------------------- |
+| Display / lede    | 56–96 px      | (editorial override) May intentionally exceed the default `typography.md` display range |
+| Deck / standfirst | 18–24 px      | Large jump down — intentional                                                           |
+| Body              | 16–18 px      | Close to deck is fine; they're in the same reading register                             |
+| Pull quote        | 28–40 px      | Disrupts body rhythm; treated as a visual break, not a heading                          |
+| Caption / label   | 11–13 px      | Minimal — never competes with body                                                      |
 
 The gap between display and deck is the editorial signature. A small step
 here reads as SaaS, not editorial.
@@ -46,6 +46,7 @@ surrounded by generous whitespace outranks a bold heading crammed against
 its content.
 
 Rules:
+
 - Above-the-fold display element: minimum 2× the line-height in space above
   and below before body begins.
 - Pull quotes: full column margin on both sides, or break the grid entirely.
@@ -85,14 +86,14 @@ weight, and whitespace, not tracking.
 
 A pull quote is not a blockquote. It is a visual interrupt.
 
-| Property | Behavior |
-|---|---|
-| Scale | 28–40 px — above body, below display |
-| Weight | Regular or light — never bold |
-| Tracking | Slightly negative (`-0.01em`) or zero |
+| Property  | Behavior                                                               |
+| --------- | ---------------------------------------------------------------------- |
+| Scale     | 28–40 px — above body, below display                                   |
+| Weight    | Regular or light — never bold                                          |
+| Tracking  | Slightly negative (`-0.01em`) or zero                                  |
 | Alignment | Break from body column — full width, or offset inline-start/inline-end |
-| Spacing | Large above and below — equal to or greater than a section break |
-| Color | May use `var(--accent)` as the only accent use on the page |
+| Spacing   | Large above and below — equal to or greater than a section break       |
+| Color     | May use `var(--accent)` as the only accent use on the page             |
 
 Pull quotes placed at regular intervals destroy their effect. One per
 long-form article is usually correct. Two is a maximum.
@@ -123,15 +124,15 @@ between compression and expansion:
 
 ## Editorial hierarchy table
 
-| Element | Scale | Weight | Tracking | Leading | Spacing role |
-|---|---|---|---|---|---|
-| Display headline | 56–96 px | Light or regular | `-0.02em` to `-0.05em` | `1.0`–`1.1` | Event — generous above/below |
-| Deck / standfirst | 18–24 px | Regular | `0` | `1.4`–`1.5` | Transitional — moderate gap below |
-| Byline / dateline | 12–14 px | Regular or medium | `0.02em`–`0.04em` | `1.5` | Recedes — tight gap below |
-| Body | 16–18 px | Regular | `0` | `1.6`–`1.7` | Baseline — rhythm carrier |
-| Pull quote | 28–40 px | Regular or light | `-0.01em` (Latin only; 0 for joining scripts) | `1.2`–`1.3` | Interrupt — large above/below |
-| Image caption | 12–13 px | Regular | `0.01em` | `1.5` | Recedes — tight cluster |
-| Section label | 11–12 px | Medium | `0.06em`–`0.1em` (if caps) | `1.5` | Wayfinding only |
+| Element           | Scale    | Weight            | Tracking                                      | Leading     | Spacing role                      |
+| ----------------- | -------- | ----------------- | --------------------------------------------- | ----------- | --------------------------------- |
+| Display headline  | 56–96 px | Light or regular  | `-0.02em` to `-0.05em`                        | `1.0`–`1.1` | Event — generous above/below      |
+| Deck / standfirst | 18–24 px | Regular           | `0`                                           | `1.4`–`1.5` | Transitional — moderate gap below |
+| Byline / dateline | 12–14 px | Regular or medium | `0.02em`–`0.04em`                             | `1.5`       | Recedes — tight gap below         |
+| Body              | 16–18 px | Regular           | `0`                                           | `1.6`–`1.7` | Baseline — rhythm carrier         |
+| Pull quote        | 28–40 px | Regular or light  | `-0.01em` (Latin only; 0 for joining scripts) | `1.2`–`1.3` | Interrupt — large above/below     |
+| Image caption     | 12–13 px | Regular           | `0.01em`                                      | `1.5`       | Recedes — tight cluster           |
+| Section label     | 11–12 px | Medium            | `0.06em`–`0.1em` (if caps)                    | `1.5`       | Wayfinding only                   |
 
 ---
 
@@ -177,6 +178,6 @@ between compression and expansion:
 - [ ] Bold used ≤ 2 times per 400 words in body copy. (long-form only)
 - [ ] `var(--accent)` used ≤ 2 times on the full editorial surface (see `color.md` §accent discipline).
 - [ ] Section separators (rules, dingbats) are used only when they
-  reinforce publication identity or clearly mark unrelated-content boundaries;
-  they must not be used as a hierarchy fallback. (guidance)
+      reinforce publication identity or clearly mark unrelated-content boundaries;
+      they must not be used as a hierarchy fallback. (guidance)
 - [ ] Pull quote has no background, border, or container treatment.

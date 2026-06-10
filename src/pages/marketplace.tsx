@@ -630,9 +630,7 @@ function FileRow({
                   variant="outline"
                   className="h-7 px-2"
                   title={`Show in folder: ${download.destPath}`}
-                  onClick={() =>
-                    ipc.system.showItemInFolder(download.destPath)
-                  }
+                  onClick={() => ipc.system.showItemInFolder(download.destPath)}
                 >
                   <FolderOpen className="w-3 h-3" />
                 </Button>

@@ -27,7 +27,11 @@ import { ipc } from "@/ipc/types";
 import { cn } from "@/lib/utils";
 import { generatedMediaUrl } from "@/ipc/types";
 
-const CATEGORIES: { kind: GeneratedMediaKind; label: string; icon: typeof ImageIcon }[] = [
+const CATEGORIES: {
+  kind: GeneratedMediaKind;
+  label: string;
+  icon: typeof ImageIcon;
+}[] = [
   { kind: "image", label: "Images", icon: ImageIcon },
   { kind: "video", label: "Videos", icon: Film },
   { kind: "model", label: "3D Models", icon: Box },
@@ -133,7 +137,11 @@ export default function MediaPage() {
           <ImageIcon className="h-5 w-5 text-primary" />
           <h1 className="text-base font-semibold">Media</h1>
         </div>
-        <Button size="sm" variant="outline" onClick={() => void navigate({ to: "/mediaai" })}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => void navigate({ to: "/mediaai" })}
+        >
           <Sparkles className="mr-1.5 h-3.5 w-3.5" />
           Generate in Gen Assets
         </Button>
@@ -157,7 +165,10 @@ export default function MediaPage() {
               <p className="text-sm font-medium">No media yet</p>
               <p className="mt-1 text-xs text-muted-foreground">
                 Generate images, videos or 3D models in{" "}
-                <button className="text-primary underline" onClick={() => void navigate({ to: "/mediaai" })}>
+                <button
+                  className="text-primary underline"
+                  onClick={() => void navigate({ to: "/mediaai" })}
+                >
                   Gen Assets
                 </button>{" "}
                 — they appear here automatically.
@@ -308,7 +319,8 @@ export default function MediaPage() {
               onClick={() => setEditOpen(true)}
             >
               <Scissors className="mr-1.5 h-4 w-4" />
-              Edit & join {selectedVideos.length >= 2 ? selectedVideos.length : ""} clips
+              Edit & join{" "}
+              {selectedVideos.length >= 2 ? selectedVideos.length : ""} clips
             </Button>
           </div>
         </div>

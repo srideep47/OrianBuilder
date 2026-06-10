@@ -97,7 +97,8 @@ export const generatedMediaEvents = {
   }),
 } as const;
 
-export const generatedMediaEventClient = createEventClient(generatedMediaEvents);
+export const generatedMediaEventClient =
+  createEventClient(generatedMediaEvents);
 
 /** Build the renderer URL that serves a generated-media file. */
 export function generatedMediaUrl(fileName: string): string {

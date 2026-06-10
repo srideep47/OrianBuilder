@@ -161,9 +161,8 @@ export function GalaxyBackground() {
       canvas.style.height = `${H}px`;
       ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
       // Use 50% of the original ray count — still visually rich, half the GPU work
-      rays = Array.from(
-        { length: Math.round(targetCount(W, H) * 0.5) },
-        () => makeRay(W, H),
+      rays = Array.from({ length: Math.round(targetCount(W, H) * 0.5) }, () =>
+        makeRay(W, H),
       );
     };
 

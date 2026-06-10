@@ -8,11 +8,7 @@ import {
   CheckCircle2,
   Scissors,
 } from "lucide-react";
-import {
-  ipc,
-  generatedMediaUrl,
-  type GeneratedMediaItem,
-} from "@/ipc/types";
+import { ipc, generatedMediaUrl, type GeneratedMediaItem } from "@/ipc/types";
 import {
   Dialog,
   DialogContent,
@@ -104,8 +100,8 @@ export function VideoEditDialog({
           </DialogTitle>
           <DialogDescription>
             Reorder the clips below. They will be joined in this order into a
-            single new video. Different resolutions are normalised to 1280×720
-            @ 24fps.
+            single new video. Different resolutions are normalised to 1280×720 @
+            24fps.
           </DialogDescription>
         </DialogHeader>
 
@@ -139,7 +135,9 @@ export function VideoEditDialog({
                     src={generatedMediaUrl(item.fileName)}
                     className="h-14 w-24 shrink-0 rounded bg-black object-cover"
                     muted
-                    onMouseEnter={(e) => void e.currentTarget.play().catch(() => undefined)}
+                    onMouseEnter={(e) =>
+                      void e.currentTarget.play().catch(() => undefined)
+                    }
                     onMouseLeave={(e) => {
                       e.currentTarget.pause();
                       e.currentTarget.currentTime = 0;

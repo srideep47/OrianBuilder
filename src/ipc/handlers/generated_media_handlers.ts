@@ -8,7 +8,10 @@ import * as fs from "fs";
 import * as os from "os";
 import { BrowserWindow } from "electron";
 import log from "electron-log/main";
-import { generatedMediaContracts, generatedMediaEvents } from "@/ipc/types/generated_media";
+import {
+  generatedMediaContracts,
+  generatedMediaEvents,
+} from "@/ipc/types/generated_media";
 import { createTypedHandler } from "./base";
 import * as store from "@/main/generated_media/store";
 import { mediaShare } from "@/main/network/media-share";
@@ -32,23 +35,29 @@ function emitChanged(): void {
 export function registerGeneratedMediaHandlers(): void {
   createTypedHandler(generatedMediaContracts.list, async () => store.list());
 
-  createTypedHandler(generatedMediaContracts.saveFromUrl, async (_e, params) => {
-    const item = await store.saveFromUrl(params.url, {
-      prompt: params.prompt ?? null,
-      promptOrStem: params.prompt ?? undefined,
-      ext: params.ext,
-    });
-    emitChanged();
-    return item;
-  });
+  createTypedHandler(
+    generatedMediaContracts.saveFromUrl,
+    async (_e, params) => {
+      const item = await store.saveFromUrl(params.url, {
+        prompt: params.prompt ?? null,
+        promptOrStem: params.prompt ?? undefined,
+        ext: params.ext,
+      });
+      emitChanged();
+      return item;
+    },
+  );
 
-  createTypedHandler(generatedMediaContracts.remove, async (_e, { fileName }) => {
-    store.remove(fileName);
-    emitChanged();
-    // A removed item may have been shared — re-announce the smaller set.
-    mediaShare.announceToAll();
-    return { ok: true };
-  });
+  createTypedHandler(
+    generatedMediaContracts.remove,
+    async (_e, { fileName }) => {
+      store.remove(fileName);
+      emitChanged();
+      // A removed item may have been shared — re-announce the smaller set.
+      mediaShare.announceToAll();
+      return { ok: true };
+    },
+  );
 
   createTypedHandler(
     generatedMediaContracts.getFilePath,

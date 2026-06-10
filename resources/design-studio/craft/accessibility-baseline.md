@@ -38,12 +38,12 @@ and prepares for v4.1.1. Anything below 2.2 AA is craft debt.
 
 ## Color contrast
 
-| Pair | WCAG 2.x AA minimum |
-|---|---|
-| Normal text below 18 pt regular / 14 pt bold (covers most body and UI text) | 4.5:1 |
-| Large text (≥18 *pt* regular ≈24 px, or ≥14 *pt* bold ≈18.5 px) | 3:1 |
-| Non-text UI components and graphical objects | 3:1 |
-| Focus indicator vs adjacent and unfocused state | 3:1 |
+| Pair                                                                        | WCAG 2.x AA minimum |
+| --------------------------------------------------------------------------- | ------------------- |
+| Normal text below 18 pt regular / 14 pt bold (covers most body and UI text) | 4.5:1               |
+| Large text (≥18 _pt_ regular ≈24 px, or ≥14 _pt_ bold ≈18.5 px)             | 3:1                 |
+| Non-text UI components and graphical objects                                | 3:1                 |
+| Focus indicator vs adjacent and unfocused state                             | 3:1                 |
 
 Thresholds are **inclusive** — exactly 4.5:1 or 3:1 passes. Don't round
 up: 2.999:1 fails because rounding is not a permitted mechanism.
@@ -63,12 +63,12 @@ package; the SAPC repo is non-commercial.
 
 ## Touch targets
 
-| Bar | SC | Size |
-|---|---|---|
-| AA (legal floor) | 2.5.8 Target Size (Minimum) | **24×24 CSS px** |
-| AAA (craft commitment) | 2.5.5 Target Size (Enhanced) | 44×44 CSS px |
-| iOS HIG | — | 44×44 pt |
-| Material 3 | — | 48×48 dp |
+| Bar                    | SC                           | Size             |
+| ---------------------- | ---------------------------- | ---------------- |
+| AA (legal floor)       | 2.5.8 Target Size (Minimum)  | **24×24 CSS px** |
+| AAA (craft commitment) | 2.5.5 Target Size (Enhanced) | 44×44 CSS px     |
+| iOS HIG                | —                            | 44×44 pt         |
+| Material 3             | —                            | 48×48 dp         |
 
 WCAG 2.5.8 lists five exceptions where the 24×24 minimum doesn't
 apply: **Spacing** (a 24-CSS-px exclusion circle around the target
@@ -105,9 +105,13 @@ Default form-error wiring (WCAG 2.2 + ARIA APG):
 
 ```html
 <label for="email">Email</label>
-<input id="email" type="email" required
-       aria-describedby="email-hint email-error"
-       aria-invalid="true">
+<input
+  id="email"
+  type="email"
+  required
+  aria-describedby="email-hint email-error"
+  aria-invalid="true"
+/>
 <span id="email-hint">Used for receipts only.</span>
 <span id="email-error" role="alert">Email must include @ and a domain.</span>
 ```
@@ -131,7 +135,7 @@ are noted per item.
 
 - **Tab reachability** (2.1.1 Keyboard, Level A): every interactive element must be reachable and operable via keyboard. `tabindex="-1"` removes from the tab order; `tabindex` values >0 break document order and should not be used. (2.1.3 No Exception extends 2.1.1 to AAA by removing the underlying-function exception.)
 - **Activation keys** (2.1.1, Level A): `<button>` activates on Enter and Space; `<a href="…">` activates on Enter. A bare `<a>` without `href` is not a link, not focusable, and not keyboard-operable — use `<a href="…">` for navigation or `<button>` for actions, never a placeholder anchor. Custom controls must implement the matching key handlers and `role`.
-- **No keyboard trap** (2.1.2, Level A): focus must be able to leave any component via the same standard keys it entered with. Modal dialogs are a focus-trap *by design*, not a violation — they trap until dismissed by Escape or the close button.
+- **No keyboard trap** (2.1.2, Level A): focus must be able to leave any component via the same standard keys it entered with. Modal dialogs are a focus-trap _by design_, not a violation — they trap until dismissed by Escape or the close button.
 - **Focus order** (2.4.3, Level A): tab order must follow the meaningful reading order. Don't rely on positive `tabindex` to fix DOM that's out of order; fix the DOM.
 - **Native control first** (craft convention, anchored on 4.1.2 Name/Role/Value Level A): a `<button>` is keyboard-operable, focusable, name-resolvable, and announced as a button by every AT for free. `<div role="button" tabindex="0">` requires you to re-implement all of that and most reimplementations miss `aria-pressed`, disabled state, or Space-on-keyup. Reach for ARIA only when no native element fits.
 - **Document language** (3.1.1, Level A): `<html lang="...">` is required. Sub-tree language switches use `lang` on the inner element.
@@ -144,8 +148,7 @@ are noted per item.
 WebAIM Million 2026 shows ARIA pages average **59.1 errors** vs
 **42** on non-ARIA pages — about 17 extra errors on the ARIA side.
 The gap was 30 in 2025 (57 vs 27) and 15 in 2024; YoY direction is
-noisy, but ARIA usage is up (82.7% of home pages in 2026 vs 79.4% in
-2025) while correctness lags. ARIA deployment outpaces ARIA
+noisy, but ARIA usage is up (82.7% of home pages in 2026 vs 79.4% in 2025) while correctness lags. ARIA deployment outpaces ARIA
 correctness.
 
 Decision order, per ARIA APG:
@@ -169,13 +172,13 @@ epilepsy is the protected concern.
 
 Web ARIA does not auto-translate. Each platform has its own labelling API.
 
-| Platform | Label | Role |
-|---|---|---|
-| iOS UIKit | `accessibilityLabel` | `accessibilityTraits` |
-| iOS SwiftUI | `.accessibilityLabel(…)` | `.accessibilityAddTraits(.isButton)` |
+| Platform        | Label                                           | Role                                        |
+| --------------- | ----------------------------------------------- | ------------------------------------------- |
+| iOS UIKit       | `accessibilityLabel`                            | `accessibilityTraits`                       |
+| iOS SwiftUI     | `.accessibilityLabel(…)`                        | `.accessibilityAddTraits(.isButton)`        |
 | Android Compose | `Modifier.semantics { contentDescription = … }` | `Modifier.semantics { role = Role.Button }` |
-| Flutter | `Semantics(label: …)` | `Semantics(button: true, …)` |
-| React Native | `accessibilityLabel` | `accessibilityRole` |
+| Flutter         | `Semantics(label: …)`                           | `Semantics(button: true, …)`                |
+| React Native    | `accessibilityLabel`                            | `accessibilityRole`                         |
 
 Use the platform API for each target. AI-generated mobile UI that
 mirrors web ARIA verbatim usually misses the platform-native screen
@@ -184,7 +187,7 @@ reader path.
 ## Common mistakes (lint these)
 
 - "Target Size 44×44" cited as the AA bar. 44×44 is **AAA** (2.5.5). AA is **24×24** (2.5.8).
-- "18 px = large text" — wrong. Threshold is 18 *pt* regular (~24 px) or 14 pt bold (~18.5 px).
+- "18 px = large text" — wrong. Threshold is 18 _pt_ regular (~24 px) or 14 pt bold (~18.5 px).
 - "EAA = WCAG 2.2 AA" — wrong. EN 301 549 v3.2.1 is anchored to WCAG 2.1.
 - "Section 508 = WCAG 2.1 AA" — wrong as of 2026-05. Revised 508 still references WCAG 2.0 AA; the Access Board update is in flight, not shipped.
 - "Tabindex fixes focus order" — `tabindex` >0 reorders against DOM and almost always makes it worse. Fix the DOM.

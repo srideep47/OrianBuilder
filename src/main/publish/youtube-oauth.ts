@@ -186,7 +186,9 @@ export async function runOAuthFlow(): Promise<string | null> {
       if (returnedState !== state || !code) {
         respond("Something went wrong");
         finish(() =>
-          reject(new Error("OAuth state mismatch — please try connecting again.")),
+          reject(
+            new Error("OAuth state mismatch — please try connecting again."),
+          ),
         );
         return;
       }
@@ -219,13 +221,17 @@ export async function runOAuthFlow(): Promise<string | null> {
           setChannelTitle(title);
           finish(() => resolve(title));
         } catch (err) {
-          finish(() => reject(err instanceof Error ? err : new Error(String(err))));
+          finish(() =>
+            reject(err instanceof Error ? err : new Error(String(err))),
+          );
         }
       })();
     });
 
     server.on("error", (err) =>
-      finish(() => reject(new Error(`Could not start local OAuth server: ${err.message}`))),
+      finish(() =>
+        reject(new Error(`Could not start local OAuth server: ${err.message}`)),
+      ),
     );
 
     const timeout = setTimeout(

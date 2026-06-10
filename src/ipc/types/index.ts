@@ -99,6 +99,20 @@ export {
   mediaQueueEvents,
   mediaQueueEventClient,
 } from "./media_queue";
+export {
+  orionSetupContracts,
+  orionSetupClient,
+  orionSetupEvents,
+  orionSetupEventClient,
+} from "./orion_setup";
+export type {
+  OrionSetupState,
+  OrionSetupStep,
+  OrionSetupStepId,
+  OrionSetupStepStatus,
+  OrionSetupOverall,
+  StartOrionSetupParams,
+} from "./orion_setup";
 export type {
   MediaJob,
   MediaJobKind,
@@ -653,6 +667,7 @@ import {
 } from "./generated_media";
 import { sharedMediaClient, sharedMediaEventClient } from "./shared_media";
 import { mediaQueueClient, mediaQueueEventClient } from "./media_queue";
+import { orionSetupClient, orionSetupEventClient } from "./orion_setup";
 import { youtubeClient, youtubeEventClient } from "./youtube";
 import {
   androidEmulatorClient,
@@ -738,6 +753,7 @@ export const ipc = {
   generatedMedia: generatedMediaClient,
   sharedMedia: sharedMediaClient,
   mediaQueue: mediaQueueClient,
+  orionSetup: orionSetupClient,
   youtube: youtubeClient,
   androidEmulator: androidEmulatorClient,
   designStudio: designStudioClient,
@@ -759,6 +775,7 @@ export const ipc = {
     generatedMedia: generatedMediaEventClient,
     sharedMedia: sharedMediaEventClient,
     mediaQueue: mediaQueueEventClient,
+    orionSetup: orionSetupEventClient,
     youtube: youtubeEventClient,
     androidEmulator: androidEmulatorEventClient,
     schedule: scheduleEventClient,

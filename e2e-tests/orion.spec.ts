@@ -9,6 +9,26 @@ const COFFEE_VIDEO_BUILD_PROMPT =
 
 test.setTimeout(180_000);
 
+test("Orion setup panel renders the resumable setup checklist", async ({
+  po,
+}) => {
+  await po.setUp();
+
+  await expect(
+    po.page.getByRole("heading", { name: "Set up Orion" }),
+  ).toBeVisible({ timeout: Timeout.LONG });
+
+  // The orchestrator's getState seeds the step checklist even before any run.
+  await expect(po.page.getByText("Install media backend")).toBeVisible();
+  await expect(po.page.getByText("Download media models")).toBeVisible();
+  await expect(po.page.getByText("Start media backend")).toBeVisible();
+
+  // The primary action is present (scope toggles default on per "Everything").
+  await expect(
+    po.page.getByRole("button", { name: "Set up Orion" }),
+  ).toBeVisible();
+});
+
 test("Orion command center is available from home and persists workflow sessions", async ({
   po,
 }) => {
