@@ -292,11 +292,15 @@ class OrchestratorImpl implements ModelOrchestrator {
     const swapStarted = Date.now();
 
     this.transition("swapping-out");
+    const unloadStarted = Date.now();
     try {
       if (this.hooks.unloadLlm) await this.hooks.unloadLlm();
     } catch (err) {
       logger.error("unloadLlm hook failed:", err);
     }
+    logger.info(
+      `swap-out: LLM unloaded in ${Date.now() - unloadStarted} ms (for ${captured.modelType})`,
+    );
     this.transition("media-loading");
 
     let result: MediaGenerationResult;
@@ -320,11 +324,15 @@ class OrchestratorImpl implements ModelOrchestrator {
       this.transition("swapping-back");
       this.currentMediaModel = null;
       if (this.lastLlmParams && this.hooks.reloadLlm) {
+        const reloadStarted = Date.now();
         try {
           await this.hooks.reloadLlm(this.lastLlmParams);
         } catch (err) {
           logger.error("reloadLlm hook failed:", err);
         }
+        logger.info(
+          `swap-back: LLM reloaded in ${Date.now() - reloadStarted} ms`,
+        );
       }
       this.transition("llm-loaded");
     } catch (err) {

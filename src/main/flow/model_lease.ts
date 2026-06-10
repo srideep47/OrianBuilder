@@ -1,4 +1,5 @@
 import log from "electron-log";
+import type { SwapEvent } from "@/ipc/types/intent";
 
 // =============================================================================
 // Orion Unification - N-Model Lease Scheduler (Phase 2)
@@ -89,15 +90,34 @@ export function planEvictions(
 
 // Scheduler
 
+/** Swap telemetry buffer cap; oldest events are dropped beyond this. */
+const MAX_SWAP_EVENTS = 200;
+
 export class ModelLeaseManager {
   private resident = new Map<string, ResidentModel>();
   private tick = 0;
   private hooks: ModelLeaseHooks | null = null;
   /** Serializes acquire/release so eviction math sees a consistent state. */
   private queue: Promise<unknown> = Promise.resolve();
+  /** Load/unload timings since the last drain (swap-cost telemetry). */
+  private swapEvents: SwapEvent[] = [];
 
   setHooks(hooks: ModelLeaseHooks): void {
     this.hooks = hooks;
+  }
+
+  private recordSwap(event: SwapEvent): void {
+    this.swapEvents.push(event);
+    if (this.swapEvents.length > MAX_SWAP_EVENTS) {
+      this.swapEvents.splice(0, this.swapEvents.length - MAX_SWAP_EVENTS);
+    }
+  }
+
+  /** Return and clear the swap events recorded since the last drain. */
+  drainSwapTelemetry(): SwapEvent[] {
+    const events = this.swapEvents;
+    this.swapEvents = [];
+    return events;
   }
 
   getResident(): ResidentModel[] {
@@ -157,7 +177,16 @@ export class ModelLeaseManager {
       }
 
       logger.info(`load ${spec.key} (${normalized.vramMb} MB)`);
+      const loadStarted = Date.now();
       await this.hooks.load(spec);
+      const loadMs = Date.now() - loadStarted;
+      this.recordSwap({
+        kind: "load",
+        key: spec.key,
+        durationMs: loadMs,
+        freeVramMbBefore: free,
+      });
+      logger.info(`load ${spec.key} done in ${loadMs} ms (free ${free} MB)`);
       this.resident.set(spec.key, {
         ...normalized,
         lastUsedTick: ++this.tick,
@@ -190,7 +219,13 @@ export class ModelLeaseManager {
       throw new Error(`Refusing to evict leased model "${key}"`);
     }
     logger.info(`evict ${key} (reclaim ${m.vramMb} MB)`);
+    const unloadStarted = Date.now();
     if (this.hooks) await this.hooks.unload(key);
+    this.recordSwap({
+      kind: "unload",
+      key,
+      durationMs: Date.now() - unloadStarted,
+    });
     this.resident.delete(key);
   }
 

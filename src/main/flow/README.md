@@ -30,14 +30,33 @@ command text -> intent_parser.parseIntent()  (LLM, keyword fallback)
 
 ## Files
 
-| File                                  | Role                                                                              |
-| ------------------------------------- | --------------------------------------------------------------------------------- |
-| `../../ipc/types/intent.ts`           | IPC contracts + Zod schemas (single source of truth)                              |
-| `intent_parser.ts`                    | text -> `CommandIntent` (LLM via selected model; deterministic fallback)          |
-| `capability_registry.ts`              | 9 capability descriptors + `FlowContext`; pluggable executors + fallback handling |
-| `flow_runner.ts`                      | sequential executor, dependency skipping, status aggregation                      |
-| `model_lease.ts`                      | N-model VRAM-budgeted scheduler (LRU + priority + pinned)                         |
-| `../../ipc/handlers/flow_handlers.ts` | registers handlers + wires all executors                                          |
+| File                                  | Role                                                                            |
+| ------------------------------------- | ------------------------------------------------------------------------------- |
+| `../../ipc/types/intent.ts`           | IPC contracts + Zod schemas (single source of truth)                            |
+| `intent_parser.ts`                    | text -> `CommandIntent` (LLM via selected model; deterministic fallback)        |
+| `capability_registry.ts`              | capability descriptors + `FlowContext`; pluggable executors + fallback handling |
+| `flow_runner.ts`                      | sequential executor, dependency skipping, status aggregation, resume            |
+| `flow_review.ts`                      | mid-flow review checkpoints (LLM repairs pending prompts at batch boundaries)   |
+| `flow_run_store.ts`                   | per-run JSON persistence so interrupted flows can be resumed                    |
+| `model_lease.ts`                      | N-model VRAM-budgeted scheduler (LRU + priority + pinned) + swap telemetry      |
+| `../../ipc/handlers/flow_handlers.ts` | registers handlers + wires all executors                                        |
+
+## Hardening (Phase 0)
+
+- **Review checkpoints** — at every modality-batch boundary (a contiguous run of
+  same-capability media steps) the injected `FlowReviewer` sees what was just
+  generated plus the still-pending prompted steps, and may return prompt
+  revisions for the pending steps. Wired to the selected model via
+  `createLlmFlowReviewer(defaultGenerateText)` in `flow_handlers.ts`. A reviewer
+  failure never fails the flow.
+- **Resume** — run state (intent + per-step results) is persisted after every
+  step under `<userData>/orion-flow/runs/<flowId>.json`. `flow:list-resumable`
+  lists interrupted/failed/partial runs; `flow:resume` re-runs only the steps
+  that didn't succeed, re-threading the successful outputs.
+- **Swap telemetry** — the lease manager times every model load/unload (with
+  free-VRAM-before-load); the flow runner attaches them per step
+  (`StepResult.swaps`) and aggregates `FlowRunResult.swapTotals`. The
+  orchestrator also logs LLM unload/reload durations for the media swap path.
 
 ## Capabilities (9)
 

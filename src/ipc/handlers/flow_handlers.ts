@@ -16,7 +16,12 @@ import type {
 import { safeSend } from "@/ipc/utils/safe_sender";
 import { createLoggedTypedHandler } from "./base";
 import { parseIntent } from "@/main/flow/intent_parser";
-import { runFlow } from "@/main/flow/flow_runner";
+import { runFlow, resumeFlow } from "@/main/flow/flow_runner";
+import {
+  setFlowReviewer,
+  createLlmFlowReviewer,
+} from "@/main/flow/flow_review";
+import { listResumableFlowRuns } from "@/main/flow/flow_run_store";
 import {
   listCapabilities,
   setBuildExecutor,
@@ -1304,6 +1309,9 @@ export function registerFlowHandlers(): void {
   setThreeDExecutor(prepareThreeDAsset);
   setNewsExecutor(researchNews);
   setTrackingExecutor(runTracking);
+  // Mid-flow review checkpoints: at each modality-batch boundary the selected
+  // model may repair the prompts of still-pending steps (never fails a flow).
+  setFlowReviewer(createLlmFlowReviewer(defaultGenerateText));
 
   handle(flowContracts.parseCommand, async (_event, { text, appId }) => {
     return parseIntent(text, appId);
@@ -1333,5 +1341,14 @@ export function registerFlowHandlers(): void {
 
   handle(flowContracts.generateMedia, async (_event, { intent }) => {
     return runOrionMediaReply(intent);
+  });
+
+  handle(flowContracts.listResumableFlows, async () => {
+    return listResumableFlowRuns();
+  });
+
+  handle(flowContracts.resumeFlow, async (_event, { flowId }) => {
+    const mediaProfile = await resolveMediaProfile();
+    return resumeFlow(flowId, { mediaProfile });
   });
 }

@@ -68,6 +68,17 @@ export type CommandIntent = z.infer<typeof CommandIntentSchema>;
 export const StepStatusSchema = z.enum(["success", "failed", "skipped"]);
 export type StepStatus = z.infer<typeof StepStatusSchema>;
 
+/** One model load/unload performed while a step ran (swap telemetry). */
+export const SwapEventSchema = z.object({
+  kind: z.enum(["load", "unload"]),
+  /** Model key, e.g. "media:image". */
+  key: z.string(),
+  durationMs: z.number(),
+  /** Free VRAM (MB) measured just before a load; absent for unloads. */
+  freeVramMbBefore: z.number().optional(),
+});
+export type SwapEvent = z.infer<typeof SwapEventSchema>;
+
 /** Outcome of executing a single flow step. */
 export const StepResultSchema = z.object({
   stepId: z.string(),
@@ -77,6 +88,8 @@ export const StepResultSchema = z.object({
   output: z.record(z.string(), z.unknown()),
   error: z.string().optional(),
   durationMs: z.number(),
+  /** Model swaps performed while this step ran (absent when none). */
+  swaps: z.array(SwapEventSchema).optional(),
 });
 export type StepResult = z.infer<typeof StepResultSchema>;
 
@@ -91,8 +104,38 @@ export const FlowRunResultSchema = z.object({
   steps: z.array(StepResultSchema),
   startedAt: z.number(),
   finishedAt: z.number(),
+  /** Aggregated swap cost across all steps (absent when no swaps happened). */
+  swapTotals: z.object({ count: z.number(), totalMs: z.number() }).optional(),
 });
 export type FlowRunResult = z.infer<typeof FlowRunResultSchema>;
+
+// =============================================================================
+// Flow persistence / resume (Phase 0 hardening)
+// =============================================================================
+
+/** Persisted-run status: "running" means the app died mid-flow. */
+export const PersistedFlowStatusSchema = z.enum([
+  "running",
+  "completed",
+  "failed",
+  "partial",
+]);
+export type PersistedFlowStatus = z.infer<typeof PersistedFlowStatusSchema>;
+
+/** Listing entry for a flow run that can be resumed. */
+export const ResumableFlowSummarySchema = z.object({
+  flowId: z.string(),
+  goal: z.string(),
+  status: PersistedFlowStatusSchema,
+  startedAt: z.number(),
+  updatedAt: z.number(),
+  totalSteps: z.number(),
+  completedSteps: z.number(),
+});
+export type ResumableFlowSummary = z.infer<typeof ResumableFlowSummarySchema>;
+
+export const ResumeFlowParamsSchema = z.object({ flowId: z.string() });
+export type ResumeFlowParams = z.infer<typeof ResumeFlowParamsSchema>;
 
 /** Lightweight descriptor used by the UI to list what the assistant can do. */
 export const CapabilityDescriptorSchema = z.object({
@@ -241,6 +284,21 @@ export const flowContracts = {
     channel: "flow:generate-media",
     input: GenerateMediaParamsSchema,
     output: MediaReplyResultSchema,
+  }),
+  /** List interrupted/partial flow runs that can be resumed. */
+  listResumableFlows: defineContract({
+    channel: "flow:list-resumable",
+    input: z.void(),
+    output: z.array(ResumableFlowSummarySchema),
+  }),
+  /**
+   * Resume a persisted flow run: completed steps are kept (their outputs are
+   * re-threaded), failed/skipped/unstarted steps are executed again.
+   */
+  resumeFlow: defineContract({
+    channel: "flow:resume",
+    input: ResumeFlowParamsSchema,
+    output: FlowRunResultSchema,
   }),
 } as const;
 
