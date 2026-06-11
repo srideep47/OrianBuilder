@@ -301,7 +301,7 @@ interface TodoItemProps {
 
 const TodoItem: React.FC<TodoItemProps> = ({ todo, onToggle, onDelete }) => {
   return (
-    <div className="flex items-center justify-between p-4 border rounded-lg mb-2 bg-white shadow-sm">
+    <div className="flex items-center justify-between p-4 border rounded-2xl mb-2 bg-white shadow-md">
       <div className="flex items-center gap-3 flex-1">
         <Button
           variant="outline"
@@ -405,7 +405,7 @@ const TodoList: React.FC<TodoListProps> = ({ todos, onToggle, onDelete }) => {
   }
 
   return (
-    <ScrollArea className="h-[400px] rounded-md border p-4">
+    <ScrollArea className="h-[400px] rounded-3xl border p-4">
       <div className="space-y-2">
         {todos.map((todo) => (
           <TodoItem

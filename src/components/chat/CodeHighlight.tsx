@@ -100,7 +100,7 @@ export const CodeHighlight = memo(
     return !isInline ? (
       <div
         className="shiki not-prose relative [&_pre]:overflow-auto 
-      [&_pre]:rounded-lg [&_pre]:px-6 [&_pre]:py-7"
+      [&_pre]:rounded-2xl [&_pre]:px-6 [&_pre]:py-7"
       >
         {code && (
           <div

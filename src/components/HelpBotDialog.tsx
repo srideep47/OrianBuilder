@@ -167,7 +167,7 @@ export function HelpBotDialog({ isOpen, onClose }: HelpBotDialogProps) {
         </DialogHeader>
         <div className="flex flex-col gap-3 h-[480px]">
           {error && (
-            <div className="bg-destructive/10 border border-destructive/20 rounded-md p-3">
+            <div className="bg-destructive/10 border border-destructive/20 rounded-3xl p-3">
               <div className="flex items-start gap-2">
                 <div className="text-destructive text-sm font-medium">
                   Error:
@@ -182,13 +182,13 @@ export function HelpBotDialog({ isOpen, onClose }: HelpBotDialogProps) {
               </div>
             </div>
           )}
-          <div className="flex-1 overflow-auto rounded-md border p-3 bg-(--background-lightest)">
+          <div className="flex-1 overflow-auto rounded-3xl border p-3 bg-(--background-lightest)">
             {messages.length === 0 ? (
               <div className="space-y-3">
                 <div className="text-sm text-muted-foreground">
                   Ask a question about using OrianBuilder.
                 </div>
-                <div className="text-xs text-muted-foreground/70 bg-muted/50 rounded-md p-3">
+                <div className="text-xs text-muted-foreground/70 bg-muted/50 rounded-3xl p-3">
                   This conversation may be logged and used to improve the
                   product. Please do not put any sensitive information in here.
                 </div>
@@ -199,7 +199,7 @@ export function HelpBotDialog({ isOpen, onClose }: HelpBotDialogProps) {
                   <div key={i}>
                     {m.role === "user" ? (
                       <div className="text-right">
-                        <div className="inline-block rounded-lg px-3 py-2 bg-primary text-primary-foreground">
+                        <div className="inline-block rounded-2xl px-3 py-2 bg-primary text-primary-foreground">
                           {m.content}
                         </div>
                       </div>
@@ -212,7 +212,7 @@ export function HelpBotDialog({ isOpen, onClose }: HelpBotDialogProps) {
                         )}
 
                         {m.content && (
-                          <div className="inline-block rounded-lg px-3 py-2 bg-muted prose dark:prose-invert prose-headings:mb-2 prose-p:my-1 prose-pre:my-0 max-w-none">
+                          <div className="inline-block rounded-2xl px-3 py-2 bg-muted prose dark:prose-invert prose-headings:mb-2 prose-p:my-1 prose-pre:my-0 max-w-none">
                             <VanillaMarkdownParser content={m.content} />
                           </div>
                         )}
@@ -225,7 +225,7 @@ export function HelpBotDialog({ isOpen, onClose }: HelpBotDialogProps) {
           </div>
           <div className="flex gap-2">
             <input
-              className="flex-1 h-10 rounded-md border bg-background px-3 text-sm"
+              className="flex-1 h-10 rounded-3xl border bg-transparent px-3 text-sm"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Type your question..."

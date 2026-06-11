@@ -274,7 +274,7 @@ export function ExpoPreviewPanel({ appId }: ExpoPreviewPanelProps) {
                 <button
                   onClick={handleStartDevServer}
                   disabled={runAppLoading}
-                  className="mt-1 flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-60"
+                  className="mt-1 flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-2xl text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-60"
                 >
                   {runAppLoading ? (
                     <Loader2 size={14} className="animate-spin" />
@@ -324,7 +324,7 @@ export function ExpoPreviewPanel({ appId }: ExpoPreviewPanelProps) {
             />
           </div>
 
-          <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-lg px-3 py-1.5 max-w-full">
+          <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-2xl px-3 py-1.5 max-w-full">
             <code className="text-xs text-gray-600 dark:text-gray-300 truncate max-w-[240px]">
               {expoUrl}
             </code>
@@ -346,7 +346,7 @@ export function ExpoPreviewPanel({ appId }: ExpoPreviewPanelProps) {
             <button
               onClick={handleOpenAndroid}
               disabled={openingAndroid}
-              className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm hover:bg-[var(--background-darkest)] transition-colors disabled:opacity-60"
+              className="flex items-center gap-2 px-4 py-2 border border-border rounded-2xl text-sm hover:bg-[var(--background-darkest)] transition-colors disabled:opacity-60"
             >
               {openingAndroid ? (
                 <Loader2 size={14} className="animate-spin" />
@@ -357,7 +357,7 @@ export function ExpoPreviewPanel({ appId }: ExpoPreviewPanelProps) {
             </button>
             <button
               onClick={() => ipc.system.openExternalUrl(expoUrl)}
-              className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm hover:bg-[var(--background-darkest)] transition-colors"
+              className="flex items-center gap-2 px-4 py-2 border border-border rounded-2xl text-sm hover:bg-[var(--background-darkest)] transition-colors"
             >
               <ExternalLink size={14} />
               Open in Expo Go
@@ -385,7 +385,7 @@ export function ExpoPreviewPanel({ appId }: ExpoPreviewPanelProps) {
           <button
             onClick={handleStartDevServer}
             disabled={runAppLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-60"
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-2xl text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-60"
           >
             {runAppLoading ? (
               <Loader2 size={14} className="animate-spin" />

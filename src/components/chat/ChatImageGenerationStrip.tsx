@@ -84,11 +84,11 @@ export function ChatImageGenerationStrip({
         {visibleJobs.map((job) => (
           <div
             key={job.id}
-            className="flex items-center bg-muted rounded-lg px-2 py-1.5 text-xs gap-2"
+            className="flex items-center bg-muted rounded-2xl px-2 py-1.5 text-xs gap-2"
           >
             {job.status === "pending" ? (
               <>
-                <div className="w-12 h-12 rounded-md bg-muted-foreground/10 animate-pulse flex items-center justify-center shrink-0">
+                <div className="w-12 h-12 rounded-3xl bg-muted-foreground/10 animate-pulse flex items-center justify-center shrink-0">
                   <Loader2
                     size={16}
                     className="animate-spin text-muted-foreground"
@@ -112,7 +112,7 @@ export function ChatImageGenerationStrip({
               </>
             ) : job.status === "error" ? (
               <>
-                <div className="w-12 h-12 rounded-md bg-destructive/15 flex items-center justify-center shrink-0">
+                <div className="w-12 h-12 rounded-3xl bg-destructive/15 flex items-center justify-center shrink-0">
                   <AlertCircle
                     size={16}
                     className="text-destructive-foreground"
@@ -151,7 +151,7 @@ export function ChatImageGenerationStrip({
                       job.result.fileName,
                     )}
                     alt={job.prompt}
-                    className="w-12 h-12 rounded-md object-cover shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                    className="w-12 h-12 rounded-3xl object-cover shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
                     onClick={() => setLightboxJob(job)}
                   />
                 )}

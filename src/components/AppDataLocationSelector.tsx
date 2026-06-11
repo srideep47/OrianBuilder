@@ -122,7 +122,7 @@ export function AppDataLocationSelector() {
           )}
         </div>
 
-        <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+        <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
               {isPathDefault ? "Default Location:" : "Custom Location:"}

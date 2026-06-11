@@ -503,7 +503,7 @@ function ConnectedGitHubConnector({
             </a>
           </p>
           {showRebaseRecoveryOptions && (
-            <div className="space-y-2 rounded-md border border-orange-200 p-3 dark:border-orange-800 dark:bg-orange-900/20">
+            <div className="space-y-2 rounded-3xl border border-orange-200 p-3 dark:border-orange-800 dark:bg-orange-900/20">
               <p className="text-sm text-orange-800 dark:text-orange-100">
                 A rebase is already in progress. Choose how to proceed.
               </p>
@@ -571,7 +571,7 @@ function ConnectedGitHubConnector({
       )}
       {/* Conflict Resolution Buttons */}
       {conflicts.length > 0 && (
-        <div className="mt-3 p-3 rounded-md border border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-900/20">
+        <div className="mt-3 p-3 rounded-3xl border border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-900/20">
           <p className="text-sm text-yellow-800 dark:text-yellow-200 mb-3">
             {conflicts.length} file{conflicts.length > 1 ? "s" : ""} with merge
             conflicts: {conflicts.join(", ")}
@@ -619,7 +619,7 @@ function ConnectedGitHubConnector({
                   You are about to perform a <strong>force push</strong> to your
                   GitHub repository.
                 </p>
-                <div className="bg-orange-50 dark:bg-orange-900/20 p-3 rounded-md border border-orange-200 dark:border-orange-800">
+                <div className="bg-orange-50 dark:bg-orange-900/20 p-3 rounded-3xl border border-orange-200 dark:border-orange-800">
                   <p className="text-sm text-orange-800 dark:text-orange-200">
                     <strong>
                       This is dangerous and non-reversible and will:
@@ -952,7 +952,7 @@ export function UnconnectedGitHubConnector({
 
         {/* GitHub Connection Status/Instructions */}
         {(githubUserCode || githubStatusMessage || githubError) && (
-          <div className="mt-6 p-4 border rounded-md bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600">
+          <div className="mt-6 p-4 border rounded-3xl bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600">
             <h4 className="font-medium mb-2">GitHub Connection</h4>
             {githubError && (
               <p className="text-red-600 dark:text-red-400 mb-2">
@@ -982,7 +982,7 @@ export function UnconnectedGitHubConnector({
                     {githubUserCode}
                   </strong>
                   <button
-                    className="ml-2 p-1 rounded-md hover:bg-gray-300 dark:hover:bg-gray-500 focus:outline-none"
+                    className="ml-2 p-1 rounded-3xl hover:bg-gray-300 dark:hover:bg-gray-500 focus:outline-none"
                     onClick={() => {
                       if (githubUserCode) {
                         navigator.clipboard
@@ -1024,7 +1024,7 @@ export function UnconnectedGitHubConnector({
       <button
         type="button"
         onClick={!isExpanded ? () => setIsExpanded(true) : undefined}
-        className={`w-full p-4 text-left transition-colors rounded-md flex items-center justify-between ${
+        className={`w-full p-4 text-left transition-colors rounded-3xl flex items-center justify-between ${
           !isExpanded
             ? "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50"
             : ""
@@ -1045,7 +1045,7 @@ export function UnconnectedGitHubConnector({
         <div className="p-4 pt-0 space-y-4">
           {/* Mode Selection */}
           <div>
-            <div className="flex rounded-md border border-gray-200 dark:border-gray-700">
+            <div className="flex rounded-3xl border border-gray-200 dark:border-gray-700">
               <Button
                 type="button"
                 variant={repoSetupMode === "create" ? "default" : "ghost"}

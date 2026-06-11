@@ -201,7 +201,7 @@ export const PublishPanel = () => {
               <div
                 role="radiogroup"
                 aria-label="Select Deployment Provider"
-                className="flex rounded-md border border-gray-200 dark:border-gray-700"
+                className="flex rounded-3xl border border-gray-200 dark:border-gray-700"
               >
                 <Button
                   type="button"
@@ -283,7 +283,7 @@ export const PublishPanel = () => {
                   Publish your app by deploying it to Vercel.
                 </p>
                 {!app?.githubOrg || !app?.githubRepo ? (
-                  <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+                  <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-2xl p-4">
                     <div className="flex items-start gap-3">
                       <svg
                         className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0"
@@ -322,7 +322,7 @@ export const PublishPanel = () => {
                   Publish your app by deploying it to Netlify.
                 </p>
                 {!app?.githubOrg || !app?.githubRepo ? (
-                  <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+                  <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-2xl p-4">
                     <div className="flex items-start gap-3">
                       <svg
                         className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0"

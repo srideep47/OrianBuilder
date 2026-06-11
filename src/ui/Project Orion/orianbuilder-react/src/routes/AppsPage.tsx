@@ -137,7 +137,7 @@ export function AppsPage() {
           >
             <Badge>🤖 Agent</Badge>
             <Badge>Auto</Badge>
-            <Badge tone="purple">⭐ Pro</Badge>
+            <Badge tone="blue">⭐ Pro</Badge>
           </div>
           <div className="chip-row">
             {QUICK.map((q) => (

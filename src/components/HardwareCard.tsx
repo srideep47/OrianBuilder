@@ -25,7 +25,7 @@ const ORCH_STATE_STYLE: Record<OrchestratorStatus["state"], string> = {
   "media-loading":
     "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border-orange-300 dark:border-orange-700",
   "media-loaded":
-    "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border-purple-300 dark:border-purple-700",
+    "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-300 dark:border-blue-700",
   "swapping-back":
     "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700",
 };
@@ -242,7 +242,7 @@ const BACKEND_COLORS: Record<string, string> = {
   cuda: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 border-green-300 dark:border-green-700",
   rocm: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 border-red-300 dark:border-red-700",
   metal:
-    "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border-purple-300 dark:border-purple-700",
+    "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-300 dark:border-blue-700",
   vulkan:
     "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border-orange-300 dark:border-orange-700",
   directml:
@@ -319,7 +319,7 @@ export function HardwareCard() {
 
   if (!profile) {
     return (
-      <div className="rounded-xl border bg-card p-5 flex items-center gap-3 text-sm text-muted-foreground">
+      <div className="rounded-3xl border bg-card p-5 flex items-center gap-3 text-sm text-muted-foreground">
         <Loader2 className="w-4 h-4 animate-spin" />
         Detecting hardware…
       </div>
@@ -329,7 +329,7 @@ export function HardwareCard() {
   const primary = profile.primaryGpu;
 
   return (
-    <div className="rounded-xl border bg-card overflow-hidden">
+    <div className="rounded-3xl border bg-card overflow-hidden">
       <div className="px-5 py-3.5 flex items-center justify-between border-b">
         <div className="flex items-center gap-2.5 font-semibold text-sm">
           <Cpu className="w-4 h-4 text-primary" />

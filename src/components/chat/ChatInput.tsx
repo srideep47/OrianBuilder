@@ -1212,7 +1212,7 @@ export function ChatInput({
         )}
         <div
           className={cn(
-            "relative flex flex-col border border-border rounded-2xl bg-(--background-lighter) transition-colors duration-200",
+            "relative flex flex-col border border-white/5 rounded-[28px] mac-glass-panel shadow-2xl transition-colors duration-200",
             "focus-within:border-primary/30 focus-within:ring-1 focus-within:ring-primary/20",
             isDraggingOver && "ring-2 ring-blue-500 border-blue-500",
             showBanner && "rounded-t-none border-t-0",
@@ -1417,7 +1417,7 @@ export function ChatInput({
                           : t("voiceToText", "Voice to text")
                     }
                     className={cn(
-                      "px-2 py-2 mb-0.5 text-muted-foreground rounded-lg transition-colors duration-150 cursor-pointer disabled:cursor-default disabled:opacity-30",
+                      "px-2 py-2 mb-0.5 text-muted-foreground rounded-2xl transition-colors duration-150 cursor-pointer disabled:cursor-default disabled:opacity-30",
                       isRecording &&
                         "text-red-500 hover:text-red-600 animate-pulse",
                       !isRecording && !isTranscribing && "hover:text-primary",
@@ -1449,7 +1449,7 @@ export function ChatInput({
                     <button
                       onClick={handleCancel}
                       aria-label={t("cancelGeneration")}
-                      className="px-2 py-2 mb-0.5 mr-1 text-muted-foreground hover:text-destructive rounded-lg transition-colors duration-150 cursor-pointer"
+                      className="px-2 py-2 mb-0.5 mr-1 text-muted-foreground hover:text-destructive rounded-2xl transition-colors duration-150 cursor-pointer"
                     />
                   }
                 >
@@ -1470,7 +1470,7 @@ export function ChatInput({
                         disableSendButton
                       }
                       aria-label={t("sendMessage")}
-                      className="px-2 py-2 mb-0.5 mr-1 text-muted-foreground hover:text-primary rounded-lg transition-colors duration-150 disabled:opacity-30 disabled:hover:text-muted-foreground cursor-pointer disabled:cursor-default"
+                      className="px-2 py-2 mb-0.5 mr-1 text-muted-foreground hover:text-primary rounded-2xl transition-colors duration-150 disabled:opacity-30 disabled:hover:text-muted-foreground cursor-pointer disabled:cursor-default"
                     />
                   }
                 >
@@ -1489,7 +1489,7 @@ export function ChatInput({
                     <label
                       htmlFor="auto-publish-after-checks"
                       className={cn(
-                        "chip glass-soft h-7 rounded-md px-2 text-[11px] font-medium",
+                        "chip glass-soft h-7 rounded-3xl px-2 text-[11px] font-medium",
                         "border-white/10 text-white/65 hover:border-primary/40 hover:bg-primary/10 hover:text-white",
                         isAutoPublishEnabled &&
                           "border-primary/40 bg-primary/15 text-white shadow-[0_0_18px_-10px_rgba(168,140,255,.8)]",
@@ -2114,7 +2114,7 @@ function SqlQueryItem({ query }: { query: SqlQuery }) {
 
   return (
     <li
-      className="bg-(--background-lightest) hover:bg-(--background-lighter) rounded-lg px-3 py-2 border border-border cursor-pointer"
+      className="bg-(--background-lightest) hover:bg-(--background-lighter) rounded-2xl px-3 py-2 border border-border cursor-pointer"
       onClick={() => setIsExpanded(!isExpanded)}
     >
       <div className="flex items-center justify-between">

@@ -362,7 +362,7 @@ export default function AppDetailsPage() {
         Back
       </Button>
 
-      <div className="w-full max-w-2xl mx-auto mt-10 p-4 bg-card rounded-lg border border-border/60 shadow-sm relative">
+      <div className="w-full max-w-2xl mx-auto mt-10 p-4 bg-card rounded-2xl border border-border/60 shadow-md relative">
         <div className="flex items-center mb-3">
           <h2 className="text-2xl font-bold">{selectedApp.name}</h2>
           <Tooltip>
@@ -407,7 +407,7 @@ export default function AppDetailsPage() {
         <div className="absolute top-2 right-2">
           <Popover>
             <PopoverTrigger
-              className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-7 w-7 p-0"
+              className="inline-flex items-center justify-center whitespace-nowrap rounded-3xl text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-7 w-7 p-0"
               data-testid="app-details-more-options-button"
             >
               <MoreVertical className="h-4 w-4" />
@@ -463,7 +463,7 @@ export default function AppDetailsPage() {
         </div>
 
         {latestScreenshotUrl && !screenshotLoadFailed && (
-          <div className="mb-4 rounded-lg overflow-hidden border border-border bg-muted aspect-video">
+          <div className="mb-4 rounded-2xl overflow-hidden border border-border bg-muted aspect-video">
             <img
               src={latestScreenshotUrl}
               alt={`Preview of ${selectedApp?.name ?? "app"}`}
@@ -527,7 +527,7 @@ export default function AppDetailsPage() {
             Open in Chat
             <MessageCircle className="h-4 w-4" />
           </Button>
-          <div className="border border-gray-200 rounded-md p-4">
+          <div className="border border-gray-200 rounded-3xl p-4">
             <GitHubConnector appId={appId} folderName={selectedApp.path} />
             {selectedApp.githubOrg && selectedApp.githubRepo && appId && (
               <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
@@ -558,7 +558,7 @@ export default function AppDetailsPage() {
               {appId &&
                 !selectedApp?.neonProjectId &&
                 !selectedApp?.supabaseProjectId && (
-                  <div className="flex items-start gap-2 rounded-md border border-muted bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                  <div className="flex items-start gap-2 rounded-3xl border border-muted bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                     <Info className="h-4 w-4 shrink-0 mt-0.5" />
                     <span>{t("integrations.mutualExclusion.chooseOne")}</span>
                   </div>

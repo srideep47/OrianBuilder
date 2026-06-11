@@ -128,7 +128,7 @@ export const OrianBuilderWrite: React.FC<OrianBuilderWriteProps> = ({
           onClick={(e) => e.stopPropagation()}
         >
           {isEditing ? (
-            <div className="h-96 min-h-96 border border-border rounded-lg overflow-hidden">
+            <div className="h-96 min-h-96 border border-border rounded-2xl overflow-hidden">
               <FileEditor appId={appId ?? null} filePath={path} />
             </div>
           ) : (

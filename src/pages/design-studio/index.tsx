@@ -126,7 +126,7 @@ const PROVIDER_META: Record<
     label: "OpenAI-compat",
     shortLabel: "OpenAI",
     icon: <span className="text-[10px] font-bold leading-none">▲</span>,
-    color: "text-purple-400",
+    color: "text-blue-400",
   },
 };
 
@@ -922,7 +922,7 @@ export default function DesignStudioPage() {
   // Render
   // =============================================================================
   return (
-    <div className="flex h-full w-full overflow-hidden bg-background relative">
+    <div className="flex h-full w-full overflow-hidden bg-transparent relative">
       {/* ── Modals ──────────────────────────────────────────────────────────────── */}
       {showDirectionPicker && (
         <DirectionPickerModal
@@ -946,7 +946,7 @@ export default function DesignStudioPage() {
       )}
       {commentMode && elementClick && (
         <div
-          className="fixed z-50 bg-popover border border-border rounded-xl shadow-xl p-3 w-72"
+          className="fixed z-50 bg-popover border border-border rounded-3xl shadow-xl p-3 w-72"
           style={{
             left: Math.min(elementClick.x + 10, window.innerWidth - 300),
             top: Math.min(elementClick.y + 10, window.innerHeight - 160),
@@ -1052,14 +1052,14 @@ export default function DesignStudioPage() {
                 </div>
                 <button
                   onClick={newSession}
-                  className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-primary bg-white/[0.04] hover:bg-primary/10 border border-white/[0.06] hover:border-primary/30 rounded-md px-2 py-1 transition-all"
+                  className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-primary bg-white/[0.04] hover:bg-primary/10 border border-white/[0.06] hover:border-primary/30 rounded-3xl px-2 py-1 transition-all"
                 >
                   <Plus className="h-3 w-3" />
                   New
                 </button>
               </div>
               {sessions.length === 0 ? (
-                <div className="text-[11px] text-muted-foreground/40 text-center py-3 border border-dashed border-white/[0.05] rounded-lg">
+                <div className="text-[11px] text-muted-foreground/40 text-center py-3 border border-dashed border-white/[0.05] rounded-2xl">
                   No sessions yet — start by typing below
                 </div>
               ) : (
@@ -1094,7 +1094,7 @@ export default function DesignStudioPage() {
                         onClick={() => setMode(m.id)}
                         title={m.hint}
                         className={cn(
-                          "flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all",
+                          "flex items-center gap-1.5 px-2 py-1.5 rounded-2xl text-xs font-medium transition-all",
                           mode === m.id
                             ? "bg-primary text-primary-foreground"
                             : "bg-white/[0.04] text-muted-foreground hover:bg-white/[0.07] hover:text-foreground",
@@ -1110,13 +1110,13 @@ export default function DesignStudioPage() {
                 {/* Fidelity */}
                 <div>
                   <PanelLabel>Fidelity</PanelLabel>
-                  <div className="mt-1.5 bg-white/[0.03] rounded-xl p-1 flex flex-col gap-0.5">
+                  <div className="mt-1.5 bg-white/[0.03] rounded-3xl p-1 flex flex-col gap-0.5">
                     {FIDELITY_LEVELS.map((f) => (
                       <button
                         key={f.id}
                         onClick={() => setFidelity(f.id)}
                         className={cn(
-                          "flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs transition-all",
+                          "flex items-center gap-2.5 px-3 py-1.5 rounded-2xl text-xs transition-all",
                           fidelity === f.id
                             ? "bg-white/[0.08] text-foreground font-medium"
                             : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]",
@@ -1156,7 +1156,7 @@ export default function DesignStudioPage() {
                       return (
                         <button
                           onClick={() => setShowDirectionPicker(true)}
-                          className="w-full flex items-center gap-2.5 p-2.5 rounded-xl bg-white/[0.04] border border-white/[0.06] hover:border-primary/30 transition-all group"
+                          className="w-full flex items-center gap-2.5 p-2.5 rounded-3xl bg-white/[0.04] border border-white/[0.06] hover:border-primary/30 transition-all group"
                         >
                           <div className="flex gap-1">
                             {[dir.bg, dir.fg, dir.accent].map((c) => (
@@ -1182,7 +1182,7 @@ export default function DesignStudioPage() {
                   ) : (
                     <button
                       onClick={() => setShowDirectionPicker(true)}
-                      className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-dashed border-white/[0.08] text-xs text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-all"
+                      className="w-full flex items-center justify-center gap-2 py-2 rounded-3xl border border-dashed border-white/[0.08] text-xs text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-all"
                     >
                       <Sparkles className="h-3.5 w-3.5" />
                       Pick a visual direction
@@ -1216,7 +1216,7 @@ export default function DesignStudioPage() {
                       placeholder="Search…"
                       value={skillFilter}
                       onChange={(e) => setSkillFilter(e.target.value)}
-                      className="w-full pl-7 pr-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.06] rounded-lg outline-none focus:border-primary/40 text-foreground placeholder:text-muted-foreground/50"
+                      className="w-full pl-7 pr-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.06] rounded-2xl outline-none focus:border-primary/40 text-foreground placeholder:text-muted-foreground/50"
                     />
                     <svg
                       className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40"
@@ -1256,7 +1256,7 @@ export default function DesignStudioPage() {
                           setSelectedSkill((p) => (p?.id === sk.id ? null : sk))
                         }
                         className={cn(
-                          "w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-all",
+                          "w-full text-left px-2.5 py-1.5 rounded-2xl text-xs transition-all",
                           selectedSkill?.id === sk.id
                             ? "bg-primary/15 text-primary font-medium"
                             : "text-muted-foreground hover:text-foreground hover:bg-white/[0.05]",
@@ -1299,7 +1299,7 @@ export default function DesignStudioPage() {
                       placeholder="Search 150 systems…"
                       value={dsFilter}
                       onChange={(e) => setDsFilter(e.target.value)}
-                      className="w-full pl-7 pr-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.06] rounded-lg outline-none focus:border-primary/40 text-foreground placeholder:text-muted-foreground/50"
+                      className="w-full pl-7 pr-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.06] rounded-2xl outline-none focus:border-primary/40 text-foreground placeholder:text-muted-foreground/50"
                     />
                     <svg
                       className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40"
@@ -1323,7 +1323,7 @@ export default function DesignStudioPage() {
                           setSelectedDs((p) => (p?.id === ds.id ? null : ds))
                         }
                         className={cn(
-                          "w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-all",
+                          "w-full text-left px-2.5 py-1.5 rounded-2xl text-xs transition-all",
                           selectedDs?.id === ds.id
                             ? "bg-primary/15 text-primary font-medium"
                             : "text-muted-foreground hover:text-foreground hover:bg-white/[0.05]",
@@ -1346,7 +1346,7 @@ export default function DesignStudioPage() {
                       <select
                         value={audience}
                         onChange={(e) => setAudience(e.target.value)}
-                        className="w-full px-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.06] rounded-lg outline-none focus:border-primary/40 text-foreground appearance-none"
+                        className="w-full px-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.06] rounded-2xl outline-none focus:border-primary/40 text-foreground appearance-none"
                       >
                         <option value="">Any</option>
                         {AUDIENCES.map((a) => (
@@ -1363,7 +1363,7 @@ export default function DesignStudioPage() {
                       <select
                         value={tone}
                         onChange={(e) => setTone(e.target.value)}
-                        className="w-full px-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.06] rounded-lg outline-none focus:border-primary/40 text-foreground appearance-none"
+                        className="w-full px-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.06] rounded-2xl outline-none focus:border-primary/40 text-foreground appearance-none"
                       >
                         <option value="">Neutral</option>
                         {TONES.map((t) => (
@@ -1430,7 +1430,7 @@ export default function DesignStudioPage() {
       {/* ── Main Area ───────────────────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Toolbar */}
-        <div className="flex items-center gap-1.5 px-3 h-11 border-b border-white/[0.06] shrink-0 bg-background/60 backdrop-blur">
+        <div className="flex items-center gap-1.5 px-3 h-11 border-b border-white/[0.06] shrink-0 bg-transparent/60 backdrop-blur">
           {/* Panel toggle */}
           <Button
             variant="ghost"
@@ -1533,14 +1533,14 @@ export default function DesignStudioPage() {
                 </Button>
                 <div className="w-px h-4 bg-white/[0.08]" />
                 {/* Frame picker */}
-                <div className="flex items-center bg-white/[0.04] rounded-lg p-0.5">
+                <div className="flex items-center bg-white/[0.04] rounded-2xl p-0.5">
                   {FRAME_OPTIONS.map(({ id, label, icon: Icon }) => (
                     <button
                       key={id}
                       title={label}
                       onClick={() => setFrame(id)}
                       className={cn(
-                        "p-1.5 rounded-md transition-all",
+                        "p-1.5 rounded-3xl transition-all",
                         frame === id
                           ? "bg-white/[0.1] text-foreground"
                           : "text-muted-foreground hover:text-foreground",
@@ -1620,7 +1620,7 @@ export default function DesignStudioPage() {
             {/* New tab button */}
             <button
               onClick={newSession}
-              className="flex items-center justify-center h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground hover:bg-white/[0.05] rounded-md transition-colors ml-1"
+              className="flex items-center justify-center h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground hover:bg-white/[0.05] rounded-3xl transition-colors ml-1"
               title="New design"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -1633,9 +1633,9 @@ export default function DesignStudioPage() {
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Preview */}
             <div className="flex-1 min-h-0 p-2 overflow-hidden">
-              <div className="h-full rounded-xl border border-border/50 overflow-hidden relative bg-white dark:bg-zinc-900">
+              <div className="h-full rounded-3xl border border-border/50 overflow-hidden relative bg-white dark:bg-zinc-900">
                 {isStreaming && (
-                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/80 backdrop-blur-sm">
+                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-transparent/80 backdrop-blur-sm">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                     <p className="text-sm font-medium text-muted-foreground">
                       Generating design…
@@ -1730,7 +1730,7 @@ export default function DesignStudioPage() {
                     </div>
 
                     {!statusLoading && !providerReady && (
-                      <div className="flex items-center gap-2 text-sm text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-2 mb-4">
+                      <div className="flex items-center gap-2 text-sm text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded-2xl px-4 py-2 mb-4">
                         <AlertCircle className="h-4 w-4 shrink-0" />
                         {providerSettings.provider === "embedded-llama" ? (
                           <>
@@ -1765,7 +1765,7 @@ export default function DesignStudioPage() {
                       {/* New session card */}
                       <button
                         onClick={newSession}
-                        className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border/50 hover:border-primary/40 hover:bg-primary/5 transition-all p-6 text-muted-foreground hover:text-primary min-h-[140px]"
+                        className="flex flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-border/50 hover:border-primary/40 hover:bg-primary/5 transition-all p-6 text-muted-foreground hover:text-primary min-h-[140px]"
                       >
                         <Plus className="h-6 w-6" />
                         <span className="text-sm font-medium">New Design</span>
@@ -1788,7 +1788,7 @@ export default function DesignStudioPage() {
                       {!statusLoading &&
                         !providerReady &&
                         providerSettings.provider === "embedded-llama" && (
-                          <div className="flex items-center gap-2 text-sm text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-2 w-full justify-center">
+                          <div className="flex items-center gap-2 text-sm text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded-2xl px-4 py-2 w-full justify-center">
                             <AlertCircle className="h-4 w-4 shrink-0" />
                             No model loaded.{" "}
                             <button
@@ -1820,7 +1820,7 @@ export default function DesignStudioPage() {
                               setInput(p);
                               inputRef.current?.focus();
                             }}
-                            className="text-left text-xs px-3 py-2 rounded-lg border border-border/50 bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                            className="text-left text-xs px-3 py-2 rounded-2xl border border-border/50 bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                           >
                             {p}
                           </button>
@@ -1839,11 +1839,11 @@ export default function DesignStudioPage() {
                     <span className="h-3 w-3 rounded-full bg-red-400/60" />
                     <span className="h-3 w-3 rounded-full bg-amber-400/60" />
                     <span className="h-3 w-3 rounded-full bg-emerald-400/60" />
-                    <div className="flex-1 mx-3 h-5 rounded bg-background/60 border border-border/40" />
+                    <div className="flex-1 mx-3 h-5 rounded bg-transparent/60 border border-border/40" />
                   </div>
                   {/* Animated skeleton */}
                   <div className="p-6 space-y-4 min-h-[260px]">
-                    <div className="h-8 rounded-lg bg-muted/60 w-2/3 animate-pulse" />
+                    <div className="h-8 rounded-2xl bg-muted/60 w-2/3 animate-pulse" />
                     <div
                       className="h-4 rounded bg-muted/40 w-full animate-pulse"
                       style={{ animationDelay: "0.1s" }}
@@ -1856,13 +1856,13 @@ export default function DesignStudioPage() {
                       {[0, 1, 2].map((i) => (
                         <div
                           key={i}
-                          className="h-20 rounded-xl bg-muted/40 animate-pulse"
+                          className="h-20 rounded-3xl bg-muted/40 animate-pulse"
                           style={{ animationDelay: `${0.1 * i}s` }}
                         />
                       ))}
                     </div>
                     <div
-                      className="h-10 rounded-lg bg-primary/20 w-40 animate-pulse"
+                      className="h-10 rounded-2xl bg-primary/20 w-40 animate-pulse"
                       style={{ animationDelay: "0.3s" }}
                     />
                   </div>
@@ -1885,7 +1885,7 @@ export default function DesignStudioPage() {
                   .map((m) => (
                     <div
                       key={m.id}
-                      className="max-w-lg text-center text-xs text-muted-foreground bg-muted/40 rounded-xl px-4 py-2 border border-border/40 italic"
+                      className="max-w-lg text-center text-xs text-muted-foreground bg-muted/40 rounded-3xl px-4 py-2 border border-border/40 italic"
                     >
                       "{m.content.slice(0, 120)}
                       {m.content.length > 120 ? "…" : ""}"
@@ -1962,7 +1962,7 @@ function SessionCard({
   return (
     <button
       type="button"
-      className="group w-full text-left rounded-xl border border-white/[0.08] hover:border-primary/40 overflow-hidden cursor-pointer transition-all hover:shadow-lg hover:shadow-primary/5 bg-white/[0.02] hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      className="group w-full text-left rounded-3xl border border-white/[0.08] hover:border-primary/40 overflow-hidden cursor-pointer transition-all hover:shadow-lg hover:shadow-primary/5 bg-white/[0.02] hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       onClick={onClick}
     >
       {/* Thumbnail — full pointer-events-none so clicks reach the button */}
@@ -1998,7 +1998,7 @@ function SessionCard({
             onDelete();
           }}
         >
-          <div className="h-6 w-6 flex items-center justify-center rounded-md bg-background/90 border border-border/60 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition-colors">
+          <div className="h-6 w-6 flex items-center justify-center rounded-3xl bg-transparent/90 border border-border/60 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition-colors">
             <Trash2 className="h-3 w-3" />
           </div>
         </div>
@@ -2043,7 +2043,7 @@ function SessionItem({
       type="button"
       onClick={onClick}
       className={cn(
-        "group w-full flex items-center gap-1 rounded-lg px-2 py-1.5 transition-colors text-left",
+        "group w-full flex items-center gap-1 rounded-2xl px-2 py-1.5 transition-colors text-left",
         active
           ? "bg-primary/15 text-primary"
           : "text-muted-foreground hover:text-foreground hover:bg-white/[0.05]",
@@ -2305,7 +2305,7 @@ function ProviderDropdown({
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all",
+          "flex items-center gap-1.5 px-2.5 py-1 rounded-2xl text-[11px] font-medium border transition-all",
           "bg-white/[0.04] border-white/[0.08] hover:border-white/[0.15] hover:bg-white/[0.07]",
           meta.color,
         )}
@@ -2324,7 +2324,7 @@ function ProviderDropdown({
               setShowConfig(false);
             }}
           />
-          <div className="absolute bottom-full left-0 mb-1.5 z-50 bg-popover border border-border rounded-xl shadow-xl py-1 w-72">
+          <div className="absolute bottom-full left-0 mb-1.5 z-50 bg-popover border border-border rounded-3xl shadow-xl py-1 w-72">
             {/* Provider list */}
             {!showConfig &&
               providers.map((p) => {
@@ -2406,7 +2406,7 @@ function ProviderDropdown({
                         onChange={(e) =>
                           onChange({ ...settings, ollamaUrl: e.target.value })
                         }
-                        className="w-full px-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.08] rounded-lg outline-none focus:border-primary/40"
+                        className="w-full px-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.08] rounded-2xl outline-none focus:border-primary/40"
                         placeholder="http://localhost:11434"
                       />
                     </div>
@@ -2420,7 +2420,7 @@ function ProviderDropdown({
                         onChange={(e) =>
                           onChange({ ...settings, ollamaModel: e.target.value })
                         }
-                        className="w-full px-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.08] rounded-lg outline-none focus:border-primary/40"
+                        className="w-full px-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.08] rounded-2xl outline-none focus:border-primary/40"
                         placeholder="mistral"
                       />
                     </div>
@@ -2458,7 +2458,7 @@ function ProviderDropdown({
                             openAiCompatUrl: e.target.value,
                           })
                         }
-                        className="w-full px-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.08] rounded-lg outline-none focus:border-primary/40"
+                        className="w-full px-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.08] rounded-2xl outline-none focus:border-primary/40"
                         placeholder="https://api.openai.com"
                       />
                     </div>
@@ -2475,7 +2475,7 @@ function ProviderDropdown({
                             openAiCompatModel: e.target.value,
                           })
                         }
-                        className="w-full px-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.08] rounded-lg outline-none focus:border-primary/40"
+                        className="w-full px-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.08] rounded-2xl outline-none focus:border-primary/40"
                         placeholder="gpt-4o"
                       />
                     </div>
@@ -2492,7 +2492,7 @@ function ProviderDropdown({
                             openAiCompatKey: e.target.value,
                           })
                         }
-                        className="w-full px-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.08] rounded-lg outline-none focus:border-primary/40"
+                        className="w-full px-2 py-1.5 text-xs bg-white/[0.04] border border-white/[0.08] rounded-2xl outline-none focus:border-primary/40"
                         placeholder="sk-..."
                       />
                     </div>
@@ -2529,7 +2529,7 @@ function ProviderDropdown({
                           onChange({ ...settings, claudeModel: m.id })
                         }
                         className={cn(
-                          "w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-all",
+                          "w-full flex items-center justify-between px-2.5 py-1.5 rounded-2xl text-xs transition-all",
                           active
                             ? "bg-amber-400/15 text-amber-300"
                             : "text-muted-foreground hover:text-foreground hover:bg-white/[0.05]",
@@ -2579,7 +2579,7 @@ function CritiqueScoreBar({
     { key: "innovation", label: "Innovation" },
   ] as const;
   return (
-    <div className="bg-muted/30 rounded-lg border border-border/40 px-3 py-2">
+    <div className="bg-muted/30 rounded-2xl border border-border/40 px-3 py-2">
       <div className="flex items-center gap-2 mb-1.5">
         <Star className="h-3 w-3 text-primary" />
         <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -2645,7 +2645,7 @@ function ExportDropdown({
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-8 z-50 bg-popover border border-border rounded-lg shadow-lg py-1 w-36">
+          <div className="absolute right-0 top-8 z-50 bg-popover border border-border rounded-2xl shadow-lg py-1 w-36">
             {[
               { format: "html" as const, label: "HTML File", icon: FileText },
               { format: "pdf" as const, label: "PDF", icon: Archive },
@@ -2685,7 +2685,7 @@ function DirectionPickerModal({
       onClick={onClose}
     >
       <div
-        className="bg-background border border-border rounded-2xl shadow-2xl p-6 w-[680px] max-w-[95vw]"
+        className="bg-transparent border border-border rounded-2xl shadow-2xl p-6 w-[680px] max-w-[95vw]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
@@ -2709,7 +2709,7 @@ function DirectionPickerModal({
               key={dir.id}
               onClick={() => onSelect(dir.id)}
               className={cn(
-                "text-left rounded-xl border-2 p-3 transition-all hover:scale-[1.01]",
+                "text-left rounded-3xl border-2 p-3 transition-all hover:scale-[1.01]",
                 current === dir.id
                   ? "border-primary"
                   : "border-border/50 hover:border-border",
@@ -2783,7 +2783,7 @@ function PromptGalleryModal({
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-4 shrink-0 border-b border-white/[0.06]">
           <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-lg bg-primary/15 flex items-center justify-center">
+            <div className="h-8 w-8 rounded-2xl bg-primary/15 flex items-center justify-center">
               <BookOpen className="h-4 w-4 text-primary" />
             </div>
             <div>
@@ -2797,7 +2797,7 @@ function PromptGalleryModal({
           </div>
           <button
             onClick={onClose}
-            className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-all text-sm"
+            className="h-7 w-7 flex items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-all text-sm"
           >
             ✕
           </button>
@@ -2825,7 +2825,7 @@ function PromptGalleryModal({
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search prompts…"
               autoFocus
-              className="w-full pl-8 pr-4 py-2 text-sm bg-white/[0.04] border border-white/[0.07] rounded-lg outline-none focus:border-primary/40 focus:bg-white/[0.06] text-foreground placeholder:text-muted-foreground/50 transition-all"
+              className="w-full pl-8 pr-4 py-2 text-sm bg-white/[0.04] border border-white/[0.07] rounded-2xl outline-none focus:border-primary/40 focus:bg-white/[0.06] text-foreground placeholder:text-muted-foreground/50 transition-all"
             />
           </div>
           {/* Category tabs */}
@@ -2839,7 +2839,7 @@ function PromptGalleryModal({
                   className={cn(
                     "flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all border shrink-0",
                     activeCategory === cat
-                      ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                      ? "bg-primary text-primary-foreground border-primary shadow-md"
                       : "bg-white/[0.04] text-muted-foreground border-white/[0.06] hover:text-foreground hover:bg-white/[0.07]",
                   )}
                 >
@@ -2863,7 +2863,7 @@ function PromptGalleryModal({
                 <button
                   key={`${p.category}-${p.label}`}
                   onClick={() => onSelect(p.prompt)}
-                  className="group text-left p-4 rounded-xl bg-white/[0.03] border border-white/[0.07] hover:bg-white/[0.07] hover:border-primary/30 transition-all flex flex-col gap-2"
+                  className="group text-left p-4 rounded-3xl bg-white/[0.03] border border-white/[0.07] hover:bg-white/[0.07] hover:border-primary/30 transition-all flex flex-col gap-2"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-1.5">

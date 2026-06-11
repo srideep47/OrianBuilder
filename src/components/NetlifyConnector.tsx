@@ -76,7 +76,7 @@ function ConnectedNetlifyConnector({
 
   return (
     <div
-      className="mt-4 w-full rounded-md"
+      className="mt-4 w-full rounded-3xl"
       data-testid="netlify-connected-project"
     >
       <p className="text-sm text-gray-600 dark:text-gray-300">
@@ -166,7 +166,7 @@ function ConnectedNetlifyConnector({
             {deployments.map((deployment) => (
               <div
                 key={deployment.uid}
-                className="bg-gray-50 dark:bg-gray-800 rounded-md p-3"
+                className="bg-gray-50 dark:bg-gray-800 rounded-3xl p-3"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -394,7 +394,7 @@ function UnconnectedNetlifyConnector({
           </div>
 
           <div className="space-y-4">
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md p-3">
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-3xl p-3">
               <p className="text-sm text-blue-800 dark:text-blue-200 mb-2">
                 To connect your app to Netlify, you'll need to create a personal
                 access token:
@@ -482,7 +482,7 @@ function UnconnectedNetlifyConnector({
             </form>
 
             {tokenError && (
-              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3">
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-3xl p-3">
                 <p className="text-sm text-red-800 dark:text-red-200">
                   {tokenError}
                 </p>
@@ -490,7 +490,7 @@ function UnconnectedNetlifyConnector({
             )}
 
             {tokenSuccess && (
-              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md p-3">
+              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-3xl p-3">
                 <p className="text-sm text-green-800 dark:text-green-200">
                   Successfully connected to Netlify! You can now set up your
                   site below.
@@ -504,14 +504,17 @@ function UnconnectedNetlifyConnector({
   }
 
   return (
-    <div className="mt-4 w-full rounded-md" data-testid="netlify-setup-project">
+    <div
+      className="mt-4 w-full rounded-3xl"
+      data-testid="netlify-setup-project"
+    >
       <div className="font-medium mb-2">Set up your Netlify site</div>
 
       <div className="overflow-hidden transition-all duration-300 ease-in-out">
         <div className="pt-0 space-y-4">
           {/* Mode Selection */}
           <div>
-            <div className="flex rounded-md border border-gray-200 dark:border-gray-700">
+            <div className="flex rounded-3xl border border-gray-200 dark:border-gray-700">
               <Button
                 type="button"
                 variant={siteSetupMode === "create" ? "default" : "ghost"}
@@ -630,7 +633,7 @@ function UnconnectedNetlifyConnector({
             (() => {
               const { message, link } = parseCreateError(createSiteError);
               return (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3 mt-2 space-y-2">
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-3xl p-3 mt-2 space-y-2">
                   <p className="text-sm text-red-800 dark:text-red-200">
                     {message}
                   </p>

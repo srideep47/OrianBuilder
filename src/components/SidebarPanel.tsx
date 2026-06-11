@@ -20,14 +20,14 @@ export function SidebarPanel() {
     <div
       data-panel="sidebar-panel"
       className={cn(
-        "flex-shrink-0 h-screenish mt-11 mb-2 sm:mb-4 overflow-hidden",
-        "transition-[width] duration-200 ease-linear",
+        "h-screenish mt-[var(--app-titlebar-height)] mb-2 overflow-hidden rounded-r-[24px] sm:mb-3",
+        "transition-[width,opacity,transform] duration-300 ease-[var(--ease-macos)] will-change-[width,opacity,transform]",
         visible
-          ? "w-[272px] border-y border-r border-white/[0.06] bg-[oklch(0.11_0.018_292)]"
-          : "w-0",
+          ? "liquid-glass-thick w-[288px] translate-x-0 opacity-100 border-y border-r border-black/[0.06] bg-card/78 shadow-[0_22px_60px_rgba(15,23,42,0.08)] dark:border-white/[0.08] dark:bg-card/70 dark:shadow-[0_22px_60px_rgba(0,0,0,0.34)]"
+          : "w-0 -translate-x-3 opacity-0",
       )}
     >
-      <div className="w-[272px] h-full">
+      <div className="h-full w-[288px]">
         <AppList show={visible && panelItem === "Apps"} />
         <ChatList show={visible && panelItem === "Chat"} />
         <SettingsList show={visible && panelItem === "Settings"} />

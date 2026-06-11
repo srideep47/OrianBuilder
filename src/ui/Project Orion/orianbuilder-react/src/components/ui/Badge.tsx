@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-type Tone = "default" | "purple" | "green" | "amber" | "red";
+type Tone = "default" | "blue" | "green" | "amber" | "red";
 
 export function Badge({
   tone = "default",

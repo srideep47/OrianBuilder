@@ -360,7 +360,7 @@ export function VisualEditingToolbar({
 
   return (
     <div
-      className="absolute bg-[var(--background)] border border-[var(--border)] rounded-md shadow-lg z-50 flex flex-row items-center p-2 gap-1"
+      className="absolute bg-[var(--background)] border border-[var(--border)] rounded-3xl shadow-lg z-50 flex flex-row items-center p-2 gap-1"
       style={{
         top: `${toolbarTop}px`,
         left: `${toolbarLeft}px`,
@@ -522,7 +522,7 @@ export function VisualEditingToolbar({
                   </Label>
                   <select
                     id="font-weight"
-                    className="mt-1 h-8 text-xs w-full rounded-md border border-input bg-background px-3 py-2"
+                    className="mt-1 h-8 text-xs w-full rounded-3xl border border-input bg-transparent px-3 py-2"
                     value={currentTextStyles.fontWeight}
                     onChange={(e) =>
                       handleTextStyleChange("fontWeight", e.target.value)
@@ -541,7 +541,7 @@ export function VisualEditingToolbar({
                   </Label>
                   <select
                     id="font-family"
-                    className="mt-1 h-8 text-xs w-full rounded-md border border-input bg-background px-3 py-2"
+                    className="mt-1 h-8 text-xs w-full rounded-3xl border border-input bg-transparent px-3 py-2"
                     value={currentTextStyles.fontFamily}
                     onChange={(e) =>
                       handleTextStyleChange("fontFamily", e.target.value)

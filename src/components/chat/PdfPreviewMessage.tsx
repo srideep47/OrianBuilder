@@ -8,7 +8,7 @@ interface PdfPreviewMessageProps {
 export function PdfPreviewMessage({ topic, dataUri }: PdfPreviewMessageProps) {
   const safeFilename = `${topic.replace(/[^a-z0-9]/gi, "_").slice(0, 60)}.pdf`;
   return (
-    <div className="border border-border rounded-xl overflow-hidden bg-(--background-lighter) w-full">
+    <div className="border border-border rounded-3xl overflow-hidden bg-(--background-lighter) w-full">
       <div className="flex items-center justify-between px-3 py-2 bg-muted/40 border-b border-border">
         <div className="flex items-center gap-2 min-w-0">
           <FileText size={15} className="text-primary shrink-0" />

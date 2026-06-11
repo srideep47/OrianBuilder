@@ -134,7 +134,7 @@ export function MissionWorkerDashboard({
           <AccordionItem
             key={item.worker.id}
             value={`worker-${item.worker.id}`}
-            className="rounded border bg-background/60 px-2 border-b"
+            className="rounded border bg-transparent/60 px-2 border-b"
           >
             <AccordionTrigger className="py-2 hover:no-underline">
               <div className="flex min-w-0 flex-1 items-center gap-2 pr-2 text-xs">

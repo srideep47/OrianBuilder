@@ -23,7 +23,7 @@ export interface MessageConfig {
 // Generic Message component
 export function Message({ spans }: MessageConfig) {
   return (
-    <div className="max-w-3xl mx-auto mt-4 py-2 px-1 border border-blue-500 rounded-lg bg-blue-50 text-center">
+    <div className="max-w-3xl mx-auto mt-4 py-2 px-1 border border-blue-500 rounded-2xl bg-blue-50 text-center">
       <p className="text-sm text-blue-700">
         {spans.map((span, index) => {
           if (span.type === "text") {

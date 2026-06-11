@@ -46,7 +46,7 @@ export function FileAttachmentTypeDialog({
         <div className="flex flex-col gap-2">
           <button
             type="button"
-            className="flex items-start gap-3 rounded-lg border border-border p-4 text-left hover:bg-muted/50 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="flex items-start gap-3 rounded-2xl border border-border p-4 text-left hover:bg-muted/50 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             onClick={() => onConfirm("chat-context")}
           >
             <MessageSquare
@@ -64,7 +64,7 @@ export function FileAttachmentTypeDialog({
           </button>
           <button
             type="button"
-            className="flex items-start gap-3 rounded-lg border border-border p-4 text-left hover:bg-muted/50 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="flex items-start gap-3 rounded-2xl border border-border p-4 text-left hover:bg-muted/50 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             onClick={() => onConfirm("upload-to-codebase")}
           >
             <Upload size={20} className="mt-0.5 text-blue-500 flex-shrink-0" />

@@ -601,9 +601,9 @@ export function ChatTabs({ selectedChatId }: ChatTabsProps) {
                             setDraggingChatId(null);
                           }}
                           className={cn(
-                            "group relative flex h-8 min-w-[160px] max-w-52 items-center gap-1 rounded-md px-2.5 transition-all active:scale-[0.97]",
+                            "group relative flex h-8 min-w-[160px] max-w-52 items-center gap-1 rounded-3xl px-2.5 transition-all active:scale-[0.97]",
                             isActive
-                              ? "bg-background text-foreground shadow-sm"
+                              ? "bg-transparent text-foreground shadow-md"
                               : "bg-muted/50 text-muted-foreground hover:bg-muted",
                             isDragging && "opacity-60",
                             // Chrome-style divider on right edge
@@ -617,7 +617,7 @@ export function ChatTabs({ selectedChatId }: ChatTabsProps) {
                     >
                       {inProgress && (
                         <span
-                          className="flex items-center text-purple-600"
+                          className="flex items-center text-blue-600"
                           aria-label={t("chatInProgress")}
                           title={t("chatInProgress")}
                         >
@@ -658,7 +658,7 @@ export function ChatTabs({ selectedChatId }: ChatTabsProps) {
                           "flex h-6 w-6 items-center justify-center rounded-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                           isActive
                             ? "opacity-80 hover:bg-muted"
-                            : "opacity-0 group-hover:opacity-80 hover:bg-background/50 focus-visible:opacity-80",
+                            : "opacity-0 group-hover:opacity-80 hover:bg-transparent/50 focus-visible:opacity-80",
                         )}
                         aria-label={t("closeChatTab", { title })}
                       >
@@ -669,7 +669,7 @@ export function ChatTabs({ selectedChatId }: ChatTabsProps) {
                       side="bottom"
                       align="start"
                       sideOffset={6}
-                      className="max-w-80 !rounded-lg !border !border-border !bg-popover !px-3.5 !py-2.5 !text-popover-foreground !shadow-lg [&>:last-child]:!hidden"
+                      className="max-w-80 !rounded-2xl !border !border-border !bg-popover !px-3.5 !py-2.5 !text-popover-foreground !shadow-lg [&>:last-child]:!hidden"
                     >
                       <div className="min-w-0">
                         <div className="truncate text-[11px] leading-4 font-semibold">
@@ -715,7 +715,7 @@ export function ChatTabs({ selectedChatId }: ChatTabsProps) {
         {overflowTabs.length > 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger
-              className="flex h-7 w-8 items-center justify-center rounded-md border border-transparent bg-muted/50 text-muted-foreground hover:bg-muted"
+              className="flex h-7 w-8 items-center justify-center rounded-3xl border border-transparent bg-muted/50 text-muted-foreground hover:bg-muted"
               aria-label={t("openOverflowTabs", {
                 count: overflowTabs.length,
               })}
@@ -744,7 +744,7 @@ export function ChatTabs({ selectedChatId }: ChatTabsProps) {
                   >
                     {inProgress && (
                       <span
-                        className="flex items-center text-purple-600"
+                        className="flex items-center text-blue-600"
                         aria-label={t("chatInProgress")}
                         title={t("chatInProgress")}
                       >

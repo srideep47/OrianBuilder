@@ -72,7 +72,7 @@ function IconLabel({ title }: { title: string }) {
     const lines =
       words.length > 2 ? [words[0], words.slice(1).join(" ")] : words;
     return (
-      <span className="flex flex-col items-center leading-[1.05] text-[9px] text-center">
+      <span className="flex flex-col items-center text-center text-[10px] leading-[1.08] tracking-[0.01em]">
         {lines.map((line) => (
           <span key={line}>{line}</span>
         ))}
@@ -80,7 +80,9 @@ function IconLabel({ title }: { title: string }) {
     );
   }
   return (
-    <span className="text-[9px] leading-tight text-center w-full">{title}</span>
+    <span className="w-full text-center text-[10px] leading-tight tracking-[0.01em]">
+      {title}
+    </span>
   );
 }
 
@@ -112,7 +114,7 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="offcanvas">
       <SidebarContent className="overflow-y-auto overflow-x-hidden group-data-[collapsible=icon]:overflow-y-auto group-data-[collapsible=icon]:overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <div className="mt-11 flex flex-1 flex-col min-h-0">
+        <div className="mt-[var(--app-titlebar-height)] flex min-h-0 flex-1 flex-col">
           <AppIcons
             onIconClick={handleIconClick}
             pathname={pathname}
@@ -127,11 +129,13 @@ export function AppSidebar() {
             <SidebarMenuButton
               size="sm"
               tooltip="Help"
-              className="flex flex-col items-center justify-center gap-0.5 w-full h-[40px] mb-0 rounded-lg font-medium"
+              className="mb-0 flex h-[48px] w-full flex-col items-center justify-center gap-1 rounded-[14px] font-medium"
               onClick={() => setIsHelpDialogOpen(true)}
             >
-              <HelpCircle className="h-4 w-4 shrink-0" />
-              <span className="text-[9px] leading-tight text-center">Help</span>
+              <HelpCircle className="h-[18px] w-[18px] shrink-0" />
+              <span className="text-center text-[10px] leading-tight">
+                Help
+              </span>
             </SidebarMenuButton>
             <HelpDialog
               isOpen={isHelpDialogOpen}
@@ -154,9 +158,9 @@ function AppIcons({
   activePanel: SidebarPanelItem;
 }) {
   return (
-    <SidebarGroup className="px-1 py-0 flex flex-1 flex-col min-h-0">
-      <SidebarGroupContent className="flex flex-1 flex-col min-h-0">
-        <SidebarMenu className="flex flex-col justify-start gap-2">
+    <SidebarGroup className="flex min-h-0 flex-1 flex-col px-2 py-1.5">
+      <SidebarGroupContent className="flex min-h-0 flex-1 flex-col">
+        <SidebarMenu className="flex flex-col justify-start gap-1.5">
           {items.map((item) => {
             const isActive =
               (item.to === "/" && pathname === "/") ||
@@ -173,10 +177,13 @@ function AppIcons({
                   size="sm"
                   tooltip={item.title}
                   isActive={isActive || isPanelActive}
-                  className="flex flex-col items-center justify-center gap-0.5 w-full h-[40px] shrink-0 rounded-lg font-medium"
+                  className="flex h-[48px] w-full shrink-0 flex-col items-center justify-center gap-1 rounded-[14px] font-medium"
                   onClick={() => onIconClick(item.title, item.hasPanel)}
                 >
-                  <item.icon className="h-4 w-4 shrink-0" />
+                  <item.icon
+                    className="h-[18px] w-[18px] shrink-0"
+                    strokeWidth={1.85}
+                  />
                   <IconLabel title={item.title} />
                 </SidebarMenuButton>
               </SidebarMenuItem>

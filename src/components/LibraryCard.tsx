@@ -21,13 +21,13 @@ const CARD_TYPE_CONFIG = {
     icon: Palette,
     label: "Theme",
     badgeClass:
-      "bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:border-purple-800",
+      "bg-primary/10 text-primary border-primary/20 backdrop-blur-md dark:bg-primary/20",
   },
   prompt: {
     icon: FileText,
     label: "Prompt",
     badgeClass:
-      "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-800",
+      "bg-zinc-100 text-zinc-700 border-zinc-200 backdrop-blur-md dark:bg-zinc-800/60 dark:text-zinc-300 dark:border-zinc-700/50",
   },
 } as const;
 
@@ -56,11 +56,14 @@ export function LibraryCard({
   return (
     <div
       data-testid={`library-${item.type}-card`}
-      className="border rounded-lg p-4 bg-(--background-lightest) relative"
+      className="liquid-glass group relative rounded-[20px] border border-black/[0.06] bg-card/76 p-5 shadow-[0_18px_48px_rgba(15,23,42,0.08)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_24px_56px_rgba(15,23,42,0.12)] dark:border-white/[0.08] dark:bg-card/72 dark:shadow-[0_18px_48px_rgba(0,0,0,0.32)] dark:hover:shadow-[0_24px_56px_rgba(0,0,0,0.4)]"
     >
       <Badge
         variant="outline"
-        className={cn("absolute top-3 right-3 gap-1", config.badgeClass)}
+        className={cn(
+          "absolute top-3 right-3 gap-1 rounded-full",
+          config.badgeClass,
+        )}
       >
         <Icon className="h-3 w-3" />
         {config.label}
@@ -70,10 +73,10 @@ export function LibraryCard({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
-              <h3 className="text-lg font-semibold truncate">{title}</h3>
+              <h3 className="truncate text-[17px] font-semibold">{title}</h3>
             </div>
             {description && (
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
                 {description}
               </p>
             )}
@@ -84,7 +87,7 @@ export function LibraryCard({
             )}
           </div>
         </div>
-        <pre className="text-sm whitespace-pre-wrap bg-transparent border rounded p-2 max-h-48 overflow-auto">
+        <pre className="max-h-48 overflow-auto rounded-2xl bg-secondary/34 p-3 text-sm whitespace-pre-wrap text-muted-foreground/90 transition-colors duration-200 group-hover:bg-secondary/50">
           {content}
         </pre>
         <div className="flex gap-1 justify-end">

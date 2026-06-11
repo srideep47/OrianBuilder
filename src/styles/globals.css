@@ -3,62 +3,6 @@
 @import "./design.css";
 @plugin "@tailwindcss/typography";
 
-/* Load Geist Font */
-
-@font-face {
-  font-family: "Geist Mono";
-  src: url("/node_modules/geist/dist/fonts/geist-mono/GeistMono-Regular.ttf")
-    format("truetype");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Geist Mono";
-  src: url("/node_modules/geist/dist/fonts/geist-mono/GeistMono-Medium.ttf")
-    format("truetype");
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Geist Mono";
-  src: url("/node_modules/geist/dist/fonts/geist-mono/GeistMono-Bold.ttf")
-    format("truetype");
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Geist";
-  src: url("/node_modules/geist/dist/fonts/geist-sans/Geist-Regular.ttf")
-    format("truetype");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Geist";
-  src: url("/node_modules/geist/dist/fonts/geist-sans/Geist-Medium.ttf")
-    format("truetype");
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Geist";
-  src: url("/node_modules/geist/dist/fonts/geist-sans/Geist-Bold.ttf")
-    format("truetype");
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-
 @custom-variant dark (&:is(.dark *));
 
 .app-region-drag {
@@ -85,14 +29,14 @@ body[data-scroll-locked] .app-region-drag {
 }
 
 .h-screenish {
-  height: calc(100vh - 60px);
+  height: calc(100vh - var(--app-titlebar-height, 60px));
 }
 
-/* Design reference (Project Orion): page-level h1 headings get uppercase + wide tracking */
+/* macOS-style page headings: natural casing, SF/system metrics, no wide tracking. */
 .page-title {
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 650;
 }
 
 /* Page-level sticky header — used on inference / marketplace / models / settings.
@@ -104,97 +48,170 @@ body[data-scroll-locked] .app-region-drag {
 }
 
 :root {
+  --app-titlebar-height: 60px;
   --docs-bg: #f5f5f5;
-  --default-font-family: "Geist", sans-serif;
-  --default-mono-font-family: "Geist Mono", monospace;
-  /* --background: oklch(1 0 0); */
-  --background-lightest: #fff;
-  --background-lighter: oklch(0.995 0.0188 292.61);
-  --background: oklch(0.985 0.0188 292.61);
-  --background-darker: oklch(0.955 0.0188 292.61);
-  --background-darkest: oklch(0.925 0.0188 292.61);
+  --default-font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+    "Segoe UI", system-ui, sans-serif;
+  --default-mono-font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
 
-  --foreground: oklch(0.25 0.0679 293.36);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.59 0.16 287.69);
-  /* --primary: oklch(0.205 0 0); */
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.96 0.0188 292.61);
-  /* --sidebar: oklch(0.975 0.0188 292.61); */
-  /* --sidebar: oklch(0.985 0 0); */
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  /* --sidebar-accent: oklch(0.97 0 0); */
-  --sidebar-accent: oklch(0.88 0.07 291.44);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: var(--sidebar);
-  /* --sidebar-border: oklch(0.922 0 0); */
-  --sidebar-ring: oklch(0.708 0 0);
+  --background-lightest: #ffffff;
+  --background-lighter: #fcfcfc;
+  --background: #f5f5f7; /* macOS light bg */
+  --background-darker: #ebebeb;
+  --background-darkest: #e0e0e0;
+
+  --foreground: #1d1d1f; /* macOS dark text */
+  --card: rgba(255, 255, 255, 0.85); /* macOS glassy card */
+  --card-foreground: #1d1d1f;
+  --popover: rgba(255, 255, 255, 0.95);
+  --popover-foreground: #1d1d1f;
+  --primary: #007aff; /* macOS system blue */
+  --primary-foreground: #ffffff;
+  --secondary: rgba(0, 0, 0, 0.05);
+  --secondary-foreground: #1d1d1f;
+  --muted: rgba(0, 0, 0, 0.05);
+  --muted-foreground: #86868b;
+  --accent: rgba(0, 0, 0, 0.05);
+  --accent-foreground: #1d1d1f;
+  --destructive: #ff3b30; /* macOS system red */
+  --destructive-foreground: #ffffff;
+  --border: rgba(0, 0, 0, 0.1);
+  --input: rgba(0, 0, 0, 0.1);
+  --ring: rgba(0, 122, 255, 0.5);
+
+  --chart-1: #007aff;
+  --chart-2: #34c759;
+  --chart-3: #5856d6;
+  --chart-4: #ff9500;
+  --chart-5: #ff2d55;
+
+  --radius: 1.25rem; /* 20px macOS 26 Liquid Glass curves */
+  --glass-blur: 40px;
+  --glass-blur-thin: 24px;
+  --glass-blur-thick: 52px;
+  --glass-saturation: 180%;
+  --glass-saturation-strong: 200%;
+  --glass-bg-light: rgba(255, 255, 255, 0.78);
+  --glass-bg-dark: rgba(28, 28, 30, 0.42);
+  --glass-border-light: rgba(0, 0, 0, 0.06);
+  --glass-border-dark: rgba(255, 255, 255, 0.08);
+  --glass-shadow-light: 0 18px 60px rgba(15, 23, 42, 0.08);
+  --glass-shadow-dark: 0 18px 60px rgba(0, 0, 0, 0.36);
+
+  --motion-hover: 120ms;
+  --motion-press: 80ms;
+  --motion-panel: 240ms;
+  --motion-page: 260ms;
+  --ease-macos: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-macos-control: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --sidebar: rgba(245, 245, 247, 0.85);
+  --sidebar-foreground: #1d1d1f;
+  --sidebar-primary: #007aff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgba(0, 0, 0, 0.06);
+  --sidebar-accent-foreground: #1d1d1f;
+  --sidebar-border: rgba(0, 0, 0, 0.1);
+  --sidebar-ring: rgba(0, 122, 255, 0.5);
 }
 
 .prose {
   --tw-prose-pre-bg: var(--background);
 }
 .dark {
-  --docs-bg: #121212;
+  --docs-bg: #000000;
 
-  --background-lightest: oklch(0.285 0 0);
-  --background-lighter: oklch(0.185 0 0);
-  --background: oklch(0.145 0 0);
-  --background-darker: oklch(0.125 0 0);
-  --background-darkest: oklch(0.105 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.2 0.018 265 / 0.45);
-  --card-foreground: oklch(0.97 0 0);
-  --popover: oklch(0.18 0.02 265 / 0.92);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.72 0.18 270);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(1 0 0 / 0.06);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(1 0 0 / 0.06);
-  --muted-foreground: oklch(0.72 0 0);
-  --accent: oklch(1 0 0 / 0.08);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.396 0.141 25.723);
-  --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: oklch(1 0 0 / 0.1);
-  --input: oklch(1 0 0 / 0.09);
-  --ring: oklch(0.72 0.18 270 / 0.6);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.16 0.02 265 / 0.88);
-  --sidebar-foreground: oklch(0.95 0 0);
-  --sidebar-primary: oklch(0.72 0.18 270);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(1 0 0 / 0.08);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 0.1);
-  --sidebar-ring: oklch(0.72 0.18 270 / 0.5);
+  --background-lightest: #1a1a1a;
+  --background-lighter: #121212;
+  --background: #000000; /* macOS 26 pure black bg */
+  --background-darker: #000000;
+  --background-darkest: #000000;
+  --foreground: #ffffff; /* macOS light text */
+  --card: rgba(24, 24, 27, 0.4); /* macOS glassy card */
+  --card-foreground: #ffffff;
+  --popover: rgba(24, 24, 27, 0.6);
+  --popover-foreground: #ffffff;
+  --primary: #0a84ff; /* macOS dark system blue */
+  --primary-foreground: #ffffff;
+  --secondary: rgba(255, 255, 255, 0.08);
+  --secondary-foreground: #ffffff;
+  --muted: rgba(255, 255, 255, 0.08);
+  --muted-foreground: #a1a1aa;
+  --accent: rgba(255, 255, 255, 0.1);
+  --accent-foreground: #ffffff;
+  --destructive: #ff453a; /* macOS dark system red */
+  --destructive-foreground: #ffffff;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.08);
+  --ring: rgba(10, 132, 255, 0.6);
+  --chart-1: #0a84ff;
+  --chart-2: #32d74b;
+  --chart-3: #5e5ce6;
+  --chart-4: #ff9f0a;
+  --chart-5: #ff375f;
+  --sidebar: rgba(0, 0, 0, 0.2);
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #0a84ff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgba(255, 255, 255, 0.1);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.05);
+  --sidebar-ring: rgba(10, 132, 255, 0.6);
+}
+
+@layer components {
+  .mac-glass-panel,
+  .mac-popover,
+  .liquid-glass,
+  .liquid-glass-thin,
+  .liquid-glass-thick {
+    background: var(--glass-bg-light);
+    border: 1px solid var(--glass-border-light);
+    box-shadow: var(--glass-shadow-light);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+    -webkit-backdrop-filter: blur(var(--glass-blur))
+      saturate(var(--glass-saturation));
+  }
+
+  .dark .mac-glass-panel,
+  .dark .mac-popover,
+  .dark .liquid-glass,
+  .dark .liquid-glass-thin,
+  .dark .liquid-glass-thick {
+    background: var(--glass-bg-dark);
+    border-color: var(--glass-border-dark);
+    box-shadow: var(--glass-shadow-dark);
+  }
+
+  .mac-popover {
+    border-radius: 1.5rem;
+    backdrop-filter: blur(var(--glass-blur-thick))
+      saturate(var(--glass-saturation-strong));
+    -webkit-backdrop-filter: blur(var(--glass-blur-thick))
+      saturate(var(--glass-saturation-strong));
+  }
+
+  .mac-btn {
+    @apply relative overflow-hidden transition-[transform,background-color,box-shadow,border-color,color] duration-200;
+    transition-timing-function: var(--ease-spring);
+  }
+
+  .liquid-glass-thin {
+    backdrop-filter: blur(var(--glass-blur-thin))
+      saturate(var(--glass-saturation));
+    -webkit-backdrop-filter: blur(var(--glass-blur-thin))
+      saturate(var(--glass-saturation));
+  }
+
+  .liquid-glass-thick {
+    backdrop-filter: blur(var(--glass-blur-thick))
+      saturate(var(--glass-saturation-strong));
+    -webkit-backdrop-filter: blur(var(--glass-blur-thick))
+      saturate(var(--glass-saturation-strong));
+  }
 }
 
 /* ── Global animation timing tokens ──────────────────────────────────────────
@@ -220,8 +237,8 @@ body[data-scroll-locked] .app-region-drag {
    so backdrop-filter is resolved on the GPU and doesn't cause CPU repaints.  */
 .dark [data-slot="card"],
 .dark .bg-card {
-  backdrop-filter: blur(14px) saturate(160%);
-  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   transform: translateZ(0); /* GPU layer promotion */
   will-change: transform;
 }
@@ -235,8 +252,8 @@ body[data-scroll-locked] .app-region-drag {
    invalidates off-screen ones. */
 body.galaxy-mode [data-slot="card"],
 body.galaxy-mode .bg-card {
-  backdrop-filter: blur(6px) saturate(140%) !important;
-  -webkit-backdrop-filter: blur(6px) saturate(140%) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
   position: relative;
   z-index: 2;
   transform: translateZ(0);
@@ -246,11 +263,10 @@ body.galaxy-mode .bg-card {
 
 /* Dark glass for the main content container */
 .dark #layout-main-content-container {
-  background: oklch(0.13 0.015 265 / 0.75);
-  backdrop-filter: blur(4px) saturate(140%);
-  -webkit-backdrop-filter: blur(4px) saturate(140%);
-  border-color: oklch(1 0 0 / 0.1);
-  /* Isolate compositing so child repaints don't bubble up */
+  background: var(--background);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-color: var(--border);
   contain: layout style;
   transform: translateZ(0);
 }
@@ -302,8 +318,18 @@ body.galaxy-mode .bg-card {
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    font-family: var(--default-font-family);
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+  }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--default-font-family);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 }
 
@@ -334,7 +360,7 @@ body.galaxy-mode .bg-card {
 @media (pointer: fine) {
   @supports not (selector(::-webkit-scrollbar)) {
     * {
-      scrollbar-color: #dadce0 transparent;
+      scrollbar-color: rgba(0, 122, 255, 0.24) transparent;
       scrollbar-gutter: auto;
       scrollbar-width: thin;
     }
@@ -350,18 +376,18 @@ body.galaxy-mode .bg-card {
   ::-webkit-scrollbar-thumb {
     background: content-box currentColor;
     border: 2px solid transparent;
-    border-radius: 8px;
-    color: #dadce0;
+    border-radius: 9999px;
+    color: rgba(0, 122, 255, 0.24);
     min-height: 48px;
     min-width: 48px;
   }
 
   :hover::-webkit-scrollbar-thumb {
-    color: #80868b;
+    color: rgba(0, 122, 255, 0.42);
   }
 
   ::-webkit-scrollbar-thumb:active {
-    color: #5f6368;
+    color: rgba(0, 122, 255, 0.58);
   }
 
   ::-webkit-scrollbar-button {
@@ -377,7 +403,7 @@ body.galaxy-mode .bg-card {
 }
 .scrollbar-on-hover:hover,
 .scrollbar-on-hover:focus-within {
-  scrollbar-color: rgba(128, 134, 139, 0.45) transparent;
+  scrollbar-color: rgba(0, 122, 255, 0.35) transparent;
 }
 .scrollbar-on-hover::-webkit-scrollbar {
   height: 10px;
@@ -401,20 +427,20 @@ body.galaxy-mode .bg-card {
 }
 .scrollbar-on-hover:hover::-webkit-scrollbar-thumb,
 .scrollbar-on-hover:focus-within::-webkit-scrollbar-thumb {
-  background-color: rgba(128, 134, 139, 0.45);
+  background-color: rgba(0, 122, 255, 0.32);
 }
 .scrollbar-on-hover::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(128, 134, 139, 0.75);
+  background-color: rgba(0, 122, 255, 0.46);
 }
 .scrollbar-on-hover::-webkit-scrollbar-thumb:active {
-  background-color: rgba(95, 99, 104, 0.9);
+  background-color: rgba(0, 122, 255, 0.58);
 }
 .dark .scrollbar-on-hover:hover::-webkit-scrollbar-thumb,
 .dark .scrollbar-on-hover:focus-within::-webkit-scrollbar-thumb {
-  background-color: rgba(200, 205, 210, 0.35);
+  background-color: rgba(10, 132, 255, 0.28);
 }
 .dark .scrollbar-on-hover::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(220, 225, 230, 0.6);
+  background-color: rgba(10, 132, 255, 0.4);
 }
 
 @keyframes marquee {
@@ -471,60 +497,42 @@ body.galaxy-mode .bg-card {
    ════════════════════════════════════════════════════════════════ */
 
 body.galaxy-mode {
-  background: #03030a !important;
-  font-family: "Inter", "Geist", system-ui, sans-serif;
-  /* CSS variable overrides — match Cosmic Rays warm dark palette */
-  --background: rgba(4, 3, 10, 1); /* solid — galaxy canvas removed */
-  --background-lighter: rgba(10, 6, 20, 1);
-  --background-lightest: rgba(16, 10, 30, 1);
-  --foreground: #f3ecdf;
-  --muted: rgba(243, 236, 223, 0.08);
-  --muted-foreground: rgba(243, 236, 223, 0.55);
-  --border: rgba(243, 236, 223, 0.12);
-  --input: rgba(243, 236, 223, 0.1);
-  --card: rgba(6, 4, 16, 0.82); /* increased opacity for readability */
-  --card-foreground: #f3ecdf;
-  --popover: rgba(10, 6, 22, 0.94);
-  --popover-foreground: #f3ecdf;
-  /* Primary buttons: violet-glass matches the galaxy accent palette and
-     guarantees cream text is always readable regardless of how Tailwind v4
-     resolves --primary-foreground through @theme inline. Cream-on-cream
-     (the old cream-bg + baked near-white text from :root) is never an
-     issue here because both bg and text are light-on-dark. */
-  --primary: rgba(168, 140, 255, 0.28);
-  --primary-foreground: #f3ecdf;
-  /* --accent / --accent-foreground MUST be set here. Without overrides the
-     fallback comes from :root (light mode): --accent ≈ oklch(0.97 0 0) which
-     is near-solid-white. hover:bg-accent on outline buttons then produces a
-     jarring white flash with invisible text. Glass cream matches the UI. */
-  --accent: rgba(243, 236, 223, 0.1);
-  --accent-foreground: #f3ecdf;
-  /* Secondary buttons — same glass treatment so they don't look washed-out */
-  --secondary: rgba(243, 236, 223, 0.08);
-  --secondary-foreground: #f3ecdf;
-  --sidebar: rgba(6, 4, 14, 0.95);
-  --sidebar-border: rgba(243, 236, 223, 0.08);
-  --sidebar-foreground: rgba(243, 236, 223, 0.88);
-  --sidebar-accent: rgba(243, 236, 223, 0.1);
-  --sidebar-accent-foreground: #f3ecdf;
+  background: var(--background) !important;
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+
+  /* Fallback galaxy-mode to just use `.dark` macOS variables without tints */
+  --primary: #0a84ff;
+  --primary-foreground: #ffffff;
+  --accent: rgba(255, 255, 255, 0.1);
+  --accent-foreground: #f5f5f7;
+  --secondary: rgba(255, 255, 255, 0.1);
+  --secondary-foreground: #f5f5f7;
+  --sidebar: rgba(30, 30, 30, 0.95);
+  --sidebar-border: rgba(255, 255, 255, 0.15);
+  --sidebar-foreground: #f5f5f7;
+  --sidebar-accent: rgba(255, 255, 255, 0.1);
+  --sidebar-accent-foreground: #ffffff;
 }
 
-/* Galaxy mode: primary (default) buttons — violet-glass background with
-   cream text. The border adds the subtle glow that ties them to the
-   galaxy accent colour. Hover brightens the violet layer slightly.
-   Using explicit color here because Tailwind v4 @theme inline may bake
-   the :root near-white into .text-primary-foreground at build time. */
 body.galaxy-mode [data-slot="button"].text-primary-foreground {
-  color: #f3ecdf;
-  border: 1px solid rgba(168, 140, 255, 0.45);
+  color: #ffffff;
+  background-color: var(--primary);
+  border: none;
 }
 body.galaxy-mode
   [data-slot="button"].text-primary-foreground:hover:not(:disabled) {
-  background-color: rgba(168, 140, 255, 0.38);
-  border-color: rgba(168, 140, 255, 0.65);
+  background-color: #007aff;
 }
 body.galaxy-mode [data-slot="button"].text-primary-foreground svg {
-  color: #f3ecdf;
+  color: #ffffff;
 }
 
 /* ── Layout above cosmos: renders all app content above the fixed canvas ── */
@@ -1920,7 +1928,7 @@ body[data-route="hub"] .galaxy-bg-wrapper::after {
   position: absolute;
   width: 74px;
   height: 74px;
-  left: calc(11% + 52px);
+  left: calc(11% + var(--app-titlebar-height, 60px));
   top: 50%;
   transform: translateY(-50%);
   border-radius: 50%;
@@ -1965,7 +1973,7 @@ body[data-route="app-details"] .galaxy-bg-nebula {
     border-radius: 0.5rem !important;
   }
   .h-screenish {
-    height: calc(100vh - 56px);
+    height: calc(100vh - var(--app-titlebar-height, 60px));
   }
 }
 
@@ -2116,4 +2124,423 @@ a,
 [data-panel],
 [data-sidebar] {
   contain: layout style;
+}
+
+/* ── macOS 26 / Liquid Glass finishing layer ──────────────────────────────
+   This layer intentionally sits last. Older page classes such as galaxy-card,
+   bg-card panels, and glass helpers keep their names so behavior stays intact,
+   but the visual language is now neutral material with system color accents. */
+:root {
+  --proerp-blue: #007aff;
+  --proerp-blue-dark: #0a84ff;
+  --proerp-green: #34c759;
+  --proerp-amber: #ffcc00;
+  --proerp-orange: #ff9500;
+  --proerp-red: #ff3b30;
+  --macos-app-background:
+    linear-gradient(135deg, rgba(0, 122, 255, 0.12) 0%, transparent 34%),
+    linear-gradient(225deg, rgba(52, 199, 89, 0.09) 0%, transparent 30%),
+    linear-gradient(180deg, #f8f9fb 0%, #eef4fb 48%, #f6f7f9 100%);
+  --macos-surface: rgba(255, 255, 255, 0.72);
+  --macos-surface-strong: rgba(255, 255, 255, 0.84);
+  --macos-border: rgba(20, 24, 31, 0.08);
+  --macos-shadow: 0 18px 54px rgba(15, 23, 42, 0.08);
+  --macos-shadow-hover: 0 24px 70px rgba(15, 23, 42, 0.13);
+}
+
+.dark {
+  --macos-app-background:
+    linear-gradient(135deg, rgba(10, 132, 255, 0.2) 0%, transparent 34%),
+    linear-gradient(225deg, rgba(48, 209, 88, 0.13) 0%, transparent 32%),
+    linear-gradient(180deg, #050609 0%, #0a1018 52%, #030405 100%);
+  --macos-surface: rgba(28, 28, 30, 0.52);
+  --macos-surface-strong: rgba(36, 36, 39, 0.66);
+  --macos-border: rgba(255, 255, 255, 0.1);
+  --macos-shadow: 0 18px 54px rgba(0, 0, 0, 0.34);
+  --macos-shadow-hover: 0 24px 70px rgba(0, 0, 0, 0.44);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  background: var(--macos-app-background) !important;
+  letter-spacing: 0;
+}
+
+body,
+button,
+input,
+textarea,
+select {
+  font-family: var(--default-font-family);
+}
+
+:where(
+  .cosmos,
+  .galaxy-bg-wrapper,
+  .galaxy-bg-core,
+  .galaxy-bg-nebula,
+  .orion-stage,
+  .orion-stars,
+  .orion-streaks,
+  .orion-grain,
+  .orion-vignette
+) {
+  display: none !important;
+}
+
+#layout-main-content-container {
+  background: color-mix(
+    in srgb,
+    var(--macos-surface-strong) 86%,
+    transparent
+  ) !important;
+  border-color: var(--macos-border) !important;
+  box-shadow: var(--macos-shadow) !important;
+}
+
+:where(
+  [data-slot="card"],
+  .bg-card,
+  .galaxy-card,
+  .galaxy-setup-card,
+  .galaxy-onboarding-card,
+  .galaxy-prompt-card,
+  .galaxy-provider-card,
+  .galaxy-promo-banner,
+  .glass,
+  .glass-deep,
+  .glass-soft
+) {
+  background: var(--macos-surface) !important;
+  border-color: var(--macos-border) !important;
+  box-shadow: var(--macos-shadow) !important;
+  backdrop-filter: blur(var(--glass-blur-thin))
+    saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--glass-blur-thin))
+    saturate(var(--glass-saturation));
+}
+
+:where(
+  [data-slot="card"],
+  .bg-card,
+  .galaxy-card,
+  .galaxy-setup-card,
+  .galaxy-onboarding-card,
+  .galaxy-prompt-card,
+  .galaxy-provider-card,
+  .galaxy-promo-banner
+):hover {
+  box-shadow: var(--macos-shadow-hover) !important;
+}
+
+:where(.galaxy-page-header) {
+  padding: clamp(18px, 3vw, 32px) clamp(18px, 3vw, 40px) 14px;
+  text-align: left;
+}
+
+:where(.galaxy-page-title, .orion-title, .apps-hero h1) {
+  color: var(--foreground) !important;
+  background: none !important;
+  -webkit-background-clip: border-box !important;
+  background-clip: border-box !important;
+  font-family: var(--default-font-family) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+:where(.galaxy-page-subtitle, .orion-subtitle) {
+  color: var(--muted-foreground) !important;
+  letter-spacing: 0 !important;
+}
+
+:where(.galaxy-section-label, .eyebrow) {
+  color: var(--muted-foreground) !important;
+  font-family: var(--default-font-family) !important;
+  font-size: 0.78rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+.badge {
+  border-radius: 9999px;
+  font-family: var(--default-font-family);
+  letter-spacing: 0;
+}
+
+.badge.purple,
+.badge.violet,
+.badge.indigo,
+.badge.blue {
+  background: rgba(0, 122, 255, 0.12);
+  border-color: rgba(0, 122, 255, 0.24);
+  color: var(--primary);
+}
+
+:where([class*="text-indigo"], [class*="text-violet"], [class*="text-purple"]) {
+  color: var(--primary) !important;
+}
+
+:where([class*="bg-indigo"], [class*="bg-violet"], [class*="bg-purple"]) {
+  background-color: rgba(0, 122, 255, 0.12) !important;
+}
+
+:where(button, [role="button"], [data-slot="button"]):where(
+  [class*="bg-indigo"],
+  [class*="bg-violet"],
+  [class*="bg-purple"]
+) {
+  background-color: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+}
+
+:where(
+  [class*="border-indigo"],
+  [class*="border-violet"],
+  [class*="border-purple"]
+) {
+  border-color: rgba(0, 122, 255, 0.24) !important;
+}
+
+:where([class*="ring-indigo"], [class*="ring-violet"], [class*="ring-purple"]) {
+  --tw-ring-color: rgba(0, 122, 255, 0.24) !important;
+}
+
+:where(
+  [class*="shadow-indigo"],
+  [class*="shadow-violet"],
+  [class*="shadow-purple"]
+) {
+  --tw-shadow-color: rgba(0, 122, 255, 0.24) !important;
+}
+
+:where([class*="from-indigo"], [class*="from-violet"], [class*="from-purple"]) {
+  --tw-gradient-from: var(--primary) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(0 122 255 / 0) var(--tw-gradient-to-position) !important;
+}
+
+:where([class*="via-indigo"], [class*="via-violet"], [class*="via-purple"]) {
+  --tw-gradient-via: color-mix(in srgb, var(--primary) 68%, white)
+    var(--tw-gradient-via-position) !important;
+}
+
+:where([class*="to-indigo"], [class*="to-violet"], [class*="to-purple"]) {
+  --tw-gradient-to: color-mix(in srgb, var(--primary) 72%, black)
+    var(--tw-gradient-to-position) !important;
+}
+
+.chip,
+.galaxy-quick-chip {
+  border-radius: 9999px !important;
+  background: color-mix(
+    in srgb,
+    var(--macos-surface) 88%,
+    transparent
+  ) !important;
+  border: 1px solid var(--macos-border) !important;
+  color: var(--foreground) !important;
+}
+
+.settings-content .bg-card,
+.models-page .bg-card,
+.marketplace-page .bg-card,
+.hub-page .bg-card,
+.media-page .bg-card,
+.lib-shell .bg-card {
+  background: var(--macos-surface) !important;
+  border-color: var(--macos-border) !important;
+  box-shadow: var(--macos-shadow) !important;
+}
+
+input,
+textarea,
+select {
+  letter-spacing: 0;
+}
+
+/* App-wide motion polish. Keep the animations compositor-friendly so dense
+   views like Marketplace and Library stay smooth while still feeling tactile. */
+@keyframes mac-fade-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes mac-popover-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -6px, 0) scale(0.975);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes mac-soft-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #layout-main-content-container > :where(div, main, section) {
+    animation: mac-fade-up var(--motion-page) var(--ease-macos) both;
+  }
+
+  :where(
+    [data-slot="button"],
+    button,
+    [role="button"],
+    a[href],
+    [data-sidebar="menu-button"],
+    [data-slot="tabs-trigger"],
+    [data-slot="dropdown-menu-item"],
+    [data-slot="select-item"],
+    [data-slot="command-item"],
+    [data-slot="context-menu-item"]
+  ) {
+    transition-property:
+      transform, opacity, color, background-color, border-color, box-shadow,
+      filter;
+    transition-duration: var(--motion-hover);
+    transition-timing-function: var(--ease-macos-control);
+  }
+
+  :where(
+      [data-slot="button"],
+      button,
+      [role="button"],
+      a[href],
+      [data-sidebar="menu-button"],
+      [data-slot="tabs-trigger"],
+      [data-slot="dropdown-menu-item"],
+      [data-slot="select-item"],
+      [data-slot="command-item"],
+      [data-slot="context-menu-item"]
+    ):where(:hover, [data-highlighted]):not(:disabled):not(
+      [aria-disabled="true"]
+    ):not([data-disabled]) {
+    transform: translate3d(0, -1px, 0);
+  }
+
+  :where(
+      [data-slot="button"],
+      button,
+      [role="button"],
+      a[href],
+      [data-sidebar="menu-button"],
+      [data-slot="tabs-trigger"],
+      [data-slot="dropdown-menu-item"],
+      [data-slot="select-item"],
+      [data-slot="command-item"],
+      [data-slot="context-menu-item"]
+    ):active:not(:disabled):not([aria-disabled="true"]):not([data-disabled]) {
+    transform: translate3d(0, 0, 0) scale(0.985);
+    transition-duration: var(--motion-press);
+  }
+
+  :where(
+    [data-slot="input"],
+    [data-slot="textarea"],
+    [data-slot="select-trigger"],
+    input,
+    textarea,
+    select
+  ) {
+    transition-property:
+      background-color, border-color, box-shadow, color, opacity, filter;
+    transition-duration: var(--motion-hover);
+    transition-timing-function: var(--ease-macos-control);
+  }
+
+  :where([data-slot="input"], [data-slot="textarea"], input, textarea):focus {
+    box-shadow:
+      0 0 0 3px rgba(0, 122, 255, 0.22),
+      inset 0 1px 0 rgba(255, 255, 255, 0.7) !important;
+  }
+
+  :where(
+    [data-slot="card"],
+    .galaxy-card,
+    .galaxy-setup-card,
+    .galaxy-prompt-card
+  ) {
+    transition:
+      transform var(--motion-panel) var(--ease-macos),
+      box-shadow var(--motion-panel) var(--ease-macos),
+      border-color var(--motion-hover) var(--ease-macos-control),
+      background-color var(--motion-hover) var(--ease-macos-control);
+  }
+
+  :where(
+    [data-slot="card"],
+    .galaxy-card,
+    .galaxy-setup-card,
+    .galaxy-prompt-card
+  ):hover {
+    transform: translate3d(0, -2px, 0);
+  }
+
+  .mac-btn::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    background: linear-gradient(
+      110deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.28) 42%,
+      transparent 64%
+    );
+    opacity: 0;
+    transform: translateX(-35%) scaleX(0.45);
+    transition:
+      opacity var(--motion-hover) var(--ease-macos-control),
+      transform var(--motion-panel) var(--ease-macos);
+  }
+
+  .mac-btn:hover::after {
+    opacity: 0.65;
+    transform: translateX(35%) scaleX(1);
+  }
+
+  .motion-popover {
+    animation: mac-popover-in var(--motion-panel) var(--ease-macos) both;
+    transform-origin: top right;
+  }
+
+  :where(.animate-pulse, [data-loading="true"], [aria-busy="true"]) {
+    animation-duration: 1.8s;
+    animation-timing-function: var(--ease-macos);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

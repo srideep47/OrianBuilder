@@ -33,12 +33,12 @@ export function SkippableBanner({
   return (
     <div className="px-3 pt-1 flex justify-center" data-testid={testId}>
       <div
-        className={`max-w-3xl w-full mb-2 rounded-lg ${c.container} ring-1 ring-inset ${c.ring} relative`}
+        className={`max-w-3xl w-full mb-2 rounded-2xl ${c.container} ring-1 ring-inset ${c.ring} relative`}
       >
         <button
           type="button"
           onClick={onSkip}
-          className={`absolute -top-2 -right-2 inline-flex items-center justify-center rounded-full p-1 transition-colors duration-150 ${c.skipBtn} cursor-pointer bg-white dark:bg-indigo-800 ring-1 ring-inset ${c.ring} shadow-sm`}
+          className={`absolute -top-2 -right-2 inline-flex items-center justify-center rounded-full p-1 transition-colors duration-150 ${c.skipBtn} cursor-pointer bg-white dark:bg-indigo-800 ring-1 ring-inset ${c.ring} shadow-md`}
           aria-label="Dismiss"
         >
           <X className="h-3.5 w-3.5" />
@@ -46,7 +46,7 @@ export function SkippableBanner({
 
         <div className="flex items-center gap-3 px-3 py-2 pr-8">
           {/* Icon badge */}
-          <div className={`shrink-0 rounded-lg p-2 ${c.icon}`}>
+          <div className={`shrink-0 rounded-2xl p-2 ${c.icon}`}>
             <Icon className="h-5 w-5" />
           </div>
 
@@ -61,7 +61,7 @@ export function SkippableBanner({
           <button
             type="button"
             onClick={onEnable}
-            className={`inline-flex items-center shrink-0 rounded-lg px-4 py-1.5 text-sm font-semibold transition-all duration-150 ${c.enableBtn} cursor-pointer`}
+            className={`inline-flex items-center shrink-0 rounded-2xl px-4 py-1.5 text-sm font-semibold transition-all duration-150 ${c.enableBtn} cursor-pointer`}
           >
             {enableLabel}
           </button>

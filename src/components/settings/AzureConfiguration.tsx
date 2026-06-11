@@ -221,7 +221,7 @@ export function AzureConfiguration({
       <Accordion defaultValue={["azure-env"]} className="w-full space-y-4">
         <AccordionItem
           value="azure-env"
-          className="border rounded-lg px-4 bg-background"
+          className="border rounded-2xl px-4 bg-transparent"
         >
           <AccordionTrigger className="text-lg font-medium hover:no-underline cursor-pointer">
             Environment Variables (optional)

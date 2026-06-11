@@ -168,7 +168,7 @@ export function QueuedMessagesList({
             aria-label={isPaused ? "Resume queue" : "Pause queue"}
             title={isPaused ? "Resume queue" : "Pause queue"}
             className={cn(
-              "ml-2 px-2 py-1 rounded-lg transition-colors duration-150 cursor-pointer",
+              "ml-2 px-2 py-1 rounded-2xl transition-colors duration-150 cursor-pointer",
               isPaused
                 ? "bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/30"
                 : "text-muted-foreground hover:text-primary hover:bg-muted/50",

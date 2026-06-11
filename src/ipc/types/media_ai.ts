@@ -83,6 +83,20 @@ export const FetchCloudImageResultSchema = z.object({
   contentType: z.string(),
 });
 
+export const ModelJunkItemSchema = z.object({
+  path: z.string(),
+  sizeBytes: z.number(),
+  kind: z.enum(["partial-download", "orphaned-marker", "empty-dir"]),
+});
+export const ModelJunkScanSchema = z.object({
+  items: z.array(ModelJunkItemSchema),
+  totalBytes: z.number(),
+});
+export const ModelJunkCleanResultSchema = z.object({
+  removed: z.array(z.string()),
+  freedBytes: z.number(),
+});
+
 export const mediaAiContracts = {
   getStatus: defineContract({
     channel: "media-ai:get-status",
@@ -139,6 +153,16 @@ export const mediaAiContracts = {
     input: z.object({ alsoDeleteModels: z.boolean().default(false) }),
     output: z.object({ removed: z.array(z.string()) }),
   }),
+  scanModelJunk: defineContract({
+    channel: "media-ai:scan-model-junk",
+    input: z.void(),
+    output: ModelJunkScanSchema,
+  }),
+  cleanModelJunk: defineContract({
+    channel: "media-ai:clean-model-junk",
+    input: z.void(),
+    output: ModelJunkCleanResultSchema,
+  }),
 } as const;
 
 export const mediaAiClient = createClient(mediaAiContracts);
@@ -152,3 +176,6 @@ export type MediaAiOperationResult = z.infer<
 export type DownloadMediaAiModelsParams = z.infer<
   typeof DownloadMediaAiModelsParamsSchema
 >;
+export type ModelJunkItem = z.infer<typeof ModelJunkItemSchema>;
+export type ModelJunkScan = z.infer<typeof ModelJunkScanSchema>;
+export type ModelJunkCleanResult = z.infer<typeof ModelJunkCleanResultSchema>;

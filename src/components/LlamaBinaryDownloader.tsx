@@ -81,8 +81,8 @@ export function LlamaBinaryDownloader() {
       <div className="rounded-2xl border border-white/10 bg-[oklch(0.10_0.018_280/0.88)] backdrop-filter backdrop-blur-2xl shadow-2xl p-8 space-y-6">
         {/* Header */}
         <div className="flex items-start gap-4">
-          <div className="flex-shrink-0 w-11 h-11 rounded-xl bg-violet-500/15 border border-violet-400/20 flex items-center justify-center">
-            <Cpu className="w-5 h-5 text-violet-300" />
+          <div className="flex-shrink-0 w-11 h-11 rounded-3xl bg-indigo-500/15 border border-indigo-400/20 flex items-center justify-center">
+            <Cpu className="w-5 h-5 text-indigo-300" />
           </div>
           <div>
             <h2 className="text-base font-semibold text-white/90">
@@ -100,7 +100,7 @@ export function LlamaBinaryDownloader() {
             OrianBuilder runs local AI models using{" "}
             <span className="text-white/80 font-medium">llama.cpp</span> — a
             fast open-source inference engine. The binary ({" "}
-            <span className="font-mono text-[11px] text-violet-300">
+            <span className="font-mono text-[11px] text-indigo-300">
               llama-server.exe
             </span>
             ) needs to be downloaded once (~300 MB) and will be stored locally.
@@ -122,7 +122,7 @@ export function LlamaBinaryDownloader() {
               </div>
               <div className="h-2 rounded-full bg-white/8 overflow-hidden">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-violet-500 to-purple-400 transition-all duration-300 ease-out"
+                  className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-blue-400 transition-all duration-300 ease-out"
                   style={{ width: `${progress?.percent ?? 0}%` }}
                 />
               </div>
@@ -158,7 +158,7 @@ export function LlamaBinaryDownloader() {
 
         {/* Error state */}
         {phase === "error" && errorMsg && (
-          <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 space-y-1">
+          <div className="rounded-2xl bg-red-500/10 border border-red-500/20 p-3 space-y-1">
             <div className="flex items-center gap-2 text-red-400 text-sm font-medium">
               <XCircle className="w-4 h-4 shrink-0" />
               Download failed
@@ -174,7 +174,7 @@ export function LlamaBinaryDownloader() {
           {phase === "idle" && (
             <Button
               onClick={handleDownload}
-              className="flex-1 gap-2 bg-violet-600 hover:bg-violet-500 text-white border-0"
+              className="flex-1 gap-2 bg-indigo-600 hover:bg-indigo-500 text-white border-0"
             >
               <Download className="w-4 h-4" />
               Download Inference Engine
@@ -195,7 +195,7 @@ export function LlamaBinaryDownloader() {
             <>
               <Button
                 onClick={handleRestartNow}
-                className="flex-1 gap-2 bg-violet-600 hover:bg-violet-500 text-white border-0"
+                className="flex-1 gap-2 bg-indigo-600 hover:bg-indigo-500 text-white border-0"
               >
                 <RotateCcw className="w-4 h-4" />
                 Restart Now
@@ -213,7 +213,7 @@ export function LlamaBinaryDownloader() {
           {phase === "error" && (
             <Button
               onClick={handleDownload}
-              className="flex-1 gap-2 bg-violet-600 hover:bg-violet-500 text-white border-0"
+              className="flex-1 gap-2 bg-indigo-600 hover:bg-indigo-500 text-white border-0"
             >
               <RotateCcw className="w-4 h-4" />
               Retry Download

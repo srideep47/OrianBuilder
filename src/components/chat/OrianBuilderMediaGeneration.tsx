@@ -79,7 +79,7 @@ export const OrianBuilderMediaGeneration: React.FC<
 
   if (aborted || !url || mediaError) {
     return (
-      <div className="my-2 rounded-xl border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+      <div className="my-2 rounded-3xl border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
         <span className="font-medium text-foreground">
           {kind ? `Generated ${kind}` : "Generated media"}
         </span>
@@ -99,7 +99,7 @@ export const OrianBuilderMediaGeneration: React.FC<
         <video
           src={url}
           controls
-          className="w-full rounded-xl border border-border"
+          className="w-full rounded-3xl border border-border"
           onError={() => setMediaError(true)}
         />
       ) : kind === "audio" ? (
@@ -113,9 +113,9 @@ export const OrianBuilderMediaGeneration: React.FC<
         <a
           href={url}
           download
-          className="flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2.5 text-sm text-foreground transition-colors hover:bg-muted/50"
+          className="flex items-center gap-2 rounded-3xl border border-border bg-muted/30 px-3 py-2.5 text-sm text-foreground transition-colors hover:bg-muted/50"
         >
-          <FileBox size={16} className="text-violet-400" />
+          <FileBox size={16} className="text-indigo-400" />
           <span className="flex-1 truncate">{prompt || "3D model"}</span>
           <span className="text-xs text-muted-foreground">Download .glb</span>
         </a>
@@ -123,7 +123,7 @@ export const OrianBuilderMediaGeneration: React.FC<
         <img
           src={url}
           alt={prompt || "Generated media"}
-          className="w-full rounded-xl border border-border object-contain"
+          className="w-full rounded-3xl border border-border object-contain"
           onError={() => setMediaError(true)}
         />
       )}

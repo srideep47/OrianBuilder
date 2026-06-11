@@ -103,8 +103,8 @@ function JobRow({
   const fromPeer = job.requestedBy.source === "peer";
 
   return (
-    <div className="flex items-start gap-3 rounded-xl border bg-card p-3">
-      <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+    <div className="flex items-start gap-3 rounded-3xl border bg-card p-3">
+      <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-muted">
         <KindIcon className="h-4 w-4 text-muted-foreground" />
       </div>
       <div className="min-w-0 flex-1">
@@ -288,7 +288,7 @@ export default function MediaQueuePage() {
       </div>
 
       {/* Submission form */}
-      <div className="flex flex-col gap-4 rounded-xl border bg-card p-4">
+      <div className="flex flex-col gap-4 rounded-3xl border bg-card p-4">
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="flex flex-col gap-1.5">
             <Label>Type</Label>
@@ -437,7 +437,7 @@ export default function MediaQueuePage() {
         {jobs.length === 0 ? (
           <p
             className={cn(
-              "rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground",
+              "rounded-3xl border border-dashed p-8 text-center text-sm text-muted-foreground",
             )}
           >
             Nothing queued yet — add a prompt above. Finished media lands in

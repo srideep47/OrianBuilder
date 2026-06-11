@@ -231,7 +231,7 @@ export function ChatHeader({
           <Button
             onClick={onVersionClick}
             variant="ghost"
-            className="hidden @6xs:flex cursor-pointer items-center gap-1 text-sm px-2 py-1 rounded-md"
+            className="hidden @6xs:flex cursor-pointer items-center gap-1 text-sm px-2 py-1 rounded-3xl"
           >
             <History size={16} />
             {versionsLoading
@@ -243,7 +243,7 @@ export function ChatHeader({
         <button
           data-testid="toggle-preview-panel-button"
           onClick={onTogglePreview}
-          className="cursor-pointer p-2 hover:bg-(--background-lightest) rounded-md"
+          className="cursor-pointer p-2 hover:bg-(--background-lightest) rounded-3xl"
         >
           {isPreviewOpen ? (
             <PanelRightClose size={20} />

@@ -68,7 +68,7 @@ export function OrianBuilderStatus({
       <OrianBuilderCardContent isExpanded={isContentVisible}>
         {content && (
           <div
-            className="p-3 text-xs font-mono whitespace-pre-wrap max-h-60 overflow-y-auto bg-muted/20 rounded-lg cursor-text"
+            className="p-3 text-xs font-mono whitespace-pre-wrap max-h-60 overflow-y-auto bg-muted/20 rounded-2xl cursor-text"
             onClick={(e) => e.stopPropagation()}
           >
             {content}

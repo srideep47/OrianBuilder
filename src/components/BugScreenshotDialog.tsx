@@ -46,7 +46,7 @@ export function BugScreenshotDialog({
             <Button
               variant="default"
               onClick={handleReportBugWithScreenshot}
-              className="w-full py-6 border-primary/50 shadow-sm shadow-primary/10 transition-all hover:shadow-md hover:shadow-primary/15"
+              className="w-full py-6 border-primary/50 shadow-md shadow-primary/10 transition-all hover:shadow-md hover:shadow-primary/15"
             >
               <Camera className="mr-2 h-5 w-5" /> Take a screenshot
               (recommended)

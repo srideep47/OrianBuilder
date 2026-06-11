@@ -35,7 +35,7 @@ export const OrianBuilderWritePlan: React.FC<OrianBuilderWritePlanProps> = ({
 
   return (
     <div
-      className={`my-4 border rounded-lg overflow-hidden ${
+      className={`my-4 border rounded-2xl overflow-hidden ${
         isInProgress ? "border-primary/60" : "border-primary/20"
       } bg-primary/5`}
     >
@@ -71,14 +71,14 @@ export const OrianBuilderWritePlan: React.FC<OrianBuilderWritePlanProps> = ({
                 setPreviewMode("plan");
                 setIsPreviewOpen(true);
               }}
-              className="flex items-center gap-1.5 text-xs font-medium text-primary-foreground px-4 py-1.5 bg-primary rounded-md hover:bg-primary/90 transition-colors"
+              className="flex items-center gap-1.5 text-xs font-medium text-primary-foreground px-4 py-1.5 bg-primary rounded-3xl hover:bg-primary/90 transition-colors"
             >
               <Eye size={14} />
               View Plan
             </button>
           )}
           {isInProgress && (
-            <span className="flex items-center gap-1.5 text-xs text-primary px-3 py-1 bg-primary/20 rounded-md font-medium">
+            <span className="flex items-center gap-1.5 text-xs text-primary px-3 py-1 bg-primary/20 rounded-3xl font-medium">
               <Loader2 size={12} className="animate-spin" />
               Generating plan...
             </span>

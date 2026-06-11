@@ -43,7 +43,7 @@ export function SchedulePicker({
   const isPast = value !== null && value < Date.now() - 60_000;
 
   return (
-    <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+    <div className="space-y-2 rounded-3xl border border-border bg-muted/30 p-3">
       <div className="flex items-center justify-between gap-2">
         <Label htmlFor="sched-when" className="text-xs">
           Publish at
@@ -125,7 +125,7 @@ function PresetChip({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="rounded-full border border-border bg-background/60 px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+      className="rounded-full border border-border bg-transparent/60 px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
     >
       {label}
     </button>

@@ -49,7 +49,7 @@ export function OrianBuilderProTrialDialog({
         {/* Header */}
         <div className="relative bg-muted/50 px-6 pt-6">
           {/* Subtle accent line */}
-          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-violet-500" />
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigo-500 via-blue-500 to-indigo-500" />
 
           {/* Title */}
           <div className="text-center">
@@ -69,9 +69,9 @@ export function OrianBuilderProTrialDialog({
             {features.map((feature) => (
               <div
                 key={feature.title}
-                className="flex items-center gap-4 rounded-xl border border-border/50 bg-muted/30 p-3 transition-colors hover:bg-muted/50"
+                className="flex items-center gap-4 rounded-3xl border border-border/50 bg-muted/30 p-3 transition-colors hover:bg-muted/50"
               >
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500/10 to-purple-500/10 ring-1 ring-indigo-500/20">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/10 to-blue-500/10 ring-1 ring-indigo-500/20">
                   <feature.icon className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -89,7 +89,7 @@ export function OrianBuilderProTrialDialog({
           <div className="mt-6 space-y-3">
             <Button
               onClick={handleStartTrial}
-              className="w-full bg-violet-600 py-5 text-base font-semibold text-white shadow-lg shadow-violet-500/30 transition-all hover:bg-violet-500 hover:shadow-xl hover:shadow-violet-500/40 active:scale-[0.98]"
+              className="w-full bg-indigo-600 py-5 text-base font-semibold text-white shadow-lg shadow-indigo-500/30 transition-all hover:bg-indigo-500 hover:shadow-xl hover:shadow-indigo-500/40 active:scale-[0.98]"
             >
               <Sparkles className="mr-2 h-4 w-4" />
               Start Free Trial

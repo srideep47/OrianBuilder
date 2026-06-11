@@ -336,7 +336,7 @@ export function AIGeneratorTab({
           <button
             type="button"
             onClick={() => setInputSource("images")}
-            className={`flex flex-col items-center rounded-lg border p-3 text-center transition-colors ${
+            className={`flex flex-col items-center rounded-2xl border p-3 text-center transition-colors ${
               inputSource === "images"
                 ? "border-primary bg-primary/5"
                 : "hover:bg-muted/50"
@@ -351,7 +351,7 @@ export function AIGeneratorTab({
           <button
             type="button"
             onClick={() => setInputSource("url")}
-            className={`flex flex-col items-center rounded-lg border p-3 text-center transition-colors ${
+            className={`flex flex-col items-center rounded-2xl border p-3 text-center transition-colors ${
               inputSource === "url"
                 ? "border-primary bg-primary/5"
                 : "hover:bg-muted/50"
@@ -371,7 +371,7 @@ export function AIGeneratorTab({
         <div className="space-y-2">
           <Label>Reference Images</Label>
           <div
-            className={`border-2 border-dashed border-muted-foreground/25 rounded-lg p-4 text-center cursor-pointer hover:border-muted-foreground/50 transition-colors ${isUploading ? "opacity-50 pointer-events-none" : ""}`}
+            className={`border-2 border-dashed border-muted-foreground/25 rounded-2xl p-4 text-center cursor-pointer hover:border-muted-foreground/50 transition-colors ${isUploading ? "opacity-50 pointer-events-none" : ""}`}
             onClick={() => fileInputRef.current?.click()}
           >
             <input
@@ -412,7 +412,7 @@ export function AIGeneratorTab({
                   <img
                     src={img.preview}
                     alt={`Upload ${index + 1}`}
-                    className="h-16 w-16 object-cover rounded-md border"
+                    className="h-16 w-16 object-cover rounded-3xl border"
                   />
                   <button
                     onClick={() => handleRemoveImage(index)}
@@ -431,7 +431,7 @@ export function AIGeneratorTab({
       {inputSource === "url" && (
         <div className="space-y-2">
           {!hasProKey ? (
-            <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+            <div className="flex items-start gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-3">
               <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
               <p className="text-xs text-muted-foreground">
                 Website crawling requires a OrianBuilder Pro API key. Use{" "}
@@ -479,7 +479,7 @@ export function AIGeneratorTab({
           <button
             type="button"
             onClick={() => setAiGenerationMode("inspired")}
-            className={`flex flex-col items-start rounded-lg border p-3 text-left transition-colors ${
+            className={`flex flex-col items-start rounded-2xl border p-3 text-left transition-colors ${
               aiGenerationMode === "inspired"
                 ? "border-primary bg-primary/5"
                 : "hover:bg-muted/50"
@@ -494,7 +494,7 @@ export function AIGeneratorTab({
           <button
             type="button"
             onClick={() => setAiGenerationMode("high-fidelity")}
-            className={`flex flex-col items-start rounded-lg border p-3 text-left transition-colors ${
+            className={`flex flex-col items-start rounded-2xl border p-3 text-left transition-colors ${
               aiGenerationMode === "high-fidelity"
                 ? "border-primary bg-primary/5"
                 : "hover:bg-muted/50"
@@ -553,7 +553,7 @@ export function AIGeneratorTab({
             placeholder="Generated prompt will appear here..."
           />
         ) : (
-          <div className="min-h-[100px] border rounded-md p-4 flex items-center justify-center text-muted-foreground text-sm text-center">
+          <div className="min-h-[100px] border rounded-3xl p-4 flex items-center justify-center text-muted-foreground text-sm text-center">
             No prompt generated yet.{" "}
             {inputSource === "images"
               ? 'Upload images and click "Generate" to create a theme prompt.'

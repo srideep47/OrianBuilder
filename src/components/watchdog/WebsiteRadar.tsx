@@ -280,7 +280,7 @@ function ItemsPanel({
   onReload: () => void;
 }) {
   return (
-    <div className="rounded-md border border-border bg-muted/30 p-3 max-h-72 flex flex-col">
+    <div className="rounded-3xl border border-border bg-muted/30 p-3 max-h-72 flex flex-col">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
           Recent posts on the page
@@ -313,7 +313,7 @@ function ItemsPanel({
               href={item.url}
               target="_blank"
               rel="noreferrer"
-              className="group flex items-start gap-2 rounded-md border border-border bg-card p-2 hover:bg-accent transition-colors"
+              className="group flex items-start gap-2 rounded-3xl border border-border bg-card p-2 hover:bg-accent transition-colors"
             >
               <ExternalLink className="w-3 h-3 mt-1 text-muted-foreground group-hover:text-foreground shrink-0" />
               <div className="min-w-0 flex-1">
@@ -332,7 +332,7 @@ function ItemsPanel({
 
 function UpdatesPanel({ updates }: { updates: WebsiteUpdate[] }) {
   return (
-    <div className="rounded-md border border-border bg-muted/30 p-3 max-h-72 flex flex-col">
+    <div className="rounded-3xl border border-border bg-muted/30 p-3 max-h-72 flex flex-col">
       <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">
         Change history
       </h3>
@@ -345,7 +345,7 @@ function UpdatesPanel({ updates }: { updates: WebsiteUpdate[] }) {
           updates.map((u) => (
             <div
               key={u.id}
-              className="rounded-md border border-border bg-card p-2"
+              className="rounded-3xl border border-border bg-card p-2"
             >
               <div className="text-[10px] text-muted-foreground mb-0.5">
                 {new Date(u.timestamp).toLocaleString()}
@@ -361,7 +361,7 @@ function UpdatesPanel({ updates }: { updates: WebsiteUpdate[] }) {
 
 function EmptyState({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-center gap-2 py-12 rounded-lg border border-dashed border-border text-sm text-muted-foreground">
+    <div className="flex items-center justify-center gap-2 py-12 rounded-2xl border border-dashed border-border text-sm text-muted-foreground">
       {children}
     </div>
   );

@@ -93,7 +93,7 @@ export const OrianBuilderSearchReplace: React.FC<
               {blocks.map((b, i) => (
                 <div
                   key={i}
-                  className="border border-border/60 rounded-lg overflow-hidden"
+                  className="border border-border/60 rounded-2xl overflow-hidden"
                 >
                   <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/30 text-[11px]">
                     <ArrowLeftRight

@@ -99,7 +99,7 @@ function PeerRow({
 }) {
   return (
     <div
-      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors cursor-pointer group ${
+      className={`flex items-center gap-3 px-3 py-2.5 rounded-2xl transition-colors cursor-pointer group ${
         selected
           ? "bg-primary/10 border border-primary/20"
           : "hover:bg-muted/50"
@@ -162,7 +162,7 @@ function FriendRequestRow({
   onDecline: () => void;
 }) {
   return (
-    <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary/5 border border-primary/10">
+    <div className="flex items-center gap-3 px-3 py-2.5 rounded-2xl bg-primary/5 border border-primary/10">
       <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
         <UserPlus className="w-4 h-4 text-primary" />
       </div>
@@ -361,7 +361,7 @@ function PeerDetailPanel({
       {!peer.isTrusted && peer.status === "online" && (
         <div className="mt-auto pt-2">
           {requestSent ? (
-            <div className="flex items-center justify-center gap-2 py-3 rounded-lg bg-primary/10 text-primary text-sm font-medium">
+            <div className="flex items-center justify-center gap-2 py-3 rounded-2xl bg-primary/10 text-primary text-sm font-medium">
               <CheckCircle2 className="w-4 h-4" />
               Request sent — waiting for them to accept
             </div>
@@ -464,13 +464,13 @@ function AddFriendModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Tabs */}
-        <div className="flex rounded-lg bg-muted p-1 gap-1">
+        <div className="flex rounded-2xl bg-muted p-1 gap-1">
           {(["share", "enter"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`flex-1 text-sm py-1.5 rounded-md font-medium transition-colors ${
-                tab === t ? "bg-background shadow-sm" : "text-muted-foreground"
+              className={`flex-1 text-sm py-1.5 rounded-3xl font-medium transition-colors ${
+                tab === t ? "bg-transparent shadow-md" : "text-muted-foreground"
               }`}
             >
               {t === "share" ? "Share Your Code" : "Enter Their Code"}
@@ -491,7 +491,7 @@ function AddFriendModal({ onClose }: { onClose: () => void }) {
             ) : (
               <>
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 text-sm font-mono bg-muted px-3 py-2.5 rounded-lg select-all tracking-wider">
+                  <code className="flex-1 text-sm font-mono bg-muted px-3 py-2.5 rounded-2xl select-all tracking-wider">
                     {inviteQuery.data?.code}
                   </code>
                   <Button
@@ -692,7 +692,7 @@ function DiagnosticView() {
             return (
               <div
                 key={p.publicKey}
-                className="rounded-lg border border-border p-3 flex flex-col gap-2"
+                className="rounded-2xl border border-border p-3 flex flex-col gap-2"
               >
                 <div className="flex items-center gap-2">
                   <span
@@ -775,7 +775,7 @@ function DiagnosticView() {
                         </p>
                         <p className="mt-0.5">{result.detail}</p>
                         {result.output && (
-                          <pre className="mt-1 p-1.5 rounded bg-background/50 font-mono text-[10px] whitespace-pre-wrap break-all max-h-32 overflow-auto">
+                          <pre className="mt-1 p-1.5 rounded bg-transparent/50 font-mono text-[10px] whitespace-pre-wrap break-all max-h-32 overflow-auto">
                             {result.output}
                           </pre>
                         )}

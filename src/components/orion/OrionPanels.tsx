@@ -100,7 +100,7 @@ export function ModelEnginePanel() {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
       <div className="mb-3 flex items-center gap-2">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-500/20 text-sky-300">
+        <div className="flex h-7 w-7 items-center justify-center rounded-2xl bg-sky-500/20 text-sky-300">
           <Cpu className="h-4 w-4" />
         </div>
         <div className="flex-1">
@@ -121,7 +121,7 @@ export function ModelEnginePanel() {
       </div>
 
       <dl className="grid grid-cols-1 gap-2 sm:grid-cols-4">
-        <div className="rounded-lg bg-black/20 px-3 py-2">
+        <div className="rounded-2xl bg-black/20 px-3 py-2">
           <dt className="text-xs text-white/40">Language model</dt>
           <dd
             className="truncate text-sm text-white/85"
@@ -130,7 +130,7 @@ export function ModelEnginePanel() {
             {shortModel(status?.currentLlmModel ?? null)}
           </dd>
         </div>
-        <div className="rounded-lg bg-black/20 px-3 py-2">
+        <div className="rounded-2xl bg-black/20 px-3 py-2">
           <dt className="text-xs text-white/40">Media model</dt>
           <dd
             className="truncate text-sm text-white/85"
@@ -139,7 +139,7 @@ export function ModelEnginePanel() {
             {shortModel(status?.currentMediaModel ?? null)}
           </dd>
         </div>
-        <div className="rounded-lg bg-black/20 px-3 py-2">
+        <div className="rounded-2xl bg-black/20 px-3 py-2">
           <dt className="text-xs text-white/40">Last swap</dt>
           <dd className="text-sm text-white/85">
             {status?.lastSwapDurationMs != null
@@ -147,7 +147,7 @@ export function ModelEnginePanel() {
               : "-"}
           </dd>
         </div>
-        <div className="rounded-lg bg-black/20 px-3 py-2">
+        <div className="rounded-2xl bg-black/20 px-3 py-2">
           <dt className="text-xs text-white/40">VRAM plan</dt>
           <dd className="text-sm text-white/85">
             {tiers
@@ -158,16 +158,16 @@ export function ModelEnginePanel() {
       </dl>
       {tiers && (
         <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-white/45 sm:grid-cols-4">
-          <div className="rounded-lg bg-black/10 px-3 py-1.5">
+          <div className="rounded-2xl bg-black/10 px-3 py-1.5">
             Image tiers: {tiers.image.length}
           </div>
-          <div className="rounded-lg bg-black/10 px-3 py-1.5">
+          <div className="rounded-2xl bg-black/10 px-3 py-1.5">
             Audio tiers: {tiers.audio.length}
           </div>
-          <div className="rounded-lg bg-black/10 px-3 py-1.5">
+          <div className="rounded-2xl bg-black/10 px-3 py-1.5">
             STT tiers: {tiers.audioStt.length}
           </div>
-          <div className="rounded-lg bg-black/10 px-3 py-1.5">
+          <div className="rounded-2xl bg-black/10 px-3 py-1.5">
             Video tiers: {tiers.video.length}
           </div>
         </div>
@@ -221,7 +221,7 @@ export function WorkflowsPanel() {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
       <div className="mb-3 flex items-center gap-2">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-fuchsia-500/20 text-fuchsia-300">
+        <div className="flex h-7 w-7 items-center justify-center rounded-2xl bg-fuchsia-500/20 text-fuchsia-300">
           <Grid3x3 className="h-4 w-4" />
         </div>
         <div>
@@ -236,7 +236,7 @@ export function WorkflowsPanel() {
           <Link
             key={w.to}
             to={w.to}
-            className="group flex flex-col gap-1 rounded-xl border border-white/10 bg-black/20 p-3 transition-colors hover:border-primary/40 hover:bg-white/[0.06]"
+            className="group flex flex-col gap-1 rounded-3xl border border-white/10 bg-black/20 p-3 transition-colors hover:border-primary/40 hover:bg-white/[0.06]"
           >
             <w.icon className="h-4 w-4 text-white/60 group-hover:text-primary" />
             <span className="text-sm font-medium text-white/85">{w.label}</span>
@@ -300,7 +300,7 @@ export function OrionSessionsPanel() {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
       <div className="mb-3 flex items-center gap-2">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-300">
+        <div className="flex h-7 w-7 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-300">
           <MessageSquare className="h-4 w-4" />
         </div>
         <div>
@@ -317,11 +317,11 @@ export function OrionSessionsPanel() {
           Loading sessions...
         </div>
       ) : sessions.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">
+        <div className="rounded-2xl border border-dashed border-white/10 px-3 py-4 text-sm text-white/45">
           No sessions yet. Run a command above to create one.
         </div>
       ) : (
-        <div className="divide-y divide-white/10 overflow-hidden rounded-lg border border-white/10 bg-black/20">
+        <div className="divide-y divide-white/10 overflow-hidden rounded-2xl border border-white/10 bg-black/20">
           {sessions.map((chat) => {
             const active = isStreamingById.get(chat.id) === true;
             const title = chat.title?.trim() || "New chat";
@@ -337,7 +337,7 @@ export function OrionSessionsPanel() {
               >
                 <span
                   className={
-                    "flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md " +
+                    "flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-3xl " +
                     (active
                       ? "bg-primary/20 text-primary"
                       : "bg-white/[0.06] text-white/45")
@@ -384,7 +384,7 @@ export function HowItWorksPanel() {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
       <div className="mb-3 flex items-center gap-2">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/20 text-primary">
+        <div className="flex h-7 w-7 items-center justify-center rounded-2xl bg-primary/20 text-primary">
           <Layers className="h-4 w-4" />
         </div>
         <div>

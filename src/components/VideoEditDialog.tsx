@@ -111,7 +111,7 @@ export function VideoEditDialog({
             <p className="text-sm font-medium">Saved to your library</p>
             <video
               src={generatedMediaUrl(result.fileName)}
-              className="max-h-72 w-full rounded-md border bg-black object-contain"
+              className="max-h-72 w-full rounded-3xl border bg-black object-contain"
               controls
               autoPlay
             />
@@ -126,7 +126,7 @@ export function VideoEditDialog({
               ordered.map((item, idx) => (
                 <div
                   key={item.fileName}
-                  className="flex items-center gap-3 rounded-md border bg-card p-2"
+                  className="flex items-center gap-3 rounded-3xl border bg-card p-2"
                 >
                   <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
                     {idx + 1}

@@ -70,7 +70,7 @@ export const OrianBuilderCodeSearchResult: React.FC<
                 filePath.substring(0, filePath.length - fileName.length) || "";
 
               return (
-                <div key={index} className="px-2 py-1 bg-muted/40 rounded-lg">
+                <div key={index} className="px-2 py-1 bg-muted/40 rounded-2xl">
                   <div className="flex items-center gap-1.5">
                     <FileText
                       size={13}

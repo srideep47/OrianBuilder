@@ -23,17 +23,17 @@ export const OnboardingBanner = ({
         }}
         target="_blank"
         rel="noopener noreferrer"
-        className="cursor-pointer block bg-(--background-lightest) border border-border rounded-lg shadow-lg hover:bg-accent transition-colors"
+        className="cursor-pointer block bg-(--background-lightest) border border-border rounded-2xl shadow-lg hover:bg-accent transition-colors"
       >
         <div className="flex items-center">
           <div className="relative p-2">
             <img
               src="https://img.youtube.com/vi/rgdNoHLaRN4/maxresdefault.jpg"
               alt="Get started with OrianBuilder in 3 minutes"
-              className="w-28 h-16 object-cover rounded-md"
+              className="w-28 h-16 object-cover rounded-3xl"
             />
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-10 h-10 bg-background rounded-full flex items-center justify-center shadow-md">
+              <div className="w-10 h-10 bg-transparent rounded-full flex items-center justify-center shadow-md">
                 <Play size={20} className="text-foreground ml-0.5" />
               </div>
             </div>

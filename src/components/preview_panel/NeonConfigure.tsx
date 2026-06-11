@@ -116,7 +116,7 @@ export const NeonConfigure = () => {
         {/* Project Information */}
         <div className="space-y-2">
           <div className="text-sm font-medium">Project Information</div>
-          <div className="bg-muted/50 p-3 rounded-md space-y-2">
+          <div className="bg-muted/50 p-3 rounded-3xl space-y-2">
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Project Name:</span>
               <span className="font-medium">{neonProject.projectName}</span>
@@ -142,7 +142,7 @@ export const NeonConfigure = () => {
             {neonProject.branches.map((branch) => (
               <div
                 key={branch.branchId}
-                className="flex items-center justify-between p-3 border rounded-md"
+                className="flex items-center justify-between p-3 border rounded-3xl"
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">

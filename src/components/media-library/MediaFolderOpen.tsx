@@ -38,14 +38,14 @@ export function MediaFolderOpen({
   return (
     <div
       data-testid={`media-folder-open-${appId}`}
-      className="border rounded-lg p-4 bg-[--background-lightest] col-span-full"
+      className="border rounded-2xl p-4 bg-[--background-lightest] col-span-full"
     >
       <div className="flex items-center gap-2 mb-4">
         <button
           data-testid="media-folder-back-button"
           aria-label="Back to folders"
           onClick={onClose}
-          className="p-1 rounded-md hover:bg-secondary transition-colors"
+          className="p-1 rounded-3xl hover:bg-secondary transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
         </button>

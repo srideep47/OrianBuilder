@@ -189,7 +189,7 @@ export const ActionHeader = () => {
             <button
               data-testid={testId}
               ref={ref}
-              className="no-app-region-drag cursor-pointer relative flex items-center gap-0.5 px-2 py-0.5 rounded-md text-xs font-medium z-10 hover:bg-[var(--background)] flex-col"
+              className="no-app-region-drag cursor-pointer relative flex items-center gap-0.5 px-2 py-0.5 rounded-3xl text-xs font-medium z-10 hover:bg-[var(--background)] flex-col"
               onClick={() => selectPanel(mode)}
             />
           }
@@ -208,9 +208,9 @@ export const ActionHeader = () => {
 
   return (
     <div className="flex items-center justify-between px-2 py-2 border-b border-border bg-(--sidebar)">
-      <div className="relative flex rounded-md p-0.5 gap-0.5">
+      <div className="relative flex rounded-3xl p-0.5 gap-0.5">
         <motion.div
-          className="absolute top-0.5 bottom-0.5 bg-[var(--background-lightest)] shadow rounded-md"
+          className="absolute top-0.5 bottom-0.5 bg-[var(--background-lightest)] shadow rounded-3xl"
           animate={{
             left: indicatorStyle.left,
             width: indicatorStyle.width,
@@ -277,7 +277,7 @@ export const ActionHeader = () => {
               render={
                 <DropdownMenuTrigger
                   data-testid="preview-more-options-button"
-                  className="no-app-region-drag flex items-center justify-center p-1.5 rounded-md text-sm hover:bg-[var(--background-darkest)] transition-colors"
+                  className="no-app-region-drag flex items-center justify-center p-1.5 rounded-3xl text-sm hover:bg-[var(--background-darkest)] transition-colors"
                 />
               }
             >

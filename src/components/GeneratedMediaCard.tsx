@@ -111,7 +111,7 @@ function LightboxImage({
       <img
         src={src}
         alt={alt}
-        className="max-h-full max-w-full rounded-lg object-contain shadow-2xl"
+        className="max-h-full max-w-full rounded-2xl object-contain shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       />
     </div>
@@ -132,7 +132,7 @@ function LightboxVideo({ src, onClose }: { src: string; onClose: () => void }) {
       </button>
       <video
         src={src}
-        className="max-h-full max-w-full rounded-lg shadow-2xl"
+        className="max-h-full max-w-full rounded-2xl shadow-2xl"
         controls
         autoPlay
         onClick={(e) => e.stopPropagation()}
@@ -189,7 +189,7 @@ export function GeneratedMediaCard({
 
   return (
     <>
-      <div className="group flex flex-col overflow-hidden rounded-xl border bg-card">
+      <div className="group flex flex-col overflow-hidden rounded-3xl border bg-card">
         {/* Preview */}
         <div
           className="relative flex aspect-video cursor-pointer items-center justify-center overflow-hidden bg-muted/40"
@@ -285,7 +285,7 @@ export function GeneratedMediaCard({
           </div>
 
           {/* Sharable toggle */}
-          <div className="flex items-center justify-between rounded-md bg-muted/40 px-2.5 py-1.5">
+          <div className="flex items-center justify-between rounded-3xl bg-muted/40 px-2.5 py-1.5">
             <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Share2 className="h-3.5 w-3.5" />
               {item.shared ? "Shared with network" : "Share with network"}
@@ -301,7 +301,7 @@ export function GeneratedMediaCard({
               opens a share-assist flow because IG has no desktop upload API. */}
           {item.kind === "video" && (
             <DropdownMenu>
-              <DropdownMenuTrigger className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-input bg-transparent px-3 text-xs font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50">
+              <DropdownMenuTrigger className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-3xl border border-input bg-transparent px-3 text-xs font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50">
                 <Send className="h-3.5 w-3.5" />
                 Publish
                 <ChevronDown className="h-3.5 w-3.5 opacity-60" />

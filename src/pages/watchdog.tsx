@@ -198,7 +198,7 @@ export default function WatchdogPage() {
   const setupComplete = status?.setupComplete ?? false;
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-background">
+    <div className="flex flex-col h-full overflow-hidden bg-transparent">
       <Header status={status} />
 
       <div className="flex-1 overflow-y-auto px-6 py-6">
@@ -239,7 +239,7 @@ function Header({ status }: { status: WatchdogStatus | null }) {
   return (
     <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-card/40">
       <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+        <div className="w-9 h-9 rounded-2xl bg-primary/10 flex items-center justify-center">
           <Eye className="w-5 h-5 text-primary" />
         </div>
         <div>
@@ -376,7 +376,7 @@ function SetupCard({
         {logLines.length > 0 && (
           <div
             ref={logRef}
-            className="font-mono text-[11px] leading-relaxed bg-muted/50 border border-border rounded-md px-3 py-2 max-h-56 overflow-y-auto whitespace-pre-wrap"
+            className="font-mono text-[11px] leading-relaxed bg-muted/50 border border-border rounded-3xl px-3 py-2 max-h-56 overflow-y-auto whitespace-pre-wrap"
           >
             {logLines.map((line, i) => (
               <div key={i} className="text-muted-foreground">
@@ -387,7 +387,7 @@ function SetupCard({
         )}
 
         {setupError && (
-          <div className="flex items-start gap-2 text-sm text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/20 rounded-md px-3 py-2">
+          <div className="flex items-start gap-2 text-sm text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/20 rounded-3xl px-3 py-2">
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
             <span>{setupError}</span>
           </div>
@@ -443,7 +443,7 @@ function DashboardTabs({ status }: { status: WatchdogStatus | null }) {
 
   return (
     <div className="space-y-4">
-      <div className="inline-flex rounded-lg border border-border bg-card p-1 gap-1">
+      <div className="inline-flex rounded-2xl border border-border bg-card p-1 gap-1">
         <TabButton
           active={tab === "websites"}
           onClick={() => setTab("websites")}
@@ -482,7 +482,7 @@ function TabButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+        "inline-flex items-center gap-1.5 rounded-3xl px-3 py-1.5 text-sm font-medium transition-colors",
         active
           ? "bg-primary text-primary-foreground"
           : "text-muted-foreground hover:text-foreground hover:bg-accent",
@@ -584,7 +584,7 @@ function Dashboard({
         </div>
 
         {actionError && (
-          <div className="mt-4 flex items-start gap-2 text-sm text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/20 rounded-md px-3 py-2">
+          <div className="mt-4 flex items-start gap-2 text-sm text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/20 rounded-3xl px-3 py-2">
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
             <span>{actionError}</span>
           </div>

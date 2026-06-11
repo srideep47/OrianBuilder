@@ -946,7 +946,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
   return (
     <div className="w-full rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-lg backdrop-blur">
       <div className="mb-3 flex items-center gap-2">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/20 text-primary">
+        <div className="flex h-7 w-7 items-center justify-center rounded-2xl bg-primary/20 text-primary">
           <Sparkles className="h-4 w-4" />
         </div>
         <div className="flex-1">
@@ -979,7 +979,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
           onKeyDown={onKeyDown}
           rows={2}
           placeholder='Describe what to build or generate... e.g. "Build a todo app with a hero image"'
-          className="w-full resize-none rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 pr-24 text-sm text-white/90 placeholder:text-white/30 outline-none focus:border-primary/50"
+          className="w-full resize-none rounded-3xl border border-white/10 bg-black/20 px-3 py-2.5 pr-24 text-sm text-white/90 placeholder:text-white/30 outline-none focus:border-primary/50"
           disabled={isRunning}
         />
         <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1.5">
@@ -1019,13 +1019,13 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
 
       {/* Autonomy toggle - autonomous by default; "Ask me" enables approvals */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-lg border border-white/10 bg-black/20 p-0.5 text-xs">
+        <div className="inline-flex rounded-2xl border border-white/10 bg-black/20 p-0.5 text-xs">
           <button
             type="button"
             onClick={() => setAutonomous(true)}
             disabled={isRunning}
             className={
-              "inline-flex items-center gap-1 rounded-md px-2.5 py-1 transition-colors " +
+              "inline-flex items-center gap-1 rounded-3xl px-2.5 py-1 transition-colors " +
               (autonomous
                 ? "bg-primary/20 text-primary"
                 : "text-white/50 hover:text-white/80")
@@ -1039,7 +1039,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
             onClick={() => setAutonomous(false)}
             disabled={isRunning}
             className={
-              "inline-flex items-center gap-1 rounded-md px-2.5 py-1 transition-colors " +
+              "inline-flex items-center gap-1 rounded-3xl px-2.5 py-1 transition-colors " +
               (!autonomous
                 ? "bg-amber-500/20 text-amber-300"
                 : "text-white/50 hover:text-white/80")
@@ -1058,7 +1058,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
         {/* Aspect ratio for video/storyboard output. Auto reads the script. */}
         <div className="ml-auto inline-flex items-center gap-1.5">
           <span className="text-xs text-white/40">Ratio</span>
-          <div className="inline-flex rounded-lg border border-white/10 bg-black/20 p-0.5 text-xs">
+          <div className="inline-flex rounded-2xl border border-white/10 bg-black/20 p-0.5 text-xs">
             {(["auto", "16:9", "9:16", "1:1"] as const).map((r) => (
               <button
                 key={r}
@@ -1071,7 +1071,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
                     : `Render video at ${r}`
                 }
                 className={
-                  "rounded-md px-2 py-1 transition-colors " +
+                  "rounded-3xl px-2 py-1 transition-colors " +
                   (aspect === r
                     ? "bg-primary/20 text-primary"
                     : "text-white/50 hover:text-white/80")
@@ -1107,7 +1107,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
           {capabilities.map((c) => (
             <span
               key={c.id}
-              className="inline-flex items-center gap-1 rounded-md bg-white/[0.04] px-2 py-0.5 text-white/55"
+              className="inline-flex items-center gap-1 rounded-3xl bg-white/[0.04] px-2 py-0.5 text-white/55"
               title={c.description}
             >
               {CAPABILITY_ICON[c.id]}
@@ -1127,7 +1127,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
 
       {/* Live activity feed - downloads, phase transitions, per-asset status */}
       {progress.length > 0 && (
-        <div className="mt-3 rounded-xl border border-white/10 bg-black/30 p-2.5">
+        <div className="mt-3 rounded-3xl border border-white/10 bg-black/30 p-2.5">
           <div className="mb-1.5 flex items-center gap-1.5 px-1 text-xs font-medium text-white/55">
             <Activity className="h-3.5 w-3.5" />
             Activity
@@ -1139,7 +1139,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
             {progress.map((p, i) => (
               <div
                 key={i}
-                className="flex items-start gap-2 rounded-md px-1 py-0.5 text-xs"
+                className="flex items-start gap-2 rounded-3xl px-1 py-0.5 text-xs"
               >
                 <span className="mt-0.5 flex-shrink-0">
                   <ProgressIcon event={p} />
@@ -1175,7 +1175,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
 
       {/* Storyboard job (script → video) progress: full pipeline checklist */}
       {storyboardJob && (
-        <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
+        <div className="mt-4 rounded-3xl border border-white/10 bg-black/20 p-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="inline-flex items-center gap-1.5 text-sm font-medium text-white/85">
               <Video className="h-4 w-4" /> Storyboard
@@ -1212,7 +1212,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
 
       {/* Factory (pipeline) result */}
       {pipelineResult && (
-        <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
+        <div className="mt-4 rounded-3xl border border-white/10 bg-black/20 p-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-medium text-white/85">
               Orion Factory
@@ -1234,7 +1234,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
             {pipelineResult.phases.map((p) => (
               <li
                 key={p.phase}
-                className="flex items-center gap-2 rounded-lg bg-white/[0.03] px-2.5 py-1.5 text-sm text-white/75"
+                className="flex items-center gap-2 rounded-2xl bg-white/[0.03] px-2.5 py-1.5 text-sm text-white/75"
               >
                 <StepStatusIcon
                   status={
@@ -1286,7 +1286,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
 
       {/* Results */}
       {result && (
-        <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
+        <div className="mt-4 rounded-3xl border border-white/10 bg-black/20 p-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-medium text-white/85">
               {result.goal}
@@ -1314,7 +1314,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
               return (
                 <li
                   key={step.stepId}
-                  className="flex items-center gap-2 rounded-lg bg-white/[0.03] px-2.5 py-1.5 text-sm text-white/75"
+                  className="flex items-center gap-2 rounded-2xl bg-white/[0.03] px-2.5 py-1.5 text-sm text-white/75"
                 >
                   <StepStatusIcon status={step.status} />
                   <span className="inline-flex items-center gap-1 text-white/50">

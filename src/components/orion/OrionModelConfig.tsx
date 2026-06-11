@@ -93,7 +93,7 @@ export function OrionModelConfig() {
   return (
     <div className="w-full rounded-2xl border border-white/10 bg-white/[0.04] p-4">
       <div className="mb-3 flex items-center gap-2">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-fuchsia-500/20 text-fuchsia-300">
+        <div className="flex h-7 w-7 items-center justify-center rounded-2xl bg-fuchsia-500/20 text-fuchsia-300">
           <SlidersHorizontal className="h-4 w-4" />
         </div>
         <div>
@@ -116,7 +116,7 @@ export function OrionModelConfig() {
           return (
             <div
               key={modality}
-              className="flex flex-col gap-1.5 rounded-xl border border-white/10 bg-black/20 p-3"
+              className="flex flex-col gap-1.5 rounded-3xl border border-white/10 bg-black/20 p-3"
             >
               <div className="flex items-center justify-between">
                 <span className="inline-flex items-center gap-1.5 text-xs font-medium text-white/70">

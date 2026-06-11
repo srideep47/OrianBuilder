@@ -13,6 +13,7 @@ import {
   startMediaAiBackend,
   stopMediaAiBackend,
 } from "../utils/media_ai_backend";
+import { scanModelJunk, cleanModelJunk } from "../utils/model_cleanup";
 
 export function registerMediaAiHandlers() {
   createTypedHandler(mediaAiContracts.getStatus, async () => {
@@ -84,6 +85,14 @@ export function registerMediaAiHandlers() {
 
   createTypedHandler(mediaAiContracts.resetSetup, async (_, params) => {
     return resetMediaAiSetup(params);
+  });
+
+  createTypedHandler(mediaAiContracts.scanModelJunk, async () => {
+    return scanModelJunk();
+  });
+
+  createTypedHandler(mediaAiContracts.cleanModelJunk, async () => {
+    return cleanModelJunk();
   });
 
   // Image proxy via main-process fetch (no CORS / Origin / Referer issues).

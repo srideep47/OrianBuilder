@@ -428,7 +428,7 @@ export function NeonConnector({ appId }: { appId: number }) {
               ) : isLoadingBranches ? (
                 <Skeleton className="h-10 w-full" />
               ) : branches.filter((b) => b.type !== "preview").length === 0 ? (
-                <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                <div className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
                   <p>{t("integrations.neon.noBranchesFound")}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button
@@ -520,7 +520,7 @@ export function NeonConnector({ appId }: { appId: number }) {
                       "https://neon.com/docs/auth/production-checklist#email-provider",
                     )
                   }
-                  className="mt-2 w-full flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200 dark:hover:bg-blue-900/30 transition-colors"
+                  className="mt-2 w-full flex items-center gap-2 rounded-3xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200 dark:hover:bg-blue-900/30 transition-colors"
                 >
                   <Info className="h-4 w-4 flex-shrink-0 text-blue-600 dark:text-blue-400" />
                   <span className="flex-1 text-left">

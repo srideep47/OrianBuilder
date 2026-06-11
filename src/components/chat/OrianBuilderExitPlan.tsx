@@ -32,7 +32,7 @@ export const OrianBuilderExitPlan: React.FC<OrianBuilderExitPlanProps> = ({
   }, [isTransitioning]);
 
   return (
-    <div className="my-4 flex items-center gap-3 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+    <div className="my-4 flex items-center gap-3 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-2xl">
       <CheckCircle className="text-green-500 flex-shrink-0" size={24} />
       <div className="flex-1">
         <div className="flex items-center gap-2">

@@ -262,6 +262,17 @@ async def v1_image_download(req: V1ImageDownloadRequest) -> V1ImageDownloadRespo
     )
 
 
+@app.post("/v1/generate/image/delete", response_model=V1ImageDownloadResponse)
+async def v1_image_delete(req: V1ImageDownloadRequest) -> V1ImageDownloadResponse:
+    image_model.pick_best_tier(req.tier_id)  # validates the tier id
+    image_model.delete_tier(req.tier_id)
+    return V1ImageDownloadResponse(
+        ok=True,
+        tier_id=req.tier_id,
+        status=image_model.tier_status(req.tier_id),
+    )
+
+
 # ─── v1 video generation ─────────────────────────────────────────────────────
 
 
@@ -398,6 +409,17 @@ async def v1_video_download(req: V1VideoDownloadRequest) -> V1VideoDownloadRespo
     )
 
 
+@app.post("/v1/generate/video/delete", response_model=V1VideoDownloadResponse)
+async def v1_video_delete(req: V1VideoDownloadRequest) -> V1VideoDownloadResponse:
+    video_model.pick_best_video_tier(req.tier_id)  # validates the tier id
+    video_model.delete_tier(req.tier_id)
+    return V1VideoDownloadResponse(
+        ok=True,
+        tier_id=req.tier_id,
+        status=video_model.tier_status(req.tier_id),
+    )
+
+
 # ─── v1 TTS ───────────────────────────────────────────────────────────────────
 
 
@@ -499,6 +521,18 @@ async def v1_music_download(req: V1MusicDownloadRequest) -> V1MusicDownloadRespo
         raise HTTPException(status_code=400, detail=f"unknown music tier: {req.tier_id}")
     loop = asyncio.get_running_loop()
     loop.run_in_executor(None, music_model.download_tier, req.tier_id)
+    return V1MusicDownloadResponse(
+        ok=True,
+        tier_id=req.tier_id,
+        status=music_model.tier_status(req.tier_id),
+    )
+
+
+@app.post("/v1/generate/music/delete", response_model=V1MusicDownloadResponse)
+async def v1_music_delete(req: V1MusicDownloadRequest) -> V1MusicDownloadResponse:
+    if not any(t["id"] == req.tier_id for t in music_model.MUSIC_TIERS):
+        raise HTTPException(status_code=400, detail=f"unknown music tier: {req.tier_id}")
+    music_model.delete_tier(req.tier_id)
     return V1MusicDownloadResponse(
         ok=True,
         tier_id=req.tier_id,

@@ -53,7 +53,7 @@ function SharedItemCard({
   const isDone = progress?.status === "done";
 
   return (
-    <div className="group flex flex-col overflow-hidden rounded-xl border bg-card">
+    <div className="group flex flex-col overflow-hidden rounded-3xl border bg-card">
       <div className="relative flex aspect-video items-center justify-center overflow-hidden bg-muted/40">
         {item.thumbnail ? (
           <img
@@ -84,7 +84,7 @@ function SharedItemCard({
         </div>
 
         {isDone ? (
-          <span className="flex items-center justify-center gap-1.5 rounded-md bg-green-500/10 py-1.5 text-xs font-medium text-green-500">
+          <span className="flex items-center justify-center gap-1.5 rounded-3xl bg-green-500/10 py-1.5 text-xs font-medium text-green-500">
             <CheckCircle2 className="h-3.5 w-3.5" />
             Downloaded to your library
           </span>

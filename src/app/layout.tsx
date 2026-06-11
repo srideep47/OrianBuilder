@@ -152,10 +152,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    document.body.classList.add("galaxy-mode");
     document.body.setAttribute("data-route", currentRoute);
     return () => {
-      document.body.classList.remove("galaxy-mode");
       document.body.removeAttribute("data-route");
     };
   }, [currentRoute]);
@@ -166,14 +164,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <DeepLinkProvider>
           <SidebarProvider
             defaultOpen={true}
-            style={{ "--sidebar-width": "5rem" } as CSSProperties}
+            style={{ "--sidebar-width": "5.5rem" } as CSSProperties}
           >
             <TitleBar />
             <AppSidebar />
             <SidebarPanel />
             <div
               id="layout-main-content-container"
-              className="flex h-screenish flex-1 min-w-0 overflow-hidden mt-11 mb-2 mr-2 sm:mb-4 sm:mr-4 border border-border rounded-r-lg bg-background"
+              className="liquid-glass flex h-screenish flex-1 min-w-0 overflow-hidden relative z-0 mt-[var(--app-titlebar-height)] mb-2 mr-2 rounded-[24px] border border-black/[0.06] bg-card/80 shadow-[0_24px_80px_rgba(15,23,42,0.08)] dark:border-white/[0.08] dark:bg-card/70 dark:shadow-[0_24px_80px_rgba(0,0,0,0.4)] sm:mb-3 sm:mr-3"
             >
               {children}
             </div>

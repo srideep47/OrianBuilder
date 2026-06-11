@@ -99,8 +99,8 @@ export function ModelsSection({ providerId }: ModelsSectionProps) {
       {/* Custom Models List Area */}
       {modelsLoading && (
         <div className="space-y-3 mt-4">
-          <Skeleton className="h-24 w-full rounded-lg" />
-          <Skeleton className="h-24 w-full rounded-lg" />
+          <Skeleton className="h-24 w-full rounded-2xl" />
+          <Skeleton className="h-24 w-full rounded-2xl" />
         </div>
       )}
       {modelsError && (
@@ -115,7 +115,7 @@ export function ModelsSection({ providerId }: ModelsSectionProps) {
           {models.map((model) => (
             <div
               key={model.apiName + model.displayName}
-              className={`p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm cursor-pointer hover:shadow-md transition-shadow ${
+              className={`p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-md cursor-pointer hover:shadow-md transition-shadow ${
                 selectedModel === model.apiName
                   ? "ring-2 ring-blue-500 dark:ring-blue-400"
                   : ""

@@ -760,7 +760,7 @@ function Component() {
       [
         3,
         {
-          classes: ["rounded-lg"],
+          classes: ["rounded-2xl"],
           prefixes: ["rounded-"],
           imageSrc: "/new.png",
         },
@@ -770,6 +770,6 @@ function Component() {
     const result = transformContent(content, changes);
     expect(result).toContain("/new.png");
     expect(result).not.toContain("/old.png");
-    expect(result).toContain("rounded-lg");
+    expect(result).toContain("rounded-2xl");
   });
 });

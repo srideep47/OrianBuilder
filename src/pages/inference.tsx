@@ -64,7 +64,7 @@ function StatCard({
   accent?: string;
 }) {
   return (
-    <div className="rounded-xl border bg-card p-4 flex flex-col gap-1 min-w-0">
+    <div className="rounded-3xl border bg-card p-4 flex flex-col gap-1 min-w-0">
       <div
         className={cn(
           "flex items-center gap-1.5 text-xs font-medium",
@@ -236,7 +236,7 @@ function NumberField({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full border rounded-md px-3 py-1.5 text-sm bg-background font-mono"
+        className="w-full border rounded-3xl px-3 py-1.5 text-sm bg-transparent font-mono"
       />
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
@@ -293,7 +293,7 @@ function Section({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-xl border bg-card overflow-hidden">
+    <div className="rounded-3xl border bg-card overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
         className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-muted/50 transition-colors"
@@ -321,7 +321,7 @@ const BACKEND_LABELS: Record<string, { label: string; color: string }> = {
   cuda: { label: "CUDA", color: "text-green-600 dark:text-green-400" },
   vulkan: { label: "Vulkan", color: "text-red-500 dark:text-red-400" },
   rocm: { label: "ROCm", color: "text-orange-500 dark:text-orange-400" },
-  metal: { label: "Metal", color: "text-purple-600 dark:text-purple-400" },
+  metal: { label: "Metal", color: "text-blue-600 dark:text-blue-400" },
   cpu: { label: "CPU", color: "text-muted-foreground" },
 };
 
@@ -329,7 +329,7 @@ const VENDOR_COLORS: Record<string, string> = {
   nvidia: "border-green-500/40 bg-green-500/5",
   amd: "border-red-500/40 bg-red-500/5",
   intel: "border-blue-500/40 bg-blue-500/5",
-  apple: "border-purple-500/40 bg-purple-500/5",
+  apple: "border-blue-500/40 bg-blue-500/5",
   unknown: "border-border bg-muted/20",
 };
 
@@ -417,8 +417,8 @@ const STATE_CONFIG: Record<
   },
   thinking: {
     label: "Thinking…",
-    color: "text-purple-600 dark:text-purple-400",
-    bg: "bg-purple-50 dark:bg-purple-900/30",
+    color: "text-blue-600 dark:text-blue-400",
+    bg: "bg-blue-50 dark:bg-blue-900/30",
     icon: Brain,
     pulse: true,
   },
@@ -495,7 +495,7 @@ function InferenceMonitor({
         {/* State badge */}
         <div
           className={cn(
-            "rounded-lg px-3 py-2.5 flex items-center gap-2.5 flex-1 min-w-40",
+            "rounded-2xl px-3 py-2.5 flex items-center gap-2.5 flex-1 min-w-40",
             cfg.bg,
           )}
         >
@@ -520,7 +520,7 @@ function InferenceMonitor({
         </div>
 
         {/* Speed metrics */}
-        <div className="rounded-lg border bg-card px-4 py-2.5 flex-1 min-w-56">
+        <div className="rounded-2xl border bg-card px-4 py-2.5 flex-1 min-w-56">
           <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1">
             <Zap className="w-3 h-3" />
             Speed (tok/s)
@@ -534,7 +534,7 @@ function InferenceMonitor({
         </div>
 
         {/* Session stats */}
-        <div className="rounded-lg border bg-card px-4 py-2.5 flex-1 min-w-48">
+        <div className="rounded-2xl border bg-card px-4 py-2.5 flex-1 min-w-48">
           <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1">
             <BarChart3 className="w-3 h-3" />
             Session
@@ -575,7 +575,7 @@ function InferenceMonitor({
       </div>
 
       {/* Log stream */}
-      <div className="rounded-lg border bg-card overflow-hidden">
+      <div className="rounded-2xl border bg-card overflow-hidden">
         <div className="px-3 py-2 border-b flex items-center gap-1.5">
           <ScrollText className="w-3.5 h-3.5 text-muted-foreground" />
           <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
@@ -1108,7 +1108,7 @@ export default function InferencePage() {
           <LlamaBinaryDownloader />
         </div>
       )}
-      <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-xl border-b border-border/50 px-6 py-4 flex items-center justify-between shrink-0">
+      <div className="sticky top-0 z-10 bg-transparent/80 backdrop-blur-xl border-b border-border/50 px-6 py-4 flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2 page-title">
             <Zap className="w-5 h-5 text-yellow-500" />
@@ -1161,10 +1161,10 @@ export default function InferencePage() {
                       <button
                         onClick={() => patch({ selectedGpuModel: null })}
                         className={cn(
-                          "rounded-lg border px-3 py-2.5 text-left transition-colors flex items-start gap-3",
+                          "rounded-2xl border px-3 py-2.5 text-left transition-colors flex items-start gap-3",
                           !config.selectedGpuModel
                             ? "border-primary bg-primary/10"
-                            : "bg-background hover:bg-muted/50",
+                            : "bg-transparent hover:bg-muted/50",
                         )}
                       >
                         <div className="flex-1 min-w-0">
@@ -1195,14 +1195,14 @@ export default function InferencePage() {
                               patch({ selectedGpuModel: gpu.model })
                             }
                             className={cn(
-                              "rounded-lg border px-3 py-2.5 text-left transition-colors flex items-start gap-3",
+                              "rounded-2xl border px-3 py-2.5 text-left transition-colors flex items-start gap-3",
                               isSelected
                                 ? cn(
                                     "border-primary bg-primary/10",
                                     vendorStyle,
                                   )
                                 : cn(
-                                    "bg-background hover:bg-muted/50",
+                                    "bg-transparent hover:bg-muted/50",
                                     vendorStyle,
                                   ),
                             )}
@@ -1229,10 +1229,10 @@ export default function InferencePage() {
                   <button
                     onClick={() => patch({ inferenceBackend: "llama-cpp" })}
                     className={cn(
-                      "rounded-lg border px-4 py-3 text-left transition-colors",
+                      "rounded-2xl border px-4 py-3 text-left transition-colors",
                       !usingTensorRt
                         ? "border-primary bg-primary/10"
-                        : "bg-background hover:bg-muted/50",
+                        : "bg-transparent hover:bg-muted/50",
                     )}
                   >
                     <p className="text-sm font-semibold">
@@ -1257,10 +1257,10 @@ export default function InferencePage() {
                       patch({ inferenceBackend: "tensorrt-native" })
                     }
                     className={cn(
-                      "rounded-lg border px-4 py-3 text-left transition-colors",
+                      "rounded-2xl border px-4 py-3 text-left transition-colors",
                       usingTensorRt
                         ? "border-primary bg-primary/10"
-                        : "bg-background hover:bg-muted/50",
+                        : "bg-transparent hover:bg-muted/50",
                     )}
                   >
                     <p className="text-sm font-semibold">Native TensorRT</p>
@@ -1272,7 +1272,7 @@ export default function InferencePage() {
                 </div>
 
                 {usingTensorRt && (
-                  <div className="rounded-lg border bg-background px-3 py-3 space-y-3">
+                  <div className="rounded-2xl border bg-transparent px-3 py-3 space-y-3">
                     {/* Runtime readiness row */}
                     <div className="flex items-center justify-between gap-3">
                       <div>
@@ -1311,7 +1311,7 @@ export default function InferencePage() {
 
                     {/* Warnings */}
                     {!tensorRtRuntimeAvailable && (
-                      <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+                      <div className="rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-xs text-red-700 dark:text-red-300">
                         TensorRT runtime not found. Set{" "}
                         <code className="font-mono">
                           TENSORRT_ROOT=C:\NVIDIA\TensorRT-10.16.1.11
@@ -1320,7 +1320,7 @@ export default function InferencePage() {
                       </div>
                     )}
                     {tensorRtEngineFormat === "tensorrt-plan" && (
-                      <div className="rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 px-3 py-2 text-xs text-orange-700 dark:text-orange-300">
+                      <div className="rounded-2xl bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 px-3 py-2 text-xs text-orange-700 dark:text-orange-300">
                         This directory contains a raw TensorRT plan (format:
                         tensorrt-plan). It cannot run LLM chat. Use the build
                         panel below to create a full TensorRT-LLM engine
@@ -1339,7 +1339,7 @@ export default function InferencePage() {
                         )}
                       </p>
                       <div className="flex gap-2">
-                        <div className="flex-1 border rounded-lg px-3 py-2 text-sm bg-background font-mono truncate text-muted-foreground min-w-0">
+                        <div className="flex-1 border rounded-2xl px-3 py-2 text-sm bg-transparent font-mono truncate text-muted-foreground min-w-0">
                           {tensorRtEngineDir || "No engine directory selected"}
                         </div>
                         <Button
@@ -1354,7 +1354,7 @@ export default function InferencePage() {
                     </div>
 
                     {/* Build panel */}
-                    <div className="rounded-lg border bg-muted/30 px-3 py-3 space-y-3">
+                    <div className="rounded-2xl border bg-muted/30 px-3 py-3 space-y-3">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold">
@@ -1375,7 +1375,7 @@ export default function InferencePage() {
                                 ? "text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
                                 : tensorRtBuildRunning
                                   ? "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800"
-                                  : "text-muted-foreground bg-background",
+                                  : "text-muted-foreground bg-transparent",
                           )}
                         >
                           {tensorRtBuildRunning
@@ -1395,7 +1395,7 @@ export default function InferencePage() {
                             setTensorRtBuildModelId(e.target.value)
                           }
                           disabled={tensorRtBuildRunning}
-                          className="w-full border rounded-lg px-3 py-2 text-sm bg-background font-mono disabled:opacity-50"
+                          className="w-full border rounded-2xl px-3 py-2 text-sm bg-transparent font-mono disabled:opacity-50"
                         >
                           <option value="Qwen/Qwen2.5-0.5B-Instruct">
                             Qwen2.5-0.5B-Instruct (~1 GB · fastest build)
@@ -1482,7 +1482,7 @@ export default function InferencePage() {
                       onChange={(e) => {
                         if (e.target.value) inspectFile(e.target.value);
                       }}
-                      className="w-full border rounded-lg px-3 py-2 text-sm bg-background font-mono"
+                      className="w-full border rounded-2xl px-3 py-2 text-sm bg-transparent font-mono"
                     >
                       <option value="">— pick a downloaded model —</option>
                       {library.map((m) => (
@@ -1501,7 +1501,7 @@ export default function InferencePage() {
                     GGUF File
                   </label>
                   <div className="flex gap-2">
-                    <div className="flex-1 border rounded-lg px-3 py-2 text-sm bg-background font-mono truncate text-muted-foreground min-w-0">
+                    <div className="flex-1 border rounded-2xl px-3 py-2 text-sm bg-transparent font-mono truncate text-muted-foreground min-w-0">
                       {config.modelPath || "No file selected"}
                     </div>
                     <Button
@@ -1550,7 +1550,7 @@ export default function InferencePage() {
                 </div>
 
                 {modelInfo && (
-                  <div className="rounded-lg bg-muted/40 border px-4 py-3 space-y-2">
+                  <div className="rounded-2xl bg-muted/40 border px-4 py-3 space-y-2">
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-x-6 gap-y-1.5 text-sm">
                       <div>
                         <p className="text-xs text-muted-foreground">Arch</p>
@@ -1681,7 +1681,7 @@ export default function InferencePage() {
             <Section title="Memory & Compute" icon={Settings2}>
               <div className="space-y-6">
                 <div className="space-y-3">
-                  <div className="rounded-lg border bg-background px-3 py-3 space-y-3">
+                  <div className="rounded-2xl border bg-transparent px-3 py-3 space-y-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold flex items-center gap-1.5">
@@ -1762,7 +1762,7 @@ export default function InferencePage() {
                   </div>
 
                   {modelInfo && (
-                    <div className="rounded-lg border bg-background px-3 py-3 space-y-3">
+                    <div className="rounded-2xl border bg-transparent px-3 py-3 space-y-3">
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold">
@@ -1773,7 +1773,7 @@ export default function InferencePage() {
                             {previewCpuLayers} on CPU
                           </p>
                         </div>
-                        <div className="inline-flex rounded-md border overflow-hidden text-xs">
+                        <div className="inline-flex rounded-3xl border overflow-hidden text-xs">
                           <button
                             onClick={() =>
                               patch({
@@ -1835,7 +1835,7 @@ export default function InferencePage() {
                   )}
 
                   {modelInfo && vramMb > 0 && (
-                    <div className="rounded-lg bg-muted/40 border px-3 py-2.5 space-y-2.5 text-xs">
+                    <div className="rounded-2xl bg-muted/40 border px-3 py-2.5 space-y-2.5 text-xs">
                       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
                         <div className="text-center">
                           <p className="text-muted-foreground mb-0.5">
@@ -1928,7 +1928,7 @@ export default function InferencePage() {
                   {modelLoaded && (
                     <div
                       className={cn(
-                        "rounded-lg border px-3 py-2 text-xs flex items-start gap-2",
+                        "rounded-2xl border px-3 py-2 text-xs flex items-start gap-2",
                         actualCtx < 16384
                           ? "bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-300"
                           : "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-300",
@@ -1989,7 +1989,7 @@ export default function InferencePage() {
                     </div>
                   </div>
                   {config.contextSize < 32768 && (
-                    <div className="flex items-start gap-1.5 text-xs bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 text-orange-800 dark:text-orange-300 rounded-lg px-3 py-2">
+                    <div className="flex items-start gap-1.5 text-xs bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 text-orange-800 dark:text-orange-300 rounded-2xl px-3 py-2">
                       <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                       <span>
                         <strong>App building needs ≥ 32K context.</strong>{" "}
@@ -2000,7 +2000,7 @@ export default function InferencePage() {
                       </span>
                     </div>
                   )}
-                  <div className="rounded-lg border bg-background px-3 py-3 space-y-2">
+                  <div className="rounded-2xl border bg-transparent px-3 py-3 space-y-2">
                     <input
                       type="range"
                       min={minContextSize}
@@ -2053,7 +2053,7 @@ export default function InferencePage() {
                     </div>
                   </div>
                   {contextExceedsCurrentBudget && modelInfo && vramMb > 0 ? (
-                    <div className="flex items-start gap-1.5 text-xs text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg px-3 py-2">
+                    <div className="flex items-start gap-1.5 text-xs text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-2xl px-3 py-2">
                       <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                       <span>
                         <strong>
@@ -2160,7 +2160,7 @@ export default function InferencePage() {
                           e.target.value === "" ? null : Number(e.target.value),
                       })
                     }
-                    className="w-full border rounded-md px-3 py-1.5 text-sm bg-background font-mono"
+                    className="w-full border rounded-3xl px-3 py-1.5 text-sm bg-transparent font-mono"
                   />
                   <p className="text-xs text-muted-foreground">
                     Fixed seed for reproducible outputs.
@@ -2227,7 +2227,7 @@ export default function InferencePage() {
                 {gpuStats && (
                   <div
                     className={cn(
-                      "rounded-lg border px-3 py-2.5 text-xs space-y-2",
+                      "rounded-2xl border px-3 py-2.5 text-xs space-y-2",
                       gpuStats.memoryOverflowMb > 64
                         ? "border-red-500/40 bg-red-500/10 text-red-200"
                         : "bg-muted/30",

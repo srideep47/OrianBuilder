@@ -4,7 +4,7 @@ import { useCustomThemes } from "@/hooks/useCustomThemes";
 import { useAppMediaFiles } from "@/hooks/useAppMediaFiles";
 import { useLoadApps } from "@/hooks/useLoadApps";
 import { useAddPromptDeepLink } from "@/hooks/useAddPromptDeepLink";
-import { BookOpen, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { CreateOrEditPromptDialog } from "@/components/CreatePromptDialog";
 import { CustomThemeDialog } from "@/components/CustomThemeDialog";
 import { NewLibraryItemMenu } from "@/components/NewLibraryItemMenu";
@@ -142,22 +142,28 @@ export default function LibraryHomePage() {
     filteredGeneratedMedia.length === 0;
 
   return (
-    <div className="min-h-screen w-full">
-      <div className="px-8 py-6">
-        <div className="max-w-6xl mx-auto">
+    <div className="min-h-screen w-full bg-transparent transition-colors duration-300">
+      <div className="mx-auto max-w-[1440px] px-6 py-8 lg:px-8 lg:py-10">
+        <div className="flex flex-col gap-2">
           {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-3xl font-bold">
-              <BookOpen className="inline-block h-8 w-8 mr-2" />
-              Library
-            </h1>
-            <div className="flex items-center gap-2">
+          <div className="mb-8 flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-[34px] font-semibold tracking-tight text-foreground">
+                Library
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Manage your themes, prompts, and generated media
+              </p>
+            </div>
+            <div className="flex items-center gap-3 self-start">
               <ImageGenerationProgressButton />
-              <NewLibraryItemMenu
-                onNewPrompt={() => setPromptDialogOpen(true)}
-                onNewTheme={() => setCreateThemeDialogOpen(true)}
-                onNewImage={() => setImageGeneratorOpen(true)}
-              />
+              <div className="liquid-glass-thin rounded-full border border-black/[0.05] p-1 shadow-[0_12px_32px_rgba(15,23,42,0.06)] dark:border-white/[0.08] dark:shadow-[0_12px_32px_rgba(0,0,0,0.24)]">
+                <NewLibraryItemMenu
+                  onNewPrompt={() => setPromptDialogOpen(true)}
+                  onNewTheme={() => setCreateThemeDialogOpen(true)}
+                  onNewImage={() => setImageGeneratorOpen(true)}
+                />
+              </div>
             </div>
           </div>
 
@@ -171,11 +177,15 @@ export default function LibraryHomePage() {
             trigger={<span />}
           />
 
-          {/* Search Bar */}
-          <LibrarySearchBar value={searchQuery} onChange={setSearchQuery} />
-
-          {/* Filter Tabs */}
-          <LibraryFilterTabs active={activeFilter} onChange={setActiveFilter} />
+          <div className="-mb-1 flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+            <LibraryFilterTabs
+              active={activeFilter}
+              onChange={setActiveFilter}
+            />
+            <div className="w-full lg:w-[22rem]">
+              <LibrarySearchBar value={searchQuery} onChange={setSearchQuery} />
+            </div>
+          </div>
 
           {/* Grid */}
           {isLoading ? (
@@ -183,7 +193,7 @@ export default function LibraryHomePage() {
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : hasNoResults ? (
-            <div className="text-muted-foreground text-center py-12">
+            <div className="liquid-glass-thin rounded-[24px] border border-dashed border-black/[0.08] py-20 text-center text-muted-foreground dark:border-white/[0.1]">
               {searchQuery
                 ? "No results found."
                 : activeFilter === "media"
@@ -197,7 +207,7 @@ export default function LibraryHomePage() {
           ) : (
             <div
               data-testid="library-grid"
-              className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4"
+              className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(340px,1fr))] gap-5 lg:gap-6"
             >
               {filteredItems.map((item) => (
                 <LibraryCard

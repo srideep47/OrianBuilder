@@ -72,7 +72,7 @@ export function ProModeSelector() {
       <Tooltip>
         <TooltipTrigger
           render={
-            <PopoverTrigger className="inline-flex items-center justify-center whitespace-nowrap rounded-lg text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border-none bg-transparent shadow-none text-primary/95 hover:text-primary hover:bg-primary/10 h-7 px-2 gap-1 cursor-pointer" />
+            <PopoverTrigger className="inline-flex items-center justify-center whitespace-nowrap rounded-2xl text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border-none bg-transparent shadow-none text-primary/95 hover:text-primary hover:bg-primary/10 h-7 px-2 gap-1 cursor-pointer" />
           }
         >
           <Sparkles className="h-3.5 w-3.5" />
@@ -92,7 +92,7 @@ export function ProModeSelector() {
           {!hasProKey && (
             <div className="text-sm text-center text-muted-foreground">
               <a
-                className="inline-flex items-center justify-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm font-medium text-primary shadow-sm transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring cursor-pointer"
+                className="inline-flex items-center justify-center gap-2 rounded-3xl border border-primary/30 bg-primary/10 px-3 py-2 text-sm font-medium text-primary shadow-md transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring cursor-pointer"
                 onClick={() => {
                   ipc.system.openExternalUrl("https://orianbuilder.sh/pro#ai");
                 }}
@@ -114,7 +114,7 @@ export function ProModeSelector() {
             <Accordion>
               <AccordionItem
                 value="build-mode-settings"
-                className="rounded-lg border border-border/60 bg-muted/30 px-3 border-b-0"
+                className="rounded-2xl border border-border/60 bg-muted/30 px-3 border-b-0"
               >
                 <AccordionTrigger className="cursor-pointer py-2 text-foreground/80 hover:text-foreground hover:no-underline">
                   Build mode settings
@@ -232,7 +232,7 @@ function TurboEditsSelector({
         </span>
       </div>
       <div
-        className="inline-flex rounded-md border border-input"
+        className="inline-flex rounded-3xl border border-input"
         data-testid="turbo-edits-selector"
       >
         <Tooltip>
@@ -331,7 +331,7 @@ function SmartContextSelector({
         </span>
       </div>
       <div
-        className="inline-flex rounded-md border border-input"
+        className="inline-flex rounded-3xl border border-input"
         data-testid="smart-context-selector"
       >
         <Tooltip>

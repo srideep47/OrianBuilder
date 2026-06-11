@@ -87,7 +87,7 @@ export function NotificationsDrawer() {
       <Button
         variant="ghost"
         size="sm"
-        className="h-7 w-7 p-0 relative"
+        className="relative h-8 w-8 p-0"
         onClick={open ? () => setOpen(false) : handleOpen}
       >
         <Bell className="w-4 h-4" />
@@ -104,7 +104,7 @@ export function NotificationsDrawer() {
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
 
           {/* Panel */}
-          <div className="absolute right-0 top-8 w-80 bg-background border border-border rounded-xl shadow-xl z-50 flex flex-col max-h-[480px]">
+          <div className="motion-popover liquid-glass-thick absolute right-0 top-11 z-50 flex max-h-[480px] w-80 flex-col rounded-3xl border border-border shadow-xl">
             <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
               <h3 className="text-sm font-semibold">Activity</h3>
               <div className="flex items-center gap-1">

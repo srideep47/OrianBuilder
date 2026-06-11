@@ -67,7 +67,7 @@ export function OrianBuilderQuestionnaire({
   const meta = TYPE_META[current.type];
 
   return (
-    <div className="my-4 border rounded-lg overflow-hidden border-primary/20 bg-primary/5">
+    <div className="my-4 border rounded-2xl overflow-hidden border-primary/20 bg-primary/5">
       {/* Header */}
       <div className="px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -75,7 +75,7 @@ export function OrianBuilderQuestionnaire({
           <span className="font-semibold text-foreground">
             Questionnaire Responses
           </span>
-          <span className="flex items-center text-xs text-primary px-2 py-0.5 bg-primary/10 rounded-md font-medium">
+          <span className="flex items-center text-xs text-primary px-2 py-0.5 bg-primary/10 rounded-3xl font-medium">
             {entries.length} answered
           </span>
         </div>
@@ -84,7 +84,7 @@ export function OrianBuilderQuestionnaire({
 
       {/* Question/Answer content */}
       <div className="px-4 pb-4">
-        <div className="rounded-lg bg-(--background-lightest) dark:bg-zinc-900/60 border border-border/40 overflow-hidden">
+        <div className="rounded-2xl bg-(--background-lightest) dark:bg-zinc-900/60 border border-border/40 overflow-hidden">
           {/* Question */}
           <div className="px-3.5 pt-3 pb-2.5 bg-muted/40">
             <div className="flex items-center gap-1.5 mb-1.5">
@@ -137,7 +137,7 @@ export function OrianBuilderQuestionnaire({
               <button
                 onClick={() => setCurrentIndex((i) => i - 1)}
                 disabled={!hasPrev}
-                className="p-1 rounded-md hover:bg-primary/10 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                className="p-1 rounded-3xl hover:bg-primary/10 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
                 aria-label="Previous question"
               >
                 <ChevronLeft size={16} className="text-muted-foreground" />
@@ -148,7 +148,7 @@ export function OrianBuilderQuestionnaire({
               <button
                 onClick={() => setCurrentIndex((i) => i + 1)}
                 disabled={!hasNext}
-                className="p-1 rounded-md hover:bg-primary/10 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                className="p-1 rounded-3xl hover:bg-primary/10 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
                 aria-label="Next question"
               >
                 <ChevronRight size={16} className="text-muted-foreground" />

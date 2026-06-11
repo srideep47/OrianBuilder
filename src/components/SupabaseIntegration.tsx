@@ -118,7 +118,7 @@ export function SupabaseIntegration() {
         {organizations.map((org) => (
           <div
             key={org.organizationSlug}
-            className="flex items-center justify-between p-2 rounded-md bg-muted/50 text-sm gap-2"
+            className="flex items-center justify-between p-2 rounded-3xl bg-muted/50 text-sm gap-2"
           >
             <div className="flex flex-col min-w-0 flex-1">
               <span className="text-gray-700 dark:text-gray-300 font-medium truncate">

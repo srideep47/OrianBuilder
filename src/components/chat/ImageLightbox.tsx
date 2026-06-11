@@ -82,7 +82,7 @@ export const ImageLightbox: React.FC<ImageLightboxProps> = ({
       <img
         src={imageUrl}
         alt={alt}
-        className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+        className="max-w-[90vw] max-h-[90vh] object-contain rounded-2xl"
         onClick={(e) => e.stopPropagation()}
         onError={onError}
       />

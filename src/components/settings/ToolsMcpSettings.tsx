@@ -166,7 +166,7 @@ function KeyValueEditor({
   return (
     <div className="mt-3 space-y-3">
       {isAddingNew ? (
-        <div className="space-y-3 p-3 border rounded-md bg-muted/50">
+        <div className="space-y-3 p-3 border rounded-3xl bg-muted/50">
           <div className="space-y-2">
             <Label htmlFor={`env-new-key-${id}`}>
               {t("settings:toolsMcp.key")}
@@ -244,7 +244,7 @@ function KeyValueEditor({
           envVars.map((kv) => (
             <div
               key={kv.key}
-              className="flex items-center space-x-2 p-2 border rounded-md"
+              className="flex items-center space-x-2 p-2 border rounded-3xl"
             >
               {editingKey === kv.key ? (
                 <>
@@ -445,7 +445,7 @@ export function ToolsMcpSettings() {
               data-testid="mcp-transport-select"
               value={transport}
               onChange={(e) => setTransport(e.target.value as Transport)}
-              className="w-full h-9 rounded-md border bg-transparent px-3 text-sm"
+              className="w-full h-9 rounded-3xl border bg-transparent px-3 text-sm"
             >
               <option value="stdio">stdio</option>
               <option value="http">http</option>
@@ -499,7 +499,7 @@ export function ToolsMcpSettings() {
 
       <div className="space-y-3">
         {servers.map((s) => (
-          <div key={s.id} className="border rounded-lg p-3">
+          <div key={s.id} className="border rounded-2xl p-3">
             <div className="flex items-center justify-between">
               <div>
                 <div className="font-medium">{s.name}</div>

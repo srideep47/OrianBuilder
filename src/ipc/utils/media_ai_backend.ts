@@ -52,7 +52,7 @@ export function resolveMediaAiBackendPath() {
   return path.join(app.getAppPath(), "mediaai-backend", "backend");
 }
 
-function getMediaAiDataPaths() {
+export function getMediaAiDataPaths() {
   const root = path.join(app.getPath("userData"), "mediaai");
   return {
     root,
@@ -946,14 +946,14 @@ export const isMediaAiBackendHealthy = isBackendHealthy;
 
 // HuggingFace Hub stores repos under <HF_HOME>/hub/models--<org>--<model>/.
 // "stabilityai/sd-turbo" → "models--stabilityai--sd-turbo"
-function hfHubRepoDir(repoId: string): string {
+export function hfHubRepoDir(repoId: string): string {
   return `models--${repoId.replace("/", "--")}`;
 }
 
 // Map of per-tier download IDs to their HuggingFace repo IDs. Used to probe
 // the HF hub cache when the script-based marker file is absent (e.g. the
 // model was auto-downloaded by diffusers on first generation run).
-const TIER_HF_REPOS: Partial<Record<MediaAiModelId, string>> = {
+export const TIER_HF_REPOS: Partial<Record<MediaAiModelId, string>> = {
   "image-sd-turbo": "stabilityai/sd-turbo",
   "image-z-image-turbo": "Tongyi-MAI/Z-Image-Turbo",
   whisper: "Systran/faster-whisper-base",

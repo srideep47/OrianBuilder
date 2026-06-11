@@ -118,7 +118,7 @@ Do not leave any import unresolved.
 import React from 'react';
 
 const Button = ({ children, variant = 'primary', onClick, disabled = false }) => {
-  const baseClasses = "px-4 py-2 rounded-md font-medium transition-colors";
+  const baseClasses = "px-4 py-2 rounded-3xl font-medium transition-colors";
   
   const variantClasses = {
     primary: "bg-blue-600 hover:bg-blue-700 text-white",
@@ -242,7 +242,7 @@ import { User } from 'lucide-react';
 
 const ProfileCard = ({ user }) => {
   return (
-    <div className="bg-white shadow rounded-lg p-6">
+    <div className="bg-white shadow rounded-2xl p-6">
       <div className="flex items-center">
         {user.avatar ? (
           <img 

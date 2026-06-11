@@ -218,7 +218,7 @@ export const CommentPopover: React.FC<CommentPopoverProps> = ({
         top: popover.anchorY,
         zIndex: 50,
       }}
-      className="w-72 rounded-lg border bg-popover shadow-lg"
+      className="w-72 rounded-2xl border bg-popover shadow-lg"
     >
       <CommentCard annotation={annotation} chatId={chatId} />
     </div>

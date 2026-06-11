@@ -37,7 +37,7 @@ export function ElectronPreviewPanel({ appId }: ElectronPreviewPanelProps) {
 
   return (
     <div className="flex h-full flex-col items-center justify-center gap-5 p-8 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-border bg-muted/30">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-muted/30">
         <AppWindow size={28} className="text-primary" />
       </div>
       <div className="space-y-2">
@@ -58,7 +58,7 @@ export function ElectronPreviewPanel({ appId }: ElectronPreviewPanelProps) {
         />
         Restart Desktop App
       </Button>
-      <div className="w-full max-w-lg rounded-lg border border-border bg-muted/20 p-3 text-left">
+      <div className="w-full max-w-lg rounded-2xl border border-border bg-muted/20 p-3 text-left">
         <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
           <TerminalSquare size={14} />
           Latest output

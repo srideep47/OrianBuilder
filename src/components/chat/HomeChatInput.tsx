@@ -177,7 +177,7 @@ export function HomeChatInput({
   return (
     <>
       {isHomePdfGenerating && (
-        <div className="mb-3 px-3 py-2 rounded-xl border border-border bg-muted/20">
+        <div className="mb-3 px-3 py-2 rounded-3xl border border-border bg-muted/20">
           <PdfGeneratingMessage />
         </div>
       )}
@@ -233,7 +233,7 @@ export function HomeChatInput({
                           : "Voice to text"
                     }
                     className={cn(
-                      "px-2 py-2 mb-0.5 text-muted-foreground rounded-lg transition-colors duration-150 cursor-pointer disabled:cursor-default disabled:opacity-30",
+                      "px-2 py-2 mb-0.5 text-muted-foreground rounded-2xl transition-colors duration-150 cursor-pointer disabled:cursor-default disabled:opacity-30",
                       isRecording &&
                         "text-red-500 hover:text-red-600 animate-pulse",
                       !isRecording && !isTranscribing && "hover:text-primary",
@@ -265,7 +265,7 @@ export function HomeChatInput({
                     <button
                       onClick={onCancel}
                       aria-label="Cancel generation"
-                      className="px-2 py-2 mb-0.5 mr-1 text-muted-foreground hover:text-destructive rounded-lg transition-colors duration-150 cursor-pointer"
+                      className="px-2 py-2 mb-0.5 mr-1 text-muted-foreground hover:text-destructive rounded-2xl transition-colors duration-150 cursor-pointer"
                     />
                   }
                 >
@@ -281,7 +281,7 @@ export function HomeChatInput({
                       onClick={handleCustomSubmit}
                       disabled={!inputValue.trim() && attachments.length === 0}
                       aria-label="Send message"
-                      className="px-2 py-2 mb-0.5 mr-1 text-muted-foreground hover:text-primary rounded-lg transition-colors duration-150 disabled:opacity-30 disabled:hover:text-muted-foreground cursor-pointer disabled:cursor-default"
+                      className="px-2 py-2 mb-0.5 mr-1 text-muted-foreground hover:text-primary rounded-2xl transition-colors duration-150 disabled:opacity-30 disabled:hover:text-muted-foreground cursor-pointer disabled:cursor-default"
                     />
                   }
                 >
@@ -308,7 +308,7 @@ export function HomeChatInput({
                     <label
                       htmlFor="home-auto-publish-after-checks"
                       className={cn(
-                        "flex items-center gap-1.5 cursor-pointer h-7 rounded-lg px-2 text-[11px] font-medium transition-colors",
+                        "flex items-center gap-1.5 cursor-pointer h-7 rounded-2xl px-2 text-[11px] font-medium transition-colors",
                         "border border-white/10 bg-white/[0.04] text-white/65 hover:border-primary/40 hover:bg-primary/10 hover:text-white",
                         isAutoPublishEnabled &&
                           "border-primary/40 bg-primary/15 text-white shadow-[0_0_18px_-10px_rgba(168,140,255,.8)]",
@@ -342,7 +342,7 @@ export function HomeChatInput({
                       <button
                         onClick={() => setAppSearchOpen(true)}
                         className={cn(
-                          "cursor-pointer px-2 py-1 ml-1.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-1",
+                          "cursor-pointer px-2 py-1 ml-1.5 text-xs font-medium rounded-2xl transition-colors flex items-center gap-1",
                           selectedApp
                             ? "bg-primary/10 text-primary hover:bg-primary/15"
                             : "text-foreground/80 hover:text-foreground hover:bg-muted/60",

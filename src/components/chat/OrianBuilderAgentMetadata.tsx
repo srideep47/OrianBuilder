@@ -49,7 +49,7 @@ export function OrianBuilderProjectStack({
         </div>
       </OrianBuilderCardHeader>
       <OrianBuilderCardContent isExpanded={expanded}>
-        <div className="p-3 text-xs font-mono whitespace-pre-wrap max-h-64 overflow-y-auto bg-muted/20 rounded-lg">
+        <div className="p-3 text-xs font-mono whitespace-pre-wrap max-h-64 overflow-y-auto bg-muted/20 rounded-2xl">
           {content}
         </div>
       </OrianBuilderCardContent>
@@ -70,15 +70,15 @@ export function OrianBuilderRepoMap({
 
   return (
     <OrianBuilderCard
-      accentColor="purple"
+      accentColor="blue"
       isExpanded={expanded}
       onClick={() => setExpanded((value) => !value)}
     >
       <OrianBuilderCardHeader
         icon={<FolderTree size={15} />}
-        accentColor="purple"
+        accentColor="blue"
       >
-        <OrianBuilderBadge color="purple">Repository map</OrianBuilderBadge>
+        <OrianBuilderBadge color="blue">Repository map</OrianBuilderBadge>
         <span className="text-sm text-muted-foreground">
           {files ? `${files} file${files === "1" ? "" : "s"}` : "Code index"}
         </span>
@@ -87,7 +87,7 @@ export function OrianBuilderRepoMap({
         </div>
       </OrianBuilderCardHeader>
       <OrianBuilderCardContent isExpanded={expanded}>
-        <div className="p-3 text-xs font-mono whitespace-pre-wrap max-h-72 overflow-y-auto bg-muted/20 rounded-lg">
+        <div className="p-3 text-xs font-mono whitespace-pre-wrap max-h-72 overflow-y-auto bg-muted/20 rounded-2xl">
           {content}
         </div>
       </OrianBuilderCardContent>
@@ -131,7 +131,7 @@ export function OrianBuilderAgentNote({
 }) {
   const content = typeof children === "string" ? children : "";
   return (
-    <div className="my-2 rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+    <div className="my-2 rounded-3xl border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
       {getSummaryLine(content, "Agent activity")}
     </div>
   );

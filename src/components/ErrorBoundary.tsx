@@ -76,7 +76,7 @@ ${debugInfo.logs.slice(-3_500) || "No logs available"}
 
   return (
     <div className="flex flex-col items-center justify-center h-screen p-6">
-      <div className="max-w-md w-full bg-background p-6 rounded-lg shadow-lg">
+      <div className="max-w-md w-full bg-transparent p-6 rounded-2xl shadow-lg">
         <h2 className="text-xl font-bold mb-4">
           Sorry, that shouldn't have happened!
         </h2>
@@ -84,7 +84,7 @@ ${debugInfo.logs.slice(-3_500) || "No logs available"}
         <p className="text-sm mb-3">There was an error loading the app...</p>
 
         {error && (
-          <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-md mb-6">
+          <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-3xl mb-6">
             <p className="text-sm mb-1">
               <strong>Error name:</strong> {error.name}
             </p>
@@ -100,7 +100,7 @@ ${debugInfo.logs.slice(-3_500) || "No logs available"}
           </Button>
         </div>
 
-        <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md flex items-center gap-2">
+        <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-3xl flex items-center gap-2">
           <LightbulbIcon className="h-4 w-4 text-blue-700 dark:text-blue-400 flex-shrink-0" />
           <p className="text-sm text-blue-700 dark:text-blue-400">
             <strong>Tip:</strong> Try closing and re-opening OrianBuilder as a

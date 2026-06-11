@@ -49,7 +49,7 @@ export const RightActionSidebar = () => {
     return (
       <button
         data-testid={testId}
-        className={`no-app-region-drag cursor-pointer relative flex flex-col items-center justify-center w-12 h-12 rounded-lg font-medium transition-colors duration-150 active:scale-90 ${
+        className={`no-app-region-drag cursor-pointer relative flex flex-col items-center justify-center w-12 h-12 rounded-2xl font-medium transition-colors duration-150 active:scale-90 ${
           isActive
             ? "text-sidebar-accent-foreground"
             : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -59,7 +59,7 @@ export const RightActionSidebar = () => {
         {isActive && (
           <motion.div
             layoutId="active-sidebar-indicator"
-            className="absolute inset-0 rounded-lg bg-sidebar-accent"
+            className="absolute inset-0 rounded-2xl bg-sidebar-accent"
             transition={{ type: "spring", stiffness: 500, damping: 35 }}
           />
         )}

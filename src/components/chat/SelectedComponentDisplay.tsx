@@ -78,7 +78,7 @@ export function SelectedComponentsDisplay() {
       </div>
       {selectedComponents.map((selectedComponent, index) => (
         <div key={selectedComponent.id} className="mb-1 last:mb-0">
-          <div className="flex items-center justify-between rounded-md bg-indigo-600/10 px-2 py-1 text-sm">
+          <div className="flex items-center justify-between rounded-3xl bg-indigo-600/10 px-2 py-1 text-sm">
             <div className="flex items-center gap-2 overflow-hidden">
               <Code2
                 size={16}

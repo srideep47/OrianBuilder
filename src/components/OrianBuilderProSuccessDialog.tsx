@@ -22,7 +22,7 @@ export function OrianBuilderProSuccessDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3 text-xl">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-600">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-blue-600">
               <Sparkles className="h-5 w-5 text-white" />
             </div>
             <span>Welcome to OrianBuilder Pro!</span>
@@ -36,7 +36,7 @@ export function OrianBuilderProSuccessDialog({
           </p>
 
           <div className="space-y-3">
-            <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
+            <div className="flex items-start gap-3 p-3 rounded-2xl bg-muted/50">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-900/50">
                 <Zap className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
               </div>
@@ -48,9 +48,9 @@ export function OrianBuilderProSuccessDialog({
               </div>
             </div>
 
-            <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100 dark:bg-purple-900/50">
-                <Bot className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+            <div className="flex items-start gap-3 p-3 rounded-2xl bg-muted/50">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/50">
+                <Bot className="h-4 w-4 text-blue-600 dark:text-blue-400" />
               </div>
               <div>
                 <p className="font-medium">Agent mode</p>

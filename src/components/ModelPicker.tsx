@@ -312,7 +312,7 @@ export function ModelPicker() {
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger
         className={cn(
-          "inline-flex items-center justify-center whitespace-nowrap rounded-lg text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border-none shadow-none h-7 max-w-[220px] px-2 gap-1.5 cursor-pointer",
+          "inline-flex items-center justify-center whitespace-nowrap rounded-2xl text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border-none shadow-none h-7 max-w-[220px] px-2 gap-1.5 cursor-pointer",
           activePeerNode
             ? "bg-primary/10 text-primary hover:bg-primary/20"
             : "bg-transparent text-foreground/80 hover:text-foreground hover:bg-muted/60",

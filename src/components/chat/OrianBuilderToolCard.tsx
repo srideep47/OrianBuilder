@@ -143,7 +143,7 @@ export function OrianBuilderToolCard({
         {presentation.metaTags?.map((tag) => (
           <span
             key={`${tag.label}-${tag.value}`}
-            className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
+            className="shrink-0 rounded-3xl bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
           >
             {tag.label} {tag.value}
           </span>
@@ -161,7 +161,7 @@ export function OrianBuilderToolCard({
           {presentation.url && (
             <button
               type="button"
-              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-3xl px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
               onClick={openUrl}
               title={`Open ${presentation.url}`}
             >
@@ -174,7 +174,7 @@ export function OrianBuilderToolCard({
       <OrianBuilderCardContent isExpanded={isExpanded}>
         {hasOutput && (
           <pre
-            className="max-h-72 overflow-auto rounded-lg bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap"
+            className="max-h-72 overflow-auto rounded-2xl bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap"
             onClick={(event) => event.stopPropagation()}
           >
             <code>{trimmedContent}</code>
@@ -471,7 +471,7 @@ export function getToolCardPresentation(
     case "orianbuilder-mcp-runtime": {
       return {
         icon: <PlugZap size={14} />,
-        accentColor: "purple",
+        accentColor: "blue",
         badge: "MCP",
         title: inProgress
           ? "Managing MCP runtime"
@@ -487,7 +487,7 @@ export function getToolCardPresentation(
     case "orianbuilder-media-generation": {
       return {
         icon: <Sparkles size={14} />,
-        accentColor: "purple",
+        accentColor: "blue",
         badge: "Media",
         title: inProgress
           ? `Generating ${attributes.kind ?? "media"}`

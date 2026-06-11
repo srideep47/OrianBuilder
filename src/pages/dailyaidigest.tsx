@@ -646,7 +646,7 @@ export default function DailyAIDigestPage() {
   const readerOpen = selectedStory !== null;
 
   return (
-    <div className="h-full w-full overflow-y-auto bg-background px-4 py-4 sm:px-6 lg:px-8">
+    <div className="h-full w-full overflow-y-auto bg-transparent px-4 py-4 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-[1600px]">
         {/* Header bar */}
         <div className="mb-4 flex items-start justify-between">
@@ -655,7 +655,7 @@ export default function DailyAIDigestPage() {
             <h1 className="text-2xl font-semibold">{getGreeting(now)}</h1>
           </div>
           <div className="flex items-center gap-1">
-            <div className="mr-2 flex items-center gap-2 rounded-md border px-2 py-1">
+            <div className="mr-2 flex items-center gap-2 rounded-3xl border px-2 py-1">
               {feedStatus === "live" ? (
                 <>
                   <Wifi className="h-3.5 w-3.5 text-green-500" />
@@ -1286,14 +1286,14 @@ function SportEventCard({ event }: { event: SportEvent }) {
   if (!a || !b) {
     // Individual sports (tennis, F1) sometimes use a different shape
     return (
-      <div className="rounded-md border p-2 text-xs">
+      <div className="rounded-3xl border p-2 text-xs">
         <div className="font-medium">{event.shortName || event.name}</div>
         <div className="mt-0.5 text-muted-foreground">{event.statusDetail}</div>
       </div>
     );
   }
   return (
-    <div className="rounded-md border p-2">
+    <div className="rounded-3xl border p-2">
       <div className="flex items-center justify-between gap-2">
         <CompetitorRow
           c={a}
@@ -2070,7 +2070,7 @@ function ReaderPane({
         </div>
 
         {/* Listen controls with voice picker */}
-        <div className="mb-4 rounded-md border p-2">
+        <div className="mb-4 rounded-3xl border p-2">
           <div className="mb-2 flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <Headphones className="h-3.5 w-3.5" /> Listen with
@@ -2093,7 +2093,7 @@ function ReaderPane({
                 speak("female");
               }}
               disabled={!hasFemaleVoice && voices.length > 0}
-              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md border px-3 py-2 text-sm transition disabled:opacity-50 ${
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-3xl border px-3 py-2 text-sm transition disabled:opacity-50 ${
                 gender === "female" && isSpeaking
                   ? "border-pink-500 bg-pink-500/15 text-pink-500"
                   : "hover:bg-accent"
@@ -2113,7 +2113,7 @@ function ReaderPane({
                 speak("male");
               }}
               disabled={!hasMaleVoice && voices.length > 0}
-              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md border px-3 py-2 text-sm transition disabled:opacity-50 ${
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-3xl border px-3 py-2 text-sm transition disabled:opacity-50 ${
                 gender === "male" && isSpeaking
                   ? "border-sky-500 bg-sky-500/15 text-sky-500"
                   : "hover:bg-accent"
@@ -2136,13 +2136,13 @@ function ReaderPane({
         </div>
 
         {summaryError && (
-          <div className="mb-3 rounded-md border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-500">
+          <div className="mb-3 rounded-3xl border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-500">
             {summaryError}
           </div>
         )}
 
         {summary && (
-          <div className="mb-4 rounded-md border bg-muted/40 p-3">
+          <div className="mb-4 rounded-3xl border bg-muted/40 p-3">
             <div className="mb-1 flex items-center gap-2">
               <p className="text-xs font-semibold text-muted-foreground">
                 {summaryKind === "ai" ? "AI Summary" : "Quick Summary"}
@@ -2167,7 +2167,7 @@ function ReaderPane({
         <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
           <BookOpen className="h-3.5 w-3.5" /> Article
         </div>
-        <div className="max-h-[55vh] overflow-y-auto rounded-md border p-4">
+        <div className="max-h-[55vh] overflow-y-auto rounded-3xl border p-4">
           {isFetchingArticle && !articleText ? (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

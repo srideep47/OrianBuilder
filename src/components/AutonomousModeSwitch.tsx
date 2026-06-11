@@ -36,7 +36,7 @@ export function AutonomousModeSwitch({
             <div
               className={
                 compact
-                  ? "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 transition-colors " +
+                  ? "inline-flex items-center gap-1.5 rounded-3xl border px-2 py-1 transition-colors " +
                     (isOn
                       ? "border-primary/40 bg-primary/10 text-primary"
                       : "border-border text-muted-foreground hover:text-foreground")

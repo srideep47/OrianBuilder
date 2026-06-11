@@ -183,11 +183,11 @@ export default function MarketplacePage() {
   );
 
   return (
-    <div className="flex h-full overflow-hidden bg-transparent">
+    <div className="marketplace-page flex h-full overflow-hidden bg-transparent">
       {/* ─── Main pane ─── */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="border-b border-border/50 px-6 py-4 bg-background/80 backdrop-blur-xl sticky top-0 z-10">
+        <div className="border-b border-border/50 px-6 py-4 bg-transparent/80 backdrop-blur-xl sticky top-0 z-10">
           <div className="flex items-center justify-between gap-4 mb-3">
             <div>
               <h1 className="text-xl font-bold flex items-center gap-2 page-title">
@@ -215,7 +215,7 @@ export default function MarketplacePage() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search GGUF models on Hugging Face… (e.g. qwen3, llama, mistral)"
-                className="w-full pl-10 pr-3 py-2 border rounded-lg bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full pl-10 pr-3 py-2 border rounded-2xl bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
               {isSearching && (
                 <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
@@ -224,7 +224,7 @@ export default function MarketplacePage() {
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as any)}
-              className="border rounded-lg px-3 py-2 text-sm bg-background"
+              className="border rounded-2xl px-3 py-2 text-sm bg-transparent"
             >
               {SORT_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
@@ -314,7 +314,7 @@ function ModelCard({
     <button
       onClick={onClick}
       className={cn(
-        "text-left rounded-xl border bg-card p-3.5 hover:border-primary/40 hover:shadow-sm transition-all group min-w-0",
+        "text-left rounded-3xl border bg-card p-3.5 hover:border-primary/40 hover:shadow-md transition-all group min-w-0",
         active && "border-primary ring-2 ring-primary/20",
       )}
     >
@@ -525,7 +525,7 @@ function FileGroup({
 }) {
   const [open, setOpen] = useState(true);
   return (
-    <div className="rounded-lg border bg-background overflow-hidden">
+    <div className="rounded-2xl border bg-transparent overflow-hidden">
       <button
         className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium hover:bg-muted/50 transition-colors"
         onClick={() => setOpen((o) => !o)}
@@ -780,7 +780,7 @@ function DownloadCard({
   return (
     <div
       className={cn(
-        "rounded-lg border bg-background p-3",
+        "rounded-2xl border bg-transparent p-3",
         isDone && "border-green-500/30 bg-green-500/5",
       )}
     >

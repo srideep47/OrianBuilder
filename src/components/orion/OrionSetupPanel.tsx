@@ -26,7 +26,7 @@ import { showError } from "@/lib/toast";
  *  small known set so we keep TanStack's typed-route safety. */
 function SetupActionLink({ route }: { route: string }) {
   const cls =
-    "inline-flex items-center gap-1 rounded-md bg-white/[0.06] px-2 py-0.5 text-xs font-medium text-primary hover:bg-white/[0.1]";
+    "inline-flex items-center gap-1 rounded-3xl bg-white/[0.06] px-2 py-0.5 text-xs font-medium text-primary hover:bg-white/[0.1]";
   if (route === "/inference")
     return (
       <Link to="/inference" className={cls}>
@@ -139,7 +139,7 @@ export function OrionSetupPanel() {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
       <div className="mb-3 flex items-center gap-2">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/20 text-primary">
+        <div className="flex h-7 w-7 items-center justify-center rounded-2xl bg-primary/20 text-primary">
           <Rocket className="h-4 w-4" />
         </div>
         <div className="flex-1">
@@ -179,7 +179,7 @@ export function OrionSetupPanel() {
             onClick={() => setIncludeEngine((v) => !v)}
             disabled={busy}
             className={
-              "inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs transition-colors " +
+              "inline-flex items-center gap-1 rounded-3xl px-2.5 py-1 text-xs transition-colors " +
               (includeEngine
                 ? "bg-primary/20 text-primary"
                 : "bg-black/20 text-white/50 hover:text-white/80")
@@ -193,7 +193,7 @@ export function OrionSetupPanel() {
             onClick={() => setIncludeP2p((v) => !v)}
             disabled={busy}
             className={
-              "inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs transition-colors " +
+              "inline-flex items-center gap-1 rounded-3xl px-2.5 py-1 text-xs transition-colors " +
               (includeP2p
                 ? "bg-primary/20 text-primary"
                 : "bg-black/20 text-white/50 hover:text-white/80")
@@ -261,7 +261,7 @@ export function OrionSetupPanel() {
         {steps.map((step) => (
           <li
             key={step.id}
-            className="rounded-lg bg-white/[0.03] px-2.5 py-1.5 text-sm"
+            className="rounded-2xl bg-white/[0.03] px-2.5 py-1.5 text-sm"
           >
             <div className="flex items-center gap-2">
               <StepIcon status={step.status} />
@@ -285,7 +285,7 @@ export function OrionSetupPanel() {
                       ipc.orionSetup.retryStep({ stepId: step.id }),
                     )
                   }
-                  className="rounded-md bg-white/[0.06] px-2 py-0.5 text-xs text-white/70 hover:bg-white/[0.1]"
+                  className="rounded-3xl bg-white/[0.06] px-2 py-0.5 text-xs text-white/70 hover:bg-white/[0.1]"
                 >
                   Retry
                 </button>
@@ -333,7 +333,7 @@ export function OrionSetupPanel() {
       {state && state.log.length > 0 && (
         <div
           ref={feedRef}
-          className="mt-3 max-h-32 overflow-y-auto rounded-lg border border-white/10 bg-black/30 p-2 font-mono text-[11px] leading-relaxed text-white/45"
+          className="mt-3 max-h-32 overflow-y-auto rounded-2xl border border-white/10 bg-black/30 p-2 font-mono text-[11px] leading-relaxed text-white/45"
         >
           {state.log.map((line, i) => (
             <div key={i} className="break-all">

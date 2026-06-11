@@ -161,7 +161,7 @@ export function VersionPane({ isVisible, onClose }: VersionPaneProps) {
         <div className="flex items-center gap-2">
           <button
             onClick={onClose}
-            className="p-1 hover:bg-(--background-lightest) rounded-md  "
+            className="p-1 hover:bg-(--background-lightest) rounded-3xl  "
             aria-label="Close version pane"
           >
             <X size={20} />
@@ -178,7 +178,7 @@ export function VersionPane({ isVisible, onClose }: VersionPaneProps) {
             aria-label="Search versions"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-md border border-input bg-transparent pl-8 pr-8 py-1.5 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="w-full rounded-3xl border border-input bg-transparent pl-8 pr-8 py-1.5 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           />
           {searchQuery && (
             <button
@@ -270,7 +270,7 @@ export function VersionPane({ isVisible, onClose }: VersionPaneProps) {
                                 <TooltipTrigger>
                                   <div
                                     className={cn(
-                                      "inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-md",
+                                      "inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-3xl",
                                       isExpired
                                         ? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
                                         : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
@@ -356,7 +356,7 @@ export function VersionPane({ isVisible, onClose }: VersionPaneProps) {
                           }}
                           disabled={isRevertingVersion}
                           className={cn(
-                            "invisible mt-1 flex items-center gap-1 px-2 py-0.5 text-sm font-medium bg-(--primary) text-(--primary-foreground) hover:bg-background-lightest rounded-md transition-colors",
+                            "invisible mt-1 flex items-center gap-1 px-2 py-0.5 text-sm font-medium bg-(--primary) text-(--primary-foreground) hover:bg-card/40 rounded-3xl transition-colors",
                             selectedVersionId === version.oid && "visible",
                             isRevertingVersion &&
                               "opacity-50 cursor-not-allowed",

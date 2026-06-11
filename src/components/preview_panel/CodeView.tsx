@@ -64,7 +64,7 @@ export const CodeView = ({ loading, app }: CodeViewProps) => {
   if (app.files && app.files.length > 0) {
     return (
       <div
-        className={`flex flex-col bg-background ${isFullscreen ? "fixed inset-0 z-50 h-screen w-screen shadow-2xl" : "h-full"}`}
+        className={`flex flex-col bg-transparent ${isFullscreen ? "fixed inset-0 z-50 h-screen w-screen shadow-2xl" : "h-full"}`}
       >
         {/* Toolbar */}
         <div className="flex items-center p-2 border-b space-x-2">

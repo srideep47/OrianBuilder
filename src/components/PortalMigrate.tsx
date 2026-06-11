@@ -62,7 +62,7 @@ export const PortalMigrate = ({ appId }: PortalMigrateProps) => {
           <Button
             onClick={handleCreateMigration}
             disabled={migrateMutation.isPending}
-            // className="bg-primary hover:bg-purple-700 text-white"
+            // className="bg-primary hover:bg-blue-700 text-white"
           >
             {migrateMutation.isPending ? (
               <>
@@ -90,7 +90,7 @@ export const PortalMigrate = ({ appId }: PortalMigrateProps) => {
 
         {output && (
           <div className="mt-4">
-            <div className="bg-gray-50 dark:bg-gray-900 border rounded-lg p-3">
+            <div className="bg-gray-50 dark:bg-gray-900 border rounded-2xl p-3">
               <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Command Output:
               </h4>

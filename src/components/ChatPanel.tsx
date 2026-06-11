@@ -409,7 +409,7 @@ export function ChatPanel({
                             <Button
                               onClick={handleScrollButtonClick}
                               size="icon"
-                              className="rounded-full shadow-lg hover:shadow-xl transition-all border border-border/50 backdrop-blur-sm bg-background/95 hover:bg-accent"
+                              className="rounded-full shadow-lg hover:shadow-xl transition-all border border-border/50 backdrop-blur-sm bg-transparent/95 hover:bg-accent"
                               variant="outline"
                             />
                           }
@@ -433,7 +433,7 @@ export function ChatPanel({
                       inlineMessages.map((msg, i) =>
                         msg.role === "user" ? (
                           <div key={msg.id} className="flex justify-end">
-                            <div className="bg-primary/15 border border-primary/25 text-white rounded-2xl px-4 py-2.5 max-w-[72%] text-sm whitespace-pre-wrap">
+                            <div className="rounded-[18px] border border-primary/20 bg-primary px-4 py-2.5 max-w-[72%] text-sm text-primary-foreground shadow-[0_12px_32px_rgba(0,122,255,0.22)] whitespace-pre-wrap">
                               {msg.content}
                             </div>
                           </div>
@@ -442,14 +442,14 @@ export function ChatPanel({
                             <div className="w-7 h-7 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center flex-shrink-0 mt-0.5 text-xs text-primary font-bold select-none">
                               O
                             </div>
-                            <div className="bg-white/[0.04] border border-white/10 text-white/85 rounded-2xl px-4 py-3 max-w-[72%] text-sm leading-relaxed whitespace-pre-wrap min-h-[2.5rem]">
+                            <div className="liquid-glass border border-black/[0.06] text-foreground rounded-[18px] px-4 py-3 max-w-[72%] text-sm leading-relaxed whitespace-pre-wrap min-h-[2.5rem] dark:border-white/[0.08]">
                               {msg.content ||
                                 (isInlineReplying &&
                                 i === inlineMessages.length - 1 ? (
                                   <span className="flex gap-1 items-center h-5">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-bounce [animation-delay:0ms]" />
-                                    <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-bounce [animation-delay:150ms]" />
-                                    <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-bounce [animation-delay:300ms]" />
+                                    <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:0ms]" />
+                                    <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:150ms]" />
+                                    <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:300ms]" />
                                   </span>
                                 ) : null)}
                             </div>

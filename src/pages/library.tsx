@@ -26,11 +26,11 @@ export default function LibraryPage() {
         </div>
 
         {isLoading ? (
-          <div className="rounded-xl border border-border/60 bg-card p-8 text-center text-muted-foreground">
+          <div className="rounded-3xl border border-border/60 bg-card p-8 text-center text-muted-foreground">
             Loading...
           </div>
         ) : prompts.length === 0 ? (
-          <div className="rounded-xl border border-border/60 bg-card p-10 text-center">
+          <div className="rounded-3xl border border-border/60 bg-card p-10 text-center">
             <h3 className="text-lg font-semibold text-foreground mb-1">
               No prompts yet
             </h3>

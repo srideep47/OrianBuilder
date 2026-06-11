@@ -240,7 +240,7 @@ function SecurityHeader({
   }, [selectedCount]);
 
   return (
-    <div className="sticky top-0 z-10 bg-background pt-3 pb-3 space-y-2">
+    <div className="sticky top-0 z-10 bg-transparent pt-3 pb-3 space-y-2">
       <div className="flex items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1 flex items-center gap-2">
@@ -492,7 +492,7 @@ function FindingsTable({
 
   return (
     <div
-      className="border rounded-lg overflow-hidden"
+      className="border rounded-2xl overflow-hidden"
       data-testid="security-findings-table"
     >
       <table className="w-full">
@@ -985,7 +985,7 @@ ${issuesList}`;
             </div>
             <div className="mt-3">
               <textarea
-                className="w-full h-72 rounded-md border border-gray-300 dark:border-gray-700 bg-transparent p-3 font-mono text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full h-72 rounded-3xl border border-gray-300 dark:border-gray-700 bg-transparent p-3 font-mono text-sm outline-none focus:ring-2 focus:ring-blue-500"
                 value={rulesContent}
                 onChange={(e) => setRulesContent(e.target.value)}
                 placeholder="# SECURITY_RULES.md\n\nDescribe relevant security context, accepted risks, non-issues, and environment details."

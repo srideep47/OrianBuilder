@@ -102,7 +102,7 @@ export const ConsoleEntryComponent = (props: ConsoleEntryProps) => {
             </span>
           )}
           {typeFilter == "all" && type && (
-            <span className="text-purple-500 shrink-0 text-[10px] px-1 py-0.5 mr-2 bg-gray-200 dark:bg-gray-700 rounded">
+            <span className="text-blue-500 shrink-0 text-[10px] px-1 py-0.5 mr-2 bg-gray-200 dark:bg-gray-700 rounded">
               {type}
             </span>
           )}

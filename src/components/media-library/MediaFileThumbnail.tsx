@@ -45,7 +45,7 @@ export function MediaFileThumbnail({
     <div
       data-testid="media-thumbnail"
       data-media-file-name={file.fileName}
-      className="w-[120px] border rounded-md overflow-hidden bg-secondary/30"
+      className="w-[120px] border rounded-3xl overflow-hidden bg-secondary/30"
     >
       <div
         role="button"

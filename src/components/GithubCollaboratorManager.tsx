@@ -173,7 +173,7 @@ export function GithubCollaboratorManager({ appId }: CollaboratorManagerProps) {
                 Loading collaborators...
               </div>
             ) : collaborators.length === 0 ? (
-              <div className="text-sm text-center py-4 text-gray-500 bg-gray-50 dark:bg-gray-800/50 rounded-md">
+              <div className="text-sm text-center py-4 text-gray-500 bg-gray-50 dark:bg-gray-800/50 rounded-3xl">
                 No collaborators found.
               </div>
             ) : (
@@ -182,7 +182,7 @@ export function GithubCollaboratorManager({ appId }: CollaboratorManagerProps) {
                   <div
                     key={collab.login}
                     data-testid={`collaborator-item-${collab.login}`}
-                    className="flex items-center justify-between p-2 rounded-md border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900"
+                    className="flex items-center justify-between p-2 rounded-3xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900"
                   >
                     <div className="flex items-center gap-3">
                       <SimpleAvatar

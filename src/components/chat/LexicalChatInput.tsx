@@ -34,9 +34,9 @@ import { cn } from "@/lib/utils";
 
 // Define the theme for mentions
 const beautifulMentionsTheme: BeautifulMentionsTheme = {
-  "@": "px-2 py-0.5 mx-0.5 bg-accent text-accent-foreground rounded-md",
+  "@": "px-2 py-0.5 mx-0.5 bg-accent text-accent-foreground rounded-3xl",
   "@Focused": "outline-none ring-2 ring-ring",
-  "/": "px-2 py-0.5 mx-0.5 bg-accent text-accent-foreground rounded-md",
+  "/": "px-2 py-0.5 mx-0.5 bg-accent text-accent-foreground rounded-3xl",
   "/Focused": "outline-none ring-2 ring-ring",
 };
 
@@ -92,9 +92,9 @@ const CustomMenuItem = forwardRef<
     >
       <div className="flex items-center space-x-2 min-w-0">
         <span
-          className={`px-2 py-0.5 text-xs font-medium rounded-md flex-shrink-0 ${
+          className={`px-2 py-0.5 text-xs font-medium rounded-3xl flex-shrink-0 ${
             isSkill || isPrompt
-              ? "bg-purple-500 text-white"
+              ? "bg-blue-500 text-white"
               : isApp
                 ? "bg-primary text-primary-foreground"
                 : isMedia
@@ -114,7 +114,7 @@ const CustomMenuItem = forwardRef<
 function CustomMenu({ loading: _loading, ...props }: any) {
   return (
     <ul
-      className="m-0 mb-1 min-w-[300px] w-auto max-h-64 overflow-y-auto bg-popover border border-border rounded-lg shadow-lg z-50"
+      className="m-0 mb-1 min-w-[300px] w-auto max-h-64 overflow-y-auto bg-popover border border-border rounded-2xl shadow-lg z-50"
       style={{
         position: "absolute",
         bottom: "100%",

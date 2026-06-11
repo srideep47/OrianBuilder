@@ -37,7 +37,7 @@ function DismissButton({
         toast.dismiss(toastId);
         onDismiss?.();
       }}
-      className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-muted border border-border shadow-sm flex items-center justify-center hover:bg-accent transition-colors z-10"
+      className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-muted border border-border shadow-md flex items-center justify-center hover:bg-accent transition-colors z-10"
     >
       <X className="w-3 h-3 text-muted-foreground" />
     </button>
@@ -52,7 +52,7 @@ export function ImageGeneratingToast({
   toastId: string | number;
 }) {
   return (
-    <div className="relative overflow-visible bg-background border border-border rounded-xl shadow-lg min-w-[340px] max-w-[420px] p-3">
+    <div className="relative overflow-visible bg-transparent border border-border rounded-3xl shadow-lg min-w-[340px] max-w-[420px] p-3">
       <DismissButton toastId={toastId} />
       <div className="flex items-center gap-3">
         <Loader2 className="w-5 h-5 text-primary animate-spin shrink-0" />
@@ -80,7 +80,7 @@ export function ImageSuccessToast({
 
   return (
     <>
-      <div className="relative overflow-visible bg-background border border-border rounded-xl shadow-lg min-w-[340px] max-w-[420px] p-3">
+      <div className="relative overflow-visible bg-transparent border border-border rounded-3xl shadow-lg min-w-[340px] max-w-[420px] p-3">
         <DismissButton
           toastId={toastId}
           onDismiss={restoreGeneratingToastIfNeeded}

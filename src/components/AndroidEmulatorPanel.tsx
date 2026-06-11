@@ -215,7 +215,7 @@ export function AndroidEmulatorPanel({ appId }: AndroidEmulatorPanelProps) {
             </div>
             <div className="h-2 rounded-full bg-muted overflow-hidden">
               <div
-                className="h-full rounded-full bg-violet-500 transition-all duration-300 ease-out"
+                className="h-full rounded-full bg-indigo-500 transition-all duration-300 ease-out"
                 style={{ width: `${progress?.percent ?? 0}%` }}
               />
             </div>
@@ -229,7 +229,7 @@ export function AndroidEmulatorPanel({ appId }: AndroidEmulatorPanelProps) {
         )}
 
         {phase === "error" && errorMsg && (
-          <div className="rounded-md bg-red-500/10 border border-red-500/20 p-3">
+          <div className="rounded-3xl bg-red-500/10 border border-red-500/20 p-3">
             <div className="flex items-center gap-2 text-red-500 text-sm font-medium">
               <XCircle className="h-4 w-4 shrink-0" />
               Setup failed

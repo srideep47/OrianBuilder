@@ -105,7 +105,7 @@ export function SettingsList({ show }: { show: boolean }) {
             aria-label="Search settings"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-md border border-input bg-transparent pl-8 pr-8 py-1.5 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="w-full rounded-3xl border border-input bg-transparent pl-8 pr-8 py-1.5 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           />
           {searchQuery && (
             <button
@@ -135,7 +135,7 @@ export function SettingsList({ show }: { show: boolean }) {
                     );
                     setSearchQuery("");
                   }}
-                  className="w-full text-left px-3 py-2 rounded-md text-sm transition-colors hover:bg-sidebar-accent"
+                  className="w-full text-left px-3 py-2 rounded-3xl text-sm transition-colors hover:bg-sidebar-accent"
                 >
                   <div className="font-medium">{result.item.label}</div>
                   <div className="text-xs text-muted-foreground">
@@ -154,7 +154,7 @@ export function SettingsList({ show }: { show: boolean }) {
                 key={section.id}
                 onClick={() => scrollAndNavigateTo(section.id)}
                 className={cn(
-                  "w-full text-left px-3 py-2 rounded-md text-sm transition-colors",
+                  "w-full text-left px-3 py-2 rounded-3xl text-sm transition-colors",
                   activeSection === section.id
                     ? "bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
                     : "hover:bg-sidebar-accent",

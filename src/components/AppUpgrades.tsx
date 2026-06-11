@@ -99,7 +99,7 @@ export function AppUpgrades({ appId }: { appId: number | null }) {
       {currentUpgrades.length === 0 ? (
         <div
           data-testid="no-app-upgrades-needed"
-          className="p-4 bg-green-50 border border-green-200 dark:bg-green-900/20 dark:border-green-800/50 rounded-lg text-sm text-green-800 dark:text-green-300"
+          className="p-4 bg-green-50 border border-green-200 dark:bg-green-900/20 dark:border-green-800/50 rounded-2xl text-sm text-green-800 dark:text-green-300"
         >
           App is up-to-date and has all OrianBuilder capabilities enabled
         </div>
@@ -108,7 +108,7 @@ export function AppUpgrades({ appId }: { appId: number | null }) {
           {currentUpgrades.map((upgrade: AppUpgrade) => (
             <div
               key={upgrade.id}
-              className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg flex justify-between items-start"
+              className="p-4 border border-gray-200 dark:border-gray-700 rounded-2xl flex justify-between items-start"
             >
               <div className="flex-grow">
                 <h4 className="font-semibold text-gray-800 dark:text-gray-200">

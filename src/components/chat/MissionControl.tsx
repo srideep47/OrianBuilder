@@ -540,7 +540,7 @@ export function MissionControl({ chatId }: { chatId?: number }) {
 
   if (!visibleMission) {
     return (
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/30 px-3 py-2 shadow-[0_4px_16px_-8px_rgba(0,0,0,0.4)]">
+      <div className="flex items-center justify-between gap-3 rounded-3xl border border-border/60 bg-muted/30 px-3 py-2 shadow-[0_4px_16px_-8px_rgba(0,0,0,0.4)]">
         <div className="flex min-w-0 items-center gap-2 text-sm">
           <Target className="size-4 text-muted-foreground" />
           <span className="truncate text-muted-foreground">
@@ -571,7 +571,7 @@ export function MissionControl({ chatId }: { chatId?: number }) {
   return (
     <div
       className={cn(
-        "rounded-xl border border-border/60 px-3 py-2 shadow-[0_4px_16px_-8px_rgba(0,0,0,0.4)]",
+        "rounded-3xl border border-border/60 px-3 py-2 shadow-[0_4px_16px_-8px_rgba(0,0,0,0.4)]",
         isActive ? "bg-primary/10" : "bg-muted/30",
       )}
     >
@@ -798,7 +798,7 @@ export function MissionControl({ chatId }: { chatId?: number }) {
           <div
             key={check.key}
             className={cn(
-              "flex min-w-0 items-center justify-center gap-1 rounded-md border px-1.5 py-1 text-xs",
+              "flex min-w-0 items-center justify-center gap-1 rounded-3xl border px-1.5 py-1 text-xs",
               check.status === "passed" &&
                 "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
               check.status === "failed" &&
@@ -827,7 +827,7 @@ export function MissionControl({ chatId }: { chatId?: number }) {
             <div
               key={check.key}
               className={cn(
-                "flex min-w-0 items-center justify-center gap-1 rounded-md border px-1.5 py-1 text-xs",
+                "flex min-w-0 items-center justify-center gap-1 rounded-3xl border px-1.5 py-1 text-xs",
                 check.status === "passed" &&
                   "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
                 check.status === "failed" &&
@@ -882,7 +882,7 @@ export function MissionControl({ chatId }: { chatId?: number }) {
                 return (
                   <div
                     key={artifact.id}
-                    className="flex min-w-0 items-start gap-1.5 rounded border bg-background/60 px-2 py-1"
+                    className="flex min-w-0 items-start gap-1.5 rounded border bg-transparent/60 px-2 py-1"
                     title={artifact.body ?? artifact.uri ?? artifact.title}
                   >
                     <Icon className="mt-0.5 size-3.5 shrink-0" />

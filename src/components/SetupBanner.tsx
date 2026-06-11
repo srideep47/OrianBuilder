@@ -156,7 +156,7 @@ export function SetupBanner() {
   }
 
   const bannerClasses = cn(
-    "w-full mb-6 border rounded-xl shadow-sm overflow-hidden",
+    "w-full mb-6 border rounded-3xl shadow-md overflow-hidden",
     "border-zinc-200 dark:border-zinc-700",
   );
 
@@ -260,7 +260,7 @@ export function SetupBanner() {
                     </button>
 
                     {showManualConfig && (
-                      <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                      <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-2xl">
                         <Button
                           onClick={handleManualNodeConfig}
                           disabled={isSelectingPath}
@@ -346,7 +346,7 @@ export function SetupBanner() {
               </div>
 
               <div
-                className="mt-2 p-3 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800/70 transition-colors"
+                className="mt-2 p-3 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800/70 transition-colors"
                 onClick={handleOtherProvidersClick}
                 role="button"
                 tabIndex={isNodeSetupComplete ? 0 : -1}
@@ -378,7 +378,7 @@ export function SetupBanner() {
 
 function NodeJsHelpCallout() {
   return (
-    <div className="mt-3 p-3 bg-(--background-lighter) border rounded-lg text-sm">
+    <div className="mt-3 p-3 bg-(--background-lighter) border rounded-2xl text-sm">
       <p>
         If you run into issues, read our{" "}
         <a

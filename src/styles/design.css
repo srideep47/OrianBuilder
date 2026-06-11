@@ -145,34 +145,38 @@
 
 /* ── Glass primitives ────────────────────────────────────── */
 .glass {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(18px) saturate(150%) brightness(1.12);
-  -webkit-backdrop-filter: blur(18px) saturate(150%) brightness(1.12);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--glass-bg-light);
+  backdrop-filter: blur(var(--glass-blur-thin))
+    saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--glass-blur-thin))
+    saturate(var(--glass-saturation));
+  border: 1px solid var(--glass-border-light);
   /* Own GPU compositing layer — blur resolves on GPU, not CPU */
   transform: translateZ(0);
   will-change: transform;
 }
 .glass-deep {
-  background: rgba(4, 2, 16, 0.6);
-  backdrop-filter: blur(24px) saturate(140%);
-  -webkit-backdrop-filter: blur(24px) saturate(140%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--glass-bg-dark);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--glass-blur))
+    saturate(var(--glass-saturation));
+  border: 1px solid var(--glass-border-dark);
   transform: translateZ(0);
   will-change: transform;
 }
 .glass-soft {
-  background: rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: color-mix(in srgb, var(--glass-bg-light) 72%, transparent);
+  backdrop-filter: blur(14px) saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(14px) saturate(var(--glass-saturation));
+  border: 1px solid
+    color-mix(in srgb, var(--glass-border-light) 72%, transparent);
   transform: translateZ(0);
   will-change: transform;
 }
 .glow {
   box-shadow:
-    0 0 0 1px rgba(168, 140, 255, 0.18),
-    0 12px 60px -20px rgba(120, 90, 220, 0.4);
+    0 0 0 1px rgba(0, 122, 255, 0.18),
+    0 12px 60px -20px rgba(0, 122, 255, 0.26);
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -183,7 +187,7 @@
 
 /* Global font baseline applied to galaxy-mode body */
 body.galaxy-mode {
-  font-family: "Inter", "Geist", system-ui, sans-serif;
+  font-family: var(--default-font-family);
   color: #f3ecdf;
   -webkit-font-smoothing: antialiased;
 }
@@ -354,18 +358,18 @@ body.galaxy-mode {
   white-space: nowrap;
 }
 .btn:hover {
-  background: rgba(168, 140, 255, 0.1);
-  border-color: rgba(168, 140, 255, 0.3);
+  background: rgba(0, 122, 255, 0.1);
+  border-color: rgba(0, 122, 255, 0.24);
   color: #fff;
 }
 .btn.primary {
-  background: linear-gradient(135deg, #a88cff, #6b4fd8);
+  background: linear-gradient(135deg, #007aff, #0a84ff);
   border: none;
   color: #fff;
-  box-shadow: 0 4px 16px -4px rgba(168, 140, 255, 0.5);
+  box-shadow: 0 4px 16px -4px rgba(0, 122, 255, 0.34);
 }
 .btn.primary:hover {
-  box-shadow: 0 6px 22px -4px rgba(168, 140, 255, 0.7);
+  box-shadow: 0 6px 22px -4px rgba(0, 122, 255, 0.44);
   transform: translateY(-1px);
 }
 .btn.ghost {
@@ -473,10 +477,11 @@ body.galaxy-mode {
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.6);
 }
-.badge.purple {
-  background: rgba(168, 140, 255, 0.14);
-  border-color: rgba(168, 140, 255, 0.28);
-  color: #c5b3ff;
+.badge.purple,
+.badge.blue {
+  background: rgba(0, 122, 255, 0.14);
+  border-color: rgba(0, 122, 255, 0.28);
+  color: #0a84ff;
 }
 .badge.green {
   background: rgba(60, 200, 140, 0.14);
@@ -548,9 +553,9 @@ body.galaxy-mode {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #a88cff;
+  background: #0a84ff;
   margin-right: 6px;
-  box-shadow: 0 0 6px #a88cff;
+  box-shadow: 0 0 6px #0a84ff;
   animation: cosmosCtxPulse 2s ease-in-out infinite;
 }
 @keyframes cosmosCtxPulse {

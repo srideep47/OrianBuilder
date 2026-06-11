@@ -121,7 +121,7 @@ function ModelViewer({ url }: { url: string }) {
   // event we saw at Max quality) survives into the next render and the
   // model shows up black even though it loaded.
   return (
-    <div className="relative h-[420px] w-full rounded-lg border border-border bg-[oklch(0.13_0.02_280)] overflow-hidden">
+    <div className="relative h-[420px] w-full rounded-2xl border border-border bg-[oklch(0.13_0.02_280)] overflow-hidden">
       <Canvas
         key={url}
         camera={{ position: [2, 1.5, 2.5], fov: 40 }}
@@ -864,7 +864,7 @@ export default function ThreeDAssetsPage() {
           </p>
         </header>
 
-        <div className="rounded-lg border border-border bg-card px-4 py-2 flex items-center justify-between flex-wrap gap-2">
+        <div className="rounded-2xl border border-border bg-card px-4 py-2 flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2 text-sm">
             {isBackendOnline ? (
               <>
@@ -921,7 +921,7 @@ export default function ThreeDAssetsPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               {setupError && (
-                <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                <div className="rounded-3xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
                   {setupError}
                 </div>
               )}
@@ -1010,12 +1010,12 @@ export default function ThreeDAssetsPage() {
                     ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
                     : isDownloading
                       ? "border-sky-500/30 bg-sky-500/10 text-sky-600"
-                      : "border-border bg-background/50 text-muted-foreground";
+                      : "border-border bg-transparent/50 text-muted-foreground";
                 return (
                   <div
                     key={tier.id}
                     className={cn(
-                      "rounded-lg border p-3 space-y-3 transition-colors",
+                      "rounded-2xl border p-3 space-y-3 transition-colors",
                       isChosen
                         ? "border-primary/40 bg-primary/5"
                         : "border-border",
@@ -1050,18 +1050,18 @@ export default function ThreeDAssetsPage() {
                       {tier.description}
                     </p>
                     <div className="flex flex-wrap gap-1.5 text-[10px] text-muted-foreground">
-                      <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                      <span className="rounded border border-border bg-transparent/50 px-1.5 py-0.5">
                         {tier.vram_mb >= 1000
                           ? `${tier.vram_mb / 1000} GB VRAM`
                           : `${tier.vram_mb} MB VRAM`}
                       </span>
-                      <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                      <span className="rounded border border-border bg-transparent/50 px-1.5 py-0.5">
                         ~{(tier.download_size_mb / 1024).toFixed(2)} GB
                       </span>
-                      <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                      <span className="rounded border border-border bg-transparent/50 px-1.5 py-0.5">
                         Image → 3D
                       </span>
-                      <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                      <span className="rounded border border-border bg-transparent/50 px-1.5 py-0.5">
                         .glb output
                       </span>
                     </div>
@@ -1252,7 +1252,7 @@ export default function ThreeDAssetsPage() {
                       <div
                         key={tier.id}
                         className={cn(
-                          "rounded-lg border p-3 space-y-2.5 transition-colors",
+                          "rounded-2xl border p-3 space-y-2.5 transition-colors",
                           isReady
                             ? "border-emerald-500/30 bg-emerald-500/5"
                             : isDownloading
@@ -1299,7 +1299,7 @@ export default function ThreeDAssetsPage() {
 
                         <div className="flex flex-wrap gap-1 text-[10px] text-muted-foreground">
                           {/* VRAM chip */}
-                          <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                          <span className="rounded border border-border bg-transparent/50 px-1.5 py-0.5">
                             {tier.vram_mb === 0
                               ? tier.backends?.some((b) =>
                                   ["cuda", "rocm", "metal", "mps"].includes(b),
@@ -1314,20 +1314,20 @@ export default function ThreeDAssetsPage() {
                             file size — they're roughly equal for Q4 quants */}
                           {tier.id.toLowerCase().includes("gguf") &&
                             tier.download_size_mb > 0 && (
-                              <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                              <span className="rounded border border-border bg-transparent/50 px-1.5 py-0.5">
                                 ~{(tier.download_size_mb / 1024).toFixed(1)} GB
                                 VRAM (GPU)
                               </span>
                             )}
                           {tier.download_size_mb > 0 && (
-                            <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                            <span className="rounded border border-border bg-transparent/50 px-1.5 py-0.5">
                               ~{(tier.download_size_mb / 1024).toFixed(1)} GB
                               {tier.id.toLowerCase().includes("gguf")
                                 ? " file"
                                 : " download"}
                             </span>
                           )}
-                          <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                          <span className="rounded border border-border bg-transparent/50 px-1.5 py-0.5">
                             Text → Image
                           </span>
                         </div>
@@ -1419,7 +1419,7 @@ export default function ThreeDAssetsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             {selectedTier?.status === "not_downloaded" && (
-              <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+              <div className="flex items-start gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
                 <Download className="h-4 w-4 mt-0.5 shrink-0" />
                 <span>
                   Download the selected model before generating (~
@@ -1435,7 +1435,7 @@ export default function ThreeDAssetsPage() {
               isBackendOnline &&
               !hasImageModelReady &&
               imageTiers.length > 0 && (
-                <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+                <div className="flex items-start gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
                   <Download className="h-4 w-4 mt-0.5 shrink-0" />
                   <span>
                     Text-to-3D requires an image model to generate the reference
@@ -1447,12 +1447,12 @@ export default function ThreeDAssetsPage() {
 
             <div className="space-y-2">
               <Label>Input</Label>
-              <div className="inline-flex rounded-lg border border-border bg-background/50 p-0.5">
+              <div className="inline-flex rounded-2xl border border-border bg-transparent/50 p-0.5">
                 <button
                   type="button"
                   onClick={() => setInputMode("text")}
                   className={cn(
-                    "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                    "inline-flex items-center gap-1.5 rounded-3xl px-3 py-1.5 text-xs font-medium transition-colors",
                     inputMode === "text"
                       ? "bg-primary text-primary-foreground"
                       : "text-muted-foreground hover:text-foreground",
@@ -1465,7 +1465,7 @@ export default function ThreeDAssetsPage() {
                   type="button"
                   onClick={() => setInputMode("image")}
                   className={cn(
-                    "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                    "inline-flex items-center gap-1.5 rounded-3xl px-3 py-1.5 text-xs font-medium transition-colors",
                     inputMode === "image"
                       ? "bg-primary text-primary-foreground"
                       : "text-muted-foreground hover:text-foreground",
@@ -1512,7 +1512,7 @@ export default function ThreeDAssetsPage() {
                   className="hidden"
                 />
                 {imagePreviewUrl ? (
-                  <div className="flex items-start gap-3 rounded-lg border border-border bg-background/50 p-3">
+                  <div className="flex items-start gap-3 rounded-2xl border border-border bg-transparent/50 p-3">
                     <img
                       src={imagePreviewUrl}
                       alt="reference"
@@ -1550,7 +1550,7 @@ export default function ThreeDAssetsPage() {
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-full flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-background/30 py-8 text-sm text-muted-foreground hover:bg-background/60 transition-colors"
+                    className="w-full flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border bg-transparent/30 py-8 text-sm text-muted-foreground hover:bg-transparent/60 transition-colors"
                   >
                     <Upload className="h-6 w-6" />
                     <span>Click to upload a reference image</span>
@@ -1565,14 +1565,14 @@ export default function ThreeDAssetsPage() {
             )}
 
             {genStatus === "error" && (
-              <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              <div className="flex items-start gap-2 rounded-2xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
                 <Square className="h-4 w-4 mt-0.5 shrink-0" />
                 {genError}
               </div>
             )}
 
             {isBusy && genStage && (
-              <div className="flex items-center gap-2 rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-sm text-sky-700 dark:text-sky-400">
+              <div className="flex items-center gap-2 rounded-2xl border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-sm text-sky-700 dark:text-sky-400">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 {genStage}
               </div>
@@ -1580,7 +1580,7 @@ export default function ThreeDAssetsPage() {
 
             <div className="space-y-2">
               <Label>Quality</Label>
-              <div className="inline-flex rounded-lg border border-border bg-background/50 p-0.5">
+              <div className="inline-flex rounded-2xl border border-border bg-transparent/50 p-0.5">
                 {(
                   [
                     { v: 256, label: "Fast" },
@@ -1594,7 +1594,7 @@ export default function ThreeDAssetsPage() {
                     type="button"
                     onClick={() => setMeshResolution(opt.v)}
                     className={cn(
-                      "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                      "inline-flex items-center gap-1.5 rounded-3xl px-3 py-1.5 text-xs font-medium transition-colors",
                       meshResolution === opt.v
                         ? "bg-primary text-primary-foreground"
                         : "text-muted-foreground hover:text-foreground",

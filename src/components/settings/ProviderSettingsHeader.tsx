@@ -120,7 +120,7 @@ export function ProviderSettingsHeader({
             <PopoverContent
               side="bottom"
               align="center"
-              className="w-fit py-2 px-3 bg-background text-primary shadow-lg ring-1 ring-primary/40"
+              className="w-fit py-2 px-3 bg-transparent text-primary shadow-lg ring-1 ring-primary/40"
             >
               <div className="text-sm font-semibold flex items-center gap-1">
                 <ArrowUp /> Create your API key with {providerDisplayName}

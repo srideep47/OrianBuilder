@@ -81,16 +81,12 @@ export const TitleBar = () => {
 
   return (
     <>
-      <div className="@container z-11 w-full h-11 pt-3 bg-(--sidebar) absolute top-0 left-0 app-region-drag flex items-center">
-        <div className={`${showWindowControls ? "pl-2" : "pl-18"}`}></div>
+      <div className="@container liquid-glass-thick absolute top-0 left-0 z-50 flex h-[var(--app-titlebar-height)] w-full items-center gap-2 border-b border-black/[0.06] px-3.5 py-2 shadow-[0_10px_32px_rgba(15,23,42,0.05)] transition-colors dark:border-white/[0.08] dark:shadow-[0_10px_32px_rgba(0,0,0,0.28)] app-region-drag">
+        <div className={showWindowControls ? "w-1" : "w-18"} />
 
-        <SidebarTrigger className="h-8 w-8 -mt-3 ml-1 no-app-region-drag" />
+        <SidebarTrigger className="h-9 w-9 rounded-full no-app-region-drag" />
 
-        <img
-          src={logo}
-          alt="OrianBuilder Logo"
-          className="w-6 h-6 mr-0.5 ml-2 -mt-3"
-        />
+        <img src={logo} alt="OrianBuilder Logo" className="ml-1 h-7 w-7" />
         <Tooltip>
           <TooltipTrigger
             render={
@@ -98,7 +94,7 @@ export const TitleBar = () => {
                 data-testid="title-bar-app-name-button"
                 variant="outline"
                 size="sm"
-                className={`hidden @2xl:block no-app-region-drag text-xs max-w-38 truncate font-medium -mt-3 ${
+                className={`hidden @2xl:flex no-app-region-drag h-9 max-w-[11.5rem] items-center justify-start rounded-full border-white/60 bg-white/60 px-3 text-xs font-medium shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] dark:border-white/10 dark:bg-white/[0.06] ${
                   selectedApp ? "cursor-pointer" : ""
                 }`}
                 onClick={handleAppClick}
@@ -116,7 +112,7 @@ export const TitleBar = () => {
           <ChatTabs selectedChatId={selectedChatId} />
         </div>
 
-        <div className="ml-auto flex items-center -mt-3 no-app-region-drag">
+        <div className="ml-auto flex items-center gap-1 no-app-region-drag">
           <ComputeRoutingPopover />
           <NotificationsDrawer />
           <TitleBarActions />
@@ -146,23 +142,23 @@ function WindowsControls() {
   };
 
   return (
-    <div className="flex no-app-region-drag">
+    <div className="flex h-9 overflow-hidden rounded-[14px] border border-black/[0.06] bg-white/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] dark:border-white/[0.06] dark:bg-white/[0.04] no-app-region-drag">
       <button
-        className="w-11 h-11 m-0 p-0 flex items-center justify-center hover:bg-white/[0.08] transition-colors text-foreground/80 hover:text-foreground"
+        className="flex h-9 w-10 items-center justify-center p-0 text-foreground/72 transition-colors hover:bg-black/[0.05] hover:text-foreground dark:hover:bg-white/[0.08]"
         onClick={minimizeWindow}
         aria-label="Minimize"
       >
         <Minus size={14} strokeWidth={2} />
       </button>
       <button
-        className="w-11 h-11 m-0 p-0 flex items-center justify-center hover:bg-white/[0.08] transition-colors text-foreground/80 hover:text-foreground"
+        className="flex h-9 w-10 items-center justify-center p-0 text-foreground/72 transition-colors hover:bg-black/[0.05] hover:text-foreground dark:hover:bg-white/[0.08]"
         onClick={maximizeWindow}
         aria-label="Maximize"
       >
         <Square size={11} strokeWidth={1.6} />
       </button>
       <button
-        className="w-11 h-11 m-0 p-0 flex items-center justify-center hover:bg-red-500/90 hover:text-white transition-colors text-foreground/80"
+        className="flex h-9 w-10 items-center justify-center p-0 text-foreground/72 transition-colors hover:bg-[#ff453a] hover:text-white"
         onClick={closeWindow}
         aria-label="Close"
       >
@@ -208,15 +204,15 @@ function TitleBarActions() {
   }, [restartApp]);
 
   return (
-    <div className="flex items-center gap-0.5 no-app-region-drag mr-2">
+    <div className="mr-1 flex items-center gap-1 no-app-region-drag">
       <DropdownMenu>
         <DropdownMenuTrigger
           data-testid="preview-more-options-button"
-          className="flex items-center justify-center w-8 h-8 rounded-md text-sm hover:bg-sidebar-accent transition-colors"
+          className="liquid-glass-thin flex h-9 w-9 items-center justify-center rounded-full border border-black/[0.05] text-sm transition-colors hover:bg-black/[0.04] dark:border-white/[0.08] dark:hover:bg-white/[0.08]"
         >
           <Wrench size={16} />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-60">
+        <DropdownMenuContent align="end" className="w-60 p-1.5">
           <DropdownMenuItem onClick={onCleanRestart}>
             <Cog size={16} />
             <div className="flex flex-col">
@@ -270,8 +266,9 @@ export function OrianBuilderProButton({
       }}
       variant="outline"
       className={cn(
-        "hidden @2xl:block ml-1 no-app-region-drag h-7 bg-indigo-600 text-white dark:bg-indigo-600 dark:text-white text-xs px-2 pt-1 pb-1",
-        !isOrianBuilderProEnabled && "bg-zinc-600 dark:bg-zinc-600",
+        "hidden @2xl:flex ml-1 h-8 items-center rounded-full border-none bg-primary px-3 text-xs text-primary-foreground shadow-[0_12px_24px_rgba(0,122,255,0.24)] no-app-region-drag dark:shadow-[0_12px_24px_rgba(10,132,255,0.24)]",
+        !isOrianBuilderProEnabled &&
+          "bg-secondary text-secondary-foreground shadow-none",
       )}
       size="sm"
     >
@@ -297,8 +294,12 @@ export function AICreditStatus({
   );
   return (
     <Tooltip>
-      <TooltipTrigger>
-        <div className="text-xs pl-1 mt-0.5">{remaining} credits</div>
+      <TooltipTrigger
+        render={
+          <div className="ml-1 rounded-full bg-white/18 px-2 py-0.5 text-[11px] font-medium text-primary-foreground/90" />
+        }
+      >
+        {remaining} credits
       </TooltipTrigger>
       <TooltipContent>
         <div>

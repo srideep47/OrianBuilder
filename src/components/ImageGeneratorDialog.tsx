@@ -144,7 +144,7 @@ export function ImageGeneratorDialog({
                     type="button"
                     aria-pressed={isSelected}
                     onClick={() => setThemeMode(mode.value)}
-                    className={`flex items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
+                    className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition-colors ${
                       isSelected
                         ? "border-primary bg-primary/5"
                         : "border-border hover:border-primary/30 hover:bg-muted/50"

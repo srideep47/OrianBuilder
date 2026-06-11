@@ -181,7 +181,7 @@ export function PublishToInstagramDialog({
         </DialogHeader>
 
         {/* Tiny video preview so the user is certain which file is being shared. */}
-        <div className="flex items-center gap-3 rounded-md border border-border bg-muted/30 p-2">
+        <div className="flex items-center gap-3 rounded-3xl border border-border bg-muted/30 p-2">
           <video
             src={videoSrc}
             className="h-16 w-24 shrink-0 rounded object-cover"
@@ -278,7 +278,7 @@ function FormBranch({
   return (
     <div className="space-y-3">
       {/* Now vs. Schedule toggle */}
-      <div className="inline-flex rounded-lg border border-border bg-background/50 p-0.5">
+      <div className="inline-flex rounded-2xl border border-border bg-transparent/50 p-0.5">
         <ModeButton
           active={mode === "now"}
           disabled={busy}
@@ -303,7 +303,7 @@ function FormBranch({
             disabled={busy}
           />
           {bgEnabled === false && (
-            <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-[11px] text-amber-700 dark:text-amber-400">
+            <p className="rounded-3xl border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-[11px] text-amber-700 dark:text-amber-400">
               "Run in background" is off in Settings — scheduled reminders only
               fire when OrianBuilder is open.
             </p>
@@ -314,7 +314,7 @@ function FormBranch({
       {/* Why this isn't automated. We surface the platform constraint up-front
           so the next dialog state (the step-by-step guide) doesn't feel like
           a surprise. */}
-      <div className="rounded-md border border-sky-500/30 bg-sky-500/5 p-2.5 text-[11px] text-sky-800 dark:text-sky-300">
+      <div className="rounded-3xl border border-sky-500/30 bg-sky-500/5 p-2.5 text-[11px] text-sky-800 dark:text-sky-300">
         <p className="flex items-start gap-1.5">
           <Info className="mt-0.5 h-3 w-3 shrink-0" />
           <span>
@@ -490,7 +490,7 @@ function ScheduledBranch({
         revealed, the browser open, and the caption ready.
       </p>
       {bgEnabled === false && (
-        <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+        <p className="rounded-3xl border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-400">
           "Run in background" is off — the reminder only fires if OrianBuilder
           is open at the scheduled time.
         </p>
@@ -526,7 +526,7 @@ function ModeButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50",
+        "inline-flex items-center gap-1.5 rounded-3xl px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50",
         active
           ? "bg-primary text-primary-foreground"
           : "text-muted-foreground hover:text-foreground",

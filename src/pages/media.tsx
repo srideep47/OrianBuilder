@@ -195,7 +195,7 @@ export default function MediaPage() {
                       <Button
                         size="sm"
                         variant={selecting ? "outline" : "default"}
-                        className="ml-auto h-8 gap-1.5 px-3 text-xs font-medium shadow-sm"
+                        className="ml-auto h-8 gap-1.5 px-3 text-xs font-medium shadow-md"
                         onClick={selecting ? exitSelection : enterSelection}
                       >
                         {selecting ? (
@@ -224,7 +224,7 @@ export default function MediaPage() {
                             type="button"
                             onClick={() => toggleSelect(item.fileName)}
                             className={cn(
-                              "group relative flex flex-col overflow-hidden rounded-xl border bg-card text-left transition-all",
+                              "group relative flex flex-col overflow-hidden rounded-3xl border bg-card text-left transition-all",
                               checked
                                 ? "border-primary ring-2 ring-primary/40"
                                 : "hover:border-muted-foreground/40",
@@ -305,7 +305,7 @@ export default function MediaPage() {
       {/* Floating action bar — appears while videos are being multi-selected. */}
       {selecting && (
         <div className="fixed inset-x-0 bottom-4 z-30 flex justify-center px-4">
-          <div className="flex items-center gap-3 rounded-full border bg-background/95 px-4 py-2 shadow-lg backdrop-blur">
+          <div className="flex items-center gap-3 rounded-full border bg-transparent/95 px-4 py-2 shadow-lg backdrop-blur">
             <span className="text-sm">
               <span className="font-semibold">{selectedVideos.length}</span>{" "}
               {selectedVideos.length === 1 ? "video" : "videos"} selected

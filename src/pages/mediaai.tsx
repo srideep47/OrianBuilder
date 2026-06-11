@@ -23,6 +23,7 @@ import {
   Sparkles,
   Square,
   Terminal,
+  Trash2,
   Upload,
   Video,
   Wrench,
@@ -203,8 +204,8 @@ const BACKEND_LABELS: Record<string, string> = {
 const BACKEND_COLORS: Record<string, string> = {
   cuda: "bg-green-500/15 text-green-700 border-green-500/30",
   rocm: "bg-orange-500/15 text-orange-700 border-orange-500/30",
-  metal: "bg-purple-500/15 text-purple-700 border-purple-500/30",
-  mps: "bg-purple-500/15 text-purple-700 border-purple-500/30",
+  metal: "bg-blue-500/15 text-blue-700 border-blue-500/30",
+  mps: "bg-blue-500/15 text-blue-700 border-blue-500/30",
   directml: "bg-blue-500/15 text-blue-700 border-blue-500/30",
   openvino: "bg-sky-500/15 text-sky-700 border-sky-500/30",
   vulkan: "bg-red-500/15 text-red-700 border-red-500/30",
@@ -230,7 +231,7 @@ function TierBadge({ tier }: { tier: MediaTier | null }) {
       <span className="text-xs text-muted-foreground">No model available</span>
     );
   const colorMap: Record<string, string> = {
-    ultra: "bg-violet-500/15 text-violet-700 border-violet-500/30",
+    ultra: "bg-indigo-500/15 text-indigo-700 border-indigo-500/30",
     best: "bg-green-500/15 text-green-700 border-green-500/30",
     good: "bg-blue-500/15 text-blue-700 border-blue-500/30",
     basic: "bg-yellow-500/15 text-yellow-700 border-yellow-500/30",
@@ -1101,6 +1102,51 @@ export default function MediaAIPage() {
     }
   };
 
+  const handleDeleteImageModel = async (tierId: string) => {
+    const apiTier = imageTiers.find((x) => x.id === tierId);
+    const uiTier = USER_FACING_IMAGE_TIERS.find((t) => t.tierId === tierId);
+    const tierLabel = apiTier?.label ?? uiTier?.shortName ?? tierId;
+    const sizeGb = apiTier
+      ? Math.round(apiTier.download_size_mb / 1024)
+      : uiTier?.downloadGb;
+    const sizeNote = sizeGb ? ` (~${sizeGb} GB)` : "";
+    if (!isBackendOnline) {
+      toast.info("Start Media AI first, then delete the model.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `Delete ${tierLabel}${sizeNote}?\n\n` +
+          "The downloaded weights will be removed from disk. You can re-download anytime.",
+      )
+    ) {
+      return;
+    }
+    appendLog(`Deleting image model: ${tierLabel}…`);
+    try {
+      const res = await fetch(`${serverUrl}/v1/generate/image/delete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tier_id: tierId }),
+      });
+      if (!res.ok) {
+        const err = await res
+          .json()
+          .catch(() => ({ detail: `HTTP ${res.status}` }));
+        throw new Error(
+          (err as { detail?: string }).detail ?? `HTTP ${res.status}`,
+        );
+      }
+      await fetchImageTiers();
+      appendLog(`Deleted image model: ${tierLabel}`, "success");
+      toast.success(`${tierLabel} deleted`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      appendLog(`Failed to delete ${tierLabel}: ${msg}`, "error");
+      toast.error(`Delete failed: ${msg}`);
+    }
+  };
+
   const fetchMusicTiers = useCallback(
     async (allowBackendProbe = false): Promise<MusicTierInfo[] | null> => {
       if (!isBackendOnline && !allowBackendProbe) return null;
@@ -1408,6 +1454,49 @@ export default function MediaAIPage() {
     }
   };
 
+  const handleDeleteMusicModel = async (tierId: string) => {
+    const tier = musicModelTiers.find((x) => x.id === tierId);
+    const tierLabel = tier?.label ?? tierId;
+    const sizeGb = tier ? Math.round(tier.download_size_mb / 1024) : null;
+    const sizeNote = sizeGb ? ` (~${sizeGb} GB)` : "";
+    if (!isBackendOnline) {
+      toast.info("Start Music AI first, then delete the model.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `Delete ${tierLabel}${sizeNote}?\n\n` +
+          "This tier's weights will be removed from disk. Shared base components " +
+          "kept by another downloaded music model stay in place. You can re-download anytime.",
+      )
+    ) {
+      return;
+    }
+    appendLog(`Deleting music model: ${tierLabel}…`);
+    try {
+      const res = await fetch(`${serverUrl}/v1/generate/music/delete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tier_id: tierId }),
+      });
+      if (!res.ok) {
+        const err = await res
+          .json()
+          .catch(() => ({ detail: `HTTP ${res.status}` }));
+        throw new Error(
+          (err as { detail?: string }).detail ?? `HTTP ${res.status}`,
+        );
+      }
+      await fetchMusicTiers();
+      appendLog(`Deleted music model: ${tierLabel}`, "success");
+      toast.success(`${tierLabel} deleted`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      appendLog(`Failed to delete ${tierLabel}: ${msg}`, "error");
+      toast.error(`Delete failed: ${msg}`);
+    }
+  };
+
   const handleDownloadVideoModel = async (tierId: string) => {
     const tier = videoTiers.find((x) => x.id === tierId);
     const tierLabel = tier?.label ?? tierId;
@@ -1496,6 +1585,48 @@ export default function MediaAIPage() {
       setVideoDownloadTierId(null);
       appendLog(`Video model download failed: ${msg}`, "error");
       toast.error(`Download failed: ${msg}`);
+    }
+  };
+
+  const handleDeleteVideoModel = async (tierId: string) => {
+    const tier = videoTiers.find((x) => x.id === tierId);
+    const tierLabel = tier?.label ?? tierId;
+    const sizeGb = tier ? Math.round(tier.download_size_mb / 1024) : null;
+    const sizeNote = sizeGb ? ` (~${sizeGb} GB)` : "";
+    if (!isBackendOnline) {
+      toast.info("Start Media AI first, then delete the model.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `Delete ${tierLabel}${sizeNote}?\n\n` +
+          "The downloaded weights will be removed from disk. You can re-download anytime.",
+      )
+    ) {
+      return;
+    }
+    appendLog(`Deleting video model: ${tierLabel}…`);
+    try {
+      const res = await fetch(`${serverUrl}/v1/generate/video/delete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tier_id: tierId }),
+      });
+      if (!res.ok) {
+        const err = await res
+          .json()
+          .catch(() => ({ detail: `HTTP ${res.status}` }));
+        throw new Error(
+          (err as { detail?: string }).detail ?? `HTTP ${res.status}`,
+        );
+      }
+      await fetchVideoTiers();
+      appendLog(`Deleted video model: ${tierLabel}`, "success");
+      toast.success(`${tierLabel} deleted`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      appendLog(`Failed to delete ${tierLabel}: ${msg}`, "error");
+      toast.error(`Delete failed: ${msg}`);
     }
   };
 
@@ -2031,7 +2162,7 @@ export default function MediaAIPage() {
         </CardHeader>
         <CardContent>
           {result.content && (
-            <div className="rounded-lg border bg-muted/30 p-4">
+            <div className="rounded-2xl border bg-muted/30 p-4">
               <p className="whitespace-pre-wrap text-sm leading-6">
                 {result.content}
               </p>
@@ -2044,7 +2175,7 @@ export default function MediaAIPage() {
             <LoadingImage
               src={imageSrc}
               alt="Generated"
-              className="max-h-[512px] max-w-full rounded-lg border shadow-sm"
+              className="max-h-[512px] max-w-full rounded-2xl border shadow-md"
             />
           )}
           {result.tab === "audio" && result.url && (
@@ -2058,7 +2189,7 @@ export default function MediaAIPage() {
               <VideoSlideshow frames={result.frames} />
             )}
           {result.tab === "video" && result.url && !result.frames && (
-            <video controls className="max-h-[420px] w-full rounded-lg border">
+            <video controls className="max-h-[420px] w-full rounded-2xl border">
               <source src={`${serverUrl}${result.url}`} type="video/mp4" />
             </video>
           )}
@@ -2229,7 +2360,7 @@ export default function MediaAIPage() {
                         <div
                           key={uiTier.tierId}
                           className={cn(
-                            "rounded-lg border p-3 space-y-2.5 transition-colors",
+                            "rounded-2xl border p-3 space-y-2.5 transition-colors",
                             statusColor,
                             isChosen && "ring-1 ring-primary/50",
                           )}
@@ -2267,13 +2398,13 @@ export default function MediaAIPage() {
                             {uiTier.description}
                           </p>
                           <div className="flex flex-wrap gap-1 text-[10px] text-muted-foreground">
-                            <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                            <span className="rounded border border-border bg-transparent/50 px-1.5 py-0.5">
                               {uiTier.vramGb} GB VRAM
                             </span>
-                            <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                            <span className="rounded border border-border bg-transparent/50 px-1.5 py-0.5">
                               ~{uiTier.downloadGb} GB download
                             </span>
-                            <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                            <span className="rounded border border-border bg-transparent/50 px-1.5 py-0.5">
                               {uiTier.supportsGuidance
                                 ? "Guidance ✓"
                                 : "Turbo (1-step)"}
@@ -2304,7 +2435,7 @@ export default function MediaAIPage() {
                             </div>
                           )}
                           {apiTier?.download_error && !isBusy && (
-                            <div className="flex items-start gap-1.5 rounded-md border border-red-500/30 bg-red-500/5 px-2.5 py-1.5 text-[11px] text-red-600 dark:text-red-400">
+                            <div className="flex items-start gap-1.5 rounded-3xl border border-red-500/30 bg-red-500/5 px-2.5 py-1.5 text-[11px] text-red-600 dark:text-red-400">
                               <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                               <span className="break-all">
                                 {apiTier.download_error}
@@ -2355,6 +2486,21 @@ export default function MediaAIPage() {
                                   : status === "downloaded"
                                     ? "Re-download"
                                     : "Download Model"}
+                              </Button>
+                            )}
+                            {isBackendOnline && status === "downloaded" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 px-3 text-xs text-red-600 hover:bg-red-500/10 hover:text-red-600 dark:text-red-400"
+                                onClick={() =>
+                                  void handleDeleteImageModel(uiTier.tierId)
+                                }
+                                disabled={isBusy}
+                                title="Remove this model's files from disk"
+                              >
+                                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                                Delete
                               </Button>
                             )}
                           </div>
@@ -2476,7 +2622,7 @@ export default function MediaAIPage() {
                     <Label>Audio file</Label>
                     <div
                       className={cn(
-                        "flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center transition-colors",
+                        "flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-6 text-center transition-colors",
                         transcribeFile
                           ? "border-primary/50 bg-primary/5"
                           : "border-muted-foreground/25 hover:border-muted-foreground/50",
@@ -2609,7 +2755,7 @@ export default function MediaAIPage() {
                           <div
                             key={vTier.id}
                             className={cn(
-                              "rounded-lg border p-3 space-y-2.5 transition-colors",
+                              "rounded-2xl border p-3 space-y-2.5 transition-colors",
                               cardColor,
                               isChosen && "ring-1 ring-primary/50",
                             )}
@@ -2647,18 +2793,18 @@ export default function MediaAIPage() {
                               {VIDEO_TIER_DESCRIPTIONS[vTier.id] ?? vTier.label}
                             </p>
                             <div className="flex flex-wrap gap-1 text-[10px] text-muted-foreground">
-                              <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                              <span className="rounded border border-border bg-transparent/50 px-1.5 py-0.5">
                                 {vTier.vram_mb >= 1000
                                   ? `${vTier.vram_mb / 1000} GB VRAM`
                                   : `${vTier.vram_mb} MB VRAM`}
                               </span>
-                              <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                              <span className="rounded border border-border bg-transparent/50 px-1.5 py-0.5">
                                 ~{(vTier.download_size_mb / 1024).toFixed(0)} GB
                               </span>
-                              <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                              <span className="rounded border border-border bg-transparent/50 px-1.5 py-0.5">
                                 {vTier.default_frames}f @ {vTier.default_fps}fps
                               </span>
-                              <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                              <span className="rounded border border-border bg-transparent/50 px-1.5 py-0.5">
                                 {vTier.default_width}×{vTier.default_height}
                               </span>
                             </div>
@@ -2687,7 +2833,7 @@ export default function MediaAIPage() {
                               </div>
                             )}
                             {vTier.download_error && !isBusy && (
-                              <div className="flex items-start gap-1.5 rounded-md border border-red-500/30 bg-red-500/5 px-2.5 py-1.5 text-[11px] text-red-600 dark:text-red-400">
+                              <div className="flex items-start gap-1.5 rounded-3xl border border-red-500/30 bg-red-500/5 px-2.5 py-1.5 text-[11px] text-red-600 dark:text-red-400">
                                 <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                                 <span className="break-all">
                                   {vTier.download_error}
@@ -2745,6 +2891,21 @@ export default function MediaAIPage() {
                                     : vStatus === "downloaded"
                                       ? "Re-download"
                                       : "Download Model"}
+                                </Button>
+                              )}
+                              {isBackendOnline && vStatus === "downloaded" && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 px-3 text-xs text-red-600 hover:bg-red-500/10 hover:text-red-600 dark:text-red-400"
+                                  onClick={() =>
+                                    void handleDeleteVideoModel(vTier.id)
+                                  }
+                                  disabled={isBusy}
+                                  title="Remove this model's files from disk"
+                                >
+                                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                                  Delete
                                 </Button>
                               )}
                             </div>
@@ -2820,7 +2981,7 @@ export default function MediaAIPage() {
                 {isBackendOnline &&
                   selectedVideoTierInfo &&
                   selectedVideoTierInfo.status !== "downloaded" && (
-                    <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+                    <div className="flex items-start gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
                       <Download className="h-4 w-4 mt-0.5 shrink-0" />
                       <span>
                         Download <strong>{selectedVideoTierInfo.label}</strong>{" "}
@@ -2905,7 +3066,7 @@ export default function MediaAIPage() {
                     </CardHeader>
                     <CardContent className="space-y-3">
                       {setupError && (
-                        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                        <div className="rounded-3xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
                           {setupError}
                         </div>
                       )}
@@ -2986,7 +3147,7 @@ export default function MediaAIPage() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {!isBackendOnline && (
-                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
                         <span>
                           Set up and start Music AI to check downloads and fetch
                           model weights.
@@ -3034,7 +3195,7 @@ export default function MediaAIPage() {
                           <div
                             key={tier.id}
                             className={cn(
-                              "rounded-lg border p-3 space-y-3 transition-colors",
+                              "rounded-2xl border p-3 space-y-3 transition-colors",
                               statusColor,
                               isChosen && "ring-1 ring-primary/50",
                             )}
@@ -3072,18 +3233,18 @@ export default function MediaAIPage() {
                               {tier.description}
                             </p>
                             <div className="flex flex-wrap gap-1.5 text-[10px] text-muted-foreground">
-                              <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                              <span className="rounded border border-border bg-transparent/50 px-1.5 py-0.5">
                                 {tier.vram_mb >= 1000
                                   ? `${tier.vram_mb / 1000} GB VRAM`
                                   : `${tier.vram_mb} MB VRAM`}
                               </span>
-                              <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                              <span className="rounded border border-border bg-transparent/50 px-1.5 py-0.5">
                                 ~{(tier.download_size_mb / 1024).toFixed(2)} GB
                               </span>
-                              <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                              <span className="rounded border border-border bg-transparent/50 px-1.5 py-0.5">
                                 {tier.uses_lm ? "Planner on" : "DiT only"}
                               </span>
-                              <span className="rounded border border-border bg-background/50 px-1.5 py-0.5">
+                              <span className="rounded border border-border bg-transparent/50 px-1.5 py-0.5">
                                 Vocals + instruments
                               </span>
                             </div>
@@ -3112,7 +3273,7 @@ export default function MediaAIPage() {
                               </div>
                             )}
                             {tier.download_error && !isBusy && (
-                              <div className="mt-2 flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/5 px-2.5 py-1.5 text-[11px] text-red-600 dark:text-red-400">
+                              <div className="mt-2 flex items-start gap-2 rounded-3xl border border-red-500/30 bg-red-500/5 px-2.5 py-1.5 text-[11px] text-red-600 dark:text-red-400">
                                 <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                                 <span className="break-all">
                                   Download error: {tier.download_error}
@@ -3187,6 +3348,23 @@ export default function MediaAIPage() {
                                         : "Download Model"}
                                 </Button>
                               )}
+                              {isBackendOnline &&
+                                (tier.status === "downloaded" ||
+                                  tier.status === "partially_downloaded") && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-8 px-3 text-xs text-red-600 hover:bg-red-500/10 hover:text-red-600 dark:text-red-400"
+                                    onClick={() =>
+                                      void handleDeleteMusicModel(tier.id)
+                                    }
+                                    disabled={isBusy}
+                                    title="Remove this model's files from disk"
+                                  >
+                                    <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                                    Delete
+                                  </Button>
+                                )}
                             </div>
                           </div>
                         );
@@ -3219,7 +3397,7 @@ export default function MediaAIPage() {
                   <CardContent className="space-y-4">
                     {/* Model not downloaded warning */}
                     {selectedMusicTier?.status === "not_downloaded" && (
-                      <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+                      <div className="flex items-start gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
                         <Download className="h-4 w-4 mt-0.5 shrink-0" />
                         <span>
                           Download the selected model before generating (~
@@ -3231,7 +3409,7 @@ export default function MediaAIPage() {
                       </div>
                     )}
                     {selectedMusicTier?.status === "partially_downloaded" && (
-                      <div className="flex items-start gap-2 rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-sm text-sky-700 dark:text-sky-400">
+                      <div className="flex items-start gap-2 rounded-2xl border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-sm text-sky-700 dark:text-sky-400">
                         <Download className="h-4 w-4 mt-0.5 shrink-0" />
                         <span>
                           Missing components detected. Click{" "}
@@ -3243,7 +3421,7 @@ export default function MediaAIPage() {
                       </div>
                     )}
                     {/* Restart reminder — always show when backend is online, since code changes require a restart */}
-                    <div className="flex items-start gap-2 rounded-lg border border-violet-500/30 bg-violet-500/5 px-3 py-2 text-sm text-violet-700 dark:text-violet-400">
+                    <div className="flex items-start gap-2 rounded-2xl border border-indigo-500/30 bg-indigo-500/5 px-3 py-2 text-sm text-indigo-700 dark:text-indigo-400">
                       <RefreshCw className="h-4 w-4 mt-0.5 shrink-0" />
                       <span>
                         <strong>Vocals not working?</strong> Click{" "}
@@ -3289,7 +3467,7 @@ export default function MediaAIPage() {
                         />
                       </div>
 
-                      <div className="rounded-lg border border-border">
+                      <div className="rounded-2xl border border-border">
                         <button
                           type="button"
                           className="flex w-full items-center justify-between p-3 text-sm font-medium hover:bg-muted/50"
@@ -3360,7 +3538,7 @@ export default function MediaAIPage() {
                     </div>
 
                     {musicGenStatus === "error" && (
-                      <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                      <div className="flex items-start gap-2 rounded-2xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
                         <Square className="h-4 w-4 mt-0.5 shrink-0" />
                         {musicGenError}
                       </div>
@@ -3470,7 +3648,7 @@ export default function MediaAIPage() {
                         if (e.key === "Enter") void handleMusicSearch();
                       }}
                       placeholder="Search songs, artists, or ringtones..."
-                      className="flex-1 h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/30"
+                      className="flex-1 h-9 rounded-3xl border border-border bg-transparent px-3 text-sm outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/30"
                     />
                     <Button
                       onClick={() => void handleMusicSearch()}
@@ -3497,7 +3675,7 @@ export default function MediaAIPage() {
                         <div
                           key={track.trackId}
                           className={cn(
-                            "rounded-lg border p-2.5 space-y-2 transition-colors",
+                            "rounded-2xl border p-2.5 space-y-2 transition-colors",
                             playingTrackId === track.trackId
                               ? "border-primary/50 bg-primary/5"
                               : "hover:bg-muted/40",
@@ -3572,7 +3750,7 @@ export default function MediaAIPage() {
 
 function StatusRow({ label, value }: { label: string; value?: string }) {
   return (
-    <div className="min-w-0 rounded-lg border bg-muted/20 p-3">
+    <div className="min-w-0 rounded-2xl border bg-muted/20 p-3">
       <div className="text-xs font-medium uppercase text-muted-foreground">
         {label}
       </div>
@@ -3583,7 +3761,7 @@ function StatusRow({ label, value }: { label: string; value?: string }) {
 
 function TierRow({ label, tier }: { label: string; tier: MediaTier | null }) {
   return (
-    <div className="flex items-center justify-between rounded-lg border bg-muted/10 px-3 py-2">
+    <div className="flex items-center justify-between rounded-2xl border bg-muted/10 px-3 py-2">
       <span className="text-sm font-medium">{label}</span>
       <TierBadge tier={tier} />
     </div>
@@ -3612,7 +3790,7 @@ function SegmentPicker<T extends string | number>({
             "rounded border px-2.5 py-1 text-xs font-medium transition-colors",
             v === selected
               ? "border-primary/60 bg-primary/20 text-foreground"
-              : "border-border bg-background/50 text-muted-foreground hover:bg-accent hover:text-foreground",
+              : "border-border bg-transparent/50 text-muted-foreground hover:bg-accent hover:text-foreground",
           )}
         >
           {labels?.[i] ?? String(v)}
@@ -3641,7 +3819,7 @@ function ImageSettingsPanel({
   const guidanceValues = [0, 1, 2, 3, 4, 5, 6, 7];
 
   return (
-    <div className="space-y-5 rounded-lg border bg-muted/10 p-4">
+    <div className="space-y-5 rounded-2xl border bg-muted/10 p-4">
       {/* Quality presets — quick picks */}
       <div className="space-y-2">
         <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -3663,7 +3841,7 @@ function ImageSettingsPanel({
                   "rounded border px-2.5 py-1 text-xs font-medium transition-colors",
                   active
                     ? "border-primary/60 bg-primary/20 text-foreground"
-                    : "border-border bg-background/50 text-muted-foreground hover:bg-accent hover:text-foreground",
+                    : "border-border bg-transparent/50 text-muted-foreground hover:bg-accent hover:text-foreground",
                 )}
               >
                 {preset.label}
@@ -3781,7 +3959,7 @@ function ImageSettingsPanel({
                 ),
               })
             }
-            className="h-8 w-full rounded-md border border-border bg-background/50 px-3 text-xs text-foreground outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/30"
+            className="h-8 w-full rounded-3xl border border-border bg-transparent/50 px-3 text-xs text-foreground outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/30"
           />
         ) : (
           <p className="text-[11px] text-muted-foreground">
@@ -3800,7 +3978,7 @@ function ImageSettingsPanel({
           placeholder="Things to avoid: blurry, low quality, extra limbs…"
           value={settings.negativePrompt ?? ""}
           onChange={(e) => onChange({ negativePrompt: e.target.value })}
-          className="w-full resize-none rounded-md border border-border bg-background/50 px-3 py-2 text-xs text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-primary/60 focus:ring-1 focus:ring-primary/30"
+          className="w-full resize-none rounded-3xl border border-border bg-transparent/50 px-3 py-2 text-xs text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-primary/60 focus:ring-1 focus:ring-primary/30"
         />
       </div>
 
@@ -3842,7 +4020,7 @@ function VideoSettingsPanel({
   ) as number[];
 
   return (
-    <div className="space-y-4 rounded-lg border bg-muted/10 p-4">
+    <div className="space-y-4 rounded-2xl border bg-muted/10 p-4">
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -3944,7 +4122,7 @@ function EventLogPanel({
       </CardHeader>
       {open && (
         <CardContent className="space-y-3 pt-0">
-          <div className="max-h-48 overflow-auto rounded-md border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed">
+          <div className="max-h-48 overflow-auto rounded-3xl border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed">
             {entries.length === 0 ? (
               <p className="text-muted-foreground">
                 No events yet. Logs appear here as you install, download, and
@@ -3976,7 +4154,7 @@ function EventLogPanel({
               <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Backend stdout (tail)
               </p>
-              <pre className="max-h-40 overflow-auto rounded-md bg-muted p-2 text-[11px] leading-relaxed">
+              <pre className="max-h-40 overflow-auto rounded-3xl bg-muted p-2 text-[11px] leading-relaxed">
                 {backendLog}
               </pre>
             </div>
@@ -4063,7 +4241,7 @@ function LocalImage({ src }: { src: string }) {
 
   if (imgError) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-lg border border-rose-500/40 bg-rose-500/5 p-6 text-center text-sm">
+      <div className="flex flex-col items-center gap-3 rounded-2xl border border-rose-500/40 bg-rose-500/5 p-6 text-center text-sm">
         <p className="font-medium text-rose-500">
           Image generated but could not load
         </p>
@@ -4088,7 +4266,7 @@ function LocalImage({ src }: { src: string }) {
       <img
         src={src}
         alt="Generated"
-        className="max-h-[512px] max-w-full rounded-lg border shadow-sm"
+        className="max-h-[512px] max-w-full rounded-2xl border shadow-md"
         onError={() => {
           console.error("[MediaAI] failed to load local image:", src);
           setImgError(true);
@@ -4182,7 +4360,7 @@ function VideoSlideshow({ frames }: { frames: string[] }) {
   return (
     <div className="flex flex-col items-center gap-3">
       <div
-        className="relative w-full max-w-2xl overflow-hidden rounded-lg border bg-black shadow-sm"
+        className="relative w-full max-w-2xl overflow-hidden rounded-2xl border bg-black shadow-md"
         style={{ aspectRatio: "16 / 9" }}
       >
         {blobs.map(
@@ -4337,13 +4515,13 @@ function LoadingImage({
         <img src={blobUrl} alt={alt} className={className} />
       )}
       {status === "loading" && (
-        <div className="flex h-72 w-[512px] max-w-full flex-col items-center justify-center gap-3 rounded-lg border bg-muted/30 text-sm text-muted-foreground">
+        <div className="flex h-72 w-[512px] max-w-full flex-col items-center justify-center gap-3 rounded-2xl border bg-muted/30 text-sm text-muted-foreground">
           <Loader2 className="h-8 w-8 animate-spin" />
           <p>Generating... (first request can take 10-30s)</p>
         </div>
       )}
       {status === "error" && (
-        <div className="flex h-72 w-[512px] max-w-full flex-col items-center justify-center gap-3 rounded-lg border border-rose-500/40 bg-rose-500/5 p-4 text-center text-sm">
+        <div className="flex h-72 w-[512px] max-w-full flex-col items-center justify-center gap-3 rounded-2xl border border-rose-500/40 bg-rose-500/5 p-4 text-center text-sm">
           <p className="font-medium text-rose-500">Couldn't load the image</p>
           {error && <p className="text-xs text-muted-foreground">{error}</p>}
           <Button variant="secondary" size="sm" onClick={retry}>
@@ -4430,7 +4608,7 @@ function SetupBanner({
     const showGpuWarning = gpuExpected && runningOnCpu;
     return (
       <div className="mb-6 flex flex-col gap-2">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-green-500/30 bg-green-500/5 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-green-500/30 bg-green-500/5 px-4 py-3">
           <div className="flex items-center gap-3">
             <Server className="h-4 w-4 text-green-600" />
             <span className="text-sm font-medium text-green-700">
@@ -4478,7 +4656,7 @@ function SetupBanner({
           </div>
         </div>
         {showGpuWarning && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/5 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-yellow-500/40 bg-yellow-500/5 px-4 py-3">
             <div className="flex items-center gap-2">
               <Zap className="h-4 w-4 text-yellow-600" />
               <span className="text-sm text-yellow-700">
@@ -4515,7 +4693,7 @@ function SetupBanner({
   // ── Checking ─────────────────────────────────────────────────────────────
   if (phase === "checking") {
     return (
-      <div className="mb-6 flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+      <div className="mb-6 flex items-center gap-3 rounded-2xl border bg-muted/30 px-4 py-3">
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
         <span className="text-sm text-muted-foreground">Checking backend…</span>
         <Button
@@ -4534,7 +4712,7 @@ function SetupBanner({
   // ── Starting (backend spawned, polling health) ────────────────────────────
   if (phase === "starting") {
     return (
-      <div className="mb-6 flex items-center gap-3 rounded-lg border border-blue-500/30 bg-blue-500/5 px-4 py-3">
+      <div className="mb-6 flex items-center gap-3 rounded-2xl border border-blue-500/30 bg-blue-500/5 px-4 py-3">
         <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
         <div className="flex flex-col">
           <span className="text-sm font-medium text-blue-700">
@@ -4551,7 +4729,7 @@ function SetupBanner({
   // ── Stopping ──────────────────────────────────────────────────────────────
   if (phase === "stopping") {
     return (
-      <div className="mb-6 flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+      <div className="mb-6 flex items-center gap-3 rounded-2xl border bg-muted/30 px-4 py-3">
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
         <span className="text-sm text-muted-foreground">Stopping backend…</span>
       </div>
@@ -4567,7 +4745,7 @@ function SetupBanner({
     const gpuAlreadyInstalled = !!status?.gpuBackendInstalled;
     return (
       <div className="mb-6 flex flex-col gap-2">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-muted/30 px-4 py-3">
           <div className="flex items-center gap-3">
             <ServerOff className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm text-muted-foreground">
@@ -4595,7 +4773,7 @@ function SetupBanner({
           </div>
         </div>
         {gpuBackend && !gpuAlreadyInstalled && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/5 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-yellow-500/40 bg-yellow-500/5 px-4 py-3">
             <div className="flex items-center gap-2">
               <Zap className="h-4 w-4 text-yellow-600" />
               <span className="text-sm text-yellow-700">
@@ -4656,7 +4834,7 @@ function SetupBanner({
               </Button>
             </div>
             {showLog && (
-              <div className="max-h-48 overflow-auto rounded-md border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed">
+              <div className="max-h-48 overflow-auto rounded-3xl border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed">
                 {eventLog
                   .slice()
                   .reverse()
@@ -4828,7 +5006,7 @@ function SetupBanner({
             {showLog ? "Hide" : "Show"} activity log
           </button>
           {showLog && (
-            <div className="max-h-48 overflow-auto rounded-md border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed">
+            <div className="max-h-48 overflow-auto rounded-3xl border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed">
               {eventLog.length === 0 ? (
                 <p className="text-muted-foreground">No events yet.</p>
               ) : (
@@ -4897,7 +5075,7 @@ function SetupBanner({
       <CardContent className="space-y-5">
         {/* Incomplete install warning */}
         {isIncompleteInstall && (
-          <div className="flex items-start gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/5 px-4 py-3">
+          <div className="flex items-start gap-3 rounded-2xl border border-yellow-500/40 bg-yellow-500/5 px-4 py-3">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-600" />
             <div className="text-sm">
               <p className="font-medium text-yellow-700">
@@ -4913,7 +5091,7 @@ function SetupBanner({
         )}
         {/* Hardware detected */}
         {hardware && (
-          <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/20 px-4 py-3 text-sm">
+          <div className="flex flex-wrap items-center gap-3 rounded-2xl border bg-muted/20 px-4 py-3 text-sm">
             <Zap className="h-4 w-4 text-muted-foreground" />
             {hardware.primaryGpu?.model ? (
               <>
@@ -4936,7 +5114,7 @@ function SetupBanner({
         )}
 
         {/* What will be downloaded */}
-        <div className="rounded-lg border bg-muted/20 px-4 py-3 text-sm">
+        <div className="rounded-2xl border bg-muted/20 px-4 py-3 text-sm">
           <div className="mb-2 flex items-center justify-between">
             <span className="font-medium">
               {pendingComponents.length === 0
@@ -5082,7 +5260,7 @@ function SetupBanner({
               {showLog ? "Hide" : "Show"} activity log
             </button>
             {showLog && (
-              <div className="max-h-48 overflow-auto rounded-md border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed">
+              <div className="max-h-48 overflow-auto rounded-3xl border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed">
                 {eventLog.length === 0 ? (
                   <p className="text-muted-foreground">No events yet.</p>
                 ) : (

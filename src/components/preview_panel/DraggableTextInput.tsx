@@ -154,7 +154,7 @@ export const DraggableTextInput = ({
           value={input.value}
           onChange={(e) => onChange(input.id, e.target.value)}
           onKeyDown={(e) => onKeyDown(input.id, e, index)}
-          className="pl-8 pr-8 py-2 bg-[var(--background)] border-2 rounded-md shadow-lg text-gray-900 dark:text-gray-100 focus:outline-none min-w-[200px] cursor-text"
+          className="pl-8 pr-8 py-2 bg-[var(--background)] border-2 rounded-3xl shadow-lg text-gray-900 dark:text-gray-100 focus:outline-none min-w-[200px] cursor-text"
           style={{ borderColor: color }}
           placeholder="Type text..."
           ref={(e) => {

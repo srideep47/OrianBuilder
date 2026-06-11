@@ -316,7 +316,7 @@ export function ImportAppDialog({ isOpen, onClose }: ImportAppDialogProps) {
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl w-[calc(100vw-2rem)] max-h-[98vh] overflow-y-auto flex flex-col p-0">
-        <DialogHeader className="sticky top-0 bg-background border-b px-6 py-4">
+        <DialogHeader className="sticky top-0 bg-transparent border-b px-6 py-4">
           <DialogTitle>{t("home:importApp")}</DialogTitle>
           <DialogDescription className="text-sm">
             {t("home:importAppDescription")}
@@ -372,7 +372,7 @@ export function ImportAppDialog({ isOpen, onClose }: ImportAppDialogProps) {
                   </Button>
                 ) : (
                   <div className="space-y-4">
-                    <div className="rounded-md border p-3 sm:p-4">
+                    <div className="rounded-3xl border p-3 sm:p-4">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1 overflow-hidden">
                           <p className="text-sm font-medium mb-1">
@@ -582,7 +582,7 @@ export function ImportAppDialog({ isOpen, onClose }: ImportAppDialogProps) {
                     {repos.map((repo) => (
                       <div
                         key={repo.full_name}
-                        className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent/50 transition-colors min-w-0"
+                        className="flex items-center justify-between p-3 border rounded-2xl hover:bg-accent/50 transition-colors min-w-0"
                       >
                         <div className="min-w-0 flex-1 overflow-hidden mr-2">
                           <p className="font-semibold truncate text-sm">

@@ -107,7 +107,7 @@ export default function OnboardingPage() {
   };
 
   return (
-    <div className="flex items-center justify-center w-full h-full bg-background px-4">
+    <div className="flex items-center justify-center w-full h-full bg-transparent px-4">
       <div className="w-full max-w-md">
         {/* ── Step 1: Device Setup ── */}
         {step === 1 && (
@@ -143,7 +143,7 @@ export default function OnboardingPage() {
                     <button
                       key={value}
                       onClick={() => setDeviceType(value)}
-                      className={`flex-1 flex flex-col items-center gap-2 py-3 rounded-lg border text-sm font-medium transition-colors ${
+                      className={`flex-1 flex flex-col items-center gap-2 py-3 rounded-2xl border text-sm font-medium transition-colors ${
                         deviceType === value
                           ? "border-primary bg-primary/10 text-primary"
                           : "border-border hover:border-primary/40 text-muted-foreground"
@@ -161,14 +161,14 @@ export default function OnboardingPage() {
                   <span className="text-xs text-muted-foreground w-full mb-0.5">
                     Auto-detected hardware
                   </span>
-                  <span className="text-xs px-2 py-0.5 rounded bg-background border">
+                  <span className="text-xs px-2 py-0.5 rounded bg-transparent border">
                     {identity.hardware.cpu}
                   </span>
-                  <span className="text-xs px-2 py-0.5 rounded bg-background border">
+                  <span className="text-xs px-2 py-0.5 rounded bg-transparent border">
                     {identity.hardware.ramGB} GB RAM
                   </span>
                   {identity.hardware.gpu !== "Unknown" && (
-                    <span className="text-xs px-2 py-0.5 rounded bg-background border">
+                    <span className="text-xs px-2 py-0.5 rounded bg-transparent border">
                       {identity.hardware.gpu}
                     </span>
                   )}
@@ -219,7 +219,7 @@ export default function OnboardingPage() {
                 }`}
               >
                 <span
-                  className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
+                  className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow-md transition-transform ${
                     joinNetwork ? "translate-x-5" : "translate-x-0"
                   }`}
                 />

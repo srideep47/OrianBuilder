@@ -53,7 +53,7 @@ export const OrianBuilderAddDependency: React.FC<
           <div className="flex flex-wrap gap-1.5 mt-1.5">
             {packages.map((p: string) => (
               <span
-                className="cursor-pointer text-sm px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/60 ring-1 ring-inset ring-blue-200 dark:ring-blue-800 transition-colors"
+                className="cursor-pointer text-sm px-2 py-0.5 rounded-3xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/60 ring-1 ring-inset ring-blue-200 dark:ring-blue-800 transition-colors"
                 key={p}
                 onClick={(e) => {
                   e.stopPropagation();

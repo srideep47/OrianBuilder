@@ -25,7 +25,7 @@ export function McpToolsPicker() {
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger
-        className="inline-flex items-center justify-center whitespace-nowrap rounded-lg text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border-none bg-transparent shadow-none text-muted-foreground hover:text-foreground hover:bg-muted/60 h-7 px-1.5 cursor-pointer"
+        className="inline-flex items-center justify-center whitespace-nowrap rounded-2xl text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border-none bg-transparent shadow-none text-muted-foreground hover:text-foreground hover:bg-muted/60 h-7 px-1.5 cursor-pointer"
         data-testid="mcp-tools-button"
         title="Tools"
       >
@@ -43,14 +43,14 @@ export function McpToolsPicker() {
             </p>
           </div>
           {servers.length === 0 ? (
-            <div className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
+            <div className="rounded-3xl border border-dashed p-4 text-center text-sm text-muted-foreground">
               No MCP servers configured. Configure them in Settings → Tools
               (MCP).
             </div>
           ) : (
             <div className="space-y-3">
               {servers.map((s) => (
-                <div key={s.id} className="border rounded-md p-2">
+                <div key={s.id} className="border rounded-3xl p-2">
                   <div className="flex items-center justify-between">
                     <div className="font-medium text-sm truncate">{s.name}</div>
                     {s.enabled ? (

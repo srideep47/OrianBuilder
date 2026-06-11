@@ -117,7 +117,7 @@ export function ScheduledPostsDialog({
         </DialogHeader>
 
         {/* Background-mode toggle */}
-        <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-muted/30 p-3">
+        <div className="flex items-start justify-between gap-3 rounded-3xl border border-border bg-muted/30 p-3">
           <div className="min-w-0">
             <p className="text-sm font-medium">Run in background</p>
             <p className="text-xs text-muted-foreground">
@@ -140,7 +140,7 @@ export function ScheduledPostsDialog({
               Loading…
             </div>
           ) : jobs.length === 0 ? (
-            <div className="rounded-md border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
+            <div className="rounded-3xl border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
               Nothing scheduled. Open a video's Publish menu to queue one up.
             </div>
           ) : (
@@ -218,7 +218,7 @@ function JobRow({
   const StatusIcon = meta.icon;
 
   return (
-    <div className="rounded-lg border border-border bg-background/40 p-3">
+    <div className="rounded-2xl border border-border bg-transparent/40 p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">

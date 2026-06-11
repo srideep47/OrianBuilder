@@ -35,7 +35,7 @@ const RadioGroupItem = React.forwardRef<
     <Radio.Root
       ref={ref}
       className={cn(
-        "aspect-square h-4 w-4 rounded-full border border-primary text-primary ring-offset-background focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center",
+        "aspect-square h-4 w-4 rounded-full border border-black/[0.1] bg-white/72 text-primary ring-offset-background shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center dark:border-white/[0.12] dark:bg-white/[0.08]",
         className,
       )}
       {...props}

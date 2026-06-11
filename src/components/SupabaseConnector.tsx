@@ -365,7 +365,7 @@ export function SupabaseConnector({ appId }: { appId: number }) {
                   {organizations.map((org) => (
                     <div
                       key={org.organizationSlug}
-                      className="flex items-center justify-between p-2 rounded-md bg-muted/50 text-sm gap-2"
+                      className="flex items-center justify-between p-2 rounded-3xl bg-muted/50 text-sm gap-2"
                     >
                       <div className="flex flex-col min-w-0 flex-1">
                         <span className="font-medium truncate">
@@ -448,7 +448,7 @@ export function SupabaseConnector({ appId }: { appId: number }) {
 
   // No accounts connected, show connect button
   return (
-    <div className="flex flex-col space-y-4 p-4 border rounded-md">
+    <div className="flex flex-col space-y-4 p-4 border rounded-3xl">
       <div className="flex flex-col md:flex-row items-center justify-between">
         <h2 className="text-lg font-medium">Integrations</h2>
         <img

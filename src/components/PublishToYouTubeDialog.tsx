@@ -191,7 +191,7 @@ export function PublishToYouTubeDialog({
               .
             </p>
             {bgEnabled === false && (
-              <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+              <p className="rounded-3xl border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-400">
                 Heads up: "Run in background" is off in Settings, so the upload
                 only fires if OrianBuilder is open at the scheduled time.
               </p>
@@ -243,7 +243,7 @@ export function PublishToYouTubeDialog({
                   )}
                 </div>
                 {privacy === "private" && (
-                  <p className="rounded-md border border-sky-500/30 bg-sky-500/5 px-2.5 py-1.5 text-xs text-sky-800 dark:text-sky-300">
+                  <p className="rounded-3xl border border-sky-500/30 bg-sky-500/5 px-2.5 py-1.5 text-xs text-sky-800 dark:text-sky-300">
                     The video is private — only you can see it. Open YouTube
                     Studio (above) to preview it or flip visibility to
                     Unlisted/Public.
@@ -261,13 +261,13 @@ export function PublishToYouTubeDialog({
           // Publish form.
           <div className="space-y-3">
             {/* When-to-publish toggle */}
-            <div className="inline-flex rounded-lg border border-border bg-background/50 p-0.5">
+            <div className="inline-flex rounded-2xl border border-border bg-transparent/50 p-0.5">
               <button
                 type="button"
                 onClick={() => setMode("now")}
                 disabled={publishing}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50",
+                  "inline-flex items-center gap-1.5 rounded-3xl px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50",
                   mode === "now"
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:text-foreground",
@@ -286,7 +286,7 @@ export function PublishToYouTubeDialog({
                 }}
                 disabled={publishing}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50",
+                  "inline-flex items-center gap-1.5 rounded-3xl px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50",
                   mode === "schedule"
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:text-foreground",
@@ -305,7 +305,7 @@ export function PublishToYouTubeDialog({
                   disabled={publishing}
                 />
                 {bgEnabled === false && (
-                  <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-[11px] text-amber-700 dark:text-amber-400">
+                  <p className="rounded-3xl border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-[11px] text-amber-700 dark:text-amber-400">
                     "Run in background" is off in Settings — scheduled posts
                     only fire when OrianBuilder is open. Turn it on to upload
                     even with the app closed.
@@ -349,7 +349,7 @@ export function PublishToYouTubeDialog({
                 onChange={(e) => setPrivacy(e.target.value as YouTubePrivacy)}
                 disabled={publishing}
                 className={cn(
-                  "border-input bg-transparent dark:bg-input/30 flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs outline-none disabled:opacity-50",
+                  "border-input bg-transparent dark:bg-input/30 flex h-9 w-full rounded-3xl border px-3 py-1 text-sm shadow-xs outline-none disabled:opacity-50",
                 )}
               >
                 <option value="unlisted">

@@ -29,7 +29,7 @@ export function MacNotificationGuideDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          <div className="rounded-lg border p-3 space-y-1">
+          <div className="rounded-2xl border p-3 space-y-1">
             <h4 className="text-sm font-medium">
               Option 1: From the Notification Permission Prompt
             </h4>
@@ -39,7 +39,7 @@ export function MacNotificationGuideDialog({
             </p>
           </div>
 
-          <div className="rounded-lg border p-3 space-y-1">
+          <div className="rounded-2xl border p-3 space-y-1">
             <h4 className="text-sm font-medium">Option 2: System Settings</h4>
             <p className="text-sm text-muted-foreground">
               Open{" "}

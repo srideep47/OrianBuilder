@@ -690,7 +690,7 @@ export function GithubBranchManager({
               </p>
 
               {abortConfirmation?.hasConflicts && (
-                <div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">
+                <div className="rounded-3xl border border-red-200 bg-red-50 p-3 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">
                   <p className="font-medium">Unresolved conflicts detected</p>
                   <p className="mt-1 text-xs">
                     Aborting will discard any conflict resolution work you’ve
@@ -739,7 +739,7 @@ export function GithubBranchManager({
 
       {/* Conflict Resolution Buttons */}
       {conflicts.length > 0 && (
-        <div className="mt-3 p-3 rounded-md border border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-900/20">
+        <div className="mt-3 p-3 rounded-3xl border border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-900/20">
           <p className="text-sm text-yellow-800 dark:text-yellow-200 mb-3">
             {conflicts.length} file{conflicts.length > 1 ? "s" : ""} with merge
             conflicts: {conflicts.join(", ")}
@@ -821,7 +821,7 @@ export function GithubBranchManager({
             {/* List of other branches with delete option? Or just rely on Select? */}
             {branches.length > 1 && (
               <div className="mt-2">
-                <div className="space-y-1 max-h-40 overflow-y-auto border rounded-md p-2">
+                <div className="space-y-1 max-h-40 overflow-y-auto border rounded-3xl p-2">
                   {branches.map((branch) => (
                     <div
                       key={branch}
@@ -844,7 +844,7 @@ export function GithubBranchManager({
                           }}
                         >
                           <DropdownMenuTrigger
-                            className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-6 w-6"
+                            className="inline-flex items-center justify-center whitespace-nowrap rounded-3xl text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-6 w-6"
                             data-testid={`branch-actions-${branch}`}
                           >
                             <MoreHorizontal className="h-4 w-4" />

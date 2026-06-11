@@ -135,17 +135,17 @@ export const OrianBuilderImageGeneration: React.FC<
                 e.stopPropagation();
                 setIsLightboxOpen(true);
               }}
-              className="group/thumb shrink-0 m-2 rounded-xl overflow-hidden transition-shadow cursor-pointer shadow-sm hover:shadow-xl relative"
+              className="group/thumb shrink-0 m-2 rounded-3xl overflow-hidden transition-shadow cursor-pointer shadow-md hover:shadow-xl relative"
               title="View generated image"
               aria-label="View generated image"
             >
               <img
                 src={imageUrl}
                 alt={prompt || "Generated image"}
-                className="h-20 w-20 object-cover rounded-xl"
+                className="h-20 w-20 object-cover rounded-3xl"
                 onError={() => setImageError(true)}
               />
-              <div className="absolute inset-0 bg-black/0 group-hover/thumb:bg-black/40 transition-colors rounded-xl flex items-center justify-center">
+              <div className="absolute inset-0 bg-black/0 group-hover/thumb:bg-black/40 transition-colors rounded-3xl flex items-center justify-center">
                 <Eye
                   size={20}
                   className="text-white opacity-0 group-hover/thumb:opacity-100 transition-opacity"

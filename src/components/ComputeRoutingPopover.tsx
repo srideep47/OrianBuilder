@@ -40,7 +40,7 @@ function NodeRow({
   return (
     <button
       onClick={onSelect}
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors ${
+      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-left transition-colors ${
         selected
           ? "bg-primary/10 border border-primary/20"
           : node.computeAvailable
@@ -168,7 +168,7 @@ export function ComputeRoutingPopover() {
       <Button
         variant="ghost"
         size="sm"
-        className="h-7 gap-1.5 px-2 text-xs font-medium"
+        className="h-8 gap-1.5 px-2.5 text-xs font-medium"
         onClick={() => setOpen((v) => !v)}
       >
         <Cpu className="w-3.5 h-3.5" />
@@ -187,7 +187,7 @@ export function ComputeRoutingPopover() {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-8 w-72 bg-background border border-border rounded-xl shadow-xl z-50 flex flex-col">
+          <div className="motion-popover liquid-glass-thick absolute right-0 top-11 z-50 flex w-72 flex-col rounded-3xl border border-border shadow-xl">
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
               <div className="flex items-center gap-2">
@@ -219,7 +219,7 @@ export function ComputeRoutingPopover() {
                 }`}
               >
                 <span
-                  className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
+                  className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-md transition-transform ${
                     autoMode ? "translate-x-5" : "translate-x-0"
                   }`}
                 />
@@ -264,7 +264,7 @@ export function ComputeRoutingPopover() {
                 }`}
               >
                 <span
-                  className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
+                  className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-md transition-transform ${
                     shareStatus?.enabled ? "translate-x-5" : "translate-x-0"
                   }`}
                 />

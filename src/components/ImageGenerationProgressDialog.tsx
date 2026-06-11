@@ -104,7 +104,7 @@ function ImageGenerationCard({ job }: { job: ImageGenerationJob }) {
     job.prompt.length > 60 ? job.prompt.slice(0, 60) + "…" : job.prompt;
 
   return (
-    <div className="border border-border rounded-lg overflow-hidden">
+    <div className="border border-border rounded-2xl overflow-hidden">
       {/* Collapsed header - always visible */}
       <button
         type="button"
@@ -135,13 +135,13 @@ function ImageGenerationCard({ job }: { job: ImageGenerationJob }) {
           {/* Image preview or placeholder */}
           <div>
             {job.status === "pending" ? (
-              <div className="w-full aspect-video max-w-xs rounded-lg border-2 border-dashed border-muted-foreground/25 flex flex-col items-center justify-center gap-2 bg-muted/10">
+              <div className="w-full aspect-video max-w-xs rounded-2xl border-2 border-dashed border-muted-foreground/25 flex flex-col items-center justify-center gap-2 bg-muted/10">
                 <Loader2 className="h-6 w-6 text-primary animate-spin" />
                 <p className="text-xs text-muted-foreground">Generating...</p>
               </div>
             ) : job.status === "success" && job.result ? (
               imgError ? (
-                <div className="w-full max-w-xs aspect-video rounded-lg border bg-muted/10 flex items-center justify-center">
+                <div className="w-full max-w-xs aspect-video rounded-2xl border bg-muted/10 flex items-center justify-center">
                   <ImageIcon className="h-6 w-6 text-muted-foreground" />
                 </div>
               ) : (
@@ -156,17 +156,17 @@ function ImageGenerationCard({ job }: { job: ImageGenerationJob }) {
                       job.result.fileName,
                     )}
                     alt="Generated image"
-                    className="w-full max-w-xs rounded-lg border shadow-sm hover:opacity-90 transition-opacity"
+                    className="w-full max-w-xs rounded-2xl border shadow-md hover:opacity-90 transition-opacity"
                     onError={() => setImgError(true)}
                   />
                 </button>
               )
             ) : job.status === "error" ? (
-              <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-2 text-xs text-destructive">
+              <div className="rounded-2xl border border-destructive/50 bg-destructive/10 p-2 text-xs text-destructive">
                 {job.error || "Image generation failed"}
               </div>
             ) : job.status === "cancelled" ? (
-              <div className="w-full aspect-video max-w-xs rounded-lg border-2 border-dashed border-muted-foreground/25 flex flex-col items-center justify-center gap-2 bg-muted/10">
+              <div className="w-full aspect-video max-w-xs rounded-2xl border-2 border-dashed border-muted-foreground/25 flex flex-col items-center justify-center gap-2 bg-muted/10">
                 <Ban className="h-6 w-6 text-muted-foreground" />
                 <p className="text-xs text-muted-foreground">
                   Generation was cancelled

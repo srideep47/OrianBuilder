@@ -20,7 +20,7 @@ export function AttachmentsList({
       {attachments.map((attachment, index) => (
         <div
           key={index}
-          className="flex items-center bg-muted rounded-md px-2 py-1 text-xs gap-1"
+          className="flex items-center bg-muted rounded-3xl px-2 py-1 text-xs gap-1"
           title={`${attachment.file.name} (${(attachment.file.size / 1024).toFixed(1)}KB)`}
         >
           <div className="flex items-center gap-1">
@@ -34,7 +34,7 @@ export function AttachmentsList({
                 <img
                   src={URL.createObjectURL(attachment.file)}
                   alt={attachment.file.name}
-                  className="w-12 h-12 object-cover rounded-md"
+                  className="w-12 h-12 object-cover rounded-3xl"
                   onLoad={(e) =>
                     URL.revokeObjectURL((e.target as HTMLImageElement).src)
                   }

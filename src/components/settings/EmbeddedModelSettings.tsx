@@ -83,7 +83,7 @@ export function EmbeddedModelSettings() {
 
   return (
     <div className="space-y-6 p-4">
-      <div className="rounded-lg border bg-card p-4 space-y-2">
+      <div className="rounded-2xl border bg-card p-4 space-y-2">
         <div className="flex items-center gap-2 font-semibold text-sm">
           <Zap className="w-4 h-4 text-yellow-500" />
           GPU Detection
@@ -112,7 +112,7 @@ export function EmbeddedModelSettings() {
         )}
       </div>
 
-      <div className="rounded-lg border bg-card p-4 space-y-2">
+      <div className="rounded-2xl border bg-card p-4 space-y-2">
         <div className="flex items-center gap-2 font-semibold text-sm">
           <Cpu className="w-4 h-4" />
           Model Status
@@ -141,14 +141,14 @@ export function EmbeddedModelSettings() {
         )}
       </div>
 
-      <div className="rounded-lg border bg-card p-4 space-y-4">
+      <div className="rounded-2xl border bg-card p-4 space-y-4">
         <div className="font-semibold text-sm">Load GGUF Model</div>
         <div className="space-y-2">
           <label className="text-sm text-muted-foreground">
             Model File (.gguf)
           </label>
           <div className="flex gap-2 items-center">
-            <div className="flex-1 text-sm border rounded px-3 py-1.5 bg-background truncate min-w-0 font-mono">
+            <div className="flex-1 text-sm border rounded px-3 py-1.5 bg-transparent truncate min-w-0 font-mono">
               {modelFileName ?? (
                 <span className="text-muted-foreground">No file selected</span>
               )}
@@ -171,7 +171,7 @@ export function EmbeddedModelSettings() {
           <select
             value={contextSize}
             onChange={(e) => setContextSize(Number(e.target.value))}
-            className="w-full border rounded px-3 py-1.5 text-sm bg-background"
+            className="w-full border rounded px-3 py-1.5 text-sm bg-transparent"
           >
             {[4096, 8192, 16384, 32768].map((v) => (
               <option key={v} value={v}>

@@ -46,7 +46,7 @@ export const CommentCard: React.FC<CommentCardProps> = ({
   };
 
   return (
-    <div className="rounded-lg border bg-card p-3 space-y-2">
+    <div className="rounded-2xl border bg-card p-3 space-y-2">
       <div className="flex items-start justify-between">
         <blockquote className="text-xs text-muted-foreground border-l-2 border-muted-foreground/30 pl-2 italic line-clamp-3 flex-1">
           {annotation.selectedText}
@@ -80,7 +80,7 @@ export const CommentCard: React.FC<CommentCardProps> = ({
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSave();
               if (e.key === "Escape") handleCancel();
             }}
-            className="w-full text-sm min-h-[60px] rounded-md border bg-background px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+            className="w-full text-sm min-h-[60px] rounded-3xl border bg-transparent px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
           />
           <div className="flex gap-1 justify-end">
             <Button variant="ghost" size="sm" onClick={handleCancel}>

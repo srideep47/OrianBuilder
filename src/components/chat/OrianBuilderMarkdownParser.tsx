@@ -255,13 +255,13 @@ function OrianBuilderProjectCheck({
           {command}
         </span>
         {exitCode && (
-          <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+          <span className="shrink-0 rounded-3xl bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
             exit {exitCode}
           </span>
         )}
         <button
           type="button"
-          className="ml-auto inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="ml-auto inline-flex h-7 shrink-0 items-center gap-1 rounded-3xl px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
           onClick={handleCopy}
           title="Copy project check output"
         >
@@ -273,7 +273,7 @@ function OrianBuilderProjectCheck({
       <OrianBuilderCardContent isExpanded={isExpanded}>
         {output ? (
           <pre
-            className="max-h-72 overflow-auto rounded-lg bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground"
+            className="max-h-72 overflow-auto rounded-2xl bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground"
             onClick={(event) => event.stopPropagation()}
           >
             <code>{output}</code>

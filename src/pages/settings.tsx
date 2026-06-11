@@ -75,7 +75,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto px-8 py-4">
+    <div className="settings-content flex-1 overflow-y-auto px-8 py-4">
       <div className="max-w-5xl mx-auto">
         <Button
           onClick={() => router.history.back()}
@@ -97,7 +97,7 @@ export default function SettingsPage() {
 
           <div
             id={SECTION_IDS.providers}
-            className="bg-card border border-border/60 rounded-xl shadow-sm"
+            className="bg-card border border-border/60 rounded-3xl shadow-md"
           >
             <ProviderSettingsGrid />
           </div>
@@ -105,7 +105,7 @@ export default function SettingsPage() {
           <div className="space-y-6">
             <div
               id={SECTION_IDS.telemetry}
-              className="bg-card border border-border/60 rounded-xl shadow-sm p-6"
+              className="bg-card border border-border/60 rounded-3xl shadow-md p-6"
             >
               <h2 className="text-lg font-medium text-foreground mb-4">
                 Telemetry
@@ -129,7 +129,7 @@ export default function SettingsPage() {
           {/* Integrations Section */}
           <div
             id={SECTION_IDS.integrations}
-            className="bg-card border border-border/60 rounded-xl shadow-sm p-6"
+            className="bg-card border border-border/60 rounded-3xl shadow-md p-6"
           >
             <h2 className="text-lg font-medium text-foreground mb-4">
               Integrations
@@ -160,7 +160,7 @@ export default function SettingsPage() {
 
           <div
             id={SECTION_IDS.agentPermissions}
-            className="bg-card border border-border/60 rounded-xl shadow-sm p-6"
+            className="bg-card border border-border/60 rounded-3xl shadow-md p-6"
           >
             <h2 className="text-lg font-medium text-foreground mb-4">
               Agent Permissions (Pro)
@@ -171,7 +171,7 @@ export default function SettingsPage() {
           {/* Tools (MCP) */}
           <div
             id={SECTION_IDS.toolsMcp}
-            className="bg-card border border-border/60 rounded-xl shadow-sm p-6"
+            className="bg-card border border-border/60 rounded-3xl shadow-md p-6"
           >
             <h2 className="text-lg font-medium text-foreground mb-4">
               Tools (MCP)
@@ -182,7 +182,7 @@ export default function SettingsPage() {
           {/* Experiments Section */}
           <div
             id={SECTION_IDS.experiments}
-            className="bg-card border border-border/60 rounded-xl shadow-sm p-6"
+            className="bg-card border border-border/60 rounded-3xl shadow-md p-6"
           >
             <h2 className="text-lg font-medium text-foreground mb-4">
               Experiments
@@ -273,7 +273,7 @@ export default function SettingsPage() {
           {/* Account & Identity */}
           <div
             id="account-settings"
-            className="bg-card border border-border/60 rounded-xl shadow-sm p-6"
+            className="bg-card border border-border/60 rounded-3xl shadow-md p-6"
           >
             <h2 className="text-lg font-medium mb-4">Account & Identity</h2>
             <AccountSettings />
@@ -282,7 +282,7 @@ export default function SettingsPage() {
           {/* Danger Zone */}
           <div
             id={SECTION_IDS.dangerZone}
-            className="bg-card border border-red-500/40 rounded-xl shadow-sm p-6"
+            className="bg-card border border-red-500/40 rounded-3xl shadow-md p-6"
           >
             <h2 className="text-lg font-medium text-red-600 dark:text-red-400 mb-4">
               Danger Zone
@@ -305,7 +305,7 @@ export default function SettingsPage() {
                 <button
                   onClick={() => setIsResetDialogOpen(true)}
                   disabled={isResetting}
-                  className="rounded-md border border-transparent bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="rounded-3xl border border-transparent bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isResetting ? "Resetting..." : "Reset Everything"}
                 </button>
@@ -335,7 +335,7 @@ export function GeneralSettings({ appVersion }: { appVersion: string | null }) {
   return (
     <div
       id={SECTION_IDS.general}
-      className="bg-card border border-border/60 rounded-xl shadow-sm p-6"
+      className="bg-card border border-border/60 rounded-3xl shadow-md p-6"
     >
       <h2 className="text-lg font-medium text-foreground mb-4">
         General Settings
@@ -347,17 +347,17 @@ export function GeneralSettings({ appVersion }: { appVersion: string | null }) {
             Theme
           </label>
 
-          <div className="relative bg-muted/60 rounded-lg p-1 flex">
+          <div className="relative bg-muted/60 rounded-2xl p-1 flex">
             {(["system", "light", "dark"] as const).map((option) => (
               <button
                 key={option}
                 onClick={() => setTheme(option)}
                 className={`
-                px-4 py-1.5 text-sm font-medium rounded-md
+                px-4 py-1.5 text-sm font-medium rounded-3xl
                 transition-all duration-200
                 ${
                   theme === option
-                    ? "bg-card text-foreground shadow-sm border border-border/60"
+                    ? "bg-card text-foreground shadow-md border border-border/60"
                     : "text-muted-foreground hover:text-foreground"
                 }
               `}
@@ -416,7 +416,7 @@ export function WorkflowSettings() {
   return (
     <div
       id={SECTION_IDS.workflow}
-      className="bg-card border border-border/60 rounded-xl shadow-sm p-6"
+      className="bg-card border border-border/60 rounded-3xl shadow-md p-6"
     >
       <h2 className="text-lg font-medium text-foreground mb-4">
         Workflow Settings
@@ -469,7 +469,7 @@ export function AISettings() {
   return (
     <div
       id={SECTION_IDS.ai}
-      className="bg-card border border-border/60 rounded-xl shadow-sm p-6"
+      className="bg-card border border-border/60 rounded-3xl shadow-md p-6"
     >
       <h2 className="text-lg font-medium text-foreground mb-4">AI Settings</h2>
 

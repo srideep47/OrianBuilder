@@ -126,7 +126,7 @@ export const MigrationPanel = ({ appId }: MigrationPanelProps) => {
 
         <div
           role="note"
-          className="flex items-start gap-2 text-sm text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3"
+          className="flex items-start gap-2 text-sm text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-2xl p-3"
         >
           <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
           <span>{t("integrations.migration.backupWarning")}</span>
@@ -135,7 +135,7 @@ export const MigrationPanel = ({ appId }: MigrationPanelProps) => {
         {depsInstalled === false && !pushMutation.isPending && (
           <div
             role="note"
-            className="flex items-start gap-2 text-sm text-blue-800 dark:text-blue-200 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3"
+            className="flex items-start gap-2 text-sm text-blue-800 dark:text-blue-200 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-3"
           >
             <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <span>{t("integrations.migration.installDependenciesNote")}</span>
@@ -203,7 +203,7 @@ export const MigrationPanel = ({ appId }: MigrationPanelProps) => {
             <div
               role="status"
               aria-live="polite"
-              className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3"
+              className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-2xl p-3"
             >
               <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
               {t("integrations.migration.success")}
@@ -214,7 +214,7 @@ export const MigrationPanel = ({ appId }: MigrationPanelProps) => {
           <div
             role="status"
             aria-live="polite"
-            className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3"
+            className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-3"
           >
             <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
             {t("integrations.migration.alreadyInSync")}
@@ -224,7 +224,7 @@ export const MigrationPanel = ({ appId }: MigrationPanelProps) => {
         {pushMutation.isError && (
           <div
             role="alert"
-            className="text-sm text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 space-y-2"
+            className="text-sm text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-3 space-y-2"
           >
             <div className="flex items-start gap-2">
               <XCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />

@@ -112,7 +112,7 @@ const ErrorBanner = ({ error, onDismiss, onAIFix }: ErrorBannerProps) => {
 
   return (
     <div
-      className="absolute top-2 left-2 right-2 z-10 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-md shadow-sm p-2"
+      className="absolute top-2 left-2 right-2 z-10 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-3xl shadow-md p-2"
       data-testid="preview-error-banner"
     >
       {/* Close button in top left */}
@@ -124,7 +124,7 @@ const ErrorBanner = ({ error, onDismiss, onAIFix }: ErrorBannerProps) => {
       </button>
 
       {(isInternalOrianBuilderError || isSyncError) && (
-        <div className="absolute top-1 right-1 p-1 bg-red-100 dark:bg-red-900 rounded-md text-xs font-medium text-red-700 dark:text-red-300">
+        <div className="absolute top-1 right-1 p-1 bg-red-100 dark:bg-red-900 rounded-3xl text-xs font-medium text-red-700 dark:text-red-300">
           {isSyncError ? "Cloud sync issue" : "Internal OrianBuilder error"}
         </div>
       )}
@@ -1509,8 +1509,8 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
                     onClick={handleActivateComponentSelector}
                     className={`p-1 rounded transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
                       isPicking
-                        ? "bg-purple-500 text-white hover:bg-purple-600 dark:bg-purple-600 dark:hover:bg-purple-700"
-                        : " text-purple-700 hover:bg-purple-200  dark:text-purple-300 dark:hover:bg-purple-900"
+                        ? "bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700"
+                        : " text-blue-700 hover:bg-blue-200  dark:text-blue-300 dark:hover:bg-blue-900"
                     }`}
                     disabled={
                       loading ||
@@ -1536,8 +1536,8 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
                     onClick={handleAnnotatorClick}
                     className={`p-1 rounded transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
                       annotatorMode
-                        ? "bg-purple-500 text-white hover:bg-purple-600 dark:bg-purple-600 dark:hover:bg-purple-700"
-                        : " text-purple-700 hover:bg-purple-200  dark:text-purple-300 dark:hover:bg-purple-900"
+                        ? "bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700"
+                        : " text-blue-700 hover:bg-blue-200  dark:text-blue-300 dark:hover:bg-blue-900"
                     }`}
                     disabled={
                       loading ||
@@ -1638,7 +1638,7 @@ export const PreviewIframe = ({ loading }: { loading: boolean }) => {
                 render={
                   <button
                     onClick={onRestart}
-                    className="flex items-center space-x-1 px-3 py-1 rounded-md text-sm hover:bg-[var(--background-darkest)] transition-colors"
+                    className="flex items-center space-x-1 px-3 py-1 rounded-3xl text-sm hover:bg-[var(--background-darkest)] transition-colors"
                   />
                 }
               >

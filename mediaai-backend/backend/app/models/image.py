@@ -157,6 +157,41 @@ def download_tier(tier_id: str) -> None:
         _download_progress.pop(tier_id, None)
 
 
+def delete_tier(tier_id: str) -> None:
+    """Remove a downloaded image tier's weights from disk so the UI can free
+    space. Mirrors download_tier: the GGUF tier deletes its single local file,
+    every other tier removes the HuggingFace cache directory that tier_status
+    checks. Unloads the pipeline first if this tier is the one loaded, so the
+    weight files aren't held open (Windows refuses to delete locked files)."""
+    import shutil
+
+    tier = next((t for t in IMAGE_MODEL_TIERS if t["id"] == tier_id), None)
+    if not tier:
+        return
+    if _pipeline_tier_id == tier_id:
+        unload_pipeline()
+    if tier["id"] == "z-image-turbo-gguf":
+        try:
+            gguf = _gguf_path()
+            if os.path.isfile(gguf):
+                os.remove(gguf)
+        except OSError as exc:  # noqa: BLE001
+            log.warning("failed to delete gguf for %s: %s", tier_id, exc)
+        _download_errors.pop(tier_id, None)
+        return
+    repo = tier.get("repo")
+    if repo:
+        hf_home = os.environ.get("HF_HOME", "")
+        cache_dir = (
+            Path(hf_home) / "hub"
+            if hf_home
+            else Path.home() / ".cache" / "huggingface" / "hub"
+        )
+        repo_dir = cache_dir / f"models--{repo.replace('/', '--')}"
+        shutil.rmtree(repo_dir, ignore_errors=True)
+    _download_errors.pop(tier_id, None)
+
+
 def _gguf_path() -> str:
     models_dir = os.getenv("OMNIGEN_MODELS_DIR", "")
     return os.path.join(models_dir, "z-image-turbo-Q4_1.gguf")

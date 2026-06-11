@@ -38,14 +38,14 @@ export function PriceHistoryChart({
 
   if (points.length === 0) {
     return (
-      <div className="flex h-56 items-center justify-center rounded-md border border-border bg-muted/30 text-sm text-muted-foreground">
+      <div className="flex h-56 items-center justify-center rounded-3xl border border-border bg-muted/30 text-sm text-muted-foreground">
         No history data yet — click Check now to record a point.
       </div>
     );
   }
 
   return (
-    <div className="rounded-md border border-border bg-muted/20 p-3">
+    <div className="rounded-3xl border border-border bg-muted/20 p-3">
       <div className="mb-1 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
         Price Graph
       </div>

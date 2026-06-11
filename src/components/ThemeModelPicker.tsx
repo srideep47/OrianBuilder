@@ -156,7 +156,7 @@ export function ThemeModelPicker({ value, onChange }: ThemeModelPickerProps) {
         render={
           <button
             type="button"
-            className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-9 w-full items-center justify-between rounded-3xl border border-input bg-transparent px-3 py-2 text-sm shadow-md transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           />
         }
       >

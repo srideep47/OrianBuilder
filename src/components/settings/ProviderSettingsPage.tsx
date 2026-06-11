@@ -354,7 +354,7 @@ export function ProviderSettingsPage({ provider }: ProviderSettingsPageProps) {
         )}
 
         {isOrianBuilder && !settingsLoading && (
-          <div className="mt-6 flex items-center justify-between p-4 bg-(--background-lightest) rounded-lg border">
+          <div className="mt-6 flex items-center justify-between p-4 bg-(--background-lightest) rounded-2xl border">
             <div>
               <h3 className="font-medium">Enable OrianBuilder Pro</h3>
               <p className="text-sm text-gray-600 dark:text-gray-400">

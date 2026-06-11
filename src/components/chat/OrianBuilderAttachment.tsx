@@ -54,7 +54,7 @@ export const OrianBuilderAttachment: React.FC<OrianBuilderAttachmentProps> = ({
     return (
       <>
         <div
-          className={`relative ${SIZE_CLASSES[size]} rounded-lg overflow-hidden border border-border/60 cursor-pointer hover:brightness-90 transition-all`}
+          className={`relative ${SIZE_CLASSES[size]} rounded-2xl overflow-hidden border border-border/60 cursor-pointer hover:brightness-90 transition-all`}
           onClick={() => setIsLightboxOpen(true)}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {

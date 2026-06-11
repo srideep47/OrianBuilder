@@ -185,7 +185,7 @@ export const PlanPanel: React.FC = () => {
               isSending={isSendingComments}
             />
           )}
-          <div className="border rounded-lg bg-card">
+          <div className="border rounded-2xl bg-card">
             <div className="px-4 py-3 border-b">
               <div className="flex items-center gap-2">
                 <FileText className="text-blue-500" size={20} />
@@ -229,7 +229,7 @@ export const PlanPanel: React.FC = () => {
         </>
       )}
 
-      <div className="border-t p-4 space-y-4 bg-background">
+      <div className="border-t p-4 space-y-4 bg-transparent">
         {isAccepted || isSavedPlan ? (
           <div className="flex items-center gap-2 text-green-700 dark:text-green-300">
             <Check size={16} />

@@ -74,8 +74,8 @@ export function VoiceAssistantModal({
               Ready to listen for your voice commands
             </p>
           </div>
-          <div className="w-12 h-12 rounded-full bg-purple-500/10 flex items-center justify-center flex-shrink-0">
-            <Zap className="w-6 h-6 text-purple-400" />
+          <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+            <Zap className="w-6 h-6 text-blue-400" />
           </div>
         </div>
 
@@ -86,7 +86,7 @@ export function VoiceAssistantModal({
             <p className="text-xs text-slate-500 font-semibold mb-2 text-right uppercase tracking-wider">
               YOU SAID
             </p>
-            <div className="bg-gradient-to-r from-purple-600 to-purple-500 rounded-2xl px-4 py-3 ml-auto max-w-xs shadow-lg">
+            <div className="bg-gradient-to-r from-blue-600 to-blue-500 rounded-2xl px-4 py-3 ml-auto max-w-xs shadow-lg">
               <p className="text-slate-100 text-sm font-medium leading-relaxed">
                 {context.userText || "Tap the mic and speak your question."}
               </p>
@@ -101,7 +101,7 @@ export function VoiceAssistantModal({
             <div className="bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3 max-w-xs">
               {isTranscribing ? (
                 <div className="flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
+                  <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
                   <p className="text-slate-300 text-sm">
                     Building your answer...
                   </p>
@@ -169,7 +169,7 @@ export function VoiceAssistantModal({
             onClick={stopAllAudio}
             disabled={!isRecording && !isSpeaking && !isTranscribing}
             className={cn(
-              "flex-1 flex flex-col items-center justify-center gap-1 py-4 rounded-xl transition-all border",
+              "flex-1 flex flex-col items-center justify-center gap-1 py-4 rounded-3xl transition-all border",
               isRecording || isSpeaking || isTranscribing
                 ? "bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600"
                 : "bg-slate-800 border-slate-700 text-slate-400 opacity-50 cursor-not-allowed",
@@ -184,12 +184,12 @@ export function VoiceAssistantModal({
             onClick={toggleRecording}
             disabled={isTranscribing || isSpeaking}
             className={cn(
-              "flex-1 flex flex-col items-center justify-center gap-1 py-5 rounded-xl transition-all border font-semibold text-white",
+              "flex-1 flex flex-col items-center justify-center gap-1 py-5 rounded-3xl transition-all border font-semibold text-white",
               isTranscribing || isSpeaking
                 ? "bg-slate-700 border-slate-600 opacity-50 cursor-not-allowed"
                 : isRecording
                   ? "bg-red-600 border-red-500 hover:bg-red-700 shadow-lg shadow-red-600/30"
-                  : "bg-purple-600 border-purple-500 hover:bg-purple-700 shadow-lg shadow-purple-600/30",
+                  : "bg-blue-600 border-blue-500 hover:bg-blue-700 shadow-lg shadow-blue-600/30",
             )}
             title={isRecording ? "Stop recording" : "Start recording"}
           >
@@ -203,7 +203,7 @@ export function VoiceAssistantModal({
             onClick={speakReply}
             disabled={!canSpeak}
             className={cn(
-              "flex-1 flex flex-col items-center justify-center gap-1 py-4 rounded-xl transition-all border",
+              "flex-1 flex flex-col items-center justify-center gap-1 py-4 rounded-3xl transition-all border",
               canSpeak
                 ? "bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600"
                 : "bg-slate-800 border-slate-700 text-slate-400 opacity-50 cursor-not-allowed",

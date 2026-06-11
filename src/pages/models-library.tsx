@@ -139,8 +139,8 @@ export default function ModelsLibraryPage() {
   );
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto bg-transparent">
-      <div className="border-b border-border/50 px-6 py-4 sticky top-0 z-10 bg-background/80 backdrop-blur-xl">
+    <div className="models-page flex flex-col h-full overflow-y-auto bg-transparent">
+      <div className="border-b border-border/50 px-6 py-4 sticky top-0 z-10 bg-transparent/80 backdrop-blur-xl">
         <div className="flex items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold flex items-center gap-2 page-title">
@@ -174,13 +174,13 @@ export default function ModelsLibraryPage() {
 
         {dirInfo && (
           <div className="grid grid-cols-3 gap-3 mt-3">
-            <div className="rounded-lg border bg-card p-3">
+            <div className="rounded-2xl border bg-card p-3">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
                 Models on disk
               </p>
               <p className="text-lg font-bold tabular-nums">{models.length}</p>
             </div>
-            <div className="rounded-lg border bg-card p-3">
+            <div className="rounded-2xl border bg-card p-3">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
                 Total size
               </p>
@@ -188,7 +188,7 @@ export default function ModelsLibraryPage() {
                 {fmtBytes(dirInfo.totalBytes)}
               </p>
             </div>
-            <div className="rounded-lg border bg-card p-3 truncate">
+            <div className="rounded-2xl border bg-card p-3 truncate">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wide flex items-center gap-1">
                 <Folder className="w-3 h-3" />
                 Storage path
@@ -203,7 +203,7 @@ export default function ModelsLibraryPage() {
 
       <div className="flex-1 px-6 py-5 space-y-3 max-w-5xl mx-auto w-full">
         {models.length === 0 ? (
-          <div className="text-center py-20 rounded-xl border bg-card">
+          <div className="text-center py-20 rounded-3xl border bg-card">
             <FolderOpen className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
             <p className="text-sm font-medium">No models downloaded yet</p>
             <p className="text-xs text-muted-foreground mt-1 mb-4">
@@ -253,7 +253,7 @@ function ModelRow({
   return (
     <div
       className={cn(
-        "rounded-xl border bg-card px-4 py-3 transition-colors",
+        "rounded-3xl border bg-card px-4 py-3 transition-colors",
         isLoaded
           ? "border-green-500/40 bg-green-50/30 dark:bg-green-900/10"
           : "hover:border-primary/30",

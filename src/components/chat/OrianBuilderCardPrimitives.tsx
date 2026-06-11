@@ -21,8 +21,8 @@ export type OrianBuilderAccentColor =
 
 const ACCENT_BORDER: Record<OrianBuilderAccentColor, string> = {
   blue: "border-l-blue-500",
-  purple: "border-l-purple-500",
-  violet: "border-l-violet-500",
+  purple: "border-l-blue-500",
+  violet: "border-l-indigo-500",
   red: "border-l-red-500",
   amber: "border-l-amber-500",
   green: "border-l-green-500",
@@ -35,10 +35,9 @@ const ACCENT_BORDER: Record<OrianBuilderAccentColor, string> = {
 
 const ACCENT_ICON_BG: Record<OrianBuilderAccentColor, string> = {
   blue: "bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400",
-  purple:
-    "bg-purple-100 dark:bg-purple-950 text-purple-600 dark:text-purple-400",
+  purple: "bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400",
   violet:
-    "bg-violet-100 dark:bg-violet-950 text-violet-600 dark:text-violet-400",
+    "bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400",
   red: "bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-400",
   amber: "bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400",
   green: "bg-green-100 dark:bg-green-950 text-green-600 dark:text-green-400",
@@ -54,9 +53,9 @@ const ACCENT_ICON_BG: Record<OrianBuilderAccentColor, string> = {
 const ACCENT_BADGE: Record<OrianBuilderAccentColor, string> = {
   blue: "bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 ring-blue-200 dark:ring-blue-800",
   purple:
-    "bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 ring-purple-200 dark:ring-purple-800",
+    "bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 ring-blue-200 dark:ring-blue-800",
   violet:
-    "bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 ring-violet-200 dark:ring-violet-800",
+    "bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 ring-indigo-200 dark:ring-indigo-800",
   red: "bg-red-50 dark:bg-red-950/60 text-red-700 dark:text-red-300 ring-red-200 dark:ring-red-800",
   amber:
     "bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 ring-amber-200 dark:ring-amber-800",
@@ -116,8 +115,8 @@ export function OrianBuilderCard({
 
   const variantClasses =
     variant === "ghost"
-      ? "hover:bg-(--background-lightest) rounded-lg"
-      : `bg-(--background-lightest) hover:bg-(--background-lighter) rounded-xl border border-border/60 ${leftBorder}`;
+      ? "hover:bg-(--background-lightest) rounded-2xl"
+      : `bg-(--background-lightest) hover:bg-(--background-lighter) rounded-3xl border border-border/60 ${leftBorder}`;
 
   return (
     <div
@@ -173,7 +172,7 @@ export function OrianBuilderCardHeader({
   return (
     <div className="flex items-center gap-2.5 px-3 py-2">
       <div
-        className={`flex items-center justify-center size-7 rounded-lg shrink-0 ${ACCENT_ICON_BG[accentColor]}`}
+        className={`flex items-center justify-center size-7 rounded-2xl shrink-0 ${ACCENT_ICON_BG[accentColor]}`}
       >
         {icon}
       </div>
@@ -198,7 +197,7 @@ export function OrianBuilderBadge({
 }: OrianBuilderBadgeProps) {
   return (
     <span
-      className={`inline-flex items-center text-[11px] font-semibold px-1.5 py-0.5 rounded-md ring-1 ring-inset ${ACCENT_BADGE[color]}`}
+      className={`inline-flex items-center text-[11px] font-semibold px-1.5 py-0.5 rounded-3xl ring-1 ring-inset ${ACCENT_BADGE[color]}`}
     >
       {children}
     </span>

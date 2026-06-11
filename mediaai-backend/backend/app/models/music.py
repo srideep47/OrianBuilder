@@ -288,6 +288,42 @@ def get_download_error(tier_id: str) -> str | None:
     return _download_errors.get(tier_id)
 
 
+def delete_tier(tier_id: str) -> None:
+    """Remove a downloaded music tier's weights so the UI can reclaim space.
+    The two ACE-Step tiers share the base components (vae, embeddings) and the
+    0.6B LM, so we always remove this tier's unique DiT decoder checkpoint
+    (``config_path`` — the largest, tier-specific component) and only remove the
+    shared base when no other tier still has its decoder on disk (otherwise the
+    sibling tier would break). tier_status recomputes from disk afterward."""
+    import shutil
+
+    tier = next((t for t in MUSIC_TIERS if t["id"] == tier_id), None)
+    if not tier:
+        return
+    root = _active_checkpoint_root(tier)
+    shutil.rmtree(root / tier["config_path"], ignore_errors=True)
+
+    others_present = any(
+        (root / other["config_path"]).is_dir()
+        for other in MUSIC_TIERS
+        if other["id"] != tier_id
+    )
+    if not others_present:
+        shared_dirs = [*COMMON_MAIN_COMPONENTS]
+        if tier["lm_model_path"]:
+            shared_dirs.append(tier["lm_model_path"])
+        for shared in shared_dirs:
+            shutil.rmtree(root / shared, ignore_errors=True)
+
+    try:
+        marker = _tier_marker_path(tier_id)
+        if marker.exists():
+            marker.unlink()
+    except OSError:
+        pass
+    _download_errors.pop(tier_id, None)
+
+
 def _snapshot_download_with_progress(
     *,
     repo_id: str,

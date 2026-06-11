@@ -60,8 +60,8 @@ export const AnnotatorToolbar = ({
                 className={cn(
                   "p-1 rounded transition-colors duration-200",
                   tool === "select"
-                    ? "bg-purple-500 text-white hover:bg-purple-600 dark:bg-purple-600 dark:hover:bg-purple-700"
-                    : " text-purple-700 hover:bg-purple-200  dark:text-purple-300 dark:hover:bg-purple-900",
+                    ? "bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700"
+                    : " text-blue-700 hover:bg-blue-200  dark:text-blue-300 dark:hover:bg-blue-900",
                 )}
               />
             }
@@ -80,8 +80,8 @@ export const AnnotatorToolbar = ({
                 className={cn(
                   "p-1 rounded transition-colors duration-200",
                   tool === "draw"
-                    ? "bg-purple-500 text-white hover:bg-purple-600 dark:bg-purple-600 dark:hover:bg-purple-700"
-                    : " text-purple-700 hover:bg-purple-200  dark:text-purple-300 dark:hover:bg-purple-900",
+                    ? "bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700"
+                    : " text-blue-700 hover:bg-blue-200  dark:text-blue-300 dark:hover:bg-blue-900",
                 )}
               />
             }
@@ -100,8 +100,8 @@ export const AnnotatorToolbar = ({
                 className={cn(
                   "p-1 rounded transition-colors duration-200",
                   tool === "text"
-                    ? "bg-purple-500 text-white hover:bg-purple-600 dark:bg-purple-600 dark:hover:bg-purple-700"
-                    : "text-purple-700 hover:bg-purple-200  dark:text-purple-300 dark:hover:bg-purple-900",
+                    ? "bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700"
+                    : "text-blue-700 hover:bg-blue-200  dark:text-blue-300 dark:hover:bg-blue-900",
                 )}
               />
             }
@@ -113,7 +113,7 @@ export const AnnotatorToolbar = ({
 
         <Tooltip>
           <TooltipTrigger>
-            <div className="p-1 rounded transition-colors duration-200 hover:bg-purple-200 dark:hover:bg-purple-900">
+            <div className="p-1 rounded transition-colors duration-200 hover:bg-blue-200 dark:hover:bg-blue-900">
               <ToolbarColorPicker color={color} onChange={onColorChange} />
             </div>
           </TooltipTrigger>
@@ -128,7 +128,7 @@ export const AnnotatorToolbar = ({
               <button
                 onClick={onDelete}
                 aria-label="Delete"
-                className="p-1 rounded transition-colors duration-200 text-purple-700 hover:bg-purple-200  dark:text-purple-300 dark:hover:bg-purple-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-1 rounded transition-colors duration-200 text-blue-700 hover:bg-blue-200  dark:text-blue-300 dark:hover:bg-blue-900 disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={!selectedId}
               />
             }
@@ -146,7 +146,7 @@ export const AnnotatorToolbar = ({
               <button
                 onClick={onUndo}
                 aria-label="Undo"
-                className="p-1 rounded transition-colors duration-200 text-purple-700 hover:bg-purple-200  dark:text-purple-300 dark:hover:bg-purple-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-1 rounded transition-colors duration-200 text-blue-700 hover:bg-blue-200  dark:text-blue-300 dark:hover:bg-blue-900 disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={historyStep === 0}
               />
             }
@@ -162,7 +162,7 @@ export const AnnotatorToolbar = ({
               <button
                 onClick={onRedo}
                 aria-label="Redo"
-                className="p-1 rounded transition-colors duration-200 text-purple-700 hover:bg-purple-200  dark:text-purple-300 dark:hover:bg-purple-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-1 rounded transition-colors duration-200 text-blue-700 hover:bg-blue-200  dark:text-blue-300 dark:hover:bg-blue-900 disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={historyStep === historyLength - 1}
               />
             }
@@ -180,7 +180,7 @@ export const AnnotatorToolbar = ({
               <button
                 onClick={onSubmit}
                 aria-label="Add to Chat"
-                className="p-1 rounded transition-colors duration-200 text-purple-700 hover:bg-purple-200 dark:text-purple-300 dark:hover:bg-purple-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-1 rounded transition-colors duration-200 text-blue-700 hover:bg-blue-200 dark:text-blue-300 dark:hover:bg-blue-900 disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={!hasSubmitHandler}
               />
             }
@@ -195,7 +195,7 @@ export const AnnotatorToolbar = ({
               <button
                 onClick={onDeactivate}
                 aria-label="Close Annotator"
-                className="p-1 rounded transition-colors duration-200 text-purple-700 hover:bg-purple-200 dark:text-purple-300 dark:hover:bg-purple-900"
+                className="p-1 rounded transition-colors duration-200 text-blue-700 hover:bg-blue-200 dark:text-blue-300 dark:hover:bg-blue-900"
               />
             }
           >

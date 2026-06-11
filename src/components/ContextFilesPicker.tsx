@@ -185,7 +185,7 @@ export function ContextFilesPicker() {
                 {contextPaths.map((p: ContextPathResult) => (
                   <div
                     key={p.globPath}
-                    className="flex items-center justify-between gap-2 rounded-md border p-2"
+                    className="flex items-center justify-between gap-2 rounded-3xl border p-2"
                   >
                     <div className="flex flex-1 flex-col overflow-hidden">
                       <Tooltip>
@@ -214,7 +214,7 @@ export function ContextFilesPicker() {
                 ))}
               </div>
             ) : (
-              <div className="rounded-md border border-dashed p-4 text-center">
+              <div className="rounded-3xl border border-dashed p-4 text-center">
                 <p className="text-sm text-muted-foreground">
                   {isSmartContextEnabled
                     ? "OrianBuilder will use Smart Context to automatically find the most relevant files to use as context."
@@ -275,7 +275,7 @@ export function ContextFilesPicker() {
                   {excludePaths.map((p: ContextPathResult) => (
                     <div
                       key={p.globPath}
-                      className="flex items-center justify-between gap-2 rounded-md border p-2 border-red-200"
+                      className="flex items-center justify-between gap-2 rounded-3xl border p-2 border-red-200"
                     >
                       <div className="flex flex-1 flex-col overflow-hidden">
                         <Tooltip>
@@ -360,7 +360,7 @@ export function ContextFilesPicker() {
                     {smartContextAutoIncludes.map((p: ContextPathResult) => (
                       <div
                         key={p.globPath}
-                        className="flex items-center justify-between gap-2 rounded-md border p-2"
+                        className="flex items-center justify-between gap-2 rounded-3xl border p-2"
                       >
                         <div className="flex flex-1 flex-col overflow-hidden">
                           <Tooltip>

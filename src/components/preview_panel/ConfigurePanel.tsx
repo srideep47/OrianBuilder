@@ -210,7 +210,7 @@ const AppCommandsSection = ({
           </div>
         ) : hasCustomCommands ? (
           <div className="space-y-3">
-            <div className="p-3 border rounded-md bg-muted/30">
+            <div className="p-3 border rounded-3xl bg-muted/30">
               <div className="space-y-2">
                 <div>
                   <span className="text-xs text-muted-foreground">
@@ -497,7 +497,7 @@ export const ConfigurePanel = () => {
         <CardContent className="space-y-4">
           {/* Add new environment variable form */}
           {isAddingNew ? (
-            <div className="space-y-3 p-3 border rounded-md bg-muted/50">
+            <div className="space-y-3 p-3 border rounded-3xl bg-muted/50">
               <div className="space-y-2">
                 <Label htmlFor="new-key">Key</Label>
                 <Input
@@ -553,7 +553,7 @@ export const ConfigurePanel = () => {
               envVars.map((envVar) => (
                 <div
                   key={envVar.key}
-                  className="flex items-center space-x-2 p-2 border rounded-md"
+                  className="flex items-center space-x-2 p-2 border rounded-3xl"
                 >
                   {editingKey === envVar.key ? (
                     <>

@@ -28,7 +28,7 @@ export function SetupProviderCard({
   return (
     <div
       className={cn(
-        "p-3 border rounded-lg cursor-pointer transition-colors relative",
+        "p-3 border rounded-2xl cursor-pointer transition-colors relative",
         styles.container,
         className,
       )}
@@ -100,13 +100,13 @@ function getVariantStyles(variant: SetupProviderVariant) {
     case "orianbuilder":
       return {
         container:
-          "bg-primary/10 border-primary/50 dark:bg-violet-800/50 dark:border-violet-700 hover:bg-violet-100 dark:hover:bg-violet-900/70",
-        iconWrapper: "bg-primary/5 dark:bg-violet-800",
-        titleColor: "text-violet-800 dark:text-violet-300",
-        subtitleColor: "text-violet-600 dark:text-violet-400",
+          "bg-primary/10 border-primary/50 dark:bg-indigo-800/50 dark:border-indigo-700 hover:bg-indigo-100 dark:hover:bg-indigo-900/70",
+        iconWrapper: "bg-primary/5 dark:bg-indigo-800",
+        titleColor: "text-indigo-800 dark:text-indigo-300",
+        subtitleColor: "text-indigo-600 dark:text-indigo-400",
         chipColor:
-          "text-violet-700 dark:text-violet-200 bg-violet-100 dark:bg-violet-900 border border-violet-200 dark:border-violet-700",
-        chevronColor: "text-violet-600 dark:text-violet-400",
+          "text-indigo-700 dark:text-indigo-200 bg-indigo-100 dark:bg-indigo-900 border border-indigo-200 dark:border-indigo-700",
+        chevronColor: "text-indigo-600 dark:text-indigo-400",
       } as const;
   }
 }

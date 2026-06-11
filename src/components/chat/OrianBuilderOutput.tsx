@@ -83,7 +83,7 @@ export const OrianBuilderOutput: React.FC<OrianBuilderOutputProps> = ({
           {!isStreaming && (
             <button
               onClick={handleAIFix}
-              className="cursor-pointer flex items-center justify-center bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800 text-white rounded-md text-xs px-2.5 py-1 h-6 transition-colors"
+              className="cursor-pointer flex items-center justify-center bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800 text-white rounded-3xl text-xs px-2.5 py-1 h-6 transition-colors"
             >
               <Sparkles size={13} className="mr-1" />
               <span>Fix with AI</span>

@@ -193,7 +193,7 @@ export function UncommittedFilesBanner({ appId }: UncommittedFilesBannerProps) {
                 Changed files ({uncommittedFiles.length})
               </p>
               <div
-                className="max-h-60 overflow-y-auto rounded-md border p-2 space-y-1"
+                className="max-h-60 overflow-y-auto rounded-3xl border p-2 space-y-1"
                 data-testid="changed-files-list"
               >
                 {uncommittedFiles.map((file) => (
@@ -237,7 +237,7 @@ export function UncommittedFilesBanner({ appId }: UncommittedFilesBannerProps) {
               role="alertdialog"
               aria-labelledby="discard-confirm-title"
               aria-describedby="discard-confirm-desc"
-              className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3"
+              className="flex items-start gap-2 rounded-3xl border border-destructive/50 bg-destructive/10 p-3"
             >
               <TriangleAlert className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
               <div className="flex-1 space-y-2">

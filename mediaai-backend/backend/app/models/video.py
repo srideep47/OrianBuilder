@@ -513,6 +513,30 @@ def get_download_error(tier_id: str) -> str | None:
     return _download_errors.get(tier_id)
 
 
+def delete_tier(tier_id: str) -> None:
+    """Remove a downloaded video tier's weights from the HF cache so the UI can
+    reclaim space. Removes every repo the tier fetches (tier_download_specs).
+    Tiers that share a repo (e.g. the two LTX-2.3 tiers reuse the same diffusers
+    repo + text encoder) will both report not_downloaded afterward — that's
+    correct, the shared weights are gone and either can be re-downloaded."""
+    import shutil
+
+    global _pipeline, _pipeline_tier_id
+
+    tier = next((t for t in VIDEO_TIERS if t["id"] == tier_id), None)
+    if not tier:
+        return
+    # Drop the cached pipeline if it's this tier so the files aren't held open.
+    with _lock:
+        if _pipeline_tier_id == tier_id:
+            _pipeline = None
+            _pipeline_tier_id = None
+            gc.collect()
+    for spec in tier_download_specs(tier):
+        shutil.rmtree(_repo_dir(spec["repo_id"]), ignore_errors=True)
+    _download_errors.pop(tier_id, None)
+
+
 def _dir_size_bytes(path: Path) -> int:
     total = 0
     if not path.exists():

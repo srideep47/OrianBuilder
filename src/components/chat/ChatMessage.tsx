@@ -184,7 +184,7 @@ const ChatMessage = ({
         {/* Show message box for assistant messages or user messages with text */}
         {(message.role === "assistant" || hasUserText) && (
           <div
-            className={`rounded-lg p-2 ${
+            className={`rounded-2xl p-2 ${
               message.role === "assistant" ? "" : "ml-24 bg-(--sidebar-accent)"
             }`}
           >

@@ -33,7 +33,7 @@ export function AppShowcaseCard({
       onClick={() => onClick(app.id)}
       title={app.name}
       data-testid={`app-showcase-card-${app.name}`}
-      className="group relative w-full aspect-[4/3] rounded-xl overflow-hidden border border-border bg-muted hover:border-primary/40 hover:shadow-md transition-all duration-200 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+      className="group relative w-full aspect-[4/3] rounded-3xl overflow-hidden border border-border bg-muted hover:border-primary/40 hover:shadow-md transition-all duration-200 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
     >
       {showImage ? (
         <img

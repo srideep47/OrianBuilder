@@ -172,7 +172,7 @@ function ReviewDetailsSection({
   data?: unknown;
 }) {
   return (
-    <details className="border rounded-md p-3">
+    <details className="border rounded-3xl p-3">
       <summary className="font-medium cursor-pointer">{title}</summary>
       <div
         className={`text-sm bg-slate-50 dark:bg-slate-900 rounded p-2 max-h-40 overflow-y-auto mt-2 ${mono !== false ? "font-mono" : ""} whitespace-pre-wrap`}
@@ -205,7 +205,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="shrink-0 p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+      className="shrink-0 p-1.5 rounded-3xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
       aria-label="Copy session ID"
     >
       <AnimatePresence mode="wait" initial={false}>
@@ -454,7 +454,7 @@ ${formatLogsSection(debugInfo)}
           <Button
             variant="default"
             onClick={() => setIsHelpBotOpen(true)}
-            className="w-full py-6 border-primary/50 shadow-sm shadow-primary/10 transition-all hover:shadow-md hover:shadow-primary/15"
+            className="w-full py-6 border-primary/50 shadow-md shadow-primary/10 transition-all hover:shadow-md hover:shadow-primary/15"
           >
             <SparklesIcon className="mr-2 h-5 w-5" /> Chat with OrianBuilder
             help bot (Pro)
@@ -483,7 +483,7 @@ ${formatLogsSection(debugInfo)}
         {/* Report options */}
         <div className="grid grid-cols-1 gap-3">
           {/* Upload Chat Session */}
-          <div className="border rounded-lg p-4 space-y-3 relative">
+          <div className="border rounded-2xl p-4 space-y-3 relative">
             <div className="flex items-center gap-2">
               <MessageSquareIcon className="h-4 w-4 text-primary" />
               <span className="text-sm font-semibold">
@@ -512,7 +512,7 @@ ${formatLogsSection(debugInfo)}
           </div>
 
           {/* Report a Bug */}
-          <div className="border rounded-lg p-4 space-y-3">
+          <div className="border rounded-2xl p-4 space-y-3">
             <div className="flex items-center gap-2">
               <BugIcon className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-semibold">Non-AI issues</span>
@@ -607,7 +607,7 @@ ${formatLogsSection(debugInfo)}
           />
         </div>
 
-        <div className="flex justify-between mt-4 pt-2 sticky bottom-0 bg-background">
+        <div className="flex justify-between mt-4 pt-2 sticky bottom-0 bg-transparent">
           <Button
             variant="outline"
             onClick={handleCancelReview}
@@ -643,7 +643,7 @@ ${formatLogsSection(debugInfo)}
         <span className="text-base font-medium">Chat session uploaded</span>
       </div>
 
-      <div className="bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-md flex items-center gap-2 font-mono text-sm mt-2">
+      <div className="bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-3xl flex items-center gap-2 font-mono text-sm mt-2">
         <span className="truncate flex-1 select-all">{sessionId}</span>
         <CopyButton text={sessionId} />
       </div>
@@ -657,7 +657,7 @@ ${formatLogsSection(debugInfo)}
         Create GitHub Issue
       </Button>
 
-      <div className="border border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-950/30 rounded-lg p-3 mt-3">
+      <div className="border border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-950/30 rounded-2xl p-3 mt-3">
         <div className="flex items-start gap-2">
           <AlertCircleIcon className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
           <p className="text-sm text-amber-700 dark:text-amber-400/80">

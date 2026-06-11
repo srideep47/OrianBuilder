@@ -407,7 +407,7 @@ export default function HomePage() {
             <div className="flex-1">
               <iframe
                 src={releaseUrl}
-                className="w-full h-full border-0 rounded-lg"
+                className="w-full h-full border-0 rounded-2xl"
                 title={t("releaseNotesTitle", { version: appVersion })}
               />
             </div>
@@ -470,7 +470,7 @@ export default function HomePage() {
           {chatMessages.map((msg, i) =>
             msg.role === "user" ? (
               <div key={i} className="flex justify-end">
-                <div className="bg-primary/15 border border-primary/25 text-white rounded-2xl px-4 py-2.5 max-w-[72%] text-sm whitespace-pre-wrap">
+                <div className="rounded-[18px] border border-primary/20 bg-primary px-4 py-2.5 max-w-[72%] text-sm text-primary-foreground shadow-[0_12px_32px_rgba(0,122,255,0.22)] whitespace-pre-wrap">
                   {msg.content}
                 </div>
               </div>
@@ -479,7 +479,7 @@ export default function HomePage() {
                 <div className="w-7 h-7 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center flex-shrink-0 mt-0.5 text-xs text-primary font-bold select-none">
                   O
                 </div>
-                <div className="bg-white/[0.04] border border-white/10 text-white/85 rounded-2xl px-4 py-3 max-w-[72%] text-sm leading-relaxed min-h-[2.5rem] prose dark:prose-invert prose-headings:mb-2 prose-p:my-1 prose-pre:my-2 prose-ol:my-2 prose-ul:my-2 prose-li:my-0.5 prose-strong:text-white/95 prose-code:text-white/90">
+                <div className="liquid-glass border border-black/[0.06] text-foreground rounded-[18px] px-4 py-3 max-w-[72%] text-sm leading-relaxed min-h-[2.5rem] prose dark:prose-invert prose-headings:mb-2 prose-p:my-1 prose-pre:my-2 prose-ol:my-2 prose-ul:my-2 prose-li:my-0.5 dark:border-white/[0.08]">
                   {msg.content ? (
                     <OrianBuilderMarkdownParser
                       content={msg.content}
@@ -488,9 +488,9 @@ export default function HomePage() {
                     />
                   ) : isReplying && i === chatMessages.length - 1 ? (
                     <span className="flex gap-1 items-center h-5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-bounce [animation-delay:0ms]" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-bounce [animation-delay:150ms]" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-white/50 animate-bounce [animation-delay:300ms]" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:0ms]" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:150ms]" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:300ms]" />
                     </span>
                   ) : null}
                 </div>
@@ -503,7 +503,7 @@ export default function HomePage() {
       </div>
 
       {/* Input pinned to bottom */}
-      <div className="shrink-0 bg-background/80 backdrop-blur-sm">
+      <div className="shrink-0 bg-transparent/80 backdrop-blur-sm">
         <div className="w-full max-w-4xl mx-auto px-3 sm:px-6 lg:px-8 py-3">
           <HomeChatInput
             onSubmit={handleSubmit}

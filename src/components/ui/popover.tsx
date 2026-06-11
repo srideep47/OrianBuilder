@@ -35,7 +35,7 @@ function PopoverContent({
           data-slot="popover-content"
           role="dialog"
           className={cn(
-            "z-50 w-72 rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-none data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+            "mac-popover z-50 w-72 rounded-[20px] border border-black/[0.06] bg-popover/86 p-4 text-popover-foreground shadow-[0_20px_56px_rgba(15,23,42,0.16)] outline-none data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 dark:border-white/[0.08] dark:shadow-[0_20px_56px_rgba(0,0,0,0.42)]",
             className,
           )}
           {...props}

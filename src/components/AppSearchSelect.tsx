@@ -42,7 +42,7 @@ export function AppSearchSelect({
         aria-label="Select target app"
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex h-9 w-full items-center justify-between rounded-3xl border border-input bg-transparent px-3 py-2 text-sm shadow-xs disabled:cursor-not-allowed disabled:opacity-50"
       >
         <span className={selectedApp ? "" : "text-muted-foreground"}>
           {selectedApp?.name ?? "Select an app..."}

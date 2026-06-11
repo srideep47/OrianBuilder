@@ -365,7 +365,7 @@ export function OrianBuilderAppMediaFolder({
     <div
       data-testid={`media-folder-${appId}`}
       className={cn(
-        "border rounded-lg p-4 bg-[--background-lightest] relative cursor-pointer",
+        "border rounded-2xl p-4 bg-[--background-lightest] relative cursor-pointer",
         "hover:border-primary/30 transition-colors",
       )}
       role="button"
@@ -389,7 +389,7 @@ export function OrianBuilderAppMediaFolder({
         Media
       </Badge>
       <div className="flex items-center gap-3">
-        <div className="w-14 h-14 flex items-center justify-center rounded-lg bg-amber-50 dark:bg-amber-900/20">
+        <div className="w-14 h-14 flex items-center justify-center rounded-2xl bg-amber-50 dark:bg-amber-900/20">
           <Folder className="h-8 w-8 text-amber-500" fill="currentColor" />
         </div>
         <div className="flex-1 min-w-0">

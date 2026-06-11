@@ -141,7 +141,7 @@ export function ProviderSettingsGrid() {
                               data-testid="edit-custom-provider"
                               variant="ghost"
                               size="sm"
-                              className="h-8 w-8 p-0 hover:bg-muted rounded-md"
+                              className="h-8 w-8 p-0 hover:bg-muted rounded-3xl"
                               onClick={() => handleEditProvider(provider)}
                             />
                           }
@@ -159,7 +159,7 @@ export function ProviderSettingsGrid() {
                               data-testid="delete-custom-provider"
                               variant="ghost"
                               size="sm"
-                              className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10 rounded-md"
+                              className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10 rounded-3xl"
                               onClick={() => setProviderToDelete(provider.id)}
                             />
                           }

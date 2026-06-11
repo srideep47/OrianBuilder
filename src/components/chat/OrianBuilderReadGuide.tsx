@@ -54,7 +54,7 @@ export function OrianBuilderReadGuide({
       </OrianBuilderCardHeader>
       <OrianBuilderCardContent isExpanded={isExpanded}>
         {children && (
-          <div className="p-3 text-xs font-mono whitespace-pre-wrap max-h-80 overflow-y-auto bg-muted/20 rounded-lg">
+          <div className="p-3 text-xs font-mono whitespace-pre-wrap max-h-80 overflow-y-auto bg-muted/20 rounded-2xl">
             {children}
           </div>
         )}

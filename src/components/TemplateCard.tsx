@@ -68,7 +68,7 @@ export const TemplateCard: React.FC<TemplateCardProps> = ({
       <div
         onClick={handleCardClick}
         className={`
-          bg-card border border-border/60 rounded-xl shadow-sm overflow-hidden
+          bg-card border border-border/60 rounded-3xl shadow-md overflow-hidden
           transform transition-all duration-300 ease-in-out
           cursor-pointer group relative
           ${
@@ -87,7 +87,7 @@ export const TemplateCard: React.FC<TemplateCardProps> = ({
             }`}
           />
           {isSelected && (
-            <span className="absolute top-3 right-3 bg-blue-600 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow-lg">
+            <span className="absolute top-3 right-3 bg-blue-600 text-white text-xs font-bold px-3 py-1.5 rounded-3xl shadow-lg">
               Selected
             </span>
           )}

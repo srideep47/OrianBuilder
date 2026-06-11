@@ -116,7 +116,7 @@ export const OrianBuilderProblemSummary: React.FC<
       {/* Content area - show individual problems */}
       <OrianBuilderCardContent isExpanded={isContentVisible}>
         {totalProblems > 0 ? (
-          <div className="bg-muted/20 rounded-lg border border-border/40 overflow-hidden">
+          <div className="bg-muted/20 rounded-2xl border border-border/40 overflow-hidden">
             {problems.map((problem, index) => (
               <ProblemItem
                 key={`${problem.file}-${problem.line}-${problem.column}-${index}`}
@@ -127,7 +127,7 @@ export const OrianBuilderProblemSummary: React.FC<
           </div>
         ) : (
           children && (
-            <pre className="whitespace-pre-wrap font-mono text-xs bg-muted/20 p-3 rounded-lg text-muted-foreground">
+            <pre className="whitespace-pre-wrap font-mono text-xs bg-muted/20 p-3 rounded-2xl text-muted-foreground">
               {children}
             </pre>
           )
