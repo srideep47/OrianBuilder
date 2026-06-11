@@ -152,7 +152,9 @@ def pick_best_music_tier(forced_tier_id: Optional[str] = None) -> MusicTier:
         for tier in MUSIC_TIERS:
             if tier["id"] == forced_tier_id:
                 return tier
-        raise ValueError(f"Unknown music tier: {forced_tier_id!r}")
+        # Unknown/stale tier ids (old settings, renamed tiers) degrade to
+        # auto-selection instead of failing the whole generation.
+        log.warning("unknown music tier %r — auto-selecting instead", forced_tier_id)
 
     backend = get_backend()
     vram = get_vram_mb()

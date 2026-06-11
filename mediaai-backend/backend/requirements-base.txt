@@ -8,3 +8,5 @@ scipy>=1.11.0
 soundfile>=0.13.0
 imageio-ffmpeg>=0.5.0
 python-multipart>=0.0.9
+# RAM-aware model tier selection (models/video.py) — keeps big models off small machines.
+psutil>=5.9.0

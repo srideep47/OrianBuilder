@@ -8,7 +8,7 @@ const MODEL_LABELS: Record<string, string> = {
   text: "Phi-3 mini (text)",
   image: "Stable Diffusion 1.5 (image)",
   audio: "SpeechT5 (speech)",
-  video: "Text-to-video (video)",
+  video: "Video model (hardware-matched tier)",
   "image-sd-turbo": "SD Turbo (image)",
   "image-z-image-turbo": "Z-Image Turbo (image)",
   whisper: "Whisper (transcription)",
@@ -19,9 +19,10 @@ const MODEL_LABELS: Record<string, string> = {
  * user's per-modality selection and what's already on disk.
  *
  * Built on the shared catalog's `resolveDownloadPlan` (image/speech tiers that
- * have a one-click pre-download id), plus the generic ModelScope `video`
- * weights — video tiers like LTX have no pre-download id and otherwise fetch on
- * first use, which would stall a storyboard mid-run on a multi-GB download.
+ * have a one-click pre-download id), plus the `video` group — which the
+ * backend's download script resolves to the tier matching THIS machine
+ * (LTX / AnimateDiff mid / AnimateDiff small / CPU), so storyboards never
+ * stall mid-run on a first-use multi-GB fetch.
  * Pure + deterministic so it can be unit-tested directly.
  */
 export function planModelDownloads(

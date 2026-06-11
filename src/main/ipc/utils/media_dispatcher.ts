@@ -1,10 +1,13 @@
 import log from "electron-log";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import { AUTO_TIER_ID } from "@/shared/orion_media_catalog";
 import {
   getOrchestrator,
   pickBestImageTier,
   pickBestAudioTtsTier,
+  pickBestMusicTier,
   pickBestVideoTier,
   type MediaGenerationRequest,
   type MediaGenerationResult,
@@ -13,6 +16,7 @@ import {
 import { generateImageViaCloud } from "./cloud_image_generator";
 import { generateImageViaLocalBackend } from "./local_image_generator";
 import { generateAudioViaLocalBackend } from "./local_audio_generator";
+import { generateMusicViaLocalBackend } from "./local_music_generator";
 import { generateVideoViaLocalBackend } from "./local_video_generator";
 import { getAvailableVramMb } from "./vram_accounting";
 import { getCachedHardwareProfile } from "@/main/hardware/detect";
@@ -48,14 +52,22 @@ async function pickTierForRequest(
     const profile = await getCachedHardwareProfile();
     const live = await getAvailableVramMb(profile);
     const projected = live + estimateFreedLlmVramMb(getLastLlmParams());
+    // Video tiers are RAM-gated too (LTX-2 trades VRAM for system RAM via
+    // offload) — pass total RAM so selection matches the Python backend's.
+    const totalRamMb = Math.round(os.totalmem() / (1024 * 1024));
     switch (request.modelType) {
       case "image":
         return pickBestImageTier(projected, request.preferredQuality);
       case "audio":
-      case "music":
         return pickBestAudioTtsTier(projected, request.preferredQuality);
+      case "music":
+        return pickBestMusicTier(projected, request.preferredQuality);
       case "video":
-        return pickBestVideoTier(projected, request.preferredQuality);
+        return pickBestVideoTier(
+          projected,
+          request.preferredQuality,
+          totalRamMb,
+        );
       default:
         return null;
     }
@@ -69,9 +81,10 @@ async function dispatch(
   request: MediaGenerationRequest,
 ): Promise<MediaGenerationResult> {
   // An explicit modelId (Orion Factory user selection) wins over automatic
-  // VRAM-based tier selection; only `tier.id` is needed downstream.
+  // VRAM-based tier selection; only `tier.id` is needed downstream. The
+  // "auto" sentinel means "no explicit choice" — fall through to selection.
   let tierId: string | null;
-  if (request.modelId) {
+  if (request.modelId && request.modelId !== AUTO_TIER_ID) {
     tierId = request.modelId;
     logger.info(
       `tier-selected ${request.modelType}: ${tierId} (user-selected)`,
@@ -97,7 +110,7 @@ async function dispatch(
       const local = await generateImageViaLocalBackend(
         request.prompt,
         request.outputPath,
-        { ...request.options, tier: tierId },
+        { ...request.options, tier: tierId, onProgress: request.onProgress },
       );
       if (local.success) {
         logger.info(`local image gen succeeded (tier=${local.tier ?? "?"})`);
@@ -117,12 +130,30 @@ async function dispatch(
       );
       return writePlaceholder(request);
     }
-    case "audio":
     case "music": {
+      // Music goes to the ACE-Step pipeline. (It used to be mis-routed to the
+      // TTS endpoint, which read the prompt aloud instead of composing.)
+      const music = await generateMusicViaLocalBackend(
+        request.prompt,
+        request.outputPath,
+        { ...request.options, tier: tierId, onProgress: request.onProgress },
+      );
+      if (music.success) {
+        logger.info(`local music gen succeeded (tier=${music.tier ?? "?"})`);
+        return music;
+      }
+      return {
+        success: false,
+        outputPath: request.outputPath,
+        durationMs: music.durationMs,
+        error: music.error ?? "music generation failed",
+      };
+    }
+    case "audio": {
       const audio = await generateAudioViaLocalBackend(
         request.prompt,
         request.outputPath,
-        { ...request.options, tier: tierId },
+        { ...request.options, tier: tierId, onProgress: request.onProgress },
       );
       if (audio.success) {
         logger.info(`local audio gen succeeded (tier=${audio.tier ?? "?"})`);
@@ -139,7 +170,7 @@ async function dispatch(
       const video = await generateVideoViaLocalBackend(
         request.prompt,
         request.outputPath,
-        { ...request.options, tier: tierId },
+        { ...request.options, tier: tierId, onProgress: request.onProgress },
       );
       if (video.success) {
         logger.info(`local video gen succeeded (tier=${video.tier ?? "?"})`);

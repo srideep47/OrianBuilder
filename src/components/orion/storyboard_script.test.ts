@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { looksLikeStoryboardScript } from "./storyboard_script";
+import {
+  detectAspectRatio,
+  looksLikeStoryboardScript,
+} from "./storyboard_script";
 
 // A trimmed version of the kind of authored script Orion routes to a storyboard.
 const BABY_SHARK_SCRIPT = `Style: Bright 2D cartoon animation, cheerful colors.
@@ -49,5 +52,29 @@ A neon sign flickers in the storyboard sequence.`;
     const script = `Scene 1) A wide establishing shot of mountains at dawn.
 Scene 2) Close on a hiker cresting the ridge as the sun rises.`;
     expect(looksLikeStoryboardScript(script)).toBe(true);
+  });
+});
+
+describe("detectAspectRatio", () => {
+  it("reads explicit ratios in any common spelling", () => {
+    expect(detectAspectRatio("render this in 9:16 please")).toBe("9:16");
+    expect(detectAspectRatio("a 16x9 cinematic piece")).toBe("16:9");
+    expect(detectAspectRatio("output at 4:3")).toBe("4:3");
+  });
+
+  it("maps orientation/platform words to ratios", () => {
+    expect(detectAspectRatio("make it vertical for shorts")).toBe("9:16");
+    expect(detectAspectRatio("a portrait reel for TikTok")).toBe("9:16");
+    expect(detectAspectRatio("widescreen landscape film")).toBe("16:9");
+    expect(detectAspectRatio("a square loop")).toBe("1:1");
+  });
+
+  it("explicit ratio wins over orientation words", () => {
+    expect(detectAspectRatio("a vertical feel but render 16:9")).toBe("16:9");
+  });
+
+  it("returns null when the script doesn't say", () => {
+    expect(detectAspectRatio(BABY_SHARK_SCRIPT)).toBeNull();
+    expect(detectAspectRatio("a calm ocean video")).toBeNull();
   });
 });

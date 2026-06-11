@@ -136,7 +136,10 @@ export function add(
   return full;
 }
 
-export function update(id: string, patch: Partial<ScheduleJob>): ScheduleJob | null {
+export function update(
+  id: string,
+  patch: Partial<ScheduleJob>,
+): ScheduleJob | null {
   const jobs = readAll();
   const i = jobs.findIndex((j) => j.id === id);
   if (i < 0) return null;

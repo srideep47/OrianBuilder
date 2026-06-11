@@ -187,6 +187,30 @@ _pipeline_tier_id: Optional[str] = None
 _pipeline_device: Optional[str] = None   # track which device the cache is on
 
 
+def _place_sd_pipeline(pipe, device: str):
+    """Move an SD-family pipeline to its device. GTX 16xx cards run fp32
+    (get_torch_dtype upcasts them because fp16 UNets emit NaNs there), and
+    fp32 SD weights (~5 GB) don't fit a 4 GB card whole — module-level CPU
+    offload keeps peak VRAM under ~3.7 GB (measured on a GTX 1650 Ti)."""
+    import torch  # type: ignore
+
+    from ..hardware import is_fp16_unreliable_gpu
+
+    needs_offload = (
+        device == "cuda"
+        and is_fp16_unreliable_gpu()
+        and get_torch_dtype() == torch.float32
+    )
+    if needs_offload:
+        log.info("GTX 16xx-class GPU — fp32 pipeline with model CPU offload")
+        try:
+            pipe.enable_model_cpu_offload()
+            return pipe
+        except Exception as exc:  # noqa: BLE001
+            log.warning("model_cpu_offload failed (%s); using plain .to()", exc)
+    return pipe.to(device)
+
+
 def _enable_memory_savers(pipe) -> None:
     """Apply the cheapest memory savers that don't hurt quality.
     These are no-ops for models that don't support them."""
@@ -327,10 +351,12 @@ def get_pipeline(forced_tier_id: Optional[str] = None):
     elif tier["id"] == "sd-turbo":
         from diffusers import AutoPipelineForText2Image  # type: ignore
 
+        # variant="fp16" reuses the cached fp16 shards; torch_dtype decides the
+        # compute precision (fp32 on GTX 16xx — see get_torch_dtype).
         pipe = AutoPipelineForText2Image.from_pretrained(
             tier["repo"], torch_dtype=dtype, variant="fp16"
         )
-        pipe = pipe.to(device)
+        pipe = _place_sd_pipeline(pipe, device)
         _enable_memory_savers(pipe)
     elif tier["id"] == "sdxl-turbo":
         from diffusers import AutoPipelineForText2Image  # type: ignore
@@ -338,7 +364,7 @@ def get_pipeline(forced_tier_id: Optional[str] = None):
         pipe = AutoPipelineForText2Image.from_pretrained(
             tier["repo"], torch_dtype=dtype, variant="fp16"
         )
-        pipe = pipe.to(device)
+        pipe = _place_sd_pipeline(pipe, device)
         _enable_memory_savers(pipe)
     elif tier["id"] == "sd-1.5":
         from diffusers import StableDiffusionPipeline  # type: ignore
@@ -346,7 +372,7 @@ def get_pipeline(forced_tier_id: Optional[str] = None):
         pipe = StableDiffusionPipeline.from_pretrained(
             tier["repo"], torch_dtype=dtype, safety_checker=None
         )
-        pipe = pipe.to(device)
+        pipe = _place_sd_pipeline(pipe, device)
         _enable_memory_savers(pipe)
     else:
         # CPU/ONNX fallback — defer to the existing service so we don't duplicate

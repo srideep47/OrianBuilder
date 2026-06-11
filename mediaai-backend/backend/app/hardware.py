@@ -93,8 +93,12 @@ def get_torch_dtype():
         return None
     backend = get_backend()
     if backend == "cuda":
-        # fp16 works on all CUDA GPUs (Kepler+); bfloat16 needs Ampere+ but
-        # fp16 is the safer default that still gives full GPU speed.
+        # fp16 works on most CUDA GPUs (Kepler+), but GTX 16xx cards produce
+        # NaN activations in fp16 diffusion UNets (verified: black images on a
+        # GTX 1650 Ti even with attention upcast). Those cards must run fp32 —
+        # pair with CPU offload so the weights still fit a 4 GB card.
+        if is_fp16_unreliable_gpu():
+            return torch.float32
         return torch.float16
     if backend in ("rocm", "mps", "metal"):
         return torch.float16
@@ -103,10 +107,48 @@ def get_torch_dtype():
     return torch.float32
 
 
+def is_fp16_unreliable_gpu() -> bool:
+    """True for GPUs whose float16 stable-diffusion path is known-broken.
+
+    GTX 16xx (Turing TU11x) cards famously emit NaNs during fp16 VAE decode,
+    which surfaces as solid-black images/videos. The standard community fix
+    (A1111's --no-half-vae) is to run the VAE in float32 — see
+    force_fp32_vae() below."""
+    try:
+        import torch  # type: ignore
+
+        if torch.cuda.is_available():
+            name = torch.cuda.get_device_name(0).upper()
+            return "GTX 16" in name
+    except Exception:  # noqa: BLE001
+        pass
+    return False
+
+
+def force_fp32_vae(pipe) -> None:
+    """Upcast a diffusers pipeline's VAE to float32 and transparently cast
+    incoming latents. Apply on is_fp16_unreliable_gpu() hardware — fp16
+    UNet inference stays fast, while the decode (where the NaNs appear)
+    runs in full precision (~330 MB extra VRAM for an SD-family VAE)."""
+    import torch  # type: ignore
+
+    vae = getattr(pipe, "vae", None)
+    if vae is None:
+        return
+    vae.to(dtype=torch.float32)
+    orig_decode = vae.decode
+
+    def _decode_fp32(z, *args, **kwargs):
+        return orig_decode(z.to(torch.float32), *args, **kwargs)
+
+    vae.decode = _decode_fp32
+
+
 def describe() -> dict:
     return {
         "backend": _RAW_BACKEND,
         "vendor": _RAW_VENDOR,
         "vram_mb": get_vram_mb(),
         "torch_device": get_torch_device(),
+        "fp16_unreliable": is_fp16_unreliable_gpu(),
     }

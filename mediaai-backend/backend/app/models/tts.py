@@ -243,25 +243,30 @@ def generate_speech(
     tier = pick_tts_tier(forced_tier_id)
     log.info("tts gen tier=%s", tier["id"])
 
+    # Each tier falls through to the next on ANY failure — not just the
+    # loader's own RuntimeError wrapper. Real-world example: Coqui TTS
+    # imports lazily inside its constructor and explodes with an ImportError
+    # (BeamSearchScorer removed from new transformers), which used to escape
+    # this chain and fail the whole speech request.
     if tier["id"] == "f5-tts":
         try:
             return _generate_f5(text, voice)
-        except RuntimeError as exc:
+        except Exception as exc:  # noqa: BLE001
             log.warning("f5-tts unavailable, falling back: %s", exc)
     if tier["id"] in ("f5-tts", "xtts-v2"):
         try:
             return _generate_xtts(text, voice)
-        except RuntimeError as exc:
+        except Exception as exc:  # noqa: BLE001
             log.warning("xtts unavailable, falling back: %s", exc)
     if tier["id"] in ("f5-tts", "xtts-v2", "kokoro-82m"):
         try:
             return _generate_kokoro(text, voice)
-        except RuntimeError as exc:
+        except Exception as exc:  # noqa: BLE001
             log.warning("kokoro unavailable, falling back: %s", exc)
     if tier["id"] in ("f5-tts", "xtts-v2", "kokoro-82m", "piper"):
         try:
             return _generate_piper(text, voice)
-        except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        except Exception as exc:  # noqa: BLE001
             log.warning("piper unavailable, falling back: %s", exc)
     return _generate_speecht5(text)
 

@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { Youtube, Loader2, ExternalLink, CheckCircle2, Clock, Send } from "lucide-react";
+import {
+  Youtube,
+  Loader2,
+  ExternalLink,
+  CheckCircle2,
+  Clock,
+  Send,
+} from "lucide-react";
 import {
   ipc,
   type GeneratedMediaItem,
@@ -345,7 +352,9 @@ export function PublishToYouTubeDialog({
                   "border-input bg-transparent dark:bg-input/30 flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs outline-none disabled:opacity-50",
                 )}
               >
-                <option value="unlisted">Unlisted — anyone with the link</option>
+                <option value="unlisted">
+                  Unlisted — anyone with the link
+                </option>
                 <option value="public">Public — listed on your channel</option>
                 <option value="private">Private — only you</option>
               </select>

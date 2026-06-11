@@ -1,10 +1,10 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import log from "electron-log";
+import { isMediaAiBackendHealthy } from "@/ipc/utils/media_ai_backend";
 import {
-  MEDIA_AI_SERVER_URL,
-  isMediaAiBackendHealthy,
-} from "@/ipc/utils/media_ai_backend";
+  downloadBackendFile,
+  runBackendMediaJob,
+  type MediaJobProgress,
+} from "./media_backend_jobs";
 
 const logger = log.scope("local-video-gen");
 
@@ -14,6 +14,8 @@ export interface LocalVideoGenResult {
   durationMs: number;
   tier?: string;
   model?: string;
+  /** True when the mp4 already carries a synced soundtrack (AV tiers). */
+  hasAudio?: boolean;
   error?: string;
 }
 
@@ -24,12 +26,23 @@ export interface LocalVideoGenOptions {
   width?: number;
   height?: number;
   steps?: number;
+  duration_s?: number;
+  /** "16:9" | "9:16" | … — sizes the clip to the tier's pixel budget when
+   *  width/height are omitted. */
+  aspect_ratio?: string;
+  onProgress?: (p: MediaJobProgress) => void;
 }
 
+/** Video gen can include a multi-GB first-run model download plus minutes of
+ *  inference on low-end GPUs — budget generously; polls keep it responsive. */
+const VIDEO_JOB_TIMEOUT_MS = 90 * 60 * 1000;
+
 /**
- * Generates a short video via the local Python media backend's
- * `POST /v1/generate/video` endpoint. Downloads the resulting file to
- * outputPath. Never throws — returns success:false on any failure.
+ * Generates a short video via the local Python media backend's async job API
+ * (submit + poll — a single synchronous request would be killed by undici's
+ * 300 s header timeout long before slow hardware finishes). Downloads the
+ * resulting file to outputPath. Never throws — returns success:false on any
+ * failure.
  */
 export async function generateVideoViaLocalBackend(
   prompt: string,
@@ -47,27 +60,14 @@ export async function generateVideoViaLocalBackend(
     };
   }
 
+  const { onProgress, ...params } = options;
   try {
-    const response = await fetch(`${MEDIA_AI_SERVER_URL}/v1/generate/video`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, ...options }),
-    });
-    if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      return {
-        success: false,
-        outputPath,
-        durationMs: Date.now() - started,
-        error: `backend ${response.status}: ${detail.slice(0, 200)}`,
-      };
-    }
-    const data = (await response.json()) as {
-      video_url?: string;
-      tier?: string;
-      model?: string;
-    };
-    const url = data.video_url;
+    const result = await runBackendMediaJob(
+      "video",
+      { prompt, ...params },
+      { onProgress, timeoutMs: VIDEO_JOB_TIMEOUT_MS },
+    );
+    const url = result.video_url as string | undefined;
     if (!url) {
       return {
         success: false,
@@ -76,24 +76,14 @@ export async function generateVideoViaLocalBackend(
         error: "backend returned no video_url",
       };
     }
-    const fileResponse = await fetch(`${MEDIA_AI_SERVER_URL}${url}`);
-    if (!fileResponse.ok) {
-      return {
-        success: false,
-        outputPath,
-        durationMs: Date.now() - started,
-        error: `fetch of generated video failed: ${fileResponse.status}`,
-      };
-    }
-    const buf = Buffer.from(await fileResponse.arrayBuffer());
-    await fs.mkdir(path.dirname(outputPath), { recursive: true });
-    await fs.writeFile(outputPath, buf);
+    await downloadBackendFile(url, outputPath);
     return {
       success: true,
       outputPath,
       durationMs: Date.now() - started,
-      tier: data.tier,
-      model: data.model,
+      tier: result.tier as string | undefined,
+      model: result.model as string | undefined,
+      hasAudio: result.has_audio === true,
     };
   } catch (err) {
     logger.warn("local video gen failed:", err);

@@ -18,6 +18,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.routes.generation import router as generation_router
 from app import hardware
+from app import jobs as media_jobs
 from app.models import image as image_model
 from app.models import tts as tts_model
 from app.models import stt as stt_model
@@ -51,10 +52,72 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 app.mount("/outputs", StaticFiles(directory=str(OUTPUTS_DIR)), name="outputs")
 app.include_router(generation_router)
 
+media_jobs.register_default_executors()
+
 
 @app.get("/health")
 async def health_check() -> dict[str, str]:
     return {"status": "ok"}
+
+
+# ─── v1 async media jobs ──────────────────────────────────────────────────────
+#
+# Generation can take far longer than any HTTP request should stay open (model
+# downloads + minutes of inference). Clients submit a job, then poll its
+# status; every individual request returns immediately.
+
+
+class V1JobSubmitRequest(BaseModel):
+    kind: str  # "video" | "image" | "music" | "tts"
+    params: dict = {}
+
+
+class V1JobSubmitResponse(BaseModel):
+    job_id: str
+
+
+class V1JobStatusResponse(BaseModel):
+    id: str
+    kind: str
+    status: str  # "queued" | "running" | "done" | "error" | "cancelled"
+    stage: str
+    progress: float | None = None
+    result: dict | None = None
+    error: str | None = None
+
+
+class V1JobCancelResponse(BaseModel):
+    ok: bool
+
+
+@app.post("/v1/jobs", response_model=V1JobSubmitResponse)
+async def v1_submit_job(req: V1JobSubmitRequest) -> V1JobSubmitResponse:
+    try:
+        job_id = media_jobs.submit_job(req.kind, req.params)
+    except media_jobs.UnknownJobKind as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return V1JobSubmitResponse(job_id=job_id)
+
+
+@app.get("/v1/jobs/{job_id}", response_model=V1JobStatusResponse)
+async def v1_job_status(job_id: str) -> V1JobStatusResponse:
+    job = media_jobs.manager.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"unknown job: {job_id}")
+    return V1JobStatusResponse(
+        id=job["id"],
+        kind=job["kind"],
+        status=job["status"],
+        stage=job["stage"],
+        progress=job["progress"],
+        result=job["result"],
+        error=job["error"],
+    )
+
+
+@app.post("/v1/jobs/{job_id}/cancel", response_model=V1JobCancelResponse)
+async def v1_job_cancel(job_id: str) -> V1JobCancelResponse:
+    return V1JobCancelResponse(ok=media_jobs.manager.cancel(job_id))
 
 
 @app.get("/v1/hardware")
@@ -432,7 +495,8 @@ async def v1_music_download(req: V1MusicDownloadRequest) -> V1MusicDownloadRespo
 
     # Validate before we hand work to a background thread, otherwise bad tier
     # names only fail in the server log while the renderer keeps polling.
-    music_model.pick_best_music_tier(req.tier_id)
+    if not any(t["id"] == req.tier_id for t in music_model.MUSIC_TIERS):
+        raise HTTPException(status_code=400, detail=f"unknown music tier: {req.tier_id}")
     loop = asyncio.get_running_loop()
     loop.run_in_executor(None, music_model.download_tier, req.tier_id)
     return V1MusicDownloadResponse(
@@ -921,11 +985,17 @@ class V1VideoConcatRequest(BaseModel):
     target_width: int | None = None
     target_height: int | None = None
     target_fps: int = 24
+    # Carry the clips' own audio tracks into the output (for AV models whose
+    # clips ship with synced sound). Only honored when EVERY input has audio;
+    # otherwise the output is silent as before and has_audio reports false.
+    keep_audio: bool = False
 
 
 class V1VideoConcatResponse(BaseModel):
     ok: bool
     output_path: str
+    # True when the concatenated output carries an audio track.
+    has_audio: bool = False
     error: str | None = None
 
 
@@ -938,9 +1008,28 @@ def _resolve_ffmpeg_exe() -> str:
         return "ffmpeg"  # PATH fallback
 
 
-def _run_video_concat(req: V1VideoConcatRequest) -> str:
-    """Concatenate input_paths into output_path. Returns output_path on success,
-    raises RuntimeError otherwise. Runs in a threadpool by the caller."""
+def _input_has_audio_stream(ffmpeg: str, path: str) -> bool:
+    """True when ffmpeg's probe banner lists an audio stream. imageio-ffmpeg
+    ships no ffprobe, so we parse `ffmpeg -i` stderr (rc is nonzero by design
+    — no output file was requested)."""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            [ffmpeg, "-hide_banner", "-i", path],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return "Audio:" in (result.stderr or "")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _run_video_concat(req: V1VideoConcatRequest) -> tuple[str, bool]:
+    """Concatenate input_paths into output_path. Returns (output_path,
+    has_audio) on success, raises RuntimeError otherwise. Runs in a
+    threadpool by the caller."""
     import subprocess
     import tempfile
 
@@ -980,13 +1069,20 @@ def _run_video_concat(req: V1VideoConcatRequest) -> str:
                 os.unlink(list_path)
             except Exception:
                 pass
-        return str(out_path)
+        # Stream-copy keeps whatever audio the inputs carried.
+        return str(out_path), _input_has_audio_stream(ffmpeg, req.input_paths[0])
 
     # Re-encode mode (default): normalize every clip to a uniform pixel format,
-    # resolution and fps via filter_complex, then concat in one pass.
+    # resolution and fps via filter_complex, then concat in one pass. With
+    # keep_audio, the clips' own tracks are normalized (48 kHz stereo AAC) and
+    # carried through — but only when EVERY input has audio, since concat's
+    # a=1 requires an audio leg per segment.
     w = req.target_width or 1280
     h = req.target_height or 720
     fps = req.target_fps or 24
+    with_audio = req.keep_audio and all(
+        _input_has_audio_stream(ffmpeg, p) for p in req.input_paths
+    )
     cmd: list[str] = [ffmpeg, "-y"]
     for p in req.input_paths:
         cmd.extend(["-i", p])
@@ -998,12 +1094,22 @@ def _run_video_concat(req: V1VideoConcatRequest) -> str:
             f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black,"
             f"setsar=1,fps={fps},format=yuv420p[v{i}];"
         )
-    concat_inputs = "".join(f"[v{i}]" for i in range(n))
-    filter_parts.append(f"{concat_inputs}concat=n={n}:v=1:a=0[outv]")
+        if with_audio:
+            filter_parts.append(
+                f"[{i}:a]aresample=48000,"
+                f"aformat=sample_fmts=fltp:channel_layouts=stereo[a{i}];"
+            )
+    if with_audio:
+        concat_inputs = "".join(f"[v{i}][a{i}]" for i in range(n))
+        filter_parts.append(f"{concat_inputs}concat=n={n}:v=1:a=1[outv][outa]")
+    else:
+        concat_inputs = "".join(f"[v{i}]" for i in range(n))
+        filter_parts.append(f"{concat_inputs}concat=n={n}:v=1:a=0[outv]")
     filter_complex = "".join(filter_parts)
+    cmd.extend(["-filter_complex", filter_complex, "-map", "[outv]"])
+    if with_audio:
+        cmd.extend(["-map", "[outa]", "-c:a", "aac", "-b:a", "192k"])
     cmd.extend([
-        "-filter_complex", filter_complex,
-        "-map", "[outv]",
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
         "-preset", "veryfast",
@@ -1016,19 +1122,19 @@ def _run_video_concat(req: V1VideoConcatRequest) -> str:
             f"ffmpeg concat re-encode failed (rc={result.returncode}): "
             f"{result.stderr[-2000:]}"
         )
-    return str(out_path)
+    return str(out_path), with_audio
 
 
 @app.post("/v1/edit/concat", response_model=V1VideoConcatResponse)
 async def v1_video_concat(req: V1VideoConcatRequest) -> V1VideoConcatResponse:
     """Concatenate a list of local video files into one mp4 at output_path."""
     try:
-        out = await run_in_threadpool(_run_video_concat, req)
+        out, has_audio = await run_in_threadpool(_run_video_concat, req)
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"video concat failed: {exc}") from exc
-    return V1VideoConcatResponse(ok=True, output_path=out)
+    return V1VideoConcatResponse(ok=True, output_path=out, has_audio=has_audio)
 
 
 # ─── v1 audio mux (video + audio track → one mp4) ────────────────────────────

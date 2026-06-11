@@ -29,6 +29,11 @@ import type { ParsedStoryboard } from "./script_parser";
 // "video_audio" jobs are a three-stage pipeline: generate the video, generate
 // the matched audio (music or narration), then mux them into one mp4 via the
 // injected `mux` hook (ffmpeg in the media backend).
+//
+// AV models (LTX-2) return clips that already carry a synced soundtrack
+// (`hasAudio` on the generation result). The pipeline detects this and skips
+// the separate music + mux pass: storyboards concat with `keepAudio` so the
+// per-scene sound survives the edit, and video_audio jobs deliver directly.
 // =============================================================================
 
 const logger = log.scope("media-queue");
@@ -52,11 +57,13 @@ export interface MediaQueueDeps {
   onJobUpdate: (job: MediaJob) => void;
   /** Parse a storyboard script into ordered scenes. Throws on unparseable input. */
   parseScript: (script: string) => Promise<ParsedStoryboard>;
-  /** Concatenate ordered clips into one normalized mp4 at outputPath. */
+  /** Concatenate ordered clips into one normalized mp4 at outputPath. With
+   *  keepAudio, the clips' own (synced) audio tracks carry into the output. */
   concat: (
     inputPaths: string[],
     target: { width: number; height: number; fps: number },
     outputPath: string,
+    opts?: { keepAudio?: boolean },
   ) => Promise<void>;
 }
 
@@ -72,17 +79,6 @@ const IMAGE_DIMENSIONS: Record<
   "1:1": { width: 1024, height: 1024 },
   "4:3": { width: 1024, height: 768 },
   "3:4": { width: 768, height: 1024 },
-};
-
-const VIDEO_DIMENSIONS: Record<
-  MediaAspectRatio,
-  { width: number; height: number }
-> = {
-  "16:9": { width: 512, height: 288 },
-  "9:16": { width: 288, height: 512 },
-  "1:1": { width: 448, height: 448 },
-  "4:3": { width: 512, height: 384 },
-  "3:4": { width: 384, height: 512 },
 };
 
 /** Final assembled-video resolution per aspect ratio (concat re-encode target;
@@ -219,7 +215,10 @@ export class MediaJobQueue {
     job.status = "queued";
     job.stage = undefined;
     job.error = undefined;
+    job.warning = undefined;
     job.scenes = undefined;
+    job.videoTier = undefined;
+    job.syncedAudio = undefined;
     job.startedAt = undefined;
     job.finishedAt = undefined;
     this.touch(job);
@@ -290,17 +289,31 @@ export class MediaJobQueue {
     modelType: "image" | "video" | "music" | "audio",
     prompt: string,
     options: Record<string, unknown>,
-  ): Promise<string> {
+  ): Promise<{ outputPath: string; hasAudio: boolean; tier?: string }> {
     job.stage = stage;
     job.status = "running";
     this.touch(job);
     const outputPath = this.tmpPath(EXT_BY_MODEL_TYPE[modelType]);
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
+    // Surface within-stage progress (model download %, denoising steps) in the
+    // queue UI. Persist/emit at most ~once per second — every touch() writes
+    // the whole store to disk and broadcasts to all windows.
+    let lastEmit = 0;
     const result = await this.deps!.generate({
       modelType,
       prompt,
       outputPath,
       options,
+      onProgress: (p) => {
+        const pct =
+          p.progress != null ? ` ${Math.round(p.progress * 100)}%` : "";
+        job.stage = `${stage} · ${p.stage}${pct}`;
+        const now = Date.now();
+        if (now - lastEmit >= 1000) {
+          lastEmit = now;
+          this.touch(job);
+        }
+      },
     });
     if (!result.success) {
       throw new Error(result.error ?? `${stage} generation failed`);
@@ -310,7 +323,11 @@ export class MediaJobQueue {
         `${stage}: no media provider produced output — set up the Media AI backend (or a capable peer) and retry`,
       );
     }
-    return result.outputPath;
+    return {
+      outputPath: result.outputPath,
+      hasAudio: result.hasAudio === true,
+      tier: result.tier,
+    };
   }
 
   /**
@@ -343,9 +360,12 @@ export class MediaJobQueue {
     this.touch(job);
 
     // 2. Generate each scene clip in order. The global style is prepended to
-    //    every prompt so characters/palette stay consistent across clips.
-    const clipDims = VIDEO_DIMENSIONS[job.aspectRatio];
+    //    every prompt so characters/palette stay consistent across clips. The
+    //    aspect ratio rides along so each tier renders at its own pixel
+    //    budget in the requested shape (16:9, 9:16, …). AV tiers (LTX-2)
+    //    return clips with synced audio — tracked per clip below.
     const clipPaths: string[] = [];
+    let allClipsHaveAudio = true;
     const total = storyboard.scenes.length;
     for (let i = 0; i < total; i++) {
       if (this.cancelled(job.id)) return null;
@@ -356,18 +376,20 @@ export class MediaJobQueue {
         const fullPrompt = storyboard.style
           ? `${storyboard.style}. ${scene.prompt}`
           : scene.prompt;
-        const clipPath = await this.generateStage(
+        const clip = await this.generateStage(
           job,
           `scene ${i + 1}/${total}`,
           "video",
           fullPrompt,
           {
-            ...clipDims,
+            aspect_ratio: job.aspectRatio,
             ...(scene.durationSec ? { duration_s: scene.durationSec } : {}),
           },
         );
-        cleanupPaths.push(clipPath);
-        clipPaths.push(clipPath);
+        cleanupPaths.push(clip.outputPath);
+        clipPaths.push(clip.outputPath);
+        allClipsHaveAudio &&= clip.hasAudio;
+        if (clip.tier && !job.videoTier) job.videoTier = clip.tier;
         jobScene.status = "done";
         this.touch(job);
       } catch (err) {
@@ -377,9 +399,12 @@ export class MediaJobQueue {
       }
     }
     if (this.cancelled(job.id)) return null;
+    const syncedAudio = clipPaths.length > 0 && allClipsHaveAudio;
+    job.syncedAudio = syncedAudio;
 
     // 3. Auto-edit: concat the clips in scene order, normalized to the final
-    //    resolution/fps. A single-scene storyboard skips the concat.
+    //    resolution/fps. Synced-audio clips keep their own tracks through the
+    //    edit. A single-scene storyboard skips the concat.
     const finalDims = FINAL_DIMENSIONS[job.aspectRatio];
     let assembledPath: string;
     if (clipPaths.length === 1) {
@@ -389,13 +414,17 @@ export class MediaJobQueue {
       this.touch(job);
       assembledPath = this.tmpPath("mp4");
       await fs.mkdir(path.dirname(assembledPath), { recursive: true });
-      await deps.concat(clipPaths, { ...finalDims, fps: 24 }, assembledPath);
+      await deps.concat(clipPaths, { ...finalDims, fps: 24 }, assembledPath, {
+        keepAudio: syncedAudio,
+      });
       cleanupPaths.push(assembledPath);
     }
     if (this.cancelled(job.id)) return null;
 
     // 4. Soundtrack: one matched audio track over the whole video (video
     //    duration wins in the mux — short audio padded, long audio trimmed).
+    //    Skipped entirely when the clips already carry synced audio from the
+    //    model — muxing would replace the matched sound with generic music.
     const totalDuration = storyboard.scenes.reduce(
       (sum, s) => sum + (s.durationSec ?? 6),
       0,
@@ -406,24 +435,49 @@ export class MediaJobQueue {
       (audioKind === "music"
         ? `Soundtrack for this video: ${storyboard.style ?? storyboard.scenes[0].prompt}`
         : undefined);
+    // The soundtrack is best-effort: a missing music runtime/weights (or any
+    // audio failure) must not throw away the clips we just spent an hour
+    // rendering — deliver the video without audio and say why.
     let finalPath = assembledPath;
-    if (audioPrompt) {
-      const audioPath = await this.generateStage(
-        job,
-        "soundtrack",
-        audioKind === "music" ? "music" : "audio",
-        audioPrompt,
-        { duration_s: Math.min(totalDuration, 600) },
+    if (syncedAudio) {
+      logger.info(
+        `job ${job.id}: clips carry synced audio (${job.videoTier ?? "AV tier"}) — skipping soundtrack`,
       );
-      cleanupPaths.push(audioPath);
-      if (this.cancelled(job.id)) return null;
+      if (job.audioPrompt?.trim()) {
+        job.warning =
+          "soundtrack prompt ignored: the video model generated its own synced audio";
+        this.touch(job);
+      }
+    } else if (audioPrompt) {
+      try {
+        const audio = await this.generateStage(
+          job,
+          "soundtrack",
+          audioKind === "music" ? "music" : "audio",
+          audioPrompt,
+          { duration_s: Math.min(totalDuration, 600) },
+        );
+        cleanupPaths.push(audio.outputPath);
+        if (this.cancelled(job.id)) return null;
 
-      job.stage = "mux";
-      this.touch(job);
-      finalPath = this.tmpPath("mp4");
-      await fs.mkdir(path.dirname(finalPath), { recursive: true });
-      await deps.mux(assembledPath, audioPath, finalPath);
-      cleanupPaths.push(finalPath);
+        job.stage = "mux";
+        this.touch(job);
+        const muxedPath = this.tmpPath("mp4");
+        await fs.mkdir(path.dirname(muxedPath), { recursive: true });
+        await deps.mux(assembledPath, audio.outputPath, muxedPath);
+        cleanupPaths.push(muxedPath);
+        finalPath = muxedPath;
+      } catch (err) {
+        if (this.cancelled(job.id)) return null;
+        const reason =
+          err instanceof Error ? err.message.split("\n")[0] : String(err);
+        logger.warn(
+          `job ${job.id}: soundtrack failed — delivering video without audio (${reason})`,
+        );
+        job.warning = `soundtrack skipped: ${reason}`;
+        this.touch(job);
+        finalPath = assembledPath;
+      }
     }
 
     // 5. Import the finished video into the library.
@@ -450,67 +504,87 @@ export class MediaJobQueue {
         if (fileName === null) return; // cancelled between scenes
         outputs.push(fileName);
       } else if (job.kind === "video_audio") {
-        const dims = VIDEO_DIMENSIONS[job.aspectRatio];
-        const videoPath = await this.generateStage(
+        const video = await this.generateStage(
           job,
           "video",
           "video",
           job.prompt,
           {
-            ...dims,
+            aspect_ratio: job.aspectRatio,
             ...(job.durationSec ? { duration_s: job.durationSec } : {}),
           },
         );
-        cleanupPaths.push(videoPath);
+        cleanupPaths.push(video.outputPath);
+        job.videoTier = video.tier;
+        job.syncedAudio = video.hasAudio;
         if (this.cancelled(job.id)) return;
 
-        const audioKind = job.audioKind ?? "music";
-        const audioPrompt =
-          job.audioPrompt?.trim() ||
-          (audioKind === "music"
-            ? `Background music matching: ${job.prompt}`
-            : job.prompt);
-        const audioPath = await this.generateStage(
-          job,
-          "audio",
-          audioKind === "music" ? "music" : "audio",
-          audioPrompt,
-          job.durationSec ? { duration_s: job.durationSec } : {},
-        );
-        cleanupPaths.push(audioPath);
-        if (this.cancelled(job.id)) return;
+        if (video.hasAudio) {
+          // The model produced synced audio with the frames — muxing a
+          // separate track over it would replace the matched sound.
+          if (job.audioPrompt?.trim()) {
+            job.warning =
+              "audio prompt ignored: the video model generated its own synced audio";
+          }
+          outputs.push(
+            await deps.importToStore(video.outputPath, {
+              prompt: job.prompt,
+              share,
+            }),
+          );
+        } else {
+          const audioKind = job.audioKind ?? "music";
+          const audioPrompt =
+            job.audioPrompt?.trim() ||
+            (audioKind === "music"
+              ? `Background music matching: ${job.prompt}`
+              : job.prompt);
+          const audio = await this.generateStage(
+            job,
+            "audio",
+            audioKind === "music" ? "music" : "audio",
+            audioPrompt,
+            job.durationSec ? { duration_s: job.durationSec } : {},
+          );
+          cleanupPaths.push(audio.outputPath);
+          if (this.cancelled(job.id)) return;
 
-        job.stage = "mux";
-        this.touch(job);
-        const muxedPath = this.tmpPath("mp4");
-        await fs.mkdir(path.dirname(muxedPath), { recursive: true });
-        await deps.mux(videoPath, audioPath, muxedPath);
-        cleanupPaths.push(muxedPath);
+          job.stage = "mux";
+          this.touch(job);
+          const muxedPath = this.tmpPath("mp4");
+          await fs.mkdir(path.dirname(muxedPath), { recursive: true });
+          await deps.mux(video.outputPath, audio.outputPath, muxedPath);
+          cleanupPaths.push(muxedPath);
 
-        outputs.push(
-          await deps.importToStore(muxedPath, { prompt: job.prompt, share }),
-        );
+          outputs.push(
+            await deps.importToStore(muxedPath, { prompt: job.prompt, share }),
+          );
+        }
       } else {
         const modelType = job.kind === "speech" ? ("audio" as const) : job.kind;
         const dims =
-          job.kind === "image"
-            ? IMAGE_DIMENSIONS[job.aspectRatio]
-            : job.kind === "video"
-              ? VIDEO_DIMENSIONS[job.aspectRatio]
-              : undefined;
-        const outPath = await this.generateStage(
+          job.kind === "image" ? IMAGE_DIMENSIONS[job.aspectRatio] : undefined;
+        const result = await this.generateStage(
           job,
           job.kind,
           modelType,
           job.prompt,
           {
             ...dims,
+            ...(job.kind === "video" ? { aspect_ratio: job.aspectRatio } : {}),
             ...(job.durationSec ? { duration_s: job.durationSec } : {}),
           },
         );
-        cleanupPaths.push(outPath);
+        cleanupPaths.push(result.outputPath);
+        if (job.kind === "video") {
+          job.videoTier = result.tier;
+          job.syncedAudio = result.hasAudio;
+        }
         outputs.push(
-          await deps.importToStore(outPath, { prompt: job.prompt, share }),
+          await deps.importToStore(result.outputPath, {
+            prompt: job.prompt,
+            share,
+          }),
         );
       }
 

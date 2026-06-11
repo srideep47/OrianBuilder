@@ -11,6 +11,7 @@ import {
   pickBestAudioTtsTier as sharedPickBestAudio,
   pickBestAudioSttTier as sharedPickBestAudioStt,
   pickBestVideoTier as sharedPickBestVideo,
+  pickBestMusicTier as sharedPickBestMusic,
   selectAvailableTiers as sharedSelectAvailableTiers,
   type MediaQuality as SharedMediaQuality,
   type MediaTier as SharedMediaTier,
@@ -59,6 +60,9 @@ export interface MediaGenerationRequest {
   /** Explicit tier id to use, bypassing automatic VRAM-based tier selection.
    *  Set by the Orion Factory when the user has chosen a model for the modality. */
   modelId?: string;
+  /** Live stage/percent updates from the provider (model download, denoising
+   *  steps, …). Main-process only — never serialized over IPC/P2P. */
+  onProgress?: (p: { stage: string; progress: number | null }) => void;
 }
 
 export interface MediaGenerationResult {
@@ -66,6 +70,11 @@ export interface MediaGenerationResult {
   outputPath: string;
   durationMs: number;
   error?: string;
+  /** Tier that actually generated (backend may demote a forced tier). */
+  tier?: string;
+  /** True when a video output already carries a synced soundtrack (AV models
+   *  like LTX-2) — pipelines then skip their own music + mux pass. */
+  hasAudio?: boolean;
 }
 
 export interface OrchestratorStatus {
@@ -383,6 +392,7 @@ export const pickBestImageTier = sharedPickBestImage;
 export const pickBestAudioTtsTier = sharedPickBestAudio;
 export const pickBestAudioSttTier = sharedPickBestAudioStt;
 export const pickBestVideoTier = sharedPickBestVideo;
+export const pickBestMusicTier = sharedPickBestMusic;
 
 /** Estimate VRAM (in MB) that will be freed when the currently loaded LLM is
  *  unloaded. Conservative — uses the larger of (gpuLayers × layerSize) or

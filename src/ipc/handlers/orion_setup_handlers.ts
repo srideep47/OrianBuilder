@@ -48,7 +48,12 @@ export function registerOrionSetupHandlers(): void {
     refreshHardware: async () => {
       const hw = await refreshProfile();
       const backend = hw.bestMediaBackend ?? "cpu";
-      const summary = `${hw.primaryGpu?.model ?? "CPU only"} · ${backend}`;
+      // CPU machines get CPU wheels only (requirements-cpu.txt) — say so, so
+      // nobody waits on multi-GB CUDA downloads a GPU-less laptop can't use.
+      const summary =
+        backend === "cpu"
+          ? `${hw.primaryGpu?.model ?? "No dedicated GPU"} · CPU mode (GPU packages skipped)`
+          : `${hw.primaryGpu?.model ?? "GPU"} · ${backend}`;
       return { backend, summary };
     },
     getMediaStatus: async () => {

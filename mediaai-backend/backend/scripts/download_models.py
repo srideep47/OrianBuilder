@@ -73,15 +73,10 @@ MODEL_GROUPS = {
         {"kind": "snapshot", "repo_id": "microsoft/speecht5_hifigan"},
         {"kind": "snapshot", "repo_id": "facebook/mms-tts-eng"},
     ],
-    "video": [
-        {
-            "kind": "snapshot",
-            "repo_id": os.getenv(
-                "OMNIGEN_VIDEO_MODEL_ID",
-                "damo-vilab/text-to-video-ms-1.7b",
-            ),
-        },
-    ],
+    # Resolved dynamically in _video_specs(): downloads the tier that
+    # pick_best_video_tier selects for THIS machine (top/mid/small/cpu), so
+    # setup pre-fetches the weights generation will actually use.
+    "video": [],
     # Tier-specific image entries, exposed in the Media AI page dropdown.
     "image-sd-turbo": [
         {"kind": "snapshot", "repo_id": "stabilityai/sd-turbo"},
@@ -96,6 +91,40 @@ MODEL_GROUPS = {
         {"kind": "snapshot", "repo_id": "Systran/faster-whisper-base"},
     ],
 }
+
+
+def _video_specs() -> list[dict]:
+    """Hardware-matched video tier repos. Importing app.models.video works
+    because the Electron host runs this script with PYTHONPATH=<backend dir>
+    and the same ORIANBUILDER_* hardware env vars the server gets.
+
+    Video specs use kind "snapshot_cache": they download into the default HF
+    cache (HF_HOME/hub — the host sets HF_HOME) because that is where the
+    backend's from_pretrained/tier_status look. The local_dir copy the other
+    groups make is invisible to the video loader, which would silently
+    re-download tens of GB at first generation."""
+    override = os.getenv("OMNIGEN_VIDEO_MODEL_ID")
+    if override:
+        return [{"kind": "snapshot_cache", "repo_id": override}]
+    try:
+        from app.models.video import pick_best_video_tier, tier_download_specs
+
+        tier = pick_best_video_tier()
+        print(f"Video tier for this machine: {tier['id']}", flush=True)
+        return [
+            {
+                "kind": "snapshot_cache",
+                "repo_id": spec["repo_id"],
+                "allow_patterns": spec.get("allow_patterns"),
+                "ignore_patterns": spec.get("ignore_patterns"),
+            }
+            for spec in tier_download_specs(tier)
+        ]
+    except Exception as exc:  # noqa: BLE001 — fall back to the CPU-safe model
+        print(f"Video tier resolution failed ({exc}); using CPU fallback", flush=True)
+        return [
+            {"kind": "snapshot_cache", "repo_id": "damo-vilab/text-to-video-ms-1.7b"}
+        ]
 
 
 def write_marker(model_group: str, downloaded_paths: list[str]) -> None:
@@ -115,7 +144,7 @@ def write_marker(model_group: str, downloaded_paths: list[str]) -> None:
 
 
 def download_group(model_group: str) -> None:
-    specs = MODEL_GROUPS[model_group]
+    specs = _video_specs() if model_group == "video" else MODEL_GROUPS[model_group]
     downloaded_paths = []
     for spec in specs:
         repo_id = spec["repo_id"]
@@ -126,6 +155,14 @@ def download_group(model_group: str) -> None:
                 filename=spec["filename"],
                 local_dir=str(MODELS_DIR),
                 cache_dir=str(HF_CACHE_DIR),
+            )
+        elif spec["kind"] == "snapshot_cache":
+            # Default HF cache (HF_HOME/hub) — the same place the backend
+            # server loads from, so the pre-fetch is actually used.
+            path = snapshot_download(
+                repo_id=repo_id,
+                allow_patterns=spec.get("allow_patterns"),
+                ignore_patterns=spec.get("ignore_patterns"),
             )
         else:
             path = snapshot_download(

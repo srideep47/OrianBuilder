@@ -144,7 +144,14 @@ export function ScheduledPostsDialog({
               Nothing scheduled. Open a video's Publish menu to queue one up.
             </div>
           ) : (
-            jobs.map((j) => <JobRow key={j.id} job={j} onCancel={handleCancel} onRemove={handleRemove} />)
+            jobs.map((j) => (
+              <JobRow
+                key={j.id}
+                job={j}
+                onCancel={handleCancel}
+                onRemove={handleRemove}
+              />
+            ))
           )}
         </div>
 
@@ -174,18 +181,38 @@ function JobRow({
 
   const titleOrCaption =
     job.platform === "youtube"
-      ? job.youtube?.title ?? job.fileName
+      ? (job.youtube?.title ?? job.fileName)
       : job.instagram?.caption?.slice(0, 80) || job.fileName;
 
   const statusMeta: Record<
     ScheduleJob["status"],
     { icon: typeof Clock; label: string; cls: string }
   > = {
-    pending: { icon: Clock, label: "Pending", cls: "text-sky-600 border-sky-500/30 bg-sky-500/10" },
-    running: { icon: Loader2, label: "Running", cls: "text-sky-600 border-sky-500/30 bg-sky-500/10" },
-    done: { icon: CheckCircle2, label: "Done", cls: "text-emerald-600 border-emerald-500/30 bg-emerald-500/10" },
-    failed: { icon: AlertCircle, label: "Failed", cls: "text-destructive border-destructive/30 bg-destructive/10" },
-    cancelled: { icon: X, label: "Cancelled", cls: "text-muted-foreground border-border bg-muted/30" },
+    pending: {
+      icon: Clock,
+      label: "Pending",
+      cls: "text-sky-600 border-sky-500/30 bg-sky-500/10",
+    },
+    running: {
+      icon: Loader2,
+      label: "Running",
+      cls: "text-sky-600 border-sky-500/30 bg-sky-500/10",
+    },
+    done: {
+      icon: CheckCircle2,
+      label: "Done",
+      cls: "text-emerald-600 border-emerald-500/30 bg-emerald-500/10",
+    },
+    failed: {
+      icon: AlertCircle,
+      label: "Failed",
+      cls: "text-destructive border-destructive/30 bg-destructive/10",
+    },
+    cancelled: {
+      icon: X,
+      label: "Cancelled",
+      cls: "text-muted-foreground border-border bg-muted/30",
+    },
   };
   const meta = statusMeta[job.status];
   const StatusIcon = meta.icon;
@@ -195,7 +222,9 @@ function JobRow({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <PlatformIcon className={cn("h-4 w-4 shrink-0", platformIconColor)} />
+            <PlatformIcon
+              className={cn("h-4 w-4 shrink-0", platformIconColor)}
+            />
             <span className="text-xs font-medium text-muted-foreground">
               {platformLabel}
             </span>
@@ -205,7 +234,12 @@ function JobRow({
                 meta.cls,
               )}
             >
-              <StatusIcon className={cn("h-3 w-3", job.status === "running" && "animate-spin")} />
+              <StatusIcon
+                className={cn(
+                  "h-3 w-3",
+                  job.status === "running" && "animate-spin",
+                )}
+              />
               {meta.label}
             </span>
             {job.platform === "youtube" && job.youtube?.privacy && (
@@ -214,14 +248,20 @@ function JobRow({
               </span>
             )}
           </div>
-          <p className="mt-1 truncate text-sm font-medium" title={titleOrCaption}>
+          <p
+            className="mt-1 truncate text-sm font-medium"
+            title={titleOrCaption}
+          >
             {titleOrCaption || "(no title)"}
           </p>
           <p className="text-xs text-muted-foreground">
             {new Date(job.scheduledAt).toLocaleString()}
           </p>
           {job.error && (
-            <p className="mt-1 truncate text-[11px] text-destructive" title={job.error}>
+            <p
+              className="mt-1 truncate text-[11px] text-destructive"
+              title={job.error}
+            >
               {job.error}
             </p>
           )}

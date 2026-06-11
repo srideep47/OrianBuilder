@@ -144,11 +144,7 @@ export {
   scheduleEvents,
   scheduleEventClient,
 } from "./schedule";
-export type {
-  ScheduleJob,
-  SchedulePlatform,
-  ScheduleStatus,
-} from "./schedule";
+export type { ScheduleJob, SchedulePlatform, ScheduleStatus } from "./schedule";
 export type {
   AndroidEmulatorStatus,
   AndroidSetupProgress,

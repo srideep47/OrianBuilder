@@ -1,14 +1,20 @@
 import type { AssetType } from "@/ipc/types/manifest";
+import { AUTO_TIER_ID } from "@/shared/orion_media_catalog";
 
 // =============================================================================
 // Orion Orchestrated Pipeline — Hardware / Model Profiles
 // =============================================================================
 //
 // Maps detected hardware (by GPU VRAM) to the concrete model each pipeline stage
-// should use. Selection is automatic by VRAM; `rtx-4080s-16gb` is the first
-// concrete entry and others slot in later. Because the orchestrator keeps ONE
-// model resident at a time, each stage's `vramMb` is a single-slot footprint,
-// not a co-residency budget.
+// should use. Selection is automatic by VRAM. Three concrete profiles cover the
+// hardware OrianBuilder targets:
+//
+//   rtx-4080s-16gb   TOP   — ≥15 GB VRAM  (RTX 4080 Super, 64 GB RAM class)
+//   rtx-3060-6gb     MID   — ≥5 GB VRAM   (RTX 3060 Laptop 6 GB, 16 GB RAM class)
+//   gtx-1650ti-4gb   SMALL — <5 GB VRAM   (GTX 1650 Ti 4 GB, iGPU, CPU-only)
+//
+// Because the orchestrator keeps ONE model resident at a time, each stage's
+// `vramMb` is a single-slot footprint, not a co-residency budget.
 //
 // Pure config + selection. No node/Electron imports so it stays unit-testable.
 // See plans/orion-orchestrated-pipeline.md.
@@ -88,17 +94,118 @@ const RTX_4080S_16GB: HardwareModelProfile = {
     defaultSettings: {},
   },
   video: {
-    modelId: "ltx-video",
-    label: "LTX Video",
+    // Auto: video tier choice is VRAM+RAM gated (LTX-2 trades VRAM for
+    // system RAM), which a VRAM-only profile can't express — defer to the
+    // dispatcher/backend selection so AV-capable machines get LTX-2.
+    modelId: AUTO_TIER_ID,
+    label: "Auto (best for this device)",
     vramMb: 12000,
-    defaultSettings: { seconds: 5 },
+    defaultSettings: {},
   },
   music: {
     // Must match the backend MUSIC_TIERS id (models/music.py).
     modelId: "ace-step-xl-turbo-12gb",
     label: "ACE-Step 1.5 XL Turbo",
     vramMb: 12000,
-    defaultSettings: { seconds: 30 },
+    defaultSettings: {},
+  },
+  speech: {
+    modelId: "speecht5-cpu",
+    label: "SpeechT5 (CPU)",
+    vramMb: 0,
+    defaultSettings: {},
+  },
+  disabledModalities: ["transcribe"],
+};
+
+const RTX_3060_6GB: HardwareModelProfile = {
+  id: "rtx-3060-6gb",
+  label: "Mid-range GPU (5–15 GB, e.g. RTX 3060 6 GB)",
+  minVramMb: 5000,
+  maxVramMb: 15000,
+  llm: { strategy: "last-loaded", requireMultimodal: true },
+  image: {
+    // sd-turbo over sdxl-turbo: SDXL's ~7 GB working set is too tight on a
+    // 6 GB card that is also driving the display.
+    modelId: "sd-turbo",
+    label: "SD Turbo",
+    vramMb: 3000,
+    defaultSettings: { steps: 2, guidance: 0, width: 512, height: 512 },
+  },
+  threeDRef: {
+    modelId: "sd-turbo",
+    label: "SD Turbo (3D reference)",
+    vramMb: 3000,
+    defaultSettings: { steps: 2, guidance: 0, width: 512, height: 512 },
+  },
+  threeD: {
+    modelId: "triposr-6gb",
+    label: "TripoSR",
+    vramMb: 4000,
+    defaultSettings: {},
+  },
+  video: {
+    // Auto: a 6 GB card with ≥10 GB RAM qualifies for LTX-2 (synced
+    // audio+video); with less RAM the backend lands on GPU-resident
+    // AnimateDiff. The RAM half of that gate lives in tier selection.
+    modelId: AUTO_TIER_ID,
+    label: "Auto (best for this device)",
+    vramMb: 4500,
+    defaultSettings: {},
+  },
+  music: {
+    modelId: "ace-step-turbo-4gb",
+    label: "ACE-Step 1.5 Turbo",
+    vramMb: 4000,
+    defaultSettings: {},
+  },
+  speech: {
+    modelId: "speecht5-cpu",
+    label: "SpeechT5 (CPU)",
+    vramMb: 0,
+    defaultSettings: {},
+  },
+  disabledModalities: ["transcribe"],
+};
+
+const GTX_1650TI_4GB: HardwareModelProfile = {
+  id: "gtx-1650ti-4gb",
+  label: "Small GPU (<5 GB, e.g. GTX 1650 Ti 4 GB)",
+  minVramMb: 0,
+  maxVramMb: 5000,
+  llm: { strategy: "last-loaded", requireMultimodal: true },
+  image: {
+    modelId: "sd-turbo",
+    label: "SD Turbo",
+    vramMb: 3000,
+    defaultSettings: { steps: 2, guidance: 0, width: 512, height: 512 },
+  },
+  threeDRef: {
+    modelId: "sd-turbo",
+    label: "SD Turbo (3D reference)",
+    vramMb: 3000,
+    defaultSettings: { steps: 2, guidance: 0, width: 512, height: 512 },
+  },
+  threeD: {
+    modelId: "triposr-6gb",
+    label: "TripoSR",
+    vramMb: 4000,
+    defaultSettings: {},
+  },
+  video: {
+    // Auto: a 4 GB card with ≥30 GB RAM qualifies for quantized LTX-2 via
+    // sequential offload; otherwise the backend lands on AnimateDiff small
+    // and degrades to the CPU tier when even that doesn't fit.
+    modelId: AUTO_TIER_ID,
+    label: "Auto (best for this device)",
+    vramMb: 3000,
+    defaultSettings: {},
+  },
+  music: {
+    modelId: "ace-step-turbo-4gb",
+    label: "ACE-Step 1.5 Turbo",
+    vramMb: 4000,
+    defaultSettings: {},
   },
   speech: {
     modelId: "speecht5-cpu",
@@ -112,6 +219,8 @@ const RTX_4080S_16GB: HardwareModelProfile = {
 /** All known profiles, ordered highest VRAM floor → lowest. */
 export const HARDWARE_MODEL_PROFILES: readonly HardwareModelProfile[] = [
   RTX_4080S_16GB,
+  RTX_3060_6GB,
+  GTX_1650TI_4GB,
 ] as const;
 
 // ─── Selection ───────────────────────────────────────────────────────────────
@@ -168,9 +277,10 @@ export function modelConfigForAsset(
 
 /**
  * Return a copy of `profile` with each stage's `modelId` overridden by the
- * user's media-model selection (tier ids). Unset selections keep the profile
- * default. The image override also applies to the 3D reference-image stage so a
- * chosen image model is used for 3D refs too. Pure.
+ * user's media-model selection (tier ids). Unset or "auto" selections keep the
+ * profile's hardware-matched default. The image override also applies to the
+ * 3D reference-image stage so a chosen image model is used for 3D refs too.
+ * Pure.
  */
 export function applySelectionToProfile(
   profile: HardwareModelProfile,
@@ -185,7 +295,8 @@ export function applySelectionToProfile(
   const override = (
     cfg: PipelineModelConfig,
     tierId: string | undefined,
-  ): PipelineModelConfig => (tierId ? { ...cfg, modelId: tierId } : cfg);
+  ): PipelineModelConfig =>
+    tierId && tierId !== AUTO_TIER_ID ? { ...cfg, modelId: tierId } : cfg;
 
   return {
     ...profile,

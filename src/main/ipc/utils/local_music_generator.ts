@@ -6,9 +6,9 @@ import {
   type MediaJobProgress,
 } from "./media_backend_jobs";
 
-const logger = log.scope("local-image-gen");
+const logger = log.scope("local-music-gen");
 
-export interface LocalImageGenResult {
+export interface LocalMusicGenResult {
   success: boolean;
   outputPath: string;
   durationMs: number;
@@ -16,35 +16,27 @@ export interface LocalImageGenResult {
   error?: string;
 }
 
-export interface LocalImageGenOptions {
-  steps?: number;
-  guidance?: number;
-  width?: number;
-  height?: number;
+export interface LocalMusicGenOptions {
   tier?: string | null;
+  duration_s?: number;
   onProgress?: (p: MediaJobProgress) => void;
 }
 
-/** Generation is fast; the budget covers a first-run multi-GB weight fetch. */
-const IMAGE_JOB_TIMEOUT_MS = 30 * 60 * 1000;
+const MUSIC_JOB_TIMEOUT_MS = 60 * 60 * 1000;
 
 /**
- * Generates an image via the local Python media backend's async job API
- * (submit + poll, immune to long first-run model downloads). The backend
- * writes the file to OMNIGEN_OUTPUTS_DIR; we fetch it and copy the bytes to
- * `outputPath`.
- *
- * Returns success:false (never throws) so callers can fall back to other
- * providers cleanly.
+ * Generates a music track via the local backend's ACE-Step pipeline through
+ * the async job API. Downloads the resulting WAV to outputPath. Never throws —
+ * returns success:false on any failure (e.g. the music runtime/weights aren't
+ * installed yet), letting callers degrade gracefully.
  */
-export async function generateImageViaLocalBackend(
+export async function generateMusicViaLocalBackend(
   prompt: string,
   outputPath: string,
-  options: LocalImageGenOptions = {},
-): Promise<LocalImageGenResult> {
+  options: LocalMusicGenOptions = {},
+): Promise<LocalMusicGenResult> {
   const started = Date.now();
 
-  // Probe health first so we fail fast if the backend isn't running.
   if (!(await isMediaAiBackendHealthy())) {
     return {
       success: false,
@@ -54,20 +46,23 @@ export async function generateImageViaLocalBackend(
     };
   }
 
-  const { onProgress, ...params } = options;
   try {
     const result = await runBackendMediaJob(
-      "image",
-      { prompt, ...params },
-      { onProgress, timeoutMs: IMAGE_JOB_TIMEOUT_MS },
+      "music",
+      {
+        prompt,
+        duration_seconds: options.duration_s,
+        tier: options.tier ?? undefined,
+      },
+      { onProgress: options.onProgress, timeoutMs: MUSIC_JOB_TIMEOUT_MS },
     );
-    const url = result.image_url as string | undefined;
+    const url = result.audio_url as string | undefined;
     if (!url) {
       return {
         success: false,
         outputPath,
         durationMs: Date.now() - started,
-        error: "backend returned no image_url",
+        error: "backend returned no audio_url",
       };
     }
     await downloadBackendFile(url, outputPath);
@@ -78,7 +73,7 @@ export async function generateImageViaLocalBackend(
       tier: result.tier as string | undefined,
     };
   } catch (err) {
-    logger.warn("local image gen failed:", err);
+    logger.warn("local music gen failed:", err);
     return {
       success: false,
       outputPath,

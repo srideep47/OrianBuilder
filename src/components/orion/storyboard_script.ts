@@ -9,6 +9,8 @@
  * fall through to the normal single-video path. Pure, so it's unit-testable
  * without pulling in the command-bar component.
  */
+import type { MediaAspectRatio } from "@/ipc/types/media_queue";
+
 export function looksLikeStoryboardScript(text: string): boolean {
   const t = text.trim();
   if (t.length < 40) return false;
@@ -23,4 +25,33 @@ export function looksLikeStoryboardScript(text: string): boolean {
     if (hasStyle && sceneish) return true;
   }
   return false;
+}
+
+/**
+ * Aspect ratio mentioned in (or implied by) a script: an explicit "9:16" /
+ * "16x9", or platform/orientation words ("vertical", "portrait", "shorts",
+ * "reels" → 9:16; "landscape", "widescreen" → 16:9; "square" → 1:1).
+ * Returns null when the script doesn't say — the caller picks the default.
+ * Pure, unit-testable.
+ */
+export function detectAspectRatio(text: string): MediaAspectRatio | null {
+  // No whitespace around the separator, so scene headers ("Scene 3: 4
+  // friends…") and timings ("0:16") never read as ratios.
+  const explicit = text.match(/\b(16|9|4|3|1)[:x×](16|9|4|3|1)\b/i);
+  if (explicit) {
+    const ratio = `${explicit[1]}:${explicit[2]}`;
+    const known: MediaAspectRatio[] = ["16:9", "9:16", "1:1", "4:3", "3:4"];
+    const match = known.find((k) => k === ratio);
+    if (match) return match;
+  }
+  if (
+    /\b(vertical|portrait|shorts?|reels?|tiktok|story\s*format)\b/i.test(text)
+  ) {
+    return "9:16";
+  }
+  if (/\b(landscape|widescreen|cinematic\s+wide|youtube)\b/i.test(text)) {
+    return "16:9";
+  }
+  if (/\bsquare\b/i.test(text)) return "1:1";
+  return null;
 }

@@ -38,7 +38,7 @@ import {
   applySelectionToProfile,
   modelConfigForAsset,
 } from "@/main/flow/model_profiles";
-import { resolveSelection } from "@/shared/orion_media_catalog";
+import { AUTO_TIER_ID, resolveSelection } from "@/shared/orion_media_catalog";
 import { readSettings } from "@/main/settings";
 import {
   MEDIA_AI_SERVER_URL,
@@ -101,7 +101,10 @@ async function generateForQueue(request: MediaGenerationRequest) {
       const cfg = modelConfigForAsset(hwProfile, assetType);
       request = {
         ...request,
-        modelId: cfg.modelId,
+        // "auto" means no forced tier — leave modelId unset so the
+        // dispatcher/backend run RAM-aware selection (older peers would
+        // otherwise treat the sentinel as a real tier id).
+        modelId: cfg.modelId === AUTO_TIER_ID ? undefined : cfg.modelId,
         // Job-specific options (aspect-ratio dims, duration) win over defaults.
         options: { ...cfg.defaultSettings, ...request.options },
       };
@@ -164,6 +167,7 @@ async function concatForQueue(
   inputPaths: string[],
   target: { width: number; height: number; fps: number },
   outputPath: string,
+  opts?: { keepAudio?: boolean },
 ): Promise<void> {
   await ensureBackendHealthy();
   const res = await fetch(`${MEDIA_AI_SERVER_URL}/v1/edit/concat`, {
@@ -176,6 +180,8 @@ async function concatForQueue(
       target_width: target.width,
       target_height: target.height,
       target_fps: target.fps,
+      // Carry the clips' synced audio (AV models) through the re-encode.
+      keep_audio: opts?.keepAudio === true,
     }),
   });
   if (!res.ok) {

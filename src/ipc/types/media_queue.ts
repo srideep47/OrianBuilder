@@ -84,7 +84,15 @@ export const MediaJobSchema = z.object({
   stage: z.string().optional(),
   /** Storyboard jobs: the parsed scenes with per-scene progress. */
   scenes: z.array(MediaJobSceneSchema).optional(),
+  /** Video tier that actually generated (e.g. "ltx-2-av") — for UI badges. */
+  videoTier: z.string().optional(),
+  /** True when the clips carry synced audio from the model itself, so no
+   *  separate soundtrack pass was needed. */
+  syncedAudio: z.boolean().optional(),
   error: z.string().optional(),
+  /** Non-fatal degradation note (e.g. "soundtrack skipped: …"). The job still
+   *  produced output; this explains what was left out and why. */
+  warning: z.string().optional(),
   /** Files in the generated-media store produced by this job. */
   outputFileNames: z.array(z.string()).optional(),
   requestedBy: MediaJobRequesterSchema,

@@ -301,9 +301,7 @@ export function GeneratedMediaCard({
               opens a share-assist flow because IG has no desktop upload API. */}
           {item.kind === "video" && (
             <DropdownMenu>
-              <DropdownMenuTrigger
-                className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-input bg-transparent px-3 text-xs font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
-              >
+              <DropdownMenuTrigger className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-input bg-transparent px-3 text-xs font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50">
                 <Send className="h-3.5 w-3.5" />
                 Publish
                 <ChevronDown className="h-3.5 w-3.5 opacity-60" />

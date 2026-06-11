@@ -9,11 +9,7 @@ import {
   Send,
   Info,
 } from "lucide-react";
-import {
-  ipc,
-  generatedMediaUrl,
-  type GeneratedMediaItem,
-} from "@/ipc/types";
+import { ipc, generatedMediaUrl, type GeneratedMediaItem } from "@/ipc/types";
 import {
   Dialog,
   DialogContent,
@@ -192,7 +188,9 @@ export function PublishToInstagramDialog({
             muted
             loop
             playsInline
-            onMouseEnter={(e) => void e.currentTarget.play().catch(() => undefined)}
+            onMouseEnter={(e) =>
+              void e.currentTarget.play().catch(() => undefined)
+            }
             onMouseLeave={(e) => {
               e.currentTarget.pause();
               e.currentTarget.currentTime = 0;
@@ -239,7 +237,9 @@ export function PublishToInstagramDialog({
             busy={busy}
             onCopyCaption={() => void copyCaption()}
             onCancel={() => onOpenChange(false)}
-            onPrimary={() => void (mode === "schedule" ? handleSchedule() : handleStart())}
+            onPrimary={() =>
+              void (mode === "schedule" ? handleSchedule() : handleStart())
+            }
           />
         )}
       </DialogContent>
@@ -451,11 +451,7 @@ function StartedBranch({
           )}
         </Step>
 
-        <Step
-          n={4}
-          title="Click Share on Instagram"
-          help="You're done."
-        />
+        <Step n={4} title="Click Share on Instagram" help="You're done." />
       </ol>
 
       <DialogFooter>

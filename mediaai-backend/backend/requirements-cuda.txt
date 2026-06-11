@@ -3,9 +3,18 @@
 --extra-index-url https://pypi.org/simple
 torch>=2.3.0
 torchvision>=0.18.0
-# diffusers 0.32+ ships LTXPipeline, CogVideoXPipeline, WanPipeline, FluxPipeline,
-# AnimateDiffPipeline and the model-CPU-offload helpers used by tts/video loaders.
-diffusers>=0.32.0
+# diffusers 0.37+ ships LTX2Pipeline + LTX2VideoTransformer3DModel (synced
+# audio+video, GGUF single-file loading) on top of the LTXPipeline/AnimateDiff
+# lineup and the model-CPU-offload helpers used by the tts/video loaders. The
+# video loader degrades the LTX-2.3 tiers gracefully on older installs, but
+# new installs should get them.
+diffusers>=0.37.0
+# 4-bit NF4 quantization for the LTX-2.3 transformer/text-encoder — what lets
+# the full AV tier fit a 16 GB card whole. Optional at runtime (the loader
+# falls back to bf16 + offload if missing or broken).
+bitsandbytes>=0.45.0
+# GGUF transformer loading (the LTX-2.3 distilled Q4 small tier).
+gguf>=0.10.0
 transformers>=4.45.0
 accelerate>=0.30.0
 optimum>=1.19.0

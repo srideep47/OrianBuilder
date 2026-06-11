@@ -33,6 +33,11 @@ export interface OrionModelOption {
   sizeLabel: string;
 }
 
+/** Sentinel tier id meaning "let the hardware profile / backend pick". The
+ *  profile override step skips it, so each device keeps its hardware-matched
+ *  default instead of everyone being forced onto one model. */
+export const AUTO_TIER_ID = "auto";
+
 // tierId values MUST match the backend tier ids the generators load via
 // `forced_tier_id`:
 //   image  → mediaai-backend/.../models/image.py  IMAGE_MODEL_TIERS
@@ -40,10 +45,13 @@ export interface OrionModelOption {
 //   music  → models/music.py  MUSIC_TIERS
 //   speech → models/tts.py    TTS_TIERS
 //   3d     → models/threed.py THREED_TIERS
-// First entry per modality is the default. Only the two image tiers and SpeechT5
-// have a one-click pre-download id; everything else downloads on first use.
+// First entry per modality is the default — "Auto" everywhere a hardware-matched
+// choice exists, so a 4 GB laptop never gets a 12 GB model forced on it. Only
+// the two image tiers and SpeechT5 have a one-click pre-download id; everything
+// else downloads on first use.
 export const ORION_MEDIA_CATALOG: Record<OrionModality, OrionModelOption[]> = {
   image: [
+    { tierId: AUTO_TIER_ID, label: "Auto (match this device)", sizeLabel: "—" },
     {
       tierId: "z-image-turbo",
       label: "Z Image Turbo",
@@ -70,18 +78,30 @@ export const ORION_MEDIA_CATALOG: Record<OrionModality, OrionModelOption[]> = {
     },
   ],
   video: [
-    // LTX is the default; the only video download id ("video") fetches a
-    // DIFFERENT model (text-to-video-ms), so none of these pre-download — they
-    // fetch on first use at generation time.
-    { tierId: "ltx-video", label: "LTX Video", sizeLabel: "18 GB" },
-    { tierId: "wan-2.1-1.3b", label: "Wan 2.1 (1.3B)", sizeLabel: "14 GB" },
-    { tierId: "cogvideox-2b", label: "CogVideoX 2B", sizeLabel: "11 GB" },
+    // The "video" download id pre-fetches whatever tier the backend picks for
+    // this machine; explicit tiers below download on first use.
+    { tierId: AUTO_TIER_ID, label: "Auto (match this device)", sizeLabel: "—" },
+    {
+      tierId: "ltx-2-av",
+      label: "LTX-2.3 (synced audio+video · best)",
+      sizeLabel: "~96 GB",
+    },
+    {
+      tierId: "ltx-2-av-small",
+      label: "LTX-2.3 distilled (synced audio+video)",
+      sizeLabel: "~72 GB",
+    },
+    { tierId: "ltx-video", label: "LTX Video (top)", sizeLabel: "18 GB" },
     {
       tierId: "animatediff-sd15",
-      label: "AnimateDiff + SD 1.5",
+      label: "AnimateDiff + SD 1.5 (mid)",
       sizeLabel: "6 GB",
     },
-    { tierId: "wan-2.1-14b", label: "Wan 2.1 (14B)", sizeLabel: "30 GB" },
+    {
+      tierId: "animatediff-sd15-small",
+      label: "AnimateDiff + SD 1.5 (small)",
+      sizeLabel: "6 GB",
+    },
     {
       tierId: "text-to-video-cpu",
       label: "Text-to-Video MS (CPU)",
@@ -89,6 +109,7 @@ export const ORION_MEDIA_CATALOG: Record<OrionModality, OrionModelOption[]> = {
     },
   ],
   music: [
+    { tierId: AUTO_TIER_ID, label: "Auto (match this device)", sizeLabel: "—" },
     {
       tierId: "ace-step-xl-turbo-12gb",
       label: "ACE-Step 1.5 XL Turbo (12 GB)",

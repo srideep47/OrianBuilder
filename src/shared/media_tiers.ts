@@ -15,6 +15,17 @@ export interface MediaTier {
   label: string;
   /** Minimum GPU VRAM (MB) required to load this model. 0 = CPU fallback. */
   vramRequiredMb: number;
+  /** Minimum total system RAM (MB), when the model is RAM-gated too. */
+  ramRequiredMb?: number;
+  /**
+   * When set, the tier fits if ANY {vramMb, ramMb} pair is satisfied — used
+   * for models whose weights trade VRAM for system RAM via CPU offload (e.g.
+   * LTX-2 quantized). vramRequiredMb/ramRequiredMb then act as display floors.
+   */
+  anyOfRequirements?: readonly { vramMb: number; ramMb: number }[];
+  /** True when the model emits a synced soundtrack with the frames; pipeline
+   *  steps can then skip their own music generation + mux pass. */
+  generatesAudio?: boolean;
   /** Approximate disk size after download (MB). For UI download estimates. */
   downloadSizeMb: number;
   quality: MediaQuality;
@@ -159,28 +170,63 @@ export const IMAGE_MODEL_TIERS: readonly MediaTier[] = [
 
 // ─── Video generation tiers (text → ~5s video) ───────────────────────────────
 //
-// Tier order: highest VRAM → lowest so pickBestTier auto-selects the best fit.
+// Five production tiers + a CPU fallback, matched to the hardware OrianBuilder
+// targets. Mirrors mediaai-backend/.../models/video.py VIDEO_TIERS — keep both
+// in sync.
 //
-//   • wan-2.1-14b:    Alibaba Wan 2.1 14B — top quality, 14GB VRAM, 30GB download
-//   • ltx-video:      Lightricks LTX-Video — very fast, 12GB VRAM, 18GB download
-//   • wan-2.1-1.3b:   Alibaba Wan 2.1 1.3B — budget tier with CPU offload, 5GB VRAM
-//   • cogvideox-2b:   THUDM CogVideoX 2B — 6GB VRAM
-//   • animatediff-sd15: SD 1.5 + AnimateDiff, 4GB VRAM
-//   • text-to-video-cpu: CPU fallback
+//   • ltx-2-av:               TOP++ — LTX-2.3 dev, synced audio+video, bnb-4bit
+//                                     at load (≥12 GB VRAM & ≥32 GB RAM —
+//                                     RTX 4080 Super class, best quality)
+//   • ltx-2-av-small:         TOP+  — LTX-2.3 DISTILLED, GGUF transformer,
+//                                     group-offloaded (disk-spill on 16 GB-RAM
+//                                     machines); fits when (≥6 GB VRAM &
+//                                     ≥10 GB RAM) or (≥4 GB VRAM & ≥30 GB RAM)
+//   • ltx-video:              TOP   — LTX-Video 0.9 (≥12 GB VRAM)
+//   • animatediff-sd15:       MID   — RTX 3060 6 GB class (GPU-resident)
+//   • animatediff-sd15-small: SMALL — GTX 1650 Ti 4 GB class (CPU offload)
+//   • text-to-video-cpu:      CPU fallback (256×256, slow)
 
 export const VIDEO_TIERS: readonly MediaTier[] = [
   {
-    id: "wan-2.1-14b",
-    label: "Wan 2.1 (14B, 14GB)",
-    vramRequiredMb: 14000,
-    downloadSizeMb: 30000,
-    quality: "ultra",
-    hfRepo: "Wan-AI/Wan2.1-T2V-14B-Diffusers",
-    approxSecondsPerGen: 90,
+    // LTX-2.3 generates the soundtrack WITH the frames (synced audio+video).
+    // Full dev checkpoint, 4-bit quantized at load so it fits a 16 GB card
+    // whole — the best-quality tier for the RTX 4080 Super / 64 GB machine.
+    id: "ltx-2-av",
+    label: "LTX-2.3 (synced audio+video · best)",
+    vramRequiredMb: 12000,
+    ramRequiredMb: 32000,
+    generatesAudio: true,
+    // Whole repo: 40 GB transformer + 42 GB Gemma-3 text encoder + 12 GB
+    // connectors + VAEs/vocoder.
+    downloadSizeMb: 96000,
+    quality: "best",
+    hfRepo: "diffusers/LTX-2.3-Diffusers",
+    approxSecondsPerGen: 150,
+  },
+  {
+    // LTX-2.3 distilled with a community GGUF transformer (~15-17 GB instead
+    // of 40 GB bf16), run via diffusers group offloading: weight groups
+    // stream to the GPU on demand, spilling the store to disk on 16 GB-RAM
+    // machines — so the gate is an any-of VRAM/RAM combination instead of
+    // one VRAM floor. Still needs the repo's Gemma-3 TE + connectors (~56 GB
+    // of the download).
+    id: "ltx-2-av-small",
+    label: "LTX-2.3 distilled (synced audio+video · quantized)",
+    vramRequiredMb: 4096,
+    ramRequiredMb: 10240,
+    anyOfRequirements: [
+      { vramMb: 6144, ramMb: 10240 },
+      { vramMb: 4096, ramMb: 30720 },
+    ],
+    generatesAudio: true,
+    downloadSizeMb: 72000,
+    quality: "best",
+    hfRepo: "diffusers/LTX-2.3-Diffusers",
+    approxSecondsPerGen: 300,
   },
   {
     id: "ltx-video",
-    label: "LTX Video (12GB)",
+    label: "LTX Video (top · 12GB+)",
     vramRequiredMb: 12000,
     downloadSizeMb: 18000,
     quality: "best",
@@ -188,31 +234,22 @@ export const VIDEO_TIERS: readonly MediaTier[] = [
     approxSecondsPerGen: 25,
   },
   {
-    id: "wan-2.1-1.3b",
-    label: "Wan 2.1 (1.3B, 5GB)",
-    vramRequiredMb: 5000,
-    downloadSizeMb: 14000,
-    quality: "best",
-    hfRepo: "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+    id: "animatediff-sd15",
+    label: "AnimateDiff + SD 1.5 (mid · 6GB)",
+    vramRequiredMb: 4500,
+    downloadSizeMb: 6000,
+    quality: "good",
+    hfRepo: "guoyww/animatediff-motion-adapter-v1-5-3",
     approxSecondsPerGen: 60,
   },
   {
-    id: "cogvideox-2b",
-    label: "CogVideoX 2B (7GB)",
-    vramRequiredMb: 7000,
-    downloadSizeMb: 11000,
-    quality: "good",
-    hfRepo: "THUDM/CogVideoX-2b",
-    approxSecondsPerGen: 90,
-  },
-  {
-    id: "animatediff-sd15",
-    label: "AnimateDiff + SD 1.5 (4GB)",
-    vramRequiredMb: 4000,
+    id: "animatediff-sd15-small",
+    label: "AnimateDiff + SD 1.5 (small · 4GB)",
+    vramRequiredMb: 3000,
     downloadSizeMb: 6000,
     quality: "basic",
     hfRepo: "guoyww/animatediff-motion-adapter-v1-5-3",
-    approxSecondsPerGen: 45,
+    approxSecondsPerGen: 180,
   },
   {
     id: "text-to-video-cpu",
@@ -222,6 +259,29 @@ export const VIDEO_TIERS: readonly MediaTier[] = [
     quality: "slow",
     hfRepo: "damo-vilab/text-to-video-ms-1.7b",
     approxSecondsPerGen: 600,
+  },
+] as const;
+
+// ─── Music generation tiers (text → soundtrack, ACE-Step 1.5) ────────────────
+//
+// Mirrors mediaai-backend/.../models/music.py MUSIC_TIERS.
+
+export const MUSIC_TIERS: readonly MediaTier[] = [
+  {
+    id: "ace-step-xl-turbo-12gb",
+    label: "ACE-Step 1.5 XL Turbo (12GB)",
+    vramRequiredMb: 12000,
+    downloadSizeMb: 14000,
+    quality: "best",
+    approxSecondsPerGen: 60,
+  },
+  {
+    id: "ace-step-turbo-4gb",
+    label: "ACE-Step 1.5 Turbo (4GB)",
+    vramRequiredMb: 4000,
+    downloadSizeMb: 9700,
+    quality: "good",
+    approxSecondsPerGen: 90,
   },
 ] as const;
 
@@ -339,16 +399,45 @@ const QUALITY_RANK: Record<MediaQuality, number> = {
   slow: 4,
 };
 
+/**
+ * True when the tier's hardware requirements fit. `totalRamMb` undefined means
+ * "unknown" — RAM checks pass, mirroring the Python backend's behavior (which
+ * re-validates with its own RAM reading anyway).
+ */
+export function tierFitsHardware(
+  tier: MediaTier,
+  availableVramMb: number,
+  totalRamMb?: number,
+): boolean {
+  if (tier.anyOfRequirements && tier.anyOfRequirements.length > 0) {
+    return tier.anyOfRequirements.some(
+      (req) =>
+        availableVramMb >= req.vramMb &&
+        (totalRamMb === undefined || totalRamMb >= req.ramMb),
+    );
+  }
+  if (
+    totalRamMb !== undefined &&
+    tier.ramRequiredMb !== undefined &&
+    totalRamMb < tier.ramRequiredMb
+  ) {
+    return false;
+  }
+  return tier.vramRequiredMb <= availableVramMb;
+}
+
 export function pickBestTier(
   tiers: readonly MediaTier[],
   availableVramMb: number,
   preferredQuality?: MediaQuality,
+  totalRamMb?: number,
 ): MediaTier {
   const minRank =
     preferredQuality !== undefined ? QUALITY_RANK[preferredQuality] : -1;
   const eligible = tiers.filter(
     (t) =>
-      t.vramRequiredMb <= availableVramMb && QUALITY_RANK[t.quality] >= minRank,
+      tierFitsHardware(t, availableVramMb, totalRamMb) &&
+      QUALITY_RANK[t.quality] >= minRank,
   );
   if (eligible.length > 0) return eligible[0];
   return tiers[tiers.length - 1];
@@ -378,8 +467,21 @@ export function pickBestAudioSttTier(
 export function pickBestVideoTier(
   availableVramMb: number,
   preferredQuality?: MediaQuality,
+  totalRamMb?: number,
 ): MediaTier {
-  return pickBestTier(VIDEO_TIERS, availableVramMb, preferredQuality);
+  return pickBestTier(
+    VIDEO_TIERS,
+    availableVramMb,
+    preferredQuality,
+    totalRamMb,
+  );
+}
+
+export function pickBestMusicTier(
+  availableVramMb: number,
+  preferredQuality?: MediaQuality,
+): MediaTier {
+  return pickBestTier(MUSIC_TIERS, availableVramMb, preferredQuality);
 }
 
 export interface AvailableTiersSnapshot {
@@ -394,6 +496,7 @@ export function selectAvailableTiers(
   liveAvailableVramMb: number,
   freedByLlmUnloadMb: number,
   preferredQuality?: MediaQuality,
+  totalRamMb?: number,
 ): AvailableTiersSnapshot {
   const projected = liveAvailableVramMb + freedByLlmUnloadMb;
   const filter = (tiers: readonly MediaTier[]) => {
@@ -401,7 +504,8 @@ export function selectAvailableTiers(
       preferredQuality !== undefined ? QUALITY_RANK[preferredQuality] : -1;
     return tiers.filter(
       (t) =>
-        t.vramRequiredMb <= projected && QUALITY_RANK[t.quality] >= minRank,
+        tierFitsHardware(t, projected, totalRamMb) &&
+        QUALITY_RANK[t.quality] >= minRank,
     );
   };
   return {

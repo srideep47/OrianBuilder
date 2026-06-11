@@ -75,7 +75,11 @@ export function enableBackgroundMode(window: BrowserWindow): void {
   try {
     const icon = nativeImage.createFromPath(trayIconPath());
     // Some platforms ignore large images; resizing keeps the tray neat.
-    tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon.resize({ width: 16, height: 16 }));
+    tray = new Tray(
+      icon.isEmpty()
+        ? nativeImage.createEmpty()
+        : icon.resize({ width: 16, height: 16 }),
+    );
     tray.setToolTip("OrianBuilder — running in background");
     tray.setContextMenu(buildContextMenu());
     tray.on("click", () => showAndFocusMainWindow());

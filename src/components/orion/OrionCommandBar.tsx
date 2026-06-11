@@ -36,6 +36,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ipc } from "@/ipc/types";
 import type { MediaJob } from "@/ipc/types";
+import type { MediaAspectRatio } from "@/ipc/types/media_queue";
 import { useVoiceToText } from "@/hooks/useVoiceToText";
 import { useStreamChat } from "@/hooks/useStreamChat";
 import { useSelectChat } from "@/hooks/useSelectChat";
@@ -60,7 +61,10 @@ import {
   isStreamingByIdAtom,
   pushRecentViewedChatIdAtom,
 } from "@/atoms/chatAtoms";
-import { looksLikeStoryboardScript } from "./storyboard_script";
+import {
+  detectAspectRatio,
+  looksLikeStoryboardScript,
+} from "./storyboard_script";
 
 const CAPABILITY_ICON: Record<CapabilityId, ReactNode> = {
   generate_design: <Palette className="w-3.5 h-3.5" />,
@@ -267,6 +271,141 @@ function jobStatusPillClass(status: MediaJob["status"]): string {
   return base + "bg-primary/15 text-primary";
 }
 
+// ── Storyboard pipeline stage tracker ────────────────────────────────────────
+
+type StoryboardPhaseStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "failed"
+  | "skipped";
+
+/** Map the job's free-form `stage` string + status onto the fixed pipeline
+ *  phases so the UI can show a checklist (parse → scenes → edit → audio →
+ *  library) regardless of how granular the backend progress lines are. */
+function storyboardPhaseIndex(job: MediaJob): number {
+  if (job.status === "done") return 5;
+  const s = job.stage ?? "";
+  if (s.startsWith("editing")) return 2;
+  if (s.startsWith("soundtrack") || s.startsWith("mux")) return 3;
+  if (s.startsWith("scene")) return 1;
+  if (job.scenes && job.scenes.length > 0) {
+    // Past parsing; if every scene finished we're at/after the edit.
+    return job.scenes.every((sc) => sc.status === "done") ? 2 : 1;
+  }
+  return 0;
+}
+
+function StoryboardPhaseIcon({ status }: { status: StoryboardPhaseStatus }) {
+  if (status === "done")
+    return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />;
+  if (status === "running")
+    return <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />;
+  if (status === "failed")
+    return <XCircle className="h-3.5 w-3.5 text-red-400" />;
+  if (status === "skipped")
+    return <MinusCircle className="h-3.5 w-3.5 text-white/35" />;
+  return <span className="block h-2 w-2 rounded-full bg-white/20" />;
+}
+
+/** Visual pipeline: every step of script → final video, with per-scene dots
+ *  under the "Scenes" phase and a synced-audio/tier badge once known. */
+function StoryboardPipeline({ job }: { job: MediaJob }) {
+  const phase = storyboardPhaseIndex(job);
+  const sceneTotal = job.scenes?.length ?? 0;
+  const sceneDone = job.scenes?.filter((s) => s.status === "done").length ?? 0;
+
+  const phases: { label: string; detail?: string; skipped?: boolean }[] = [
+    { label: "Read the script" },
+    {
+      label: "Generate scene clips",
+      detail: sceneTotal > 0 ? `${sceneDone}/${sceneTotal}` : undefined,
+    },
+    { label: "Auto-edit (stitch in order)" },
+    {
+      label:
+        job.syncedAudio === true
+          ? "Soundtrack — synced by the model"
+          : "Soundtrack",
+      skipped: job.syncedAudio === true,
+    },
+    { label: "Save to Library" },
+  ];
+
+  const statusFor = (idx: number): StoryboardPhaseStatus => {
+    if (phases[idx].skipped && job.status !== "failed") {
+      return idx < phase || job.status === "done" ? "skipped" : "pending";
+    }
+    if (idx < phase) return "done";
+    if (idx === phase) {
+      if (job.status === "failed") return "failed";
+      if (job.status === "running") return "running";
+      if (job.status === "done") return "done";
+      return "pending";
+    }
+    return "pending";
+  };
+
+  return (
+    <div className="flex flex-col gap-1">
+      {phases.map((p, idx) => (
+        <div key={p.label} className="flex flex-col gap-1">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="flex w-4 justify-center">
+              <StoryboardPhaseIcon status={statusFor(idx)} />
+            </span>
+            <span
+              className={
+                statusFor(idx) === "pending"
+                  ? "text-white/35"
+                  : statusFor(idx) === "failed"
+                    ? "text-red-300/90"
+                    : "text-white/75"
+              }
+            >
+              {p.label}
+            </span>
+            {p.detail && <span className="text-white/40">{p.detail}</span>}
+            {idx === phase && job.status === "running" && job.stage && (
+              <span className="truncate text-white/40">· {job.stage}</span>
+            )}
+          </div>
+          {idx === 1 && job.scenes && job.scenes.length > 0 && (
+            <div className="ml-6 flex flex-wrap gap-1.5">
+              {job.scenes.map((s) => (
+                <span
+                  key={s.index}
+                  title={`${s.title} - ${s.status}`}
+                  className={sceneDotClass(s.status)}
+                >
+                  {s.index + 1}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+      {(job.videoTier || job.syncedAudio !== undefined) && (
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+          {job.videoTier && (
+            <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium text-white/55">
+              {job.videoTier}
+            </span>
+          )}
+          {job.syncedAudio === true && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
+              <Volume2 className="h-3 w-3" /> synced audio+video
+            </span>
+          )}
+          <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium text-white/55">
+            {job.aspectRatio}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * Orion command surface: one box that turns a typed or spoken command into a
  * chained flow via `ipc.flow.runCommand`, and renders the live step results.
@@ -286,6 +425,9 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
   const [storyboardJobId, setStoryboardJobId] = useState<string | null>(null);
   const [storyboardJob, setStoryboardJob] = useState<MediaJob | null>(null);
   const [muted, setMuted] = useState(false);
+  // Output shape for storyboard/video jobs. "auto" infers it from the script
+  // ("9:16", "vertical", "shorts", …) and falls back to 16:9.
+  const [aspect, setAspect] = useState<"auto" | MediaAspectRatio>("auto");
   // Autonomous by default: after the first prompt the agent runs end-to-end with
   // no approval prompts. Toggle off ("Ask me") to get blocking approvals on
   // risky steps. Drives the global `autonomousMode` setting the agent reads.
@@ -555,10 +697,12 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
         return;
       }
 
+      const aspectRatio: MediaAspectRatio =
+        aspect !== "auto" ? aspect : (detectAspectRatio(command) ?? "16:9");
       const job = await ipc.mediaQueue.enqueue({
         kind: "storyboard",
         prompt: command,
-        aspectRatio: "16:9",
+        aspectRatio,
       });
       setStoryboardJobId(job.id);
       setStoryboardJob(job);
@@ -568,8 +712,9 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
           {
             role: "assistant",
             content:
-              "Storyboard queued. Orion will parse this into scenes, render each clip in order, " +
-              "auto-edit them together and lay a matched soundtrack over the result. Progress shows " +
+              `Storyboard queued (${aspectRatio}). Orion will parse this into scenes, render each ` +
+              "clip in order, auto-edit them together and add a soundtrack — or keep the model's " +
+              "own synced audio when an LTX-2.3 audio+video tier is running. Progress shows " +
               "here and in Library → Media Queue; the finished video lands in Library → Media.",
           },
         ],
@@ -579,7 +724,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
       markCommandSessionStreaming(session.chatId, false);
       selectChat({ chatId: session.chatId, appId: session.appId });
     },
-    [queryClient, speak, markCommandSessionStreaming, selectChat],
+    [queryClient, speak, markCommandSessionStreaming, selectChat, aspect],
   );
 
   /** Lighter chained-capability runner (news, tracking, mixed flows). Reuses
@@ -909,6 +1054,34 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
             ? "Runs end-to-end - no interruptions."
             : "Pauses for approval on risky steps."}
         </span>
+
+        {/* Aspect ratio for video/storyboard output. Auto reads the script. */}
+        <div className="ml-auto inline-flex items-center gap-1.5">
+          <span className="text-xs text-white/40">Ratio</span>
+          <div className="inline-flex rounded-lg border border-white/10 bg-black/20 p-0.5 text-xs">
+            {(["auto", "16:9", "9:16", "1:1"] as const).map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setAspect(r)}
+                disabled={isRunning}
+                title={
+                  r === "auto"
+                    ? "Detect from the script (vertical/shorts → 9:16); defaults to 16:9"
+                    : `Render video at ${r}`
+                }
+                className={
+                  "rounded-md px-2 py-1 transition-colors " +
+                  (aspect === r
+                    ? "bg-primary/20 text-primary"
+                    : "text-white/50 hover:text-white/80")
+                }
+              >
+                {r === "auto" ? "Auto" : r}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Example chips - shown only before a run */}
@@ -1000,7 +1173,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
         </div>
       )}
 
-      {/* Storyboard job (script → video) progress */}
+      {/* Storyboard job (script → video) progress: full pipeline checklist */}
       {storyboardJob && (
         <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
           <div className="mb-2 flex items-center justify-between">
@@ -1008,26 +1181,20 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
               <Video className="h-4 w-4" /> Storyboard
             </span>
             <span className={jobStatusPillClass(storyboardJob.status)}>
-              {storyboardJob.stage ?? storyboardJob.status}
+              {storyboardJob.status}
             </span>
           </div>
-          {storyboardJob.scenes && storyboardJob.scenes.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {storyboardJob.scenes.map((s) => (
-                <span
-                  key={s.index}
-                  title={`${s.title} - ${s.status}`}
-                  className={sceneDotClass(s.status)}
-                >
-                  {s.index + 1}
-                </span>
-              ))}
-            </div>
-          ) : (
+          {storyboardJob.status === "queued" &&
+          (!storyboardJob.scenes || storyboardJob.scenes.length === 0) ? (
             <p className="text-xs text-white/45">
-              {storyboardJob.status === "queued"
-                ? "Queued - parsing the script into scenes..."
-                : (storyboardJob.stage ?? "Working...")}
+              Queued - parsing the script into scenes...
+            </p>
+          ) : (
+            <StoryboardPipeline job={storyboardJob} />
+          )}
+          {storyboardJob.warning && (
+            <p className="mt-2 text-xs text-amber-300/80">
+              {storyboardJob.warning}
             </p>
           )}
           {storyboardJob.error && (

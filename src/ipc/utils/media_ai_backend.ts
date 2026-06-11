@@ -1,6 +1,7 @@
 import { app } from "electron";
 import { spawn, type ChildProcess } from "child_process";
 import fs from "fs";
+import os from "os";
 import path from "path";
 import log from "electron-log";
 import treeKill from "tree-kill";
@@ -182,6 +183,10 @@ function getBackendEnvironment(): NodeJS.ProcessEnv {
     ),
     ORIANBUILDER_GPU_VENDOR:
       cachedHardwareProfile?.primaryGpu?.vendor ?? "unknown",
+    // RAM-aware tier selection fallback for venvs without psutil installed.
+    ORIANBUILDER_TOTAL_RAM_MB: String(
+      Math.round(os.totalmem() / (1024 * 1024)),
+    ),
     // Full-bandwidth HuggingFace downloads via both Xet and hf_transfer.
     HF_XET_HIGH_PERFORMANCE: "1",
     HF_HUB_ENABLE_HF_TRANSFER: "1",
