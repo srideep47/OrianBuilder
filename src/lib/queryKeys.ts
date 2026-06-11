@@ -22,6 +22,7 @@ export const queryKeys = {
     all: ["system"] as const,
     appVersion: ["system", "appVersion"] as const,
     platform: ["system", "platform"] as const,
+    appDataDir: ["system", "appDataDir"] as const,
   },
 
   // ─────────────────────────────────────────────────────────────────────────────

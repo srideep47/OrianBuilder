@@ -1,4 +1,4 @@
-import { createRoute, lazyRouteComponent } from "@tanstack/react-router";
+import { createRoute } from "@tanstack/react-router";
 import { rootRoute } from "@/routes/root";
 import { lazy } from "react";
 

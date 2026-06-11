@@ -356,7 +356,6 @@ export function ChatInput({
   });
 
   const [isInlineReplying, setIsInlineReplying] = useState(false);
-  const inlineBufferRef = useRef("");
   const inlineFlushTimerRef = useRef<number | null>(null);
   const inlineIdCounterRef = useRef(0);
 

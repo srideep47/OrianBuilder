@@ -61,12 +61,18 @@ import {
 } from "./ipc/utils/embedded_inference_server";
 import { recoverInterruptedMissionsOnStartup } from "./ipc/utils/mission_recovery";
 import { stopMediaAiBackend } from "./ipc/utils/media_ai_backend";
+import { applyUserDataRelocation } from "./main/user_data_location";
 
 log.errorHandler.startCatching();
 log.eventLogger.startLogging();
 log.scope.labelPadding = false;
 
 const logger = log.scope("main");
+
+// Relocate the userData directory (DB, settings, and the multi-GB mediaai model
+// cache) to a user-chosen drive if configured. MUST run before anything reads
+// app.getPath("userData"), i.e. before registerIpcHandlers / DB / settings.
+applyUserDataRelocation();
 
 // Load environment variables from .env file
 dotenv.config();
@@ -330,12 +336,9 @@ export async function onReady() {
   // attach the system tray + window-close interceptor. This must run after
   // `createWindow()` so we have a window reference to wire close-to-tray.
   try {
-    const { startScheduleEngine } = await import(
-      "./main/schedule/engine"
-    );
-    const { enableBackgroundMode, shouldStartHidden } = await import(
-      "./main/schedule/tray"
-    );
+    const { startScheduleEngine } = await import("./main/schedule/engine");
+    const { enableBackgroundMode, shouldStartHidden } =
+      await import("./main/schedule/tray");
     startScheduleEngine();
     if (settings.runInBackground === true && mainWindow) {
       enableBackgroundMode(mainWindow);

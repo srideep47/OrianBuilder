@@ -18,6 +18,7 @@ import { GitHubIntegration } from "@/components/GitHubIntegration";
 import { VercelIntegration } from "@/components/VercelIntegration";
 import { SupabaseIntegration } from "@/components/SupabaseIntegration";
 import { CustomAppsFolderSelector } from "@/components/CustomAppsFolderSelector";
+import { AppDataLocationSelector } from "@/components/AppDataLocationSelector";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { AutoFixProblemsSwitch } from "@/components/AutoFixProblemsSwitch";
@@ -396,6 +397,9 @@ export function GeneralSettings({ appVersion }: { appVersion: string | null }) {
       </div>
       <div id={SETTING_IDS.customAppsFolder} className="mt-4">
         <CustomAppsFolderSelector />
+      </div>
+      <div id={SETTING_IDS.appDataDir} className="mt-4">
+        <AppDataLocationSelector />
       </div>
 
       <div className="flex items-center text-sm text-muted-foreground mt-4">

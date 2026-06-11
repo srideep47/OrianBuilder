@@ -60,6 +60,32 @@ export const GetCustomAppsFolderResultSchema = z.object({
   isPathDefault: z.boolean(),
 });
 
+// App data (userData) location: holds the DB, settings, and the multi-GB
+// mediaai model cache. Relocatable to another drive (e.g. D:) to free space.
+export const GetAppDataDirResultSchema = z.object({
+  path: z.string(),
+  isPathDefault: z.boolean(),
+  isPathAvailable: z.boolean(),
+  freeBytes: z.number().nullable(),
+});
+
+export type GetAppDataDirResult = z.infer<typeof GetAppDataDirResultSchema>;
+
+export const SelectAppDataDirResultSchema = z.object({
+  path: z.string().nullable(),
+  canceled: z.boolean(),
+  freeBytes: z.number().nullable(),
+});
+
+export const SetAppDataDirResultSchema = z.object({
+  // Final resolved userData path the app will use after restart.
+  path: z.string(),
+  // Whether the existing data was copied to the new location by this call.
+  moved: z.boolean(),
+  // The app must restart to pick up the relocated userData directory.
+  requiresRestart: z.boolean(),
+});
+
 export const DoesReleaseNoteExistParamsSchema = z.object({
   version: z.string(),
 });
@@ -191,6 +217,27 @@ export const systemContracts = {
     channel: "set-custom-apps-folder",
     input: z.string().nullable(),
     output: z.void(),
+  }),
+
+  // App data (userData) location
+  getAppDataDir: defineContract({
+    channel: "get-app-data-dir",
+    input: z.void(),
+    output: GetAppDataDirResultSchema,
+  }),
+
+  selectAppDataDir: defineContract({
+    channel: "select-app-data-dir",
+    input: z.void(),
+    output: SelectAppDataDirResultSchema,
+  }),
+
+  setAppDataDir: defineContract({
+    // Pass a parent directory to relocate into (data goes in <dir>/orianbuilder),
+    // or null to reset to the default location.
+    channel: "set-app-data-dir",
+    input: z.string().nullable(),
+    output: SetAppDataDirResultSchema,
   }),
 
   // External
