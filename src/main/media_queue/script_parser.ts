@@ -27,6 +27,9 @@ export interface StoryboardScene {
   index: number;
   title: string;
   prompt: string;
+  /** Spoken narration/voiceover for this scene (TTS → muxed onto the clip).
+   *  From a "Narration:" line in the authored format, or extracted by the LLM. */
+  narration?: string;
   /** Target clip length in seconds, when derivable from the script. */
   durationSec?: number;
 }
@@ -92,13 +95,29 @@ export function parseScriptDeterministic(
     const header = headers[h];
     const blockEnd =
       h + 1 < headers.length ? headers[h + 1].line : lines.length;
-    const block = lines.slice(header.line + 1, blockEnd).join("\n");
+    const blockLines = lines.slice(header.line + 1, blockEnd);
 
-    // Prefer an explicit "Prompt:" label; otherwise use the whole block.
-    const promptMatch = block.match(/Prompt\s*:\s*([\s\S]+)/i);
-    const prompt = (promptMatch ? promptMatch[1] : block)
+    // Labeled sections inside a scene block: "Prompt:" / "Narration:" (or
+    // "Voiceover:"/"VO:") each run until the next label or block end. A block
+    // with no labels at all is the prompt (the original format).
+    const sections: Record<string, string[]> = {};
+    let current: string | null = null;
+    for (const line of blockLines) {
+      const label = line.match(
+        /^\s*(Prompt|Narration|Voiceover|VO)\s*:\s*(.*)$/i,
+      );
+      if (label) {
+        current = /^prompt$/i.test(label[1]) ? "prompt" : "narration";
+        sections[current] = [label[2]];
+      } else if (current) {
+        sections[current].push(line);
+      }
+    }
+    const prompt = (sections.prompt?.join(" ") ?? blockLines.join(" "))
       .trim()
       .replace(/\s+/g, " ");
+    const narration =
+      sections.narration?.join(" ").trim().replace(/\s+/g, " ") || undefined;
     if (!prompt) continue;
 
     const durationSec =
@@ -110,6 +129,7 @@ export function parseScriptDeterministic(
       index: header.index,
       title: header.title || `Scene ${header.index}`,
       prompt,
+      narration,
       durationSec,
     });
   }
@@ -129,6 +149,7 @@ const LlmStoryboardSchema = z.object({
       z.object({
         title: z.string(),
         prompt: z.string().min(1),
+        narration: z.string().optional(),
         durationSec: z.number().positive().max(120).optional(),
       }),
     )
@@ -138,9 +159,12 @@ const LlmStoryboardSchema = z.object({
 const PARSE_SYSTEM_PROMPT = `You convert a video script into a structured storyboard JSON.
 Rules:
 - Output ONLY valid JSON. No prose, no markdown fences.
-- Shape: {"style": string?, "scenes": [{"title": string, "prompt": string, "durationSec": number?}]}
+- Shape: {"style": string?, "scenes": [{"title": string, "prompt": string, "narration": string?, "durationSec": number?}]}
 - Each scene's "prompt" must be a complete, self-contained visual generation
-  prompt (subject, action, setting, camera) usable by a text-to-video model.
+  prompt (subject, action, setting, camera) usable by a video model.
+- "narration" is the spoken voiceover/dialogue text for the scene, when the
+  script contains any — verbatim words to be read aloud, NOT a description.
+  Never put narration text inside "prompt".
 - "style" is the overall visual style applied to every scene, if the script
   implies one.
 - "durationSec" per scene when the script gives timings; omit otherwise.
@@ -191,6 +215,7 @@ export function createScriptParser(
       index: i + 1,
       title: s.title,
       prompt: s.prompt,
+      narration: s.narration?.trim() || undefined,
       durationSec:
         s.durationSec != null ? clampDuration(s.durationSec) : undefined,
     }));

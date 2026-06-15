@@ -32,6 +32,8 @@ export interface LanBeacon {
   deviceName: string;
   appVersion: string;
   timestamp: number;
+  /** Additive: raw-TCP fallback port for peers that can't run Hyperswarm. */
+  tcpPort?: number;
 }
 
 export interface LanPeer {
@@ -40,6 +42,8 @@ export interface LanPeer {
   deviceName: string;
   address: string;
   lastSeenAt: number;
+  /** TCP fallback port advertised by the peer, or null if it's DHT-only. */
+  tcpPort: number | null;
 }
 
 type LanDiscoveryEvents = {
@@ -208,6 +212,7 @@ class LanDiscovery extends EventEmitter<LanDiscoveryEvents> {
       deviceName: beacon.deviceName,
       address: rinfo.address,
       lastSeenAt: Date.now(),
+      tcpPort: typeof beacon.tcpPort === "number" ? beacon.tcpPort : null,
     };
     this.peers.set(beacon.publicKey, peer);
     if (!existing) {

@@ -35,6 +35,8 @@ export const MediaJobSceneSchema = z.object({
   index: z.number(),
   title: z.string(),
   prompt: z.string(),
+  /** Spoken narration for this scene (TTS → muxed onto the clip, scene-aligned). */
+  narration: z.string().optional(),
   durationSec: z.number().optional(),
   status: z.enum(["pending", "generating", "done", "failed"]),
 });
@@ -79,12 +81,14 @@ export const MediaJobSchema = z.object({
   aspectRatio: MediaAspectRatioSchema,
   /** Target duration in seconds (video/music/speech). */
   durationSec: z.number().optional(),
+  /** Keyframe image path for i2v video jobs (see EnqueueMediaJobParams). */
+  seedImagePath: z.string().optional(),
   status: MediaJobStatusSchema,
   /** Present while running: which stage is active (e.g. "video", "scene 3/12", "mux"). */
   stage: z.string().optional(),
   /** Storyboard jobs: the parsed scenes with per-scene progress. */
   scenes: z.array(MediaJobSceneSchema).optional(),
-  /** Video tier that actually generated (e.g. "ltx-2-av") — for UI badges. */
+  /** Video tier that actually generated (e.g. "ltx-2-av-small") — for UI badges. */
   videoTier: z.string().optional(),
   /** True when the clips carry synced audio from the model itself, so no
    *  separate soundtrack pass was needed. */
@@ -117,6 +121,10 @@ export const EnqueueMediaJobParamsSchema = z.object({
   audioKind: z.enum(["music", "speech"]).optional(),
   aspectRatio: MediaAspectRatioSchema.optional(),
   durationSec: z.number().positive().max(600).optional(),
+  /** Absolute path to a keyframe image for video jobs — routes i2v-capable
+   *  tiers (Wan 2.2 14B, LTX) into image-to-video. Storyboard jobs generate
+   *  their own per-scene keyframes and ignore this. */
+  seedImagePath: z.string().optional(),
   /** Submit to a trusted peer's queue instead of running locally. */
   targetPeerId: z.string().optional(),
 });

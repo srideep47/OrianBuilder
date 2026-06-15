@@ -63,10 +63,18 @@ async function pickTierForRequest(
       case "music":
         return pickBestMusicTier(projected, request.preferredQuality);
       case "video":
+        // Pass whether a keyframe accompanies the request so image-to-video
+        // tiers (Wan 2.2 14B) become eligible — without this they're always
+        // filtered out and a storyboard clip with a keyframe still gets an
+        // LTX text-to-video tier forced onto the backend.
         return pickBestVideoTier(
           projected,
           request.preferredQuality,
           totalRamMb,
+          Boolean(
+            (request.options as { image_path?: unknown } | undefined)
+              ?.image_path,
+          ),
         );
       default:
         return null;

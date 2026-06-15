@@ -22,6 +22,10 @@ export interface LocalImageGenOptions {
   width?: number;
   height?: number;
   tier?: string | null;
+  /** Fixed RNG seed. Storyboards pass one stable seed for every keyframe so the
+   *  scenes share a consistent visual style instead of drifting between
+   *  realistic / anime / 3D looks on each independent generation. */
+  seed?: number;
   onProgress?: (p: MediaJobProgress) => void;
 }
 

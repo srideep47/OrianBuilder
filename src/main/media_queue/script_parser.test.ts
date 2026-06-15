@@ -70,6 +70,35 @@ describe("parseScriptDeterministic", () => {
     expect(parsed.scenes[0].prompt).toBe("A lone astronaut floating in space.");
   });
 
+  it("extracts a Narration: label separately from the prompt", () => {
+    const parsed = parseScriptDeterministic(
+      [
+        "Scene 1: Workshop (0:00 - 0:06)",
+        "Prompt: A boy enters a cluttered inventor's workshop,",
+        "warm lamplight, 3D animation.",
+        "Narration: It all began in grandpa's workshop,",
+        "where every gadget told a story.",
+        "Scene 2: Reveal (0:06 - 0:12)",
+        "Prompt: A small robot blinks awake on the workbench.",
+      ].join("\n"),
+    )!;
+    expect(parsed.scenes).toHaveLength(2);
+    expect(parsed.scenes[0].prompt).toBe(
+      "A boy enters a cluttered inventor's workshop, warm lamplight, 3D animation.",
+    );
+    expect(parsed.scenes[0].narration).toBe(
+      "It all began in grandpa's workshop, where every gadget told a story.",
+    );
+    expect(parsed.scenes[1].narration).toBeUndefined();
+  });
+
+  it("accepts Voiceover:/VO: as narration aliases", () => {
+    const parsed = parseScriptDeterministic(
+      `Scene 1: A\nPrompt: A city street.\nVoiceover: Welcome to the future.`,
+    )!;
+    expect(parsed.scenes[0].narration).toBe("Welcome to the future.");
+  });
+
   it("returns null for free-form text", () => {
     expect(
       parseScriptDeterministic("Make me a fun video about sharks please."),

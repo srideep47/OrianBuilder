@@ -34,6 +34,7 @@ import { mediaShare } from "./media-share";
 import type { Peer } from "@/ipc/types/network";
 import { app } from "electron";
 import { lanDiscovery, type LanPeer } from "./lan-discovery";
+import { LanTcpTransport } from "./lan-tcp";
 import {
   getCurrentBroadcastState,
   broadcastNow,
@@ -90,6 +91,7 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
   private reflushTimer: ReturnType<typeof setInterval> | null = null;
   private pingNonceCounter = 1;
+  private lanTcp: LanTcpTransport | null = null;
 
   async start(): Promise<void> {
     if (this.isOnline) return;
@@ -128,6 +130,27 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
         );
       this.isOnline = true;
 
+      // Start the raw-TCP LAN fallback transport BEFORE discovery so its port
+      // is known when we broadcast. This is what lets Hyperswarm-incapable peers
+      // (the Android nodejs-mobile bridge) form a data channel with us: they
+      // advertise a tcpPort in their beacon, the smaller pubkey dials, and we
+      // run the same Ed25519 challenge-response + framed-JSON channel.
+      try {
+        const privBytesForLan = await getPrivateKeyBytes();
+        const identity = await getDeviceIdentity();
+        this.lanTcp = new LanTcpTransport({
+          publicKeyHex: identity.publicKey,
+          privateKeyBytes: privBytesForLan,
+          onChannel: (ch, remoteKeyHex) =>
+            void this.attachLanChannel(ch, remoteKeyHex),
+          isConnected: (key) => this.isPeerConnected(key),
+        });
+        await this.lanTcp.start();
+      } catch (err) {
+        logger.warn("LAN-TCP transport failed to start (non-fatal):", err);
+        this.lanTcp = null;
+      }
+
       // Start LAN broadcast discovery in parallel with the DHT join.
       try {
         const identity = await getDeviceIdentity();
@@ -136,6 +159,7 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
           displayName: identity.deviceName,
           deviceName: identity.deviceName,
           appVersion: app.getVersion(),
+          tcpPort: this.lanTcp?.getPort(),
         });
         lanDiscovery.on("peer-seen", (lanPeer) => this._onLanPeer(lanPeer));
       } catch (err) {
@@ -167,6 +191,8 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
     this.keepaliveTimer = null;
     this.reflushTimer = null;
     await lanDiscovery.stop().catch(() => undefined);
+    await this.lanTcp?.stop().catch(() => undefined);
+    this.lanTcp = null;
     if (!this.swarm) return;
     try {
       await this.swarm.destroy();
@@ -210,6 +236,9 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
    * faster path for devices that share a network.
    */
   private _onLanPeer(lanPeer: LanPeer): void {
+    // Raw-TCP fallback: if the peer advertised a tcpPort (LAN-only peers that
+    // can't do Hyperswarm), let the transport decide whether to dial it.
+    this.lanTcp?.onPeerSeen(lanPeer);
     if (!this.swarm) return;
     if (lanJoinedTopics.has(lanPeer.publicKey)) return;
     void this._joinLanRendezvous(lanPeer);
@@ -254,7 +283,26 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
       return;
     }
 
-    const channel = new PeerChannel(socket);
+    await this._registerChannel(new PeerChannel(socket), remoteKeyHex);
+  }
+
+  /**
+   * Adopt an already-established, identity-verified PeerChannel from the LAN-TCP
+   * fallback transport (peers that can't run Hyperswarm — e.g. the Android
+   * nodejs-mobile bridge). Wire-identical to a Hyperswarm connection from here on.
+   */
+  async attachLanChannel(channel: PeerChannel, remoteKeyHex: string) {
+    const existing = connectedPeers.get(remoteKeyHex);
+    if (existing && !existing.channel.isClosed()) {
+      // Already connected (e.g. via Hyperswarm) — keep the existing channel.
+      channel.close();
+      return;
+    }
+    logger.info(`LAN-TCP connection from ${remoteKeyHex.slice(0, 16)}…`);
+    await this._registerChannel(channel, remoteKeyHex);
+  }
+
+  private async _registerChannel(channel: PeerChannel, remoteKeyHex: string) {
     logger.info(`New connection from ${remoteKeyHex.slice(0, 16)}…`);
 
     // Initialize a placeholder entry — gets enriched on METADATA.

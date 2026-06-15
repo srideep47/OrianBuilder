@@ -231,44 +231,424 @@ def submit_job(kind: str, params: dict) -> str:
     return manager.submit(kind, params)
 
 
+# ── Subprocess-isolated generation (persistent worker) ───────────────────────
+#
+# Heavy generation runs in a child process (app.workers.gen_worker --serve).
+# A native crash there — CUDA OOM, a torch ABI segfault, a driver fault —
+# kills only the child; this server stays up and the job is marked failed
+# with a real message instead of the whole backend dying and wiping every
+# in-memory job.
+#
+# The child is PERSISTENT between jobs: storyboards generate many clips
+# back-to-back, and reloading a 17 GB GGUF + a streamed text encoder for
+# every clip would thrash RAM/SSD and add minutes per scene. Staying alive
+# keeps the model cache inside the child warm, so consecutive video jobs pay
+# the load once. An idle reaper retires the child (freeing its ~20 GB of RAM)
+# once no work has arrived for a while, and image/music/tts executors retire
+# it explicitly before loading their own models into the freed memory.
+
+
+class SubprocessCrashed(RuntimeError):
+    """The worker process died without reporting a result (segfault / OOM)."""
+
+
+_WORKER_IDLE_TIMEOUT_S = float(os.getenv("OMNIGEN_WORKER_IDLE_S", "300"))
+
+
+class _PersistentWorker:
+    """One long-lived gen_worker child speaking the line protocol: parent
+    writes a spec path per job to stdin; child answers with @@PROGRESS@@…
+    then exactly one @@DONE@@/@@ERROR@@. The JobManager runs jobs on a single
+    thread, so the lock here only guards against the idle reaper."""
+
+    def __init__(self) -> None:
+        self._proc = None
+        self._stderr_file = None
+        self._stderr_path: Optional[str] = None
+        self._last_used = 0.0
+        self._lock = threading.Lock()
+        self._reaper_started = False
+
+    def _spawn(self) -> None:
+        import subprocess
+        import sys
+        import tempfile
+
+        # PYTHONPATH/HF_HOME/OMNIGEN_* are inherited from this process's env,
+        # so the child resolves `app` and the model cache exactly as we do.
+        env = dict(os.environ)
+        env["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+        # The child's stderr (diffusers/tqdm/tracebacks) goes to a FILE, never
+        # a pipe: a heavy stderr stream would fill a 64 KB pipe buffer while
+        # we're blocked reading stdout, deadlocking the child.
+        fd, self._stderr_path = tempfile.mkstemp(
+            prefix="gen-worker-", suffix=".log"
+        )
+        self._stderr_file = os.fdopen(fd, "w", encoding="utf-8", errors="replace")
+        self._proc = subprocess.Popen(
+            [sys.executable, "-m", "app.workers.gen_worker", "--serve"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=self._stderr_file,
+            text=True,
+            bufsize=1,  # line-buffered so progress arrives promptly
+            env=env,
+        )
+        log.info("gen worker spawned (pid=%s)", self._proc.pid)
+
+    def _close(self, kill: bool = True) -> None:
+        proc, stderr_file = self._proc, self._stderr_file
+        self._proc = None
+        self._stderr_file = None
+        if proc is not None and kill:
+            try:
+                proc.kill()
+                proc.wait(timeout=10)
+            except Exception:  # noqa: BLE001
+                pass
+        if stderr_file is not None:
+            try:
+                stderr_file.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def retire(self) -> None:
+        """Kill the idle child to hand its RAM/VRAM to another model. Cheap
+        no-op when no child is alive; the next video job just respawns."""
+        with self._lock:
+            if self._proc is not None:
+                log.info("retiring gen worker (pid=%s)", self._proc.pid)
+            self._close()
+
+    def _stderr_tail(self) -> str:
+        if not self._stderr_path:
+            return ""
+        try:
+            with open(
+                self._stderr_path, "r", encoding="utf-8", errors="replace"
+            ) as f:
+                return (f.read() or "").strip()[-1500:]
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def _ensure_reaper(self) -> None:
+        if self._reaper_started:
+            return
+        self._reaper_started = True
+
+        def _reap() -> None:
+            while True:
+                time.sleep(30)
+                with self._lock:
+                    if (
+                        self._proc is not None
+                        and time.time() - self._last_used > _WORKER_IDLE_TIMEOUT_S
+                    ):
+                        log.info(
+                            "gen worker idle %.0fs — retiring (frees its RAM)",
+                            time.time() - self._last_used,
+                        )
+                        self._close()
+
+        threading.Thread(target=_reap, daemon=True, name="gen-worker-reaper").start()
+
+    def run(self, kind: str, params: dict, report: ProgressFn) -> dict:
+        """Run one generation in the (re)used child, streaming its progress.
+
+        Raises JobCancelled if the client cancels (the child is killed —
+        mid-job CUDA state isn't safely reusable), SubprocessCrashed on a
+        native crash, or RuntimeError with the worker's own message on a
+        clean failure (the child stays warm in that case)."""
+        import json
+        import tempfile
+
+        with self._lock:
+            self._ensure_reaper()
+            self._last_used = time.time()
+            if self._proc is None or self._proc.poll() is not None:
+                self._close(kill=False)
+                self._spawn()
+            proc = self._proc
+            assert proc is not None and proc.stdin and proc.stdout
+
+            with tempfile.TemporaryDirectory(prefix="gen-job-") as tmp:
+                spec_path = os.path.join(tmp, "spec.json")
+                result_path = os.path.join(tmp, "result.json")
+                with open(spec_path, "w", encoding="utf-8") as f:
+                    json.dump(
+                        {"kind": kind, "params": params, "result_path": result_path},
+                        f,
+                    )
+
+                worker_error: Optional[str] = None
+                saw_done = False
+                try:
+                    try:
+                        proc.stdin.write(spec_path + "\n")
+                        proc.stdin.flush()
+                    except OSError:
+                        pass  # child already dead → falls through to crash path
+                    while True:
+                        raw = proc.stdout.readline()
+                        if raw == "":  # EOF — the child exited
+                            break
+                        line = raw.rstrip("\n")
+                        if line.startswith("@@PROGRESS@@"):
+                            try:
+                                payload = json.loads(line[len("@@PROGRESS@@"):])
+                            except ValueError:
+                                continue
+                            # report() raises JobCancelled when the client
+                            # cancelled — propagated after the kill below.
+                            report(
+                                payload.get("stage") or "working",
+                                payload.get("progress"),
+                            )
+                        elif line.startswith("@@DONE@@"):
+                            saw_done = True
+                            break
+                        elif line.startswith("@@ERROR@@"):
+                            worker_error = line[len("@@ERROR@@"):].strip()
+                            break
+                except BaseException:
+                    # JobCancelled or shutdown — a mid-job child holds CUDA
+                    # state we can't safely reuse; kill it. Next job respawns.
+                    self._close()
+                    raise
+
+                self._last_used = time.time()
+                if saw_done:
+                    try:
+                        with open(result_path, "r", encoding="utf-8") as f:
+                            return json.load(f)
+                    except Exception as exc:  # noqa: BLE001
+                        self._close()
+                        raise SubprocessCrashed(
+                            f"worker reported done but no result file: {exc}"
+                        ) from exc
+
+                if worker_error:
+                    # Clean, Python-level failure — the worker survives it and
+                    # keeps its model cache; surface its own message.
+                    raise RuntimeError(worker_error)
+
+                # No result, no clean error → native crash. 3221225477 ==
+                # 0xC0000005 (Windows access violation, typically OOM in a
+                # native CUDA kernel). stdout EOF can precede the OS reaping
+                # the child, so wait for the real exit code (it feeds the
+                # OOM hint below).
+                try:
+                    returncode = proc.wait(timeout=10)
+                except Exception:  # noqa: BLE001
+                    returncode = proc.poll()
+                stderr_tail = self._stderr_tail()
+                self._close(kill=False)
+                hint = ""
+                if returncode in (3221225477, -11, 139):
+                    hint = (
+                        " (likely out of memory - close other apps or pick a"
+                        " lighter model)"
+                    )
+                detail = f": {stderr_tail}" if stderr_tail else ""
+                raise SubprocessCrashed(
+                    f"generation worker crashed (exit {returncode}){hint}{detail}"
+                )
+
+
+_video_worker = _PersistentWorker()
+
+
+def _run_in_subprocess(kind: str, params: dict, report: ProgressFn) -> dict:
+    """Run one generation in the persistent worker child (kept for the
+    executors below and ad-hoc harness scripts)."""
+    return _video_worker.run(kind, params, report)
+
+
+def _free_main_process_pipelines(report: Optional[ProgressFn] = None) -> None:
+    """Drop pipelines the in-process executors (image/music/tts) left resident
+    AND block until the GPU VRAM is actually reclaimed, so the video worker
+    child loads into a clean GPU. Only touches modules that were actually
+    imported — never pulls torch in cold.
+
+    The verify-and-wait is essential: an image model that just finished can
+    still be releasing its weights (CUDA caching allocator + accelerate offload
+    hooks) when the video model starts loading. Without waiting for the VRAM to
+    come back, the 14B Wan i2v / LTX pipeline OOMs on its first denoise step."""
+    import sys as _sys
+
+    for mod_name, fn_name in (
+        ("app.models.image", "unload_pipeline"),
+        ("app.models.music", "unload"),
+        ("app.models.tts", "unload"),
+    ):
+        mod = _sys.modules.get(mod_name)
+        if mod is None:
+            continue
+        try:
+            getattr(mod, fn_name)()
+            log.info("unloaded %s before video generation", mod_name)
+        except Exception:  # noqa: BLE001
+            pass
+
+    _wait_for_vram_reclaimed(report)
+
+
+def _wait_for_vram_reclaimed(report: Optional[ProgressFn] = None) -> None:
+    """Poll free VRAM until most of the card is back (the video model needs it)
+    or a short deadline passes. Retries gc + empty_cache each tick so a slow
+    allocator teardown still completes before the video model loads."""
+    import time as _time
+
+    try:
+        import gc as _gc
+        import torch  # type: ignore
+    except ImportError:
+        return
+    if not torch.cuda.is_available():
+        return
+
+    try:
+        total_mb = torch.cuda.get_device_properties(0).total_memory // (1024 * 1024)
+    except Exception:  # noqa: BLE001
+        return
+    # The 14B video pipelines want most of the card; require ~80% free before
+    # we hand off. On a 16 GB card that's ~12.8 GB, comfortably above the
+    # group-offload working set we measured (~9-10 GB peak).
+    target_free_mb = int(total_mb * 0.80)
+    deadline = _time.time() + 20.0
+    if report:
+        report("freeing GPU memory for video model", None)
+    while True:
+        _gc.collect()
+        try:
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            free_mb = torch.cuda.mem_get_info()[0] // (1024 * 1024)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("VRAM reclaim check failed: %s", exc)
+            return
+        if free_mb >= target_free_mb:
+            log.info(
+                "pre-video VRAM reclaimed: %d MB free of %d MB (>= target %d MB)",
+                free_mb, total_mb, target_free_mb,
+            )
+            return
+        if _time.time() >= deadline:
+            log.warning(
+                "pre-video VRAM still low after wait: %d MB free of %d MB "
+                "(target %d MB) — proceeding, video model may OOM",
+                free_mb, total_mb, target_free_mb,
+            )
+            return
+        _time.sleep(0.5)
+
+
 # ── Executors ──────────────────────────────────────────────────────────────────
 #
 # Model modules are imported lazily inside each executor so the FastAPI app
 # (and its /health endpoint) comes up instantly without pulling in torch.
 
 
-def _execute_video(params: dict, report: ProgressFn) -> dict:
+_VIDEO_FALLBACK_TIER = "ltx-video"
+
+
+def _ensure_keyframe_for_i2v(params: dict, report: ProgressFn) -> dict:
+    """Image-to-video tiers (Wan 2.2 14B) animate a supplied keyframe — they
+    cannot start from text. When the user selects one for a plain text prompt
+    with no keyframe, render the keyframe from that prompt with the image model
+    first, then hand it to the video worker. Without this, tier selection
+    silently demotes the i2v tier to a text-to-video model (LTX) and the user
+    never actually gets Wan.
+
+    The image model runs in THIS (main) process and is unloaded before the
+    video subprocess loads Wan — the same single-residency handoff the
+    storyboard uses (generate stills → unload image model → load video model).
+    The keyframe is sized to the video tier's native input resolution (the i2v
+    pipeline downscales it anyway), which keeps it fast without affecting the
+    final clip. Best-effort: on any failure params are returned unchanged and
+    the video tier demotes as before, so the job still produces a clip."""
     from app.models import video as video_model
 
-    report("resolving model tier", None)
-    tier = video_model.pick_best_video_tier(params.get("tier"))
-    video_model.ensure_tier_downloaded(tier, report)
+    forced = params.get("tier")
+    if params.get("image_path") or not forced:
+        return params
+    tier = next((t for t in video_model.VIDEO_TIERS if t["id"] == forced), None)
+    if not tier or tier.get("image_conditioning") != "required":
+        return params
 
-    result = video_model.generate_video(
-        prompt=params["prompt"],
-        forced_tier_id=tier["id"],
-        num_frames=params.get("num_frames"),
-        fps=params.get("fps"),
-        width=params.get("width"),
-        height=params.get("height"),
-        steps=params.get("steps"),
-        duration_s=params.get("duration_s"),
-        aspect_ratio=params.get("aspect_ratio"),
-        progress_cb=report,
-    )
-    return {
-        "video_url": result["video_url"],
-        "tier": result["tier"],
-        "model": result["model"],
-        # True when the clip ships with a synced soundtrack (AV tiers) — the
-        # client then skips its own music/mux pass.
-        "has_audio": bool(result.get("has_audio")),
-    }
+    from app.models import image as image_model
+
+    # Hand the video worker's RAM/VRAM to the image model, then free the image
+    # model again before the video subprocess loads Wan (single residency).
+    _video_worker.retire()
+    report("generating keyframe", None)
+    keyframe_path: Optional[str] = None
+    try:
+        width = int(params.get("width") or tier["default_width"])
+        height = int(params.get("height") or tier["default_height"])
+        data = image_model.generate_image(
+            params["prompt"], width=width, height=height
+        )
+        OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+        out = OUTPUTS_DIR / _unique_output_filename("png", params["prompt"])
+        out.write_bytes(data)
+        keyframe_path = str(out.resolve())
+        log.info("auto-generated keyframe for i2v tier %s: %s", forced, out.name)
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "keyframe generation for %s failed (%s); the video tier will fall "
+            "back to text-to-video",
+            forced,
+            exc,
+        )
+    finally:
+        image_model.unload_pipeline()
+
+    if keyframe_path:
+        params = dict(params)
+        params["image_path"] = keyframe_path
+    return params
+
+
+def _execute_video(params: dict, report: ProgressFn) -> dict:
+    """Generate a video in an isolated subprocess. The heavy LTX-2.3 tiers can
+    fail two ways no in-process try/except could ever fully tame: a native
+    segfault/OOM (SubprocessCrashed) or a clean-but-fatal load/offload error
+    (e.g. bitsandbytes 'meta tensor'). Either way, retry once on the rock-solid
+    ltx-video tier (18 GB, already on disk, no exotic quantization) so the user
+    gets a clip instead of an error."""
+    forced = params.get("tier")
+    # i2v-only tiers (Wan 2.2 14B) need a keyframe; make one from the prompt
+    # when the caller didn't supply one (e.g. the single-prompt Generate path).
+    params = _ensure_keyframe_for_i2v(params, report)
+    _free_main_process_pipelines(report)
+    try:
+        return _run_in_subprocess("video", params, report)
+    except (SubprocessCrashed, RuntimeError) as exc:
+        # Already on the safe tier, or it's the one that failed → nothing safer
+        # to fall back to.
+        if forced == _VIDEO_FALLBACK_TIER:
+            raise
+        log.warning(
+            "video tier %s failed (%s) — retrying on %s",
+            forced,
+            exc,
+            _VIDEO_FALLBACK_TIER,
+        )
+        report(
+            f"that model failed - retrying on a lighter model ({_VIDEO_FALLBACK_TIER})",
+            None,
+        )
+        fallback_params = dict(params)
+        fallback_params["tier"] = _VIDEO_FALLBACK_TIER
+        return _run_in_subprocess("video", fallback_params, report)
 
 
 def _execute_image(params: dict, report: ProgressFn) -> dict:
     from app.models import image as image_model
 
+    # Hand the video worker's RAM/VRAM to the image model (single residency).
+    _video_worker.retire()
     report("loading image model", None)
     data = image_model.generate_image(
         params["prompt"],
@@ -289,6 +669,7 @@ def _execute_image(params: dict, report: ProgressFn) -> dict:
 def _execute_music(params: dict, report: ProgressFn) -> dict:
     from app.models import music as music_model
 
+    _video_worker.retire()
     report("loading music model", None)
     data = music_model.generate_music(
         params["prompt"],
@@ -306,6 +687,7 @@ def _execute_music(params: dict, report: ProgressFn) -> dict:
 def _execute_tts(params: dict, report: ProgressFn) -> dict:
     from app.models import tts as tts_model
 
+    _video_worker.retire()
     report("loading speech model", None)
     data = tts_model.generate_speech(
         params["text"], params.get("voice"), params.get("tier")

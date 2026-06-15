@@ -48,13 +48,16 @@ IMAGE_MODEL_TIERS: list[ImageTier] = [
         "backends": ["cuda", "rocm", "metal", "mps", "directml", "cpu"],
     },
     {
-        # Alibaba Tongyi — 8-step, best quality tier. Auto-selected for 8 GB+.
+        # Alibaba Tongyi — 8-step, best quality tier.
+        # Actual disk size: transformer 24.62 GB (bf16) + text encoder 8.05 GB + VAE 0.17 GB ≈ 32.85 GB.
+        # Uses enable_sequential_cpu_offload on consumer GPUs (< 40 GB VRAM) — slow but correct.
+        # Prefer z-image-turbo-gguf (13.1 GB total, fully GPU-resident on 16 GB cards).
         "id": "z-image-turbo",
         "label": "Z Image Turbo",
         "repo": "Tongyi-MAI/Z-Image-Turbo",
         "filename": None,
         "vram_mb": 8000,
-        "download_size_mb": 12000,
+        "download_size_mb": 32850,
         "backends": ["cuda", "rocm", "metal", "mps"],
     },
     {
@@ -198,19 +201,36 @@ def _gguf_path() -> str:
 
 
 def pick_best_tier(forced_tier_id: Optional[str] = None) -> ImageTier:
+    backend = get_backend()
+    gguf_tier = next(
+        (t for t in IMAGE_MODEL_TIERS if t["id"] == "z-image-turbo-gguf"), None
+    )
+    gguf_available = (
+        gguf_tier is not None
+        and os.path.isfile(_gguf_path())
+        and backend in gguf_tier["backends"]
+    )
+
     if forced_tier_id:
+        # The GGUF build IS Z-Image-Turbo (Q4_1 quantised). On a consumer GPU it
+        # loads fully into VRAM (fast) and uses ~13 GB system RAM vs the bf16
+        # build's ~32 GB. So when z-image-turbo is requested (e.g. storyboard
+        # keyframes) and the GGUF is present, serve the GGUF: far faster AND it
+        # leaves the RAM the video model (Wan 2.2 14B) needs free.
+        if forced_tier_id in ("z-image-turbo", "z-image-turbo-gguf") and gguf_available:
+            return gguf_tier  # type: ignore[return-value]
         for tier in IMAGE_MODEL_TIERS:
             if tier["id"] == forced_tier_id:
                 return tier
-    backend = get_backend()
+
     vram = get_vram_mb()
     for tier in IMAGE_MODEL_TIERS:
         if tier["id"] == "z-image-turbo-gguf":
             # Loaded via diffusers Lumina2Transformer2DModel + GGUFQuantizationConfig.
             # Transformer weights come from the local GGUF; VAE + text encoder are
             # fetched from HuggingFace on first run and cached.
-            if os.path.isfile(_gguf_path()) and backend in tier["backends"]:
-                return tier
+            if gguf_available:
+                return tier  # type: ignore[return-value]
             continue
         if backend in tier["backends"] and tier["vram_mb"] <= vram:
             return tier
@@ -337,18 +357,46 @@ def get_pipeline(forced_tier_id: Optional[str] = None):
 
         # Load quantised transformer from local GGUF; text encoder + VAE come
         # from the already-cached HuggingFace snapshot (no download needed).
+        _use_gpu = active_backend == "cuda" and get_vram_mb() >= 14000
+        log.info(
+            "z-image-turbo-gguf: vram=%d MB, use_gpu=%s",
+            get_vram_mb(), _use_gpu,
+        )
         transformer = ZImageTransformer2DModel.from_single_file(
             _gguf_path(),
             config=transformer_cfg,
             quantization_config=GGUFQuantizationConfig(compute_dtype=compute_dtype),
             torch_dtype=compute_dtype,
         )
+        # Move the GGUF transformer to GPU BEFORE building the full pipeline so
+        # that from_pretrained (text encoder + VAE) stays in CPU RAM and we can
+        # move components one at a time — avoids a single large .to("cuda") call
+        # that can fail if any component has a broken .to() override.
+        if _use_gpu:
+            transformer = transformer.to(device)
+            log.info(
+                "GGUF transformer on GPU, VRAM used: %d MB",
+                torch.cuda.memory_allocated() // (1024 * 1024),
+            )
         pipe = ZImagePipeline.from_pretrained(
             "Tongyi-MAI/Z-Image-Turbo",
             transformer=transformer,
             torch_dtype=compute_dtype,
         )
-        if active_backend == "cuda":
+        if _use_gpu:
+            # Transformer is already on GPU; move text encoder and VAE individually.
+            for attr in ("text_encoder", "text_encoder_2", "vae"):
+                component = getattr(pipe, attr, None)
+                if component is not None:
+                    try:
+                        setattr(pipe, attr, component.to(device))
+                        log.info(
+                            "Moved %s to GPU, VRAM used: %d MB",
+                            attr, torch.cuda.memory_allocated() // (1024 * 1024),
+                        )
+                    except Exception as _e:  # noqa: BLE001
+                        log.warning("Failed to move %s to GPU (%s); keeping on CPU", attr, _e)
+        elif active_backend == "cuda":
             pipe.enable_model_cpu_offload()
         else:
             pipe = pipe.to(device)
@@ -374,12 +422,18 @@ def get_pipeline(forced_tier_id: Optional[str] = None):
             tier["repo"],
             torch_dtype=zimg_dtype,
         )
-        # 6 GB GPUs are tight — use CPU offload so VRAM isn't exceeded.
-        if get_vram_mb() <= 6500 and device == "cuda":
-            try:
-                pipe.enable_model_cpu_offload()
-            except Exception:  # noqa: BLE001
+        # Z-Image Turbo (bf16) is 32.85 GB on disk: transformer 24.6 GB + Qwen3
+        # text encoder 8 GB + VAE 0.17 GB. It cannot fit on any consumer GPU.
+        # enable_sequential_cpu_offload offloads at the individual layer/block
+        # level so peak VRAM stays at a few hundred MB — the only safe mode.
+        # (enable_model_cpu_offload works at the component level; the 24.6 GB
+        # transformer component alone exceeds 16 GB VRAM and would OOM.)
+        # Only load fully to GPU on a datacenter-class card (40+ GB).
+        if device == "cuda":
+            if get_vram_mb() >= 40000:
                 pipe = pipe.to(device)
+            else:
+                pipe.enable_sequential_cpu_offload()
         else:
             pipe = pipe.to(device)
         _enable_memory_savers(pipe)
@@ -424,15 +478,39 @@ def get_pipeline(forced_tier_id: Optional[str] = None):
 
 def unload_pipeline() -> None:
     global _pipeline, _pipeline_tier_id, _pipeline_device
+    pipe = _pipeline
     _pipeline = None
     _pipeline_tier_id = None
     _pipeline_device = None
+    # Strip accelerate CPU-offload hooks before dropping the reference. A model
+    # loaded via enable_sequential/model_cpu_offload keeps AlignDevicesHooks +
+    # pinned buffers that a plain `del` + empty_cache() can leave resident, so
+    # the next model (e.g. the Wan video pipeline) OOMs. Removing the hooks lets
+    # gc actually reclaim the GPU memory.
+    if pipe is not None:
+        try:
+            from accelerate.hooks import remove_hook_from_module  # type: ignore
+
+            for name in (
+                "transformer", "unet", "text_encoder", "text_encoder_2",
+                "vae", "image_encoder",
+            ):
+                comp = getattr(pipe, name, None)
+                if comp is not None:
+                    try:
+                        remove_hook_from_module(comp, recurse=True)
+                    except Exception:  # noqa: BLE001
+                        pass
+        except Exception:  # noqa: BLE001
+            pass
+    del pipe
     gc.collect()
     try:
         import torch  # type: ignore
 
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+            torch.cuda.synchronize()
     except ImportError:
         pass
 

@@ -336,13 +336,19 @@ class V1VideoTierInfo(BaseModel):
     download_size_mb: int
     backends: list[str]
     default_frames: int
+    max_frames: int
     default_fps: int
     default_width: int
     default_height: int
     default_steps: int
+    # "required" = i2v-only (needs a keyframe image), "optional" = uses one
+    # when given, None = text-to-video only.
+    image_conditioning: str | None = None
     available_for_backend: bool
-    status: str  # "downloaded" | "downloading" | "not_downloaded"
+    status: str  # "downloaded" | "downloading" | "not_downloaded" | "partial"
     download_progress: float | None = None
+    downloaded_bytes: int | None = None
+    download_speed_bps: float | None = None
     download_error: str | None = None
     selected: bool
 
@@ -366,14 +372,26 @@ async def v1_video_tiers() -> V1VideoTiersResponse:
             download_size_mb=t["download_size_mb"],
             backends=t["backends"],
             default_frames=t["default_frames"],
+            max_frames=t["max_frames"],
             default_fps=t["default_fps"],
             default_width=t["default_width"],
             default_height=t["default_height"],
             default_steps=t["default_steps"],
+            image_conditioning=t.get("image_conditioning"),
             available_for_backend=normalized_backend in t["backends"],
             status=video_model.tier_status(t["id"]),
             download_progress=(
                 video_model._download_progress.get(t["id"])
+                if video_model.tier_status(t["id"]) == "downloading"
+                else None
+            ),
+            downloaded_bytes=(
+                video_model._download_bytes_on_disk.get(t["id"])
+                if video_model.tier_status(t["id"]) == "downloading"
+                else None
+            ),
+            download_speed_bps=(
+                video_model._download_speed_bps.get(t["id"])
                 if video_model.tier_status(t["id"]) == "downloading"
                 else None
             ),
@@ -1060,6 +1078,49 @@ def _input_has_audio_stream(ffmpeg: str, path: str) -> bool:
         return False
 
 
+def _probe_video_fps(ffmpeg: str, path: str) -> float | None:
+    """Source frame rate from the `ffmpeg -i` banner, or None. Used so the
+    concat re-encodes at the clips' own fps instead of a fixed 24 — resampling
+    a 16 fps Wan clip up to 24 duplicates frames unevenly and looks like
+    stutter/freezing."""
+    import re
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            [ffmpeg, "-hide_banner", "-i", path],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        m = re.search(r"(\d+(?:\.\d+)?)\s*fps", result.stderr or "")
+        return float(m.group(1)) if m else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _probe_video_duration(ffmpeg: str, path: str) -> float | None:
+    """Clip length in seconds from the `ffmpeg -i` banner, or None."""
+    import re
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            [ffmpeg, "-hide_banner", "-i", path],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        m = re.search(
+            r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", result.stderr or ""
+        )
+        if not m:
+            return None
+        return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _run_video_concat(req: V1VideoConcatRequest) -> tuple[str, bool]:
     """Concatenate input_paths into output_path. Returns (output_path,
     has_audio) on success, raises RuntimeError otherwise. Runs in a
@@ -1113,7 +1174,12 @@ def _run_video_concat(req: V1VideoConcatRequest) -> tuple[str, bool]:
     # a=1 requires an audio leg per segment.
     w = req.target_width or 1280
     h = req.target_height or 720
-    fps = req.target_fps or 24
+    # target_fps <= 0 means "match the source" — probe the first clip so we
+    # don't resample (e.g. Wan's 16 fps → 24 fps) and introduce judder.
+    if req.target_fps and req.target_fps > 0:
+        fps = req.target_fps
+    else:
+        fps = round(_probe_video_fps(ffmpeg, req.input_paths[0]) or 24)
     with_audio = req.keep_audio and all(
         _input_has_audio_stream(ffmpeg, p) for p in req.input_paths
     )
@@ -1200,6 +1266,13 @@ def _run_audio_mux(req: V1AudioMuxRequest) -> str:
     out_path = Path(req.output_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     ffmpeg = _resolve_ffmpeg_exe()
+    # apad pads the audio with silence to the video's length. With `-c:v copy`,
+    # `-shortest` alone can hang forever (the copied video reaches EOF instantly
+    # while apad keeps generating silence and never signals EOF) — which is what
+    # made storyboard narration mux time out ("fetch failed"). Hard-cap the
+    # output at the probed video duration so ffmpeg always terminates; fall back
+    # to `-shortest` only when the duration can't be read.
+    duration = _probe_video_duration(ffmpeg, req.video_path)
     cmd = [
         ffmpeg, "-y",
         "-i", req.video_path,
@@ -1210,11 +1283,13 @@ def _run_audio_mux(req: V1AudioMuxRequest) -> str:
         "-c:v", "copy",
         "-c:a", "aac",
         "-b:a", "192k",
-        "-shortest",
-        "-movflags", "+faststart",
-        str(out_path),
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    if duration and duration > 0:
+        cmd += ["-t", f"{duration:.3f}"]
+    else:
+        cmd += ["-shortest"]
+    cmd += ["-movflags", "+faststart", str(out_path)]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
     if result.returncode != 0:
         raise RuntimeError(
             f"ffmpeg mux failed (rc={result.returncode}): {result.stderr[-2000:]}"
@@ -1232,3 +1307,124 @@ async def v1_audio_mux(req: V1AudioMuxRequest) -> V1AudioMuxResponse:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"audio mux failed: {exc}") from exc
     return V1AudioMuxResponse(ok=True, output_path=out)
+
+
+# ─── v1 audio mix (music bed ducked under the video's voice track) ────────────
+
+
+class V1AudioMixRequest(BaseModel):
+    video_path: str
+    music_path: str
+    output_path: str
+    # Gain applied to the music bed before ducking (linear, 1.0 = unchanged).
+    music_volume: float = 0.85
+    # Extra voice track laid over the bed at full level (e.g. one narration
+    # file for videos whose clips carry no audio of their own).
+    narration_path: str | None = None
+
+
+class V1AudioMixResponse(BaseModel):
+    ok: bool
+    output_path: str
+    error: str | None = None
+
+
+def _stream_has_audio(path: str) -> bool:
+    """True when the media file has an audio stream. ffprobe isn't bundled
+    (imageio-ffmpeg ships ffmpeg only), so parse `ffmpeg -i` stderr."""
+    import subprocess
+
+    proc = subprocess.run(
+        [_resolve_ffmpeg_exe(), "-hide_banner", "-i", path],
+        capture_output=True,
+        text=True,
+    )
+    # Without an output argument ffmpeg exits non-zero, but the stream list
+    # still prints — that's all we need.
+    return "Audio:" in (proc.stderr or "")
+
+
+def _run_audio_mix(req: V1AudioMixRequest) -> str:
+    """Lay a music bed under a video, ducked beneath speech. The "voice"
+    signal is the video's own audio track (e.g. per-scene narration muxed
+    upstream) plus the optional narration_path file. Music is sidechain-
+    compressed against the voice so words stay intelligible, then everything
+    mixes into one AAC track cut to the video's duration."""
+    import subprocess
+
+    if not Path(req.video_path).is_file():
+        raise RuntimeError(f"video not found: {req.video_path}")
+    if not Path(req.music_path).is_file():
+        raise RuntimeError(f"music not found: {req.music_path}")
+    if req.narration_path and not Path(req.narration_path).is_file():
+        raise RuntimeError(f"narration not found: {req.narration_path}")
+
+    out_path = Path(req.output_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    ffmpeg = _resolve_ffmpeg_exe()
+
+    inputs = ["-i", req.video_path, "-i", req.music_path]
+    if req.narration_path:
+        inputs += ["-i", req.narration_path]
+
+    voice_labels = []
+    if _stream_has_audio(req.video_path):
+        voice_labels.append("[0:a]")
+    if req.narration_path:
+        voice_labels.append("[2:a]")
+
+    vol = max(0.0, min(req.music_volume, 2.0))
+    parts: list[str] = []
+    if voice_labels:
+        if len(voice_labels) == 2:
+            parts.append(
+                f"{''.join(voice_labels)}amix=inputs=2:duration=longest:"
+                "dropout_transition=0:normalize=0[voice]"
+            )
+        else:
+            parts.append(f"{voice_labels[0]}anull[voice]")
+        parts.append("[voice]asplit=2[vc1][vc2]")
+        parts.append(f"[1:a]volume={vol}[bed]")
+        parts.append(
+            "[bed][vc1]sidechaincompress="
+            "threshold=0.05:ratio=8:attack=20:release=500[duck]"
+        )
+        parts.append(
+            "[vc2][duck]amix=inputs=2:duration=longest:"
+            "dropout_transition=0:normalize=0,apad[aout]"
+        )
+    else:
+        # No voice anywhere — plain music bed under the video.
+        parts.append(f"[1:a]volume={vol},apad[aout]")
+
+    cmd = [
+        ffmpeg, "-y", *inputs,
+        "-filter_complex", ";".join(parts),
+        "-map", "0:v:0",
+        "-map", "[aout]",
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-shortest",
+        "-movflags", "+faststart",
+        str(out_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg mix failed (rc={result.returncode}): {result.stderr[-2000:]}"
+        )
+    return str(out_path)
+
+
+@app.post("/v1/edit/mix", response_model=V1AudioMixResponse)
+async def v1_audio_mix(req: V1AudioMixRequest) -> V1AudioMixResponse:
+    """Mux a music bed onto a video, automatically ducked under any existing
+    voice track (the video's own audio and/or a narration file)."""
+    try:
+        out = await run_in_threadpool(_run_audio_mix, req)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"audio mix failed: {exc}") from exc
+    return V1AudioMixResponse(ok=True, output_path=out)

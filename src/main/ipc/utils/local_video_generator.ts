@@ -30,6 +30,12 @@ export interface LocalVideoGenOptions {
   /** "16:9" | "9:16" | … — sizes the clip to the tier's pixel budget when
    *  width/height are omitted. */
   aspect_ratio?: string;
+  /** Absolute path to a keyframe image — routes i2v-capable tiers (Wan 2.2
+   *  14B requires one; LTX tiers use it when given) into image-to-video. */
+  image_path?: string;
+  /** Fixed RNG seed — storyboards pass one stable seed across all clips so the
+   *  motion/look stays consistent scene to scene. */
+  seed?: number;
   onProgress?: (p: MediaJobProgress) => void;
 }
 

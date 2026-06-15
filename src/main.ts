@@ -1,13 +1,7 @@
-import {
-  app,
-  BrowserWindow,
-  dialog,
-  Menu,
-  protocol,
-  net,
-  session,
-} from "electron";
+import { app, BrowserWindow, dialog, Menu, protocol, session } from "electron";
 import * as path from "node:path";
+import * as fs from "node:fs";
+import { Readable } from "node:stream";
 import { registerIpcHandlers } from "./ipc/ipc_host";
 import { autoStartNetwork } from "./ipc/handlers/network_handlers";
 import dotenv from "dotenv";
@@ -49,7 +43,6 @@ import {
 import { cleanupOldAiMessagesJson } from "./pro/main/ipc/handlers/local_agent/ai_messages_cleanup";
 import { cleanupOldMediaFiles } from "./ipc/utils/media_cleanup";
 import { stopEmulator } from "./main/android/android_sdk_manager";
-import fs from "fs";
 import { gitAddSafeDirectory } from "./ipc/utils/git_utils";
 import {
   getOrianBuilderAppsBaseDirectory,
@@ -238,6 +231,77 @@ export async function onReady() {
   startPerformanceMonitoring();
 
   // Handle orian-media:// protocol requests to serve persistent media and screenshot files.
+
+  /**
+   * Serve a local file with HTTP Range request support so the browser's
+   * <video>/<audio> elements can seek and stream without freezing.
+   * net.fetch(file://) does NOT forward the Range header from the browser
+   * request, so the video element buffers only the initial chunk then stalls.
+   */
+  function serveLocalFileWithRange(
+    resolvedPath: string,
+    filename: string,
+    request: Request,
+  ): Response {
+    const MIME: Record<string, string> = {
+      ".mp4": "video/mp4",
+      ".webm": "video/webm",
+      ".ogg": "video/ogg",
+      ".mp3": "audio/mpeg",
+      ".wav": "audio/wav",
+      ".aac": "audio/aac",
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".gif": "image/gif",
+      ".webp": "image/webp",
+      ".glb": "model/gltf-binary",
+      ".gltf": "model/gltf+json",
+    };
+    const ext = path.extname(filename).toLowerCase();
+    const contentType = MIME[ext] ?? "application/octet-stream";
+
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(resolvedPath);
+    } catch {
+      return new Response("Not Found", { status: 404 });
+    }
+    const fileSize = stat.size;
+
+    const rangeHeader = request.headers.get("range");
+    let start = 0;
+    let end = fileSize - 1;
+    let status = 200;
+
+    if (rangeHeader) {
+      const match = /bytes=(\d+)-(\d*)/.exec(rangeHeader);
+      if (match) {
+        start = parseInt(match[1], 10);
+        end = match[2]
+          ? Math.min(parseInt(match[2], 10), fileSize - 1)
+          : fileSize - 1;
+        status = 206;
+      }
+    }
+
+    const chunkSize = end - start + 1;
+    const nodeStream = fs.createReadStream(resolvedPath, { start, end });
+    // Readable.toWeb converts a Node.js Readable → Web ReadableStream (Node ≥17).
+    const webStream = Readable.toWeb(nodeStream) as unknown as ReadableStream;
+
+    const headers: Record<string, string> = {
+      "Content-Type": contentType,
+      "Content-Length": String(chunkSize),
+      "Accept-Ranges": "bytes",
+    };
+    if (status === 206) {
+      headers["Content-Range"] = `bytes ${start}-${end}/${fileSize}`;
+    }
+
+    return new Response(webStream, { status, headers });
+  }
+
   protocol.handle("orian-media", async (request) => {
     const url = new URL(request.url);
 
@@ -260,9 +324,7 @@ export async function onReady() {
         if (rel.startsWith("..") || path.isAbsolute(rel)) {
           return new Response("Forbidden", { status: 403 });
         }
-        return await net.fetch(
-          require("node:url").pathToFileURL(resolvedPath).href,
-        );
+        return serveLocalFileWithRange(resolvedPath, filename, request);
       } catch {
         return new Response("Not Found", { status: 404 });
       }
@@ -313,13 +375,7 @@ export async function onReady() {
       return new Response("Forbidden", { status: 403 });
     }
 
-    try {
-      return await net.fetch(
-        require("node:url").pathToFileURL(resolvedPath).href,
-      );
-    } catch {
-      return new Response("Not Found", { status: 404 });
-    }
+    return serveLocalFileWithRange(resolvedPath, filename, request);
   });
 
   // Start the embedded inference server (non-blocking; model loads on-demand)

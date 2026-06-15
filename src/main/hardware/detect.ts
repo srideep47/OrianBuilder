@@ -101,9 +101,14 @@ export function parseWmicGpuOutput(csv: string): GpuInfo[] {
     if (/microsoft basic display|basic render driver/i.test(name)) continue;
     const adapterRamBytes =
       adapterRamIdx >= 0 ? parseInt(cols[adapterRamIdx]?.trim() ?? "0", 10) : 0;
-    const vramMb = isNaN(adapterRamBytes)
-      ? 0
-      : Math.round(adapterRamBytes / (1024 * 1024));
+    // WMI AdapterRAM is a 32-bit field — any GPU with >4 GB VRAM overflows
+    // and returns exactly 4294967296 (0x100000000). Set to 0 so that
+    // overrideNvidiaVram() can replace it with the real value from nvidia-smi,
+    // and if nvidia-smi is absent the Python backend falls back to torch.
+    const vramMb =
+      isNaN(adapterRamBytes) || adapterRamBytes >= 4294967296
+        ? 0
+        : Math.round(adapterRamBytes / (1024 * 1024));
     const vendor = detectGpuVendor(name);
     gpus.push({
       vendor,
@@ -233,7 +238,11 @@ async function detectWindowsGpusPowerShell(): Promise<GpuInfo[]> {
       )
       .map((item): GpuInfo => {
         const name = item.Name!;
-        const vramMb = Math.round((item.AdapterRAM ?? 0) / (1024 * 1024));
+        // Same 32-bit overflow as wmic: AdapterRAM >= 4 GB means the field
+        // saturated; use 0 so nvidia-smi/torch can supply the real value.
+        const adapterRam = item.AdapterRAM ?? 0;
+        const vramMb =
+          adapterRam >= 4294967296 ? 0 : Math.round(adapterRam / (1024 * 1024));
         const vendor = detectGpuVendor(name);
         return {
           vendor,

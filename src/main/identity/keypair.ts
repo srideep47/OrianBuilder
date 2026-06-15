@@ -20,13 +20,72 @@ export async function getOrCreateKeypair(): Promise<KeypairData> {
   const existing = db.select().from(deviceIdentity).limit(1).all();
   if (existing.length > 0) {
     const row = existing[0];
-    _cache = {
-      publicKey: row.publicKey,
-      fingerprint: computeFingerprint(row.publicKey),
-    };
-    return _cache;
+    // Validate the stored private key is actually decryptable on THIS machine
+    // before trusting the identity. safeStorage (Windows DPAPI / macOS Keychain
+    // / Linux libsecret) is bound to the OS user + machine, so if the app data
+    // folder was copied from another PC (a very common setup when running the
+    // unpackaged app from a shared drive), the ciphertext can't be decrypted
+    // here. Previously this made swarm.start() throw and silently disabled
+    // networking forever (no socket bound → no firewall prompt). Heal it by
+    // regenerating a fresh identity instead.
+    if (tryDecodePrivateKey(row.privateKeyEncrypted)) {
+      _cache = {
+        publicKey: row.publicKey,
+        fingerprint: computeFingerprint(row.publicKey),
+      };
+      return _cache;
+    }
+    logger.warn(
+      "Device identity private key can't be decrypted on this machine " +
+        "(safeStorage is per-user/per-machine; the app data was likely copied " +
+        "from another PC). Regenerating a fresh identity so networking works.",
+    );
+    db.delete(deviceIdentity).run();
   }
 
+  return generateAndPersistKeypair();
+}
+
+export async function getPrivateKeyBytes(): Promise<Uint8Array> {
+  // Ensure the stored key is decryptable on this machine first (heals a key
+  // copied from another PC), then read it back.
+  await getOrCreateKeypair();
+
+  const rows = db.select().from(deviceIdentity).limit(1).all();
+  if (!rows.length) throw new Error("No keypair found");
+
+  const bytes = tryDecodePrivateKey(rows[0].privateKeyEncrypted);
+  if (bytes) return bytes;
+
+  // Defensive: should not happen after getOrCreateKeypair healed it, but never
+  // let an undecryptable key bubble up and disable networking.
+  logger.warn("Private key still undecryptable after heal — regenerating");
+  _cache = null;
+  db.delete(deviceIdentity).run();
+  await generateAndPersistKeypair();
+  const fresh = db.select().from(deviceIdentity).limit(1).all();
+  const b = fresh.length
+    ? tryDecodePrivateKey(fresh[0].privateKeyEncrypted)
+    : null;
+  if (!b) throw new Error("Failed to materialize a usable device key");
+  return b;
+}
+
+export function computeFingerprint(publicKeyHex: string): string {
+  const pubBytes = Buffer.from(publicKeyHex, "hex");
+  const hash = crypto.createHash("sha256").update(pubBytes).digest();
+  return hash.slice(0, 8).toString("hex").toUpperCase();
+}
+
+export async function resetKeypair(): Promise<KeypairData> {
+  db.delete(deviceIdentity).run();
+  _cache = null;
+  return getOrCreateKeypair();
+}
+
+// ── internals ──────────────────────────────────────────────────────────────
+
+async function generateAndPersistKeypair(): Promise<KeypairData> {
   logger.info("Generating new Ed25519 keypair");
   const privKeyBytes = ed25519Utils.randomSecretKey();
   const pubKeyBytes = await getPublicKeyAsync(privKeyBytes);
@@ -60,31 +119,29 @@ export async function getOrCreateKeypair(): Promise<KeypairData> {
   return _cache;
 }
 
-export async function getPrivateKeyBytes(): Promise<Uint8Array> {
-  const rows = db.select().from(deviceIdentity).limit(1).all();
-  if (!rows.length) throw new Error("No keypair found");
-
-  const encoded = rows[0].privateKeyEncrypted;
+/**
+ * Decode the stored private key into raw 32-byte seed form, or null if it
+ * cannot be recovered on this machine. Tries safeStorage decryption first, then
+ * a plaintext interpretation (dev / encryption-unavailable installs), and
+ * validates the result is a 32-byte hex seed.
+ */
+function tryDecodePrivateKey(encoded: string): Buffer | null {
   const buf = Buffer.from(encoded, "base64");
-
-  let privKeyHex: string;
+  const candidates: string[] = [];
   if (safeStorage.isEncryptionAvailable()) {
-    privKeyHex = safeStorage.decryptString(buf);
-  } else {
-    privKeyHex = buf.toString("utf-8");
+    try {
+      candidates.push(safeStorage.decryptString(buf));
+    } catch {
+      // Encrypted by a different machine/user — fall through to plaintext try.
+    }
   }
+  candidates.push(buf.toString("utf-8"));
 
-  return Buffer.from(privKeyHex, "hex");
-}
-
-export function computeFingerprint(publicKeyHex: string): string {
-  const pubBytes = Buffer.from(publicKeyHex, "hex");
-  const hash = crypto.createHash("sha256").update(pubBytes).digest();
-  return hash.slice(0, 8).toString("hex").toUpperCase();
-}
-
-export async function resetKeypair(): Promise<KeypairData> {
-  db.delete(deviceIdentity).run();
-  _cache = null;
-  return getOrCreateKeypair();
+  for (const hex of candidates) {
+    if (/^[0-9a-fA-F]{64}$/.test(hex)) {
+      const bytes = Buffer.from(hex, "hex");
+      if (bytes.length === 32) return bytes;
+    }
+  }
+  return null;
 }

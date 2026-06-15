@@ -7,6 +7,7 @@ import log from "electron-log";
 import treeKill from "tree-kill";
 import type { MediaAiModelId, MediaAiStatus } from "../types/media_ai";
 import type { HardwareProfile } from "@/main/hardware/types";
+import { readUserDataPointer } from "@/main/user_data_location";
 
 /** Cached hardware profile pointer. Set by initMediaAiHardware(profile). */
 let cachedHardwareProfile: HardwareProfile | null = null;
@@ -53,7 +54,14 @@ export function resolveMediaAiBackendPath() {
 }
 
 export function getMediaAiDataPaths() {
-  const root = path.join(app.getPath("userData"), "mediaai");
+  // The multi-GB model cache must follow the user's chosen data drive. We read
+  // the relocation pointer DIRECTLY (a plain file read) rather than relying on
+  // app.getPath("userData"), because app.setPath("userData") silently does not
+  // take effect in some dev/Electron configurations — which stranded the whole
+  // mediaai cache on C: even when the pointer named D:. Falls back to the
+  // Electron userData dir when no pointer is set (default single-drive setup).
+  const base = readUserDataPointer() ?? app.getPath("userData");
+  const root = path.join(base, "mediaai");
   return {
     root,
     modelsPath: path.join(root, "models"),
@@ -190,6 +198,11 @@ function getBackendEnvironment(): NodeJS.ProcessEnv {
     // Full-bandwidth HuggingFace downloads via both Xet and hf_transfer.
     HF_XET_HIGH_PERFORMANCE: "1",
     HF_HUB_ENABLE_HF_TRANSFER: "1",
+    // Higher-quality Wan video: disable the 4-step Lightning LoRA and run full
+    // CFG sampling at OMNIGEN_WAN_STEPS steps. ~3× slower per clip than the
+    // 4-step draft, noticeably sharper motion/detail.
+    OMNIGEN_WAN_LIGHTNING: "0",
+    OMNIGEN_WAN_STEPS: "12",
   };
 }
 

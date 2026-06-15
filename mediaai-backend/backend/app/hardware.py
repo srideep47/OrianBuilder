@@ -48,19 +48,21 @@ def get_vendor() -> str:
 
 
 def get_vram_mb() -> int:
-    try:
-        mb = max(0, int(_RAW_VRAM))
-        if mb > 0:
-            return mb
-    except ValueError:
-        pass
-    # If env var is 0, auto-detect from torch.
+    # Always prefer torch's total_memory on CUDA — Windows WMI AdapterRAM is a
+    # 32-bit field that saturates at 4 GB for any GPU with more VRAM, so the
+    # env-var from Electron can be wrong (e.g. 4096 for a 16 GB card).
     try:
         import torch  # type: ignore
         if torch.cuda.is_available():
             props = torch.cuda.get_device_properties(torch.cuda.current_device())
             return props.total_memory // (1024 * 1024)
     except Exception:
+        pass
+    try:
+        mb = max(0, int(_RAW_VRAM))
+        if mb > 0:
+            return mb
+    except ValueError:
         pass
     return 0
 

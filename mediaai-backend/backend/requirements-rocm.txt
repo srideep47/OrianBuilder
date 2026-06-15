@@ -6,11 +6,16 @@ diffusers>=0.32.0
 transformers>=4.45.0
 accelerate>=0.34.0
 sentencepiece>=0.2.0
+# Wan 2.2 / Flux prompt encoders clean text with ftfy (called unconditionally by
+# diffusers); without it, encoding raises "name 'ftfy' is not defined" and the
+# video tier falls back to LTX instead of running Wan.
+ftfy>=6.1.0
 imageio>=2.34.0
 imageio-ffmpeg>=0.5.0
 av>=12.0.0
 TTS>=0.22.0
 kokoro>=0.7.0
+f5-tts                # F5-TTS — default narration voice on 16 GB+ profiles
 librosa>=0.10.0
 loguru>=0.7.3
 einops>=0.8.1

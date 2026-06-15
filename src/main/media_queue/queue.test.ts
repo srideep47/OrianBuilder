@@ -33,6 +33,7 @@ function makeDeps(overrides: Partial<MediaQueueDeps> = {}): {
     height: number;
     keepAudio?: boolean;
   }>;
+  mixCalls: Array<{ video: string; music: string; out: string }>;
   imported: Array<{ src: string; share: boolean }>;
   updates: MediaJob[];
 } {
@@ -44,6 +45,7 @@ function makeDeps(overrides: Partial<MediaQueueDeps> = {}): {
     height: number;
     keepAudio?: boolean;
   }> = [];
+  const mixCalls: Array<{ video: string; music: string; out: string }> = [];
   const imported: Array<{ src: string; share: boolean }> = [];
   const updates: MediaJob[] = [];
   const deps: MediaQueueDeps = {
@@ -69,6 +71,10 @@ function makeDeps(overrides: Partial<MediaQueueDeps> = {}): {
       });
       await fs.writeFile(out, "concat-bytes");
     },
+    mixAudio: async ({ videoPath, musicPath, outputPath }) => {
+      mixCalls.push({ video: videoPath, music: musicPath, out: outputPath });
+      await fs.writeFile(outputPath, "mixed-bytes");
+    },
     parseScript: async () => {
       throw new Error("parseScript not stubbed for this test");
     },
@@ -81,7 +87,15 @@ function makeDeps(overrides: Partial<MediaQueueDeps> = {}): {
     },
     ...overrides,
   };
-  return { deps, generated, muxCalls, concatCalls, imported, updates };
+  return {
+    deps,
+    generated,
+    muxCalls,
+    concatCalls,
+    mixCalls,
+    imported,
+    updates,
+  };
 }
 
 beforeEach(async () => {
@@ -299,6 +313,16 @@ describe("MediaJobQueue", () => {
       aspect_ratio: "16:9",
     });
 
+    // Every scene got a keyframe still first (same styled prompt, aspect
+    // dims), and its path conditioned the video stage (image-to-video).
+    const keyframes = generated.filter((g) => g.modelType === "image");
+    expect(keyframes).toHaveLength(3);
+    expect(keyframes[0]!.prompt).toBe("Bright 2D cartoon. coral reef");
+    // Keyframes render at the video model's native input size (downscaled by
+    // the i2v pipeline anyway) — faster, same final clip quality.
+    expect(keyframes[0]!.options).toMatchObject({ width: 832, height: 480 });
+    expect(videos[0]!.options!.image_path).toBe(keyframes[0]!.outputPath);
+
     // Auto-edit: one concat of the three clips at the final 16:9 resolution.
     // Silent clips → the concat does not try to carry audio through.
     expect(concatCalls).toHaveLength(1);
@@ -384,7 +408,7 @@ describe("MediaJobQueue", () => {
           success: true,
           outputPath: request.outputPath,
           durationMs: 1,
-          tier: "ltx-2-av",
+          tier: "ltx-2-av-small",
           hasAudio: true,
         };
       },
@@ -403,7 +427,9 @@ describe("MediaJobQueue", () => {
     await waitFor(() => queue.list()[0]?.status === "done", 5_000);
 
     // No separate music generation and no mux — the audio is in the clips.
-    expect(generatedKinds).toEqual(["video", "video"]);
+    // Batch-by-modality: ALL keyframes first, then all clips (one model
+    // load per modality instead of a swap per scene).
+    expect(generatedKinds).toEqual(["image", "image", "video", "video"]);
     expect(muxCalls).toHaveLength(0);
     // The edit carries the clips' own tracks through.
     expect(concatCalls).toHaveLength(1);
@@ -411,10 +437,104 @@ describe("MediaJobQueue", () => {
 
     const job = queue.list()[0]!;
     expect(job.syncedAudio).toBe(true);
-    expect(job.videoTier).toBe("ltx-2-av");
+    expect(job.videoTier).toBe("ltx-2-av-small");
     // The explicit soundtrack prompt was superseded — say so, don't fail.
     expect(job.warning).toContain("synced audio");
     expect(job.outputFileNames).toHaveLength(1);
+  });
+
+  it("narrated storyboard: per-scene TTS muxed onto clips, ducked music mix", async () => {
+    const queue = new MediaJobQueue();
+    const { deps, generated, muxCalls, concatCalls, mixCalls, imported } =
+      makeDeps({
+        parseScript: async () => ({
+          style: "Pixar-style 3D animation",
+          scenes: [
+            {
+              index: 1,
+              title: "Opening",
+              prompt: "a boy enters a workshop",
+              narration: "It all began in grandpa's workshop.",
+              durationSec: 6,
+            },
+            // No narration on scene 2 — its clip must get a silent track so
+            // the concat can still carry scene 1's voice.
+            {
+              index: 2,
+              title: "Reveal",
+              prompt: "a robot wakes",
+              durationSec: 6,
+            },
+          ],
+        }),
+      });
+    queue.setDeps(deps);
+
+    queue.enqueue(
+      { kind: "storyboard", prompt: "the script", aspectRatio: "16:9" },
+      { source: "local" },
+    );
+    await waitFor(() => queue.list()[0]?.status === "done", 5_000);
+
+    // Batch-by-modality: all keyframes → all clips → narration TTS for the
+    // scenes that have one → one music bed for the whole video.
+    expect(generated.map((g) => g.modelType)).toEqual([
+      "image",
+      "image",
+      "video",
+      "video",
+      "audio",
+      "music",
+    ]);
+    expect(generated[4]!.prompt).toBe("It all began in grandpa's workshop.");
+
+    // Two muxes: scene 1's narration onto its clip, then a silent track onto
+    // scene 2's clip so every concat input has audio.
+    expect(muxCalls).toHaveLength(2);
+    expect(concatCalls).toHaveLength(1);
+    expect(concatCalls[0]!.keepAudio).toBe(true);
+
+    // Music laid via the ducked mix (NOT plain mux) over the assembled video.
+    expect(mixCalls).toHaveLength(1);
+    expect(imported).toHaveLength(1);
+    const job = queue.list()[0]!;
+    expect(job.scenes?.[0]?.narration).toContain("workshop");
+    expect(job.error).toBeUndefined();
+  });
+
+  it("falls back to text-to-video when the scene keyframe fails", async () => {
+    const queue = new MediaJobQueue();
+    const requests: MediaGenerationRequest[] = [];
+    const { deps } = makeDeps({
+      parseScript: async () => ({
+        scenes: [{ index: 1, title: "A", prompt: "scene a", durationSec: 5 }],
+      }),
+      generate: async (request) => {
+        requests.push(request);
+        if (request.modelType === "image") {
+          return {
+            success: false,
+            outputPath: request.outputPath,
+            durationMs: 1,
+            error: "image model not downloaded",
+          };
+        }
+        await fs.mkdir(path.dirname(request.outputPath), { recursive: true });
+        await fs.writeFile(request.outputPath, "fake-bytes");
+        return { success: true, outputPath: request.outputPath, durationMs: 1 };
+      },
+    });
+    queue.setDeps(deps);
+
+    queue.enqueue(
+      { kind: "storyboard", prompt: "the script" },
+      { source: "local" },
+    );
+    await waitFor(() => queue.list()[0]?.status === "done", 5_000);
+
+    const video = requests.find((g) => g.modelType === "video")!;
+    expect(video.options!.image_path).toBeUndefined();
+    expect(queue.list()[0]!.error).toBeUndefined();
   });
 
   it("video_audio skips the audio+mux stages when the clip has synced audio", async () => {
@@ -429,7 +549,7 @@ describe("MediaJobQueue", () => {
           success: true,
           outputPath: request.outputPath,
           durationMs: 1,
-          tier: "ltx-2-av",
+          tier: "ltx-2-av-small",
           hasAudio: true,
         };
       },

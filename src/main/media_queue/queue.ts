@@ -65,6 +65,15 @@ export interface MediaQueueDeps {
     outputPath: string,
     opts?: { keepAudio?: boolean },
   ) => Promise<void>;
+  /** Lay a music bed onto a video, automatically ducked under any voice the
+   *  video already carries (per-scene narration muxed upstream). Throws on
+   *  failure. */
+  mixAudio: (opts: {
+    videoPath: string;
+    musicPath: string;
+    outputPath: string;
+    narrationPath?: string;
+  }) => Promise<void>;
 }
 
 /** Per-kind dimensions for each aspect ratio, sized to the local backend's
@@ -79,6 +88,22 @@ const IMAGE_DIMENSIONS: Record<
   "1:1": { width: 1024, height: 1024 },
   "4:3": { width: 1024, height: 768 },
   "3:4": { width: 768, height: 1024 },
+};
+
+/** Keyframe stills for image-to-video are rendered at the video model's native
+ *  input resolution, not the larger standalone-image size. The i2v pipeline
+ *  (Wan ~832×480) downscales the keyframe to its working resolution anyway, so
+ *  a bigger still only costs image-generation time without sharpening the final
+ *  (upscaled) clip — this is the "faster keyframe, same quality" lever. */
+const KEYFRAME_DIMENSIONS: Record<
+  MediaAspectRatio,
+  { width: number; height: number }
+> = {
+  "16:9": { width: 832, height: 480 },
+  "9:16": { width: 480, height: 832 },
+  "1:1": { width: 640, height: 640 },
+  "4:3": { width: 768, height: 576 },
+  "3:4": { width: 576, height: 768 },
 };
 
 /** Final assembled-video resolution per aspect ratio (concat re-encode target;
@@ -154,6 +179,7 @@ export class MediaJobQueue {
       audioKind: params.audioKind,
       aspectRatio: params.aspectRatio ?? "16:9",
       durationSec: params.durationSec,
+      seedImagePath: params.seedImagePath,
       status: "queued",
       requestedBy,
       hostedBy: "local",
@@ -283,6 +309,33 @@ export class MediaJobQueue {
     );
   }
 
+  /** Writes a 0.5 s silent wav (44.1 kHz mono 16-bit). Muxed (apad-extended)
+   *  onto clips that lack an audio track so a narrated storyboard's concat
+   *  can carry sound on every input. */
+  private async writeSilenceWav(cleanupPaths: string[]): Promise<string> {
+    const sampleRate = 44100;
+    const dataSize = Math.round(sampleRate * 0.5) * 2;
+    const buf = Buffer.alloc(44 + dataSize); // zero-filled PCM = silence
+    buf.write("RIFF", 0);
+    buf.writeUInt32LE(36 + dataSize, 4);
+    buf.write("WAVE", 8);
+    buf.write("fmt ", 12);
+    buf.writeUInt32LE(16, 16); // PCM fmt chunk size
+    buf.writeUInt16LE(1, 20); // PCM
+    buf.writeUInt16LE(1, 22); // mono
+    buf.writeUInt32LE(sampleRate, 24);
+    buf.writeUInt32LE(sampleRate * 2, 28); // byte rate
+    buf.writeUInt16LE(2, 32); // block align
+    buf.writeUInt16LE(16, 34); // bits per sample
+    buf.write("data", 36);
+    buf.writeUInt32LE(dataSize, 40);
+    const p = this.tmpPath("wav");
+    await fs.mkdir(path.dirname(p), { recursive: true });
+    await fs.writeFile(p, buf);
+    cleanupPaths.push(p);
+    return p;
+  }
+
   private async generateStage(
     job: MediaJob,
     stage: string,
@@ -352,6 +405,7 @@ export class MediaJobQueue {
         index: s.index,
         title: s.title,
         prompt: s.prompt,
+        narration: s.narration,
         durationSec: s.durationSec,
         status: "pending",
       }),
@@ -359,35 +413,85 @@ export class MediaJobQueue {
     job.scenes = jobScenes;
     this.touch(job);
 
-    // 2. Generate each scene clip in order. The global style is prepended to
-    //    every prompt so characters/palette stay consistent across clips. The
-    //    aspect ratio rides along so each tier renders at its own pixel
-    //    budget in the requested shape (16:9, 9:16, …). AV tiers (LTX-2)
-    //    return clips with synced audio — tracked per clip below.
-    const clipPaths: string[] = [];
-    let allClipsHaveAudio = true;
+    // 2. Generate BATCH-BY-MODALITY: all keyframes (image model) → all clips
+    //    (video model) → all narrations (TTS). Each model then loads exactly
+    //    once for the whole storyboard — the backend caches the resident
+    //    pipeline between consecutive same-modality jobs (the video worker
+    //    process stays alive between clips) — instead of swapping multi-GB
+    //    weights per scene through VRAM/RAM/disk.
+    //
+    //    The global style is prepended to every prompt so characters/palette
+    //    stay consistent across clips, and the per-scene KEYFRAME locks the
+    //    look in a high-quality still that image-to-video tiers (Wan 2.2 /
+    //    LTX) then animate — this is what makes scenes look designed rather
+    //    than hallucinated.
     const total = storyboard.scenes.length;
+    const fullPrompts = storyboard.scenes.map((scene) =>
+      storyboard.style ? `${storyboard.style}. ${scene.prompt}` : scene.prompt,
+    );
+
+    // One stable seed for EVERY keyframe (and clip) in this storyboard. Without
+    // a fixed seed each scene draws fresh random noise, so the same "soft anime
+    // storybook" prompt lands as anime in one scene, a photo in the next, and a
+    // 3D/Pixar render in a third. Anchoring the noise keeps the look coherent
+    // across scenes. Derived from the job id so different storyboards still
+    // vary, but all scenes within one share the style.
+    let styleSeed = 0;
+    for (const ch of job.id) {
+      styleSeed = (styleSeed * 31 + ch.charCodeAt(0)) % 2147483647;
+    }
+
+    // 2a. Keyframes (best-effort): a failed still falls back to text-to-video
+    //     for that scene rather than failing the job.
+    const keyframePaths: (string | undefined)[] = [];
+    for (let i = 0; i < total; i++) {
+      if (this.cancelled(job.id)) return null;
+      try {
+        const keyframe = await this.generateStage(
+          job,
+          `keyframe ${i + 1}/${total}`,
+          "image",
+          fullPrompts[i],
+          { ...KEYFRAME_DIMENSIONS[job.aspectRatio], seed: styleSeed },
+        );
+        cleanupPaths.push(keyframe.outputPath);
+        keyframePaths.push(keyframe.outputPath);
+      } catch (err) {
+        logger.warn(
+          `job ${job.id}: scene ${i + 1} keyframe failed — using text-to-video`,
+          err,
+        );
+        keyframePaths.push(undefined);
+      }
+    }
+
+    // 2b. Clips, in scene order. Aspect ratio rides along so each tier
+    //     renders at its own pixel budget; AV tiers (LTX-2) return clips with
+    //     synced audio — tracked per clip.
+    const clipPaths: string[] = [];
+    const clipHasTrack: boolean[] = [];
+    let allClipsHaveAudio = true;
     for (let i = 0; i < total; i++) {
       if (this.cancelled(job.id)) return null;
       const scene = storyboard.scenes[i];
       const jobScene = jobScenes[i];
       jobScene.status = "generating";
       try {
-        const fullPrompt = storyboard.style
-          ? `${storyboard.style}. ${scene.prompt}`
-          : scene.prompt;
         const clip = await this.generateStage(
           job,
           `scene ${i + 1}/${total}`,
           "video",
-          fullPrompt,
+          fullPrompts[i],
           {
             aspect_ratio: job.aspectRatio,
+            seed: styleSeed,
             ...(scene.durationSec ? { duration_s: scene.durationSec } : {}),
+            ...(keyframePaths[i] ? { image_path: keyframePaths[i] } : {}),
           },
         );
         cleanupPaths.push(clip.outputPath);
         clipPaths.push(clip.outputPath);
+        clipHasTrack.push(clip.hasAudio);
         allClipsHaveAudio &&= clip.hasAudio;
         if (clip.tier && !job.videoTier) job.videoTier = clip.tier;
         jobScene.status = "done";
@@ -399,8 +503,59 @@ export class MediaJobQueue {
       }
     }
     if (this.cancelled(job.id)) return null;
+
+    // 2c. Narration: TTS each scene's words and mux them onto its clip — the
+    //     concat then carries the voice at the right time. Best-effort: a
+    //     narration failure delivers that scene's silent clip.
+    let narrationUsed = false;
+    for (let i = 0; i < total; i++) {
+      const narrationText = storyboard.scenes[i].narration?.trim();
+      if (!narrationText) continue;
+      if (this.cancelled(job.id)) return null;
+      try {
+        const narration = await this.generateStage(
+          job,
+          `narration ${i + 1}/${total}`,
+          "audio",
+          narrationText,
+          {},
+        );
+        cleanupPaths.push(narration.outputPath);
+        const narratedPath = this.tmpPath("mp4");
+        await fs.mkdir(path.dirname(narratedPath), { recursive: true });
+        await deps.mux(clipPaths[i], narration.outputPath, narratedPath);
+        cleanupPaths.push(narratedPath);
+        clipPaths[i] = narratedPath;
+        clipHasTrack[i] = true;
+        narrationUsed = true;
+      } catch (err) {
+        const reason =
+          err instanceof Error ? err.message.split("\n")[0] : String(err);
+        logger.warn(
+          `job ${job.id}: scene ${i + 1} narration skipped (${reason})`,
+        );
+        job.warning = `scene ${i + 1} narration skipped: ${reason}`;
+        this.touch(job);
+      }
+    }
+    if (this.cancelled(job.id)) return null;
     const syncedAudio = clipPaths.length > 0 && allClipsHaveAudio;
     job.syncedAudio = syncedAudio;
+
+    // The concat's audio path needs a stream on EVERY input — when narration
+    // rides on some clips, pad the silent ones with an (apad-extended) blank
+    // track so the voiced ones survive the edit.
+    if (narrationUsed && clipPaths.length > 1) {
+      const silencePath = await this.writeSilenceWav(cleanupPaths);
+      for (let i = 0; i < clipPaths.length; i++) {
+        if (clipHasTrack[i]) continue;
+        const padded = this.tmpPath("mp4");
+        await fs.mkdir(path.dirname(padded), { recursive: true });
+        await deps.mux(clipPaths[i], silencePath, padded);
+        cleanupPaths.push(padded);
+        clipPaths[i] = padded;
+      }
+    }
 
     // 3. Auto-edit: concat the clips in scene order, normalized to the final
     //    resolution/fps. Synced-audio clips keep their own tracks through the
@@ -414,8 +569,11 @@ export class MediaJobQueue {
       this.touch(job);
       assembledPath = this.tmpPath("mp4");
       await fs.mkdir(path.dirname(assembledPath), { recursive: true });
-      await deps.concat(clipPaths, { ...finalDims, fps: 24 }, assembledPath, {
-        keepAudio: syncedAudio,
+      // fps: 0 → the backend matches the clips' own frame rate (e.g. Wan's
+      // 16 fps) instead of resampling up to 24, which duplicates frames
+      // unevenly and looks like stutter/freezing.
+      await deps.concat(clipPaths, { ...finalDims, fps: 0 }, assembledPath, {
+        keepAudio: syncedAudio || narrationUsed,
       });
       cleanupPaths.push(assembledPath);
     }
@@ -439,7 +597,49 @@ export class MediaJobQueue {
     // audio failure) must not throw away the clips we just spent an hour
     // rendering — deliver the video without audio and say why.
     let finalPath = assembledPath;
-    if (syncedAudio) {
+    if (narrationUsed) {
+      // The video already carries scene-aligned narration. Lay a music bed
+      // under it, sidechain-ducked so the words stay intelligible.
+      const musicPrompt =
+        job.audioKind === "speech"
+          ? undefined
+          : job.audioPrompt?.trim() ||
+            `Soundtrack for this video: ${storyboard.style ?? storyboard.scenes[0].prompt}`;
+      if (musicPrompt) {
+        try {
+          const music = await this.generateStage(
+            job,
+            "soundtrack",
+            "music",
+            musicPrompt,
+            { duration_s: Math.min(totalDuration, 600) },
+          );
+          cleanupPaths.push(music.outputPath);
+          if (this.cancelled(job.id)) return null;
+
+          job.stage = "mix";
+          this.touch(job);
+          const mixedPath = this.tmpPath("mp4");
+          await fs.mkdir(path.dirname(mixedPath), { recursive: true });
+          await deps.mixAudio({
+            videoPath: assembledPath,
+            musicPath: music.outputPath,
+            outputPath: mixedPath,
+          });
+          cleanupPaths.push(mixedPath);
+          finalPath = mixedPath;
+        } catch (err) {
+          if (this.cancelled(job.id)) return null;
+          const reason =
+            err instanceof Error ? err.message.split("\n")[0] : String(err);
+          logger.warn(
+            `job ${job.id}: music bed failed — delivering narrated video (${reason})`,
+          );
+          job.warning = `music skipped: ${reason}`;
+          this.touch(job);
+        }
+      }
+    } else if (syncedAudio) {
       logger.info(
         `job ${job.id}: clips carry synced audio (${job.videoTier ?? "AV tier"}) — skipping soundtrack`,
       );
@@ -512,6 +712,7 @@ export class MediaJobQueue {
           {
             aspect_ratio: job.aspectRatio,
             ...(job.durationSec ? { duration_s: job.durationSec } : {}),
+            ...(job.seedImagePath ? { image_path: job.seedImagePath } : {}),
           },
         );
         cleanupPaths.push(video.outputPath);
@@ -573,6 +774,9 @@ export class MediaJobQueue {
             ...dims,
             ...(job.kind === "video" ? { aspect_ratio: job.aspectRatio } : {}),
             ...(job.durationSec ? { duration_s: job.durationSec } : {}),
+            ...(job.kind === "video" && job.seedImagePath
+              ? { image_path: job.seedImagePath }
+              : {}),
           },
         );
         cleanupPaths.push(result.outputPath);

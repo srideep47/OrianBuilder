@@ -192,6 +192,50 @@ async function concatForQueue(
   }
 }
 
+async function mixAudioForQueue(opts: {
+  videoPath: string;
+  musicPath: string;
+  outputPath: string;
+  narrationPath?: string;
+}): Promise<void> {
+  const body = JSON.stringify({
+    video_path: opts.videoPath,
+    music_path: opts.musicPath,
+    output_path: opts.outputPath,
+    ...(opts.narrationPath ? { narration_path: opts.narrationPath } : {}),
+  });
+  // The music bed mix runs right after the music model slot, and the
+  // single-residency gate can stop the backend at that exact moment — so the
+  // first fetch sometimes dies mid-flight with a network "fetch failed" even
+  // though ensureBackendHealthy() passed a moment earlier. Retry on NETWORK
+  // errors (re-starting the backend each time); a real HTTP error is not
+  // retried. This is what dropped the music bed from finished storyboards.
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await ensureBackendHealthy();
+    let res: Response;
+    try {
+      res = await fetch(`${MEDIA_AI_SERVER_URL}/v1/edit/mix`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      });
+    } catch (err) {
+      lastErr = err; // network-level failure (backend stopped mid-request)
+      await new Promise((r) => setTimeout(r, 2000));
+      continue;
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(
+        `audio mix failed (${res.status}): ${text.slice(0, 300)}`,
+      );
+    }
+    return;
+  }
+  throw lastErr ?? new Error("audio mix failed: backend unreachable");
+}
+
 async function importToStore(
   srcPath: string,
   opts: { prompt: string; share: boolean },
@@ -272,6 +316,7 @@ export function registerMediaQueueHandlers(): void {
     generate: generateForQueue,
     mux: muxForQueue,
     concat: concatForQueue,
+    mixAudio: mixAudioForQueue,
     parseScript: createScriptParser(defaultGenerateText),
     importToStore,
     onJobUpdate,

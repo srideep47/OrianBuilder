@@ -26,6 +26,10 @@ export interface MediaTier {
   /** True when the model emits a synced soundtrack with the frames; pipeline
    *  steps can then skip their own music generation + mux pass. */
   generatesAudio?: boolean;
+  /** True for image-to-video-only models (Wan 2.2 14B): they animate a
+   *  supplied keyframe image and cannot run from text alone. Auto-selection
+   *  skips them unless the request carries an image. */
+  requiresImage?: boolean;
   /** Approximate disk size after download (MB). For UI download estimates. */
   downloadSizeMb: number;
   quality: MediaQuality;
@@ -168,50 +172,53 @@ export const IMAGE_MODEL_TIERS: readonly MediaTier[] = [
   },
 ] as const;
 
-// ─── Video generation tiers (text → ~5s video) ───────────────────────────────
+// ─── Video generation tiers (text → ~3s video) ───────────────────────────────
 //
-// Five production tiers + a CPU fallback, matched to the hardware OrianBuilder
+// Four production tiers + a CPU fallback, matched to the hardware OrianBuilder
 // targets. Mirrors mediaai-backend/.../models/video.py VIDEO_TIERS — keep both
 // in sync.
 //
-//   • ltx-2-av:               TOP++ — LTX-2.3 dev, synced audio+video, bnb-4bit
-//                                     at load (≥12 GB VRAM & ≥32 GB RAM —
-//                                     RTX 4080 Super class, best quality)
-//   • ltx-2-av-small:         TOP+  — LTX-2.3 DISTILLED, GGUF transformer,
-//                                     group-offloaded (disk-spill on 16 GB-RAM
-//                                     machines); fits when (≥6 GB VRAM &
-//                                     ≥10 GB RAM) or (≥4 GB VRAM & ≥30 GB RAM)
-//   • ltx-video:              TOP   — LTX-Video 0.9 (≥12 GB VRAM)
+//   • ltx-2-av-small:         TOP   — LTX-2.3, synced audio+video, GGUF
+//                                     transformer (Q4_K_S ~16.7 GB), group-
+//                                     offloaded (RAM-pinned on ≥24 GB machines,
+//                                     disk-spill otherwise); fits when (≥6 GB
+//                                     VRAM & ≥10 GB RAM) or (≥4 GB VRAM & ≥30 GB)
+//   • ltx-video:              TOP   — LTX-Video 0.9, no audio (≥12 GB VRAM)
 //   • animatediff-sd15:       MID   — RTX 3060 6 GB class (GPU-resident)
 //   • animatediff-sd15-small: SMALL — GTX 1650 Ti 4 GB class (CPU offload)
 //   • text-to-video-cpu:      CPU fallback (256×256, slow)
+//
+// (The full bf16 "ltx-2-av" dev tier was removed: bitsandbytes 4-bit at load
+// leaves a "meta tensor" during model offload on current torch/diffusers and
+// fails generation. The GGUF transformer path below is the reliable AV route.)
 
 export const VIDEO_TIERS: readonly MediaTier[] = [
   {
-    // LTX-2.3 generates the soundtrack WITH the frames (synced audio+video).
-    // Full dev checkpoint, 4-bit quantized at load so it fits a 16 GB card
-    // whole — the best-quality tier for the RTX 4080 Super / 64 GB machine.
-    id: "ltx-2-av",
-    label: "LTX-2.3 (synced audio+video · best)",
-    vramRequiredMb: 12000,
-    ramRequiredMb: 32000,
-    generatesAudio: true,
-    // Whole repo: 40 GB transformer + 42 GB Gemma-3 text encoder + 12 GB
-    // connectors + VAEs/vocoder.
-    downloadSizeMb: 96000,
+    // Wan 2.2 A14B — the strongest open video model on 16 GB-class cards.
+    // Two 14 B GGUF transformer experts (Q4_K_S ~8.7 GB each) + the lightx2v
+    // Lightning LoRA for 4-step sampling. IMAGE-TO-VIDEO ONLY: it animates a
+    // keyframe image (the storyboard pipeline generates one per scene), so
+    // auto-selection skips it for plain text-to-video requests. No synced
+    // audio — the pipeline lays music/narration in the edit pass instead.
+    id: "wan-2.2-i2v",
+    label: "Wan 2.2 14B (image-to-video, best quality)",
+    vramRequiredMb: 10240,
+    ramRequiredMb: 24576,
+    requiresImage: true,
+    downloadSizeMb: 31000,
     quality: "best",
-    hfRepo: "diffusers/LTX-2.3-Diffusers",
-    approxSecondsPerGen: 150,
+    hfRepo: "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
+    approxSecondsPerGen: 90,
   },
   {
-    // LTX-2.3 distilled with a community GGUF transformer (~15-17 GB instead
-    // of 40 GB bf16), run via diffusers group offloading: weight groups
-    // stream to the GPU on demand, spilling the store to disk on 16 GB-RAM
-    // machines — so the gate is an any-of VRAM/RAM combination instead of
-    // one VRAM floor. Still needs the repo's Gemma-3 TE + connectors (~56 GB
-    // of the download).
+    // LTX-2.3 generates the soundtrack WITH the frames (synced audio+video).
+    // A community GGUF transformer (Q4_K_S ~16.7 GB) replaces the 40 GB bf16
+    // one and runs via diffusers group offloading: weight groups stream to the
+    // GPU on demand, RAM-pinned on ≥24 GB machines (faster) or disk-spilled
+    // otherwise — so the gate is an any-of VRAM/RAM combination. Still needs the
+    // repo's Gemma-3 TE + connectors (~55 GB of a fresh download).
     id: "ltx-2-av-small",
-    label: "LTX-2.3 distilled (synced audio+video · quantized)",
+    label: "LTX-2.3 (synced audio+video)",
     vramRequiredMb: 4096,
     ramRequiredMb: 10240,
     anyOfRequirements: [
@@ -222,7 +229,7 @@ export const VIDEO_TIERS: readonly MediaTier[] = [
     downloadSizeMb: 72000,
     quality: "best",
     hfRepo: "diffusers/LTX-2.3-Diffusers",
-    approxSecondsPerGen: 300,
+    approxSecondsPerGen: 120,
   },
   {
     id: "ltx-video",
@@ -232,6 +239,19 @@ export const VIDEO_TIERS: readonly MediaTier[] = [
     quality: "best",
     hfRepo: "Lightricks/LTX-Video",
     approxSecondsPerGen: 25,
+  },
+  {
+    // Wan 2.2 TI2V-5B — text-to-video for the 6 GB-VRAM / 16 GB-RAM floor.
+    // Q4_K_S GGUF transformer (~3.1 GB); the UMT5 text encoder streams via
+    // group offload.
+    id: "wan-2.2-5b",
+    label: "Wan 2.2 5B (small GPU)",
+    vramRequiredMb: 5120,
+    ramRequiredMb: 10240,
+    downloadSizeMb: 15000,
+    quality: "good",
+    hfRepo: "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+    approxSecondsPerGen: 120,
   },
   {
     id: "animatediff-sd15",
@@ -468,13 +488,14 @@ export function pickBestVideoTier(
   availableVramMb: number,
   preferredQuality?: MediaQuality,
   totalRamMb?: number,
+  hasImage = false,
 ): MediaTier {
-  return pickBestTier(
-    VIDEO_TIERS,
-    availableVramMb,
-    preferredQuality,
-    totalRamMb,
-  );
+  // i2v-only tiers (Wan 2.2 14B) need a keyframe image — without one they
+  // can't run at all, so auto-selection must skip them.
+  const eligible = hasImage
+    ? VIDEO_TIERS
+    : VIDEO_TIERS.filter((t) => !t.requiresImage);
+  return pickBestTier(eligible, availableVramMb, preferredQuality, totalRamMb);
 }
 
 export function pickBestMusicTier(

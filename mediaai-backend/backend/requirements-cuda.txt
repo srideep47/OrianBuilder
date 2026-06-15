@@ -20,16 +20,22 @@ accelerate>=0.30.0
 optimum>=1.19.0
 xformers>=0.0.26
 sentencepiece>=0.2.0
+# Wan 2.2 (and Flux) prompt encoders clean text with ftfy. diffusers calls
+# ftfy.fix_text() unconditionally in those pipelines, so a missing ftfy raises
+# "name 'ftfy' is not defined" at encode time and the video tier falls back to
+# LTX instead of running Wan.
+ftfy>=6.1.0
 # Image: Z Image Turbo / FLUX use bfloat16 + custom schedulers shipped with diffusers.
 # Video: imageio for export_to_video, decord for some pipelines.
 imageio>=2.34.0
 imageio-ffmpeg>=0.5.0
 av>=12.0.0
 # Audio: TTS lineup
+# F5-TTS is the default narration voice on 16 GB+ profiles; weights
+# auto-download from HuggingFace on first use.
 TTS>=0.22.0           # Coqui XTTS-v2
 kokoro>=0.7.0         # Kokoro 82M
-# f5-tts is optional — pulling at runtime keeps the base install lean.
-# Install with `pip install f5-tts` if you want the F5-TTS tier.
+f5-tts                # F5-TTS (unpinned: API `from f5_tts.api import F5TTS` is stable)
 # STT
 librosa>=0.10.0
 # ACE-Step 1.5 is installed by the Electron setup helper with --no-deps after

@@ -110,9 +110,12 @@ const RTX_4080S_16GB: HardwareModelProfile = {
     defaultSettings: {},
   },
   speech: {
-    modelId: "speecht5-cpu",
-    label: "SpeechT5 (CPU)",
-    vramMb: 0,
+    // F5-TTS: far more natural than SpeechT5. ~6 GB VRAM, fits the 16 GB card
+    // (loaded one-at-a-time under single-residency, so it never competes with
+    // the video/music models). Smaller cards keep SpeechT5 below.
+    modelId: "f5-tts",
+    label: "F5-TTS",
+    vramMb: 6000,
     defaultSettings: {},
   },
   disabledModalities: ["transcribe"],

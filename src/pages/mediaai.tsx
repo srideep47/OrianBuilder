@@ -45,6 +45,7 @@ import {
 } from "@/shared/media_tiers";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Card,
@@ -111,36 +112,48 @@ interface VideoTierApiInfo {
   download_size_mb: number;
   backends: string[];
   default_frames: number;
+  /** Hard cap on frames (→ max clip length). May be absent on older backends. */
+  max_frames?: number;
   default_fps: number;
   default_width: number;
   default_height: number;
   default_steps: number;
   available_for_backend: boolean;
-  status: "downloaded" | "downloading" | "not_downloaded";
+  status: "downloaded" | "downloading" | "not_downloaded" | "partial";
   download_progress?: number;
+  downloaded_bytes?: number | null;
+  download_speed_bps?: number | null;
   download_error?: string | null;
   selected: boolean;
 }
 
 type VideoSettings = {
-  frames: number | null;
+  /** Clip length in seconds (slider). Backend turns it into a frame count for
+   *  the model at the chosen fps, capped to the model's max. null = default. */
+  durationSec: number | null;
   fps: number | null;
   width: number | null;
   height: number | null;
   steps: number | null;
+  /** null = pipeline default (per-tier); explicit width/height come from the
+   *  resolution picker as a "WxH" pair written to width+height together. */
+  seed: number | null; // null = random each run
+  negativePrompt: string | null; // null/empty = model's built-in default
 };
 
 const VIDEO_TIER_DESCRIPTIONS: Record<string, string> = {
-  "wan-2.1-14b":
-    "Top-quality Alibaba Wan 2.1 (14B). Best output, ~30 GB download. Auto-selected for 14 GB+ GPUs. CPU offload on <20 GB VRAM.",
+  "wan-2.2-i2v":
+    "Wan 2.2 14B — the best open video quality on 16 GB cards. Image-to-video: animates a keyframe image (storyboard jobs generate one per scene automatically). Two GGUF experts + 4-step Lightning LoRA. No audio — music/narration are mixed in the edit. ~31 GB download.",
+  "wan-2.2-5b":
+    "Wan 2.2 5B — text-to-video for 6 GB GPUs / 16 GB RAM. GGUF transformer (~3.1 GB) with the text encoder streamed from RAM. 24 fps. ~15 GB download.",
+  "ltx-2-av-small":
+    "LTX-2.3 — synced audio+video in one pass. GGUF transformer (~16.7 GB) + group offload (uses ~16 GB VRAM + ~20 GB RAM), 8-step distilled. Best AV quality + speed. Downloads the 16.7 GB GGUF (+ shared base if missing).",
   "ltx-video":
-    "Lightricks LTX Video — very fast generation, 121 frames at 24 fps. Best speed-to-quality ratio. ~18 GB download.",
-  "wan-2.1-1.3b":
-    "Budget Wan 2.1 (1.3B) with CPU offload. Fits in 5 GB VRAM. Good quality at low hardware cost. ~14 GB download.",
-  "cogvideox-2b":
-    "THUDM CogVideoX 2B. Smooth 720×480 video output. ~11 GB download. 7 GB VRAM.",
+    "LTX Video 0.9 — very fast generation, 121 frames at 24 fps. Best speed-to-quality ratio without audio. ~18 GB download.",
   "animatediff-sd15":
-    "AnimateDiff + SD 1.5. Lowest VRAM requirement (4 GB). Supports DirectML for AMD on Windows. ~6 GB download.",
+    "AnimateDiff + SD 1.5 (mid · 6 GB). Smooth motion, whole pipeline GPU-resident. ~6 GB download.",
+  "animatediff-sd15-small":
+    "AnimateDiff + SD 1.5 (small · 4 GB). Sequential CPU offload keeps peak VRAM under 3 GB. Same weights as mid tier. ~6 GB download.",
   "text-to-video-cpu":
     "Text-to-Video MS 1.7B — CPU-only fallback. Very slow but works without a GPU. ~8 GB download.",
 };
@@ -448,17 +461,24 @@ export default function MediaAIPage() {
     () => loadStoredVideoTierId(),
   );
   const [videoSettings, setVideoSettings] = useState<VideoSettings>({
-    frames: null,
+    durationSec: null,
     fps: null,
     width: null,
     height: null,
     steps: null,
+    seed: null,
+    negativePrompt: null,
   });
   const [showVideoSettings, setShowVideoSettings] = useState(false);
   const [videoDownloadTierId, setVideoDownloadTierId] = useState<string | null>(
     null,
   );
   const videoDownloadPollRef = useRef<number | null>(null);
+  const videoLastLoggedPctRef = useRef<number>(-1);
+  // Tracks the backend job id during async video generation so Stop can cancel it.
+  const videoJobIdRef = useRef<string | null>(null);
+  const [videoJobStage, setVideoJobStage] = useState<string | null>(null);
+  const [videoJobProgress, setVideoJobProgress] = useState<number | null>(null);
 
   // Music search state
   const [musicQuery, setMusicQuery] = useState("");
@@ -987,9 +1007,16 @@ export default function MediaAIPage() {
   }, [hardware, appendLog, refreshAll, waitForBackendHealthy]);
 
   const handleStop = () => {
+    if (videoJobIdRef.current) {
+      void fetch(`${serverUrl}/v1/jobs/${videoJobIdRef.current}/cancel`, {
+        method: "POST",
+      }).catch(() => {});
+    }
     abortRef.current?.abort();
     abortRef.current = null;
     setIsGenerating(false);
+    setVideoJobStage(null);
+    setVideoJobProgress(null);
   };
 
   const fetchImageTiers = useCallback(async (): Promise<
@@ -1502,11 +1529,13 @@ export default function MediaAIPage() {
     const tierLabel = tier?.label ?? tierId;
     setSelectedVideoTierId(tierId);
     setVideoSettings({
-      frames: null,
+      durationSec: null,
       fps: null,
       width: null,
       height: null,
       steps: null,
+      seed: null,
+      negativePrompt: null,
     });
     if (!isBackendOnline) {
       appendLog(`Start the backend before downloading ${tierLabel}.`);
@@ -1518,6 +1547,7 @@ export default function MediaAIPage() {
       videoDownloadPollRef.current = null;
     }
     setVideoDownloadTierId(tierId);
+    videoLastLoggedPctRef.current = -1;
     appendLog(`Starting download of video model: ${tierLabel}...`);
     try {
       const response = await fetch(`${serverUrl}/v1/generate/video/download`, {
@@ -1552,10 +1582,23 @@ export default function MediaAIPage() {
               videoDownloadPollRef.current = null;
           } else if (t.status === "downloading") {
             if (t.download_progress != null && t.download_progress !== -1) {
-              appendLog(
-                `Video model ${tierLabel} progress: ${t.download_progress}%`,
-              );
+              const milestone = Math.floor(t.download_progress / 10) * 10;
+              if (milestone > videoLastLoggedPctRef.current) {
+                videoLastLoggedPctRef.current = milestone;
+                const speedStr =
+                  t.download_speed_bps != null && t.download_speed_bps > 0
+                    ? ` at ${t.download_speed_bps >= 1_000_000 ? `${(t.download_speed_bps / 1_000_000).toFixed(1)} MB/s` : `${(t.download_speed_bps / 1_000).toFixed(0)} KB/s`}`
+                    : "";
+                const gbStr =
+                  t.downloaded_bytes != null
+                    ? ` (${(t.downloaded_bytes / 1_073_741_824).toFixed(1)} GB / ${(t.download_size_mb / 1024).toFixed(0)} GB)`
+                    : "";
+                appendLog(
+                  `Video model ${tierLabel}: ${milestone}%${gbStr}${speedStr}`,
+                );
+              }
             } else if (pollCount === 1) {
+              videoLastLoggedPctRef.current = -1;
               appendLog(
                 `Video model ${tierLabel}: Resolving repository and checking cache...`,
               );
@@ -1885,61 +1928,162 @@ export default function MediaAIPage() {
           selectedVideoTierInfo?.label ?? "best available model";
         appendLog(`Generating video with ${tierLabel}…`);
         toast.info(
-          `Generating with ${tierLabel}. This can take several minutes on first run.`,
+          `Generating with ${tierLabel}. This may take 5–20 min on first run while the model loads.`,
         );
         try {
-          const response = await fetch(`${serverUrl}/v1/generate/video`, {
+          // Submit async job — avoids the 300 s Electron fetch timeout that kills
+          // long video runs with "fetch failed". The job API is non-blocking: we
+          // get a job_id immediately and poll until done.
+          const submitResp = await fetch(`${serverUrl}/v1/jobs`, {
             method: "POST",
-            signal: ctrl.signal,
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              prompt: prompt.trim(),
-              ...(selectedVideoTierId ? { tier: selectedVideoTierId } : {}),
-              ...(videoSettings.frames !== null
-                ? { num_frames: videoSettings.frames }
-                : {}),
-              ...(videoSettings.fps !== null ? { fps: videoSettings.fps } : {}),
-              ...(videoSettings.width !== null
-                ? { width: videoSettings.width }
-                : {}),
-              ...(videoSettings.height !== null
-                ? { height: videoSettings.height }
-                : {}),
-              ...(videoSettings.steps !== null
-                ? { steps: videoSettings.steps }
-                : {}),
+              kind: "video",
+              params: {
+                prompt: prompt.trim(),
+                ...(selectedVideoTierId ? { tier: selectedVideoTierId } : {}),
+                ...(videoSettings.durationSec !== null
+                  ? { duration_s: videoSettings.durationSec }
+                  : {}),
+                ...(videoSettings.fps !== null
+                  ? { fps: videoSettings.fps }
+                  : {}),
+                ...(videoSettings.width !== null
+                  ? { width: videoSettings.width }
+                  : {}),
+                ...(videoSettings.height !== null
+                  ? { height: videoSettings.height }
+                  : {}),
+                ...(videoSettings.steps !== null
+                  ? { steps: videoSettings.steps }
+                  : {}),
+                ...(videoSettings.seed !== null
+                  ? { seed: videoSettings.seed }
+                  : {}),
+                ...(videoSettings.negativePrompt?.trim()
+                  ? { negative_prompt: videoSettings.negativePrompt.trim() }
+                  : {}),
+              },
             }),
           });
-          if (!response.ok) {
-            const errorData = await response
+          if (!submitResp.ok) {
+            const err = await submitResp
               .json()
-              .catch(() => ({ detail: `HTTP ${response.status}` }));
+              .catch(() => ({ detail: `HTTP ${submitResp.status}` }));
             throw new Error(
-              (errorData as { detail?: string }).detail ??
-                `HTTP ${response.status}`,
+              (err as { detail?: string }).detail ??
+                `HTTP ${submitResp.status}`,
             );
           }
-          const data = (await response.json()) as {
-            video_url?: string;
-            tier?: string;
-          };
-          setResult({
-            tab: "video",
-            url: data.video_url,
-            filename: `video-${Date.now()}.mp4`,
-            source: "local",
-          });
-          appendLog(
-            `Video generated${data.tier ? ` (${data.tier})` : ""}.`,
-            "success",
-          );
-          toast.success(`Video generated${data.tier ? ` (${data.tier})` : ""}`);
-          void fetchVideoTiers();
+          const { job_id } = (await submitResp.json()) as { job_id: string };
+          videoJobIdRef.current = job_id;
+          appendLog(`Video job queued — polling for progress…`);
+
+          // Poll until the job finishes, errors, or the user stops it.
+          let jobDone = false;
+          let lastStage = "";
+          // The backend keeps jobs in memory, so if it crashes + auto-restarts
+          // the job id vanishes (404) and the socket briefly refuses (network
+          // error). Tolerate a short restart window, but don't poll a dead job
+          // forever — give up with a clear message.
+          let unreachablePolls = 0;
+          let notFoundPolls = 0;
+          const MAX_UNREACHABLE = 16; // ~40s of connection refused
+          const MAX_NOT_FOUND = 4; // ~10s of 404 (absorbs restart races)
+          while (!jobDone) {
+            if (ctrl.signal.aborted) break;
+            await new Promise<void>((r) => setTimeout(r, 2500));
+            if (ctrl.signal.aborted) break;
+
+            let pollResp: Response | null;
+            try {
+              pollResp = await fetch(`${serverUrl}/v1/jobs/${job_id}`, {
+                signal: ctrl.signal,
+              });
+            } catch (e) {
+              if (e instanceof Error && e.name === "AbortError") break;
+              // Socket refused — backend down or restarting.
+              if (++unreachablePolls >= MAX_UNREACHABLE) {
+                throw new Error(
+                  "The video backend stopped responding (it may have crashed). " +
+                    "Check the activity log, then Stop/Start the backend and try again.",
+                );
+              }
+              continue;
+            }
+            if (pollResp.status === 404) {
+              // Job id unknown → the backend restarted and lost it. Brief grace
+              // for a restart race, then surface the real cause.
+              if (++notFoundPolls >= MAX_NOT_FOUND) {
+                throw new Error(
+                  "The video backend restarted and lost this job — it most likely " +
+                    "ran out of memory loading the model. Try again, free up RAM, " +
+                    "or pick a lighter video model.",
+                );
+              }
+              continue;
+            }
+            if (!pollResp.ok) {
+              if (++unreachablePolls >= MAX_UNREACHABLE) {
+                throw new Error(
+                  `Video backend error (HTTP ${pollResp.status}).`,
+                );
+              }
+              continue;
+            }
+            unreachablePolls = 0;
+            notFoundPolls = 0;
+
+            const job = (await pollResp.json()) as {
+              status: string;
+              stage: string;
+              progress: number | null;
+              result: {
+                video_url: string;
+                tier: string;
+                has_audio: boolean;
+              } | null;
+              error: string | null;
+            };
+            if (job.stage && job.stage !== "queued") {
+              setVideoJobStage(job.stage);
+              // Only append to the event log when the stage label changes.
+              if (job.stage !== lastStage) {
+                lastStage = job.stage;
+                appendLog(`Video: ${job.stage}…`);
+              }
+            }
+            if (job.progress != null) setVideoJobProgress(job.progress);
+
+            if (job.status === "done") {
+              jobDone = true;
+              const data = job.result!;
+              setResult({
+                tab: "video",
+                url: data.video_url,
+                filename: `video-${Date.now()}.mp4`,
+                source: "local",
+              });
+              appendLog(`Video generated (${data.tier}).`, "success");
+              toast.success(`Video generated (${data.tier})`);
+              void fetchVideoTiers();
+            } else if (job.status === "error") {
+              throw new Error(job.error ?? "Video generation failed");
+            } else if (job.status === "cancelled") {
+              appendLog("Video generation cancelled.", "info");
+              jobDone = true;
+            }
+          }
         } catch (error) {
           if (!(error instanceof Error && error.name === "AbortError")) {
-            toast.error(error instanceof Error ? error.message : String(error));
+            const msg = error instanceof Error ? error.message : String(error);
+            appendLog(`Video generation failed: ${msg}`, "error");
+            toast.error(msg);
           }
         } finally {
+          videoJobIdRef.current = null;
+          setVideoJobStage(null);
+          setVideoJobProgress(null);
           setIsGenerating(false);
           abortRef.current = null;
         }
@@ -2732,6 +2876,7 @@ export default function MediaAIPage() {
                         const isBusy =
                           vTier.status === "downloading" ||
                           videoDownloadTierId === vTier.id;
+                        const isPartial = vTier.status === "partial";
                         const vStatus = !isBackendOnline
                           ? "needs-backend"
                           : vTier.status;
@@ -2742,15 +2887,19 @@ export default function MediaAIPage() {
                               ? "Downloaded"
                               : isBusy
                                 ? "Downloading"
-                                : videoTiersLoading
-                                  ? "Checking"
-                                  : "Not downloaded";
+                                : vStatus === "partial"
+                                  ? "Interrupted"
+                                  : videoTiersLoading
+                                    ? "Checking"
+                                    : "Not downloaded";
                         const cardColor =
                           vStatus === "downloaded"
                             ? "border-emerald-500/30 bg-emerald-500/5"
                             : isBusy
                               ? "border-sky-500/30 bg-sky-500/5"
-                              : "border-border bg-muted/10";
+                              : isPartial
+                                ? "border-amber-500/30 bg-amber-500/5"
+                                : "border-border bg-muted/10";
                         return (
                           <div
                             key={vTier.id}
@@ -2783,7 +2932,9 @@ export default function MediaAIPage() {
                                     ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
                                     : isBusy
                                       ? "border-sky-500/30 bg-sky-500/10 text-sky-600"
-                                      : "border-border bg-muted/20 text-muted-foreground",
+                                      : isPartial
+                                        ? "border-amber-500/30 bg-amber-500/10 text-amber-600"
+                                        : "border-border bg-muted/20 text-muted-foreground",
                                 )}
                               >
                                 {statusLabel}
@@ -2811,19 +2962,62 @@ export default function MediaAIPage() {
                             {isBusy && (
                               <div className="space-y-1">
                                 <div className="flex items-center justify-between text-[10px] text-sky-600 font-medium">
-                                  <span>Downloading</span>
+                                  <span className="flex items-center gap-1">
+                                    <span>Downloading</span>
+                                    {vTier.download_speed_bps != null &&
+                                      vTier.download_speed_bps > 0 && (
+                                        <span className="text-sky-500/80">
+                                          ·{" "}
+                                          {vTier.download_speed_bps >= 1_000_000
+                                            ? `${(vTier.download_speed_bps / 1_000_000).toFixed(1)} MB/s`
+                                            : `${(vTier.download_speed_bps / 1_000).toFixed(0)} KB/s`}
+                                        </span>
+                                      )}
+                                  </span>
                                   <span>
-                                    {vTier.download_progress != null
-                                      ? `${vTier.download_progress}%`
-                                      : "Preparing…"}
+                                    {vTier.downloaded_bytes != null &&
+                                    vTier.download_progress != null ? (
+                                      <>
+                                        {(
+                                          vTier.downloaded_bytes / 1_073_741_824
+                                        ).toFixed(1)}{" "}
+                                        GB
+                                        {" / "}
+                                        {(
+                                          vTier.download_size_mb / 1024
+                                        ).toFixed(0)}{" "}
+                                        GB
+                                        {" · "}
+                                        {vTier.download_progress.toFixed(1)}%
+                                        {vTier.download_speed_bps != null &&
+                                          vTier.download_speed_bps > 0 &&
+                                          (() => {
+                                            const remaining =
+                                              vTier.download_size_mb *
+                                                1024 *
+                                                1024 -
+                                              vTier.downloaded_bytes!;
+                                            const secs =
+                                              remaining /
+                                              vTier.download_speed_bps!;
+                                            if (secs < 60) return ` · <1m`;
+                                            if (secs < 3600)
+                                              return ` · ~${Math.ceil(secs / 60)}m`;
+                                            return ` · ~${Math.floor(secs / 3600)}h ${Math.ceil((secs % 3600) / 60)}m`;
+                                          })()}
+                                      </>
+                                    ) : (
+                                      "Preparing…"
+                                    )}
                                   </span>
                                 </div>
                                 <div className="w-full h-1.5 bg-sky-500/10 rounded-full overflow-hidden">
-                                  {vTier.download_progress != null ? (
+                                  {vTier.download_progress != null &&
+                                  vTier.download_progress > 0 ? (
                                     <div
-                                      className="h-full bg-sky-500 rounded-full transition-all duration-300"
+                                      className="h-full bg-sky-500 rounded-full transition-all duration-1000"
                                       style={{
-                                        width: `${vTier.download_progress}%`,
+                                        width: `${Math.max(2, vTier.download_progress)}%`,
                                       }}
                                     />
                                   ) : (
@@ -2840,6 +3034,15 @@ export default function MediaAIPage() {
                                 </span>
                               </div>
                             )}
+                            {isPartial && !isBusy && (
+                              <div className="flex items-start gap-1.5 rounded-3xl border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+                                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                                <span>
+                                  Download was interrupted. Click &quot;Resume
+                                  Download&quot; to continue where it left off.
+                                </span>
+                              </div>
+                            )}
                             <div className="flex flex-wrap gap-2">
                               <Button
                                 size="sm"
@@ -2848,11 +3051,13 @@ export default function MediaAIPage() {
                                 onClick={() => {
                                   setSelectedVideoTierId(vTier.id);
                                   setVideoSettings({
-                                    frames: null,
+                                    durationSec: null,
                                     fps: null,
                                     width: null,
                                     height: null,
                                     steps: null,
+                                    seed: null,
+                                    negativePrompt: null,
                                   });
                                 }}
                               >
@@ -2890,7 +3095,9 @@ export default function MediaAIPage() {
                                     ? "Downloading"
                                     : vStatus === "downloaded"
                                       ? "Re-download"
-                                      : "Download Model"}
+                                      : isPartial
+                                        ? "Resume Download"
+                                        : "Download Model"}
                                 </Button>
                               )}
                               {isBackendOnline && vStatus === "downloaded" && (
@@ -2947,9 +3154,12 @@ export default function MediaAIPage() {
                       />
                       <Settings2 className="h-3.5 w-3.5" />
                       Settings (
-                      {videoSettings.frames ??
-                        selectedVideoTierInfo.default_frames}{" "}
-                      frames ·{" "}
+                      {videoSettings.durationSec ??
+                        Math.round(
+                          selectedVideoTierInfo.default_frames /
+                            Math.max(1, selectedVideoTierInfo.default_fps),
+                        )}
+                      s ·{" "}
                       {videoSettings.fps ?? selectedVideoTierInfo.default_fps}{" "}
                       fps ·{" "}
                       {videoSettings.steps ??
@@ -2965,11 +3175,13 @@ export default function MediaAIPage() {
                         }
                         onReset={() =>
                           setVideoSettings({
-                            frames: null,
+                            durationSec: null,
                             fps: null,
                             width: null,
                             height: null,
                             steps: null,
+                            seed: null,
+                            negativePrompt: null,
                           })
                         }
                       />
@@ -2977,19 +3189,30 @@ export default function MediaAIPage() {
                   </>
                 )}
 
-                {/* Not-downloaded warning */}
+                {/* Not-downloaded / interrupted warning */}
                 {isBackendOnline &&
                   selectedVideoTierInfo &&
                   selectedVideoTierInfo.status !== "downloaded" && (
                     <div className="flex items-start gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
                       <Download className="h-4 w-4 mt-0.5 shrink-0" />
                       <span>
-                        Download <strong>{selectedVideoTierInfo.label}</strong>{" "}
-                        first — ~
-                        {(
-                          selectedVideoTierInfo.download_size_mb / 1024
-                        ).toFixed(0)}{" "}
-                        GB.
+                        {selectedVideoTierInfo.status === "partial" ? (
+                          <>
+                            Download of{" "}
+                            <strong>{selectedVideoTierInfo.label}</strong> was
+                            interrupted. Resume it to use this model.
+                          </>
+                        ) : (
+                          <>
+                            Download{" "}
+                            <strong>{selectedVideoTierInfo.label}</strong> first
+                            — ~
+                            {(
+                              selectedVideoTierInfo.download_size_mb / 1024
+                            ).toFixed(0)}{" "}
+                            GB.
+                          </>
+                        )}
                       </span>
                     </div>
                   )}
@@ -3015,6 +3238,29 @@ export default function MediaAIPage() {
                   onGenerate={() => void handleGenerate()}
                   onStop={handleStop}
                 />
+                {isGenerating && activeTab === "video" && videoJobStage && (
+                  <div className="mt-3 space-y-1.5">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1.5">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        {videoJobStage}
+                      </span>
+                      {videoJobProgress != null && (
+                        <span>{Math.round(videoJobProgress * 100)}%</span>
+                      )}
+                    </div>
+                    {videoJobProgress != null && (
+                      <div className="w-full h-1 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary rounded-full transition-all duration-500"
+                          style={{
+                            width: `${Math.round(videoJobProgress * 100)}%`,
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -3768,6 +4014,35 @@ function TierRow({ label, tier }: { label: string; tier: MediaTier | null }) {
   );
 }
 
+// A themed native range slider — no extra dependency. Used for continuous
+// settings (clip length in seconds, inference steps) where a slider reads
+// better than discrete chips.
+function RangeSlider({
+  min,
+  max,
+  step,
+  value,
+  onChange,
+}: {
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <input
+      type="range"
+      min={min}
+      max={max}
+      step={step}
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary"
+    />
+  );
+}
+
 function SegmentPicker<T extends string | number>({
   values,
   labels,
@@ -4004,69 +4279,222 @@ function VideoSettingsPanel({
   onChange: (patch: Partial<VideoSettings>) => void;
   onReset: () => void;
 }) {
-  const frameOptions =
-    tier.id === "ltx-video"
-      ? [25, 49, 65, 89, 121]
-      : tier.id.startsWith("wan")
-        ? [17, 33, 49, 65, 81]
-        : tier.id === "cogvideox-2b"
-          ? [17, 33, 49]
-          : tier.id === "animatediff-sd15"
-            ? [8, 12, 16, 24]
-            : [4, 8];
+  // Steps slider range. Distilled/Lightning models (Wan 4-step, LTX-2.3
+  // 8-step) need a small range; full-step models go higher. Always spans the
+  // model's default so the recommended value is reachable.
+  const stepMin = 1;
+  const stepMax = Math.max(8, Math.round(tier.default_steps * 2));
 
-  const stepOptions = [10, 20, 30, 50].filter(
-    (s) => s <= tier.default_steps * 2,
-  ) as number[];
+  // Per-model frame-rate choices, always including the model's native default.
+  const fpsBase =
+    tier.id.startsWith("ltx") || tier.id === "wan-2.2-5b"
+      ? [24, 30]
+      : tier.id === "wan-2.2-i2v"
+        ? [16, 24]
+        : tier.id.startsWith("animatediff")
+          ? [8, 12, 16]
+          : [4, 8];
+  const fpsOptions = Array.from(new Set([...fpsBase, tier.default_fps])).sort(
+    (a, b) => a - b,
+  );
+
+  // Resolution presets derived from the model's native budget: landscape
+  // (native), portrait (swapped), and a grid-aligned square. The backend
+  // re-quantizes to each model's grid, so these only need to be close.
+  const dw = tier.default_width;
+  const dh = tier.default_height;
+  const sq = Math.round(Math.min(dw, dh) / 16) * 16;
+  const resPairs: [number, number][] = [];
+  for (const pair of [
+    [dw, dh],
+    [dh, dw],
+    [sq, sq],
+  ] as [number, number][]) {
+    if (!resPairs.some(([w, h]) => w === pair[0] && h === pair[1])) {
+      resPairs.push(pair);
+    }
+  }
+  const resValues = resPairs.map(([w, h]) => `${w}x${h}`);
+  const resLabels = resPairs.map(([w, h]) => `${w}×${h}`);
+  const selectedRes =
+    settings.width != null && settings.height != null
+      ? `${settings.width}x${settings.height}`
+      : `${dw}x${dh}`;
+
+  const effFps = settings.fps ?? tier.default_fps;
+  const maxFrames = tier.max_frames ?? tier.default_frames * 2;
+  const defaultDuration = Math.max(
+    1,
+    Math.round(tier.default_frames / Math.max(1, effFps)),
+  );
+  const maxDuration = Math.max(2, Math.round(maxFrames / Math.max(1, effFps)));
+  const durationVal = settings.durationSec ?? defaultDuration;
+  const approxFrames = Math.min(maxFrames, Math.round(durationVal * effFps));
+  const curSteps = settings.steps ?? tier.default_steps;
+  // Distilled/Lightning checkpoints sample CFG-free, so a negative prompt has
+  // little to no effect there; full-step models (LTX-Video, AnimateDiff) use it.
+  const negativePromptActive = tier.default_steps > 8;
+
+  const labelCls =
+    "text-xs font-semibold uppercase tracking-wide text-muted-foreground";
 
   return (
     <div className="space-y-4 rounded-2xl border bg-muted/10 p-4">
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Frames
-          </Label>
+          <Label className={labelCls}>Length</Label>
           <span className="text-xs text-muted-foreground">
-            default: {tier.default_frames}
+            {durationVal}s · ≈{approxFrames} frames
           </span>
         </div>
-        <SegmentPicker
-          values={frameOptions}
-          selected={settings.frames ?? tier.default_frames}
-          onSelect={(v) => onChange({ frames: v })}
+        <RangeSlider
+          min={1}
+          max={maxDuration}
+          step={1}
+          value={Math.min(durationVal, maxDuration)}
+          onChange={(v) =>
+            onChange({ durationSec: v === defaultDuration ? null : v })
+          }
         />
+        <div className="flex justify-between text-[10px] text-muted-foreground">
+          <span>1s</span>
+          <span>default {defaultDuration}s</span>
+          <span>{maxDuration}s max</span>
+        </div>
         <p className="text-[11px] text-muted-foreground">
-          More frames = longer video, slower generation.
+          Longer clips take more time and VRAM. For videos beyond {maxDuration}
+          s, use a storyboard (it stitches multiple shots together).
         </p>
       </div>
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Steps
-          </Label>
+          <Label className={labelCls}>Frame rate (fps)</Label>
           <span className="text-xs text-muted-foreground">
-            default: {tier.default_steps}
+            default: {tier.default_fps}
           </span>
         </div>
         <SegmentPicker
-          values={stepOptions}
-          selected={settings.steps ?? tier.default_steps}
-          onSelect={(v) => onChange({ steps: v })}
+          values={fpsOptions}
+          selected={settings.fps ?? tier.default_fps}
+          onSelect={(v) => onChange({ fps: v })}
         />
         <p className="text-[11px] text-muted-foreground">
-          More steps = higher quality, slower. {tier.default_steps} is the
-          recommended default.
+          Higher fps = smoother motion (more frames for the same length).
         </p>
       </div>
 
       <div className="space-y-2">
-        <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Resolution
-        </Label>
+        <div className="flex items-center justify-between">
+          <Label className={labelCls}>Steps</Label>
+          <span className="text-xs text-muted-foreground">
+            {curSteps}
+            {curSteps === tier.default_steps ? " (default)" : ""}
+          </span>
+        </div>
+        <RangeSlider
+          min={stepMin}
+          max={stepMax}
+          step={1}
+          value={Math.min(Math.max(curSteps, stepMin), stepMax)}
+          onChange={(v) =>
+            onChange({ steps: v === tier.default_steps ? null : v })
+          }
+        />
+        <div className="flex justify-between text-[10px] text-muted-foreground">
+          <span>{stepMin}</span>
+          <span>recommended {tier.default_steps}</span>
+          <span>{stepMax}</span>
+        </div>
         <p className="text-[11px] text-muted-foreground">
-          Default: {tier.default_width}×{tier.default_height}. The backend uses
-          each model's native resolution by default for best quality.
+          {tier.default_steps <= 8
+            ? `This model is distilled for ~${tier.default_steps} steps — more steps rarely help and cost time.`
+            : "More steps = higher quality, slower."}
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label className={labelCls}>Resolution</Label>
+          <span className="text-xs text-muted-foreground">
+            native: {dw}×{dh}
+          </span>
+        </div>
+        <SegmentPicker
+          values={resValues}
+          labels={resLabels}
+          selected={selectedRes}
+          onSelect={(v) => {
+            const [w, h] = v.split("x").map(Number);
+            onChange({ width: w, height: h });
+          }}
+        />
+        <p className="text-[11px] text-muted-foreground">
+          The model renders at this size; the final video is upscaled to the
+          chosen aspect ratio. Native is fastest and highest quality.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label className={labelCls}>Seed</Label>
+          <span className="text-xs text-muted-foreground">
+            {settings.seed == null ? "random each run" : "fixed"}
+          </span>
+        </div>
+        <div className="flex gap-2">
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            placeholder="random"
+            value={settings.seed ?? ""}
+            onChange={(e) => {
+              const v = e.target.value.trim();
+              onChange({
+                seed: v === "" ? null : Math.max(0, Math.floor(Number(v))),
+              });
+            }}
+            className="h-8 text-sm"
+          />
+          <button
+            type="button"
+            onClick={() =>
+              onChange({ seed: Math.floor(Math.random() * 2_000_000_000) })
+            }
+            className="shrink-0 rounded-xl border px-3 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+          >
+            Randomize
+          </button>
+          {settings.seed != null && (
+            <button
+              type="button"
+              onClick={() => onChange({ seed: null })}
+              className="shrink-0 rounded-xl border px-3 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Same seed + prompt + settings reproduces the exact video. Leave blank
+          for a fresh result each run.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label className={labelCls}>Negative prompt</Label>
+        <Textarea
+          placeholder="things to avoid — blurry, distorted, extra limbs, watermark…"
+          value={settings.negativePrompt ?? ""}
+          onChange={(e) => onChange({ negativePrompt: e.target.value || null })}
+          rows={2}
+          className="text-sm"
+        />
+        <p className="text-[11px] text-muted-foreground">
+          {negativePromptActive
+            ? "Describe what to keep out of the video."
+            : "Note: this model samples without guidance (distilled/Lightning), so a negative prompt has limited effect."}
         </p>
       </div>
 

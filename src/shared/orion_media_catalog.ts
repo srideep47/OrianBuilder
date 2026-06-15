@@ -82,16 +82,25 @@ export const ORION_MEDIA_CATALOG: Record<OrionModality, OrionModelOption[]> = {
     // this machine; explicit tiers below download on first use.
     { tierId: AUTO_TIER_ID, label: "Auto (match this device)", sizeLabel: "—" },
     {
-      tierId: "ltx-2-av",
-      label: "LTX-2.3 (synced audio+video · best)",
-      sizeLabel: "~96 GB",
+      tierId: "wan-2.2-i2v",
+      label: "Wan 2.2 14B (best, image-to-video)",
+      sizeLabel: "~31 GB",
     },
     {
       tierId: "ltx-2-av-small",
-      label: "LTX-2.3 distilled (synced audio+video)",
-      sizeLabel: "~72 GB",
+      label: "LTX-2.3 (synced audio+video)",
+      sizeLabel: "~16.7 GB GGUF",
     },
-    { tierId: "ltx-video", label: "LTX Video (top)", sizeLabel: "18 GB" },
+    {
+      tierId: "ltx-video",
+      label: "LTX Video (top, no audio)",
+      sizeLabel: "18 GB",
+    },
+    {
+      tierId: "wan-2.2-5b",
+      label: "Wan 2.2 5B (small GPU)",
+      sizeLabel: "~15 GB",
+    },
     {
       tierId: "animatediff-sd15",
       label: "AnimateDiff + SD 1.5 (mid)",

@@ -24,13 +24,14 @@ describe("orion_media_catalog", () => {
     expect(ORION_MEDIA_CATALOG.speech.length).toBeGreaterThan(1);
   });
 
-  it("video offers the five production tiers plus the CPU fallback", () => {
+  it("video offers the production tiers plus the CPU fallback", () => {
     const ids = ORION_MEDIA_CATALOG.video.map((o) => o.tierId);
     expect(ids).toEqual([
       AUTO_TIER_ID,
-      "ltx-2-av",
+      "wan-2.2-i2v",
       "ltx-2-av-small",
       "ltx-video",
+      "wan-2.2-5b",
       "animatediff-sd15",
       "animatediff-sd15-small",
       "text-to-video-cpu",
