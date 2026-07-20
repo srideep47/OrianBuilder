@@ -125,3 +125,96 @@ export async function ensureSelectedEmbeddedModelReady(
     throw new Error(result.error ?? "Failed to load the saved Engine model.");
   }
 }
+
+/** True when the user has cloud credentials we could actually use — an
+ *  OrianBuilder Pro account or any configured provider API key. Used to decide
+ *  whether to prefer the local embedded model for Orion when the picker is on a
+ *  cloud / "auto" model. */
+function hasCloudCredentials(
+  settings: UserSettings | null | undefined,
+): boolean {
+  if (!settings) return false;
+  if (settings.enableOrianBuilderPro) return true;
+  const providerSettings = settings.providerSettings ?? {};
+  return Object.values(providerSettings).some((provider) => {
+    const value = (provider as { apiKey?: { value?: unknown } } | null)?.apiKey
+      ?.value;
+    return typeof value === "string" && value.length > 0;
+  });
+}
+
+/**
+ * Ensure the Orion command has a usable model before it runs.
+ *
+ * The Orion pipeline (intent parse → asset planning → autonomous agent build)
+ * resolves the LLM from `settings.selectedModel`. On a local / offline machine
+ * the default "auto" (cloud) selection can't be used — there are no cloud keys
+ * and the cloud is unreachable — so every Orion LLM call fails and the build
+ * never launches. When that's the case and a local embedded model is available,
+ * load it and point the model picker at it so Orion (and the rest of the app)
+ * use the local model instead of a dead "Auto".
+ *
+ * Users who DO have cloud credentials keep their chosen model — their other
+ * workflows are not disturbed.
+ */
+export async function ensureUsableModelForOrion(
+  settings: UserSettings | null | undefined,
+  selectEmbeddedModel?: (model: {
+    name: string;
+    provider: "embedded";
+  }) => Promise<unknown> | unknown,
+  onStatus?: (message: string) => Promise<unknown> | unknown,
+): Promise<void> {
+  // Embedded already selected → just make sure it's actually loaded.
+  if (settings?.selectedModel.provider === "embedded") {
+    const loaded = (await ipc.embeddedModel.getStatus(undefined)).modelLoaded;
+    if (!loaded) {
+      await onStatus?.(
+        "Loading your local model — the first load after launch can take a few minutes.",
+      );
+    }
+    await ensureSelectedEmbeddedModelReady(settings);
+    return;
+  }
+
+  // A cloud / "auto" model is selected and the user has cloud credentials →
+  // respect their choice; don't switch them to the local model.
+  if (hasCloudCredentials(settings)) {
+    return;
+  }
+
+  // Cloud / "auto" selected but unusable here. Prefer a local embedded model.
+  let status = await ipc.embeddedModel.getStatus(undefined);
+  if (!status.modelLoaded) {
+    if (status.isLoading) {
+      await onStatus?.(
+        "Loading your local model — the first load after launch can take a few minutes.",
+      );
+      await waitForCurrentLoad();
+    } else {
+      const config = await getSavedLoadConfig();
+      // No local model configured either — nothing to fall back to. Leave the
+      // selection as-is so the caller surfaces a clear cloud/setup error.
+      if (!config) return;
+      await onStatus?.(
+        "Loading your local model — the first load after launch can take a few minutes.",
+      );
+      const result = await ipc.embeddedModel.loadModel(config);
+      if (!result.success) {
+        throw new Error(
+          result.error ?? "Failed to load the local Engine model for Orion.",
+        );
+      }
+    }
+    status = await ipc.embeddedModel.getStatus(undefined);
+  }
+
+  // Reflect the now-loaded local model in the picker so Orion and the rest of
+  // the app use it (and the dropdown stops showing a dead "Auto").
+  if (status.modelLoaded && status.modelName && selectEmbeddedModel) {
+    await selectEmbeddedModel({
+      name: status.modelName,
+      provider: "embedded",
+    });
+  }
+}

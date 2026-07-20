@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type React from "react";
+import { useExclusiveMediaSession } from "@/hooks/useExclusiveMediaSession";
 import {
   CheckCircle2,
   ChevronDown,
@@ -374,6 +375,7 @@ function defaultSettingsFor(tier: ImageTierUiConfig): ImageSettings {
 }
 
 export default function MediaAIPage() {
+  const mediaSession = useExclusiveMediaSession();
   const [activeTab, setActiveTab] = useState<MediaTab>("image");
   const [prompt, setPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -2351,7 +2353,19 @@ export default function MediaAIPage() {
   const hasLiveMusicModelStatus = musicTiers.length > 0;
 
   return (
-    <div className="h-full w-full overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
+    <div className="relative h-full w-full overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
+      {!mediaSession.ready && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm">
+          <div className="max-w-md rounded-2xl border bg-card p-6 text-center shadow-xl">
+            <Loader2 className="mx-auto mb-3 h-7 w-7 animate-spin text-primary" />
+            <p className="font-medium">Reserving memory for Media AI</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {mediaSession.error ??
+                "Releasing the chat model before loading a media pipeline…"}
+            </p>
+          </div>
+        </div>
+      )}
       <div className="mx-auto max-w-5xl">
         {/* Header */}
         <div className="mb-6">

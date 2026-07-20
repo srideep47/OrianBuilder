@@ -252,6 +252,10 @@ export async function runAgentStream(
   let fullResponse = "";
   let streamingPreview = ""; // Temporary preview for current tool, not persisted
   let activeRetryReplayEvents: RetryReplayEvent[] | null = null;
+  // The token-stream watchdog must not run while installs/builds/packaging are
+  // executing: tool execution legitimately emits no LLM stream chunks.
+  let activeStreamStallDetector: StreamStallDetector | null = null;
+  let activeToolExecutionCount = 0;
   // Mid-turn compaction inserts a DB summary row for LLM history, but we render
   // the user-facing compaction indicator inline in the active assistant turn.
   const hiddenMessageIdsForStreaming = new Set<number>();
@@ -351,6 +355,26 @@ export async function runAgentStream(
     return null;
   });
   missionRunId = missionRun?.id ?? null;
+  if (missionRun && missionId) {
+    const startedAt = new Date();
+    await db
+      .update(missions)
+      .set({
+        status: "running",
+        updatedAt: startedAt,
+        startedAt: activeMission?.startedAt ?? startedAt,
+        completedAt: null,
+      })
+      .where(
+        and(
+          eq(missions.id, missionId),
+          inArray(missions.status, ["queued", "running", "paused", "failed"]),
+        ),
+      )
+      .catch((err) =>
+        logger.warn("Failed to mark mission running after run start:", err),
+      );
+  }
   const mcpSessionId = missionRunId
     ? `mission-run:${missionRunId}`
     : `chat:${req.chatId}:${orianbuilderRequestId}`;
@@ -553,6 +577,7 @@ export async function runAgentStream(
       createdProjectThisTurn: false,
       lockedPaths: lockedPathsFromDb,
       placeholderRefusalCount: 0,
+      unresolvedCommandFailure: null,
     };
     const referencedAppsMap = new Map(
       referencedApps.map((ref) => [ref.appName.toLowerCase(), ref.appPath]),
@@ -720,6 +745,8 @@ export async function runAgentStream(
         });
       },
       onToolExecutionStart: (params) => {
+        activeToolExecutionCount += 1;
+        activeStreamStallDetector?.pause();
         if (params.toolName === packageNativeArtifactTool.name) {
           nativeOutcome.attemptedNativePackageArtifact = true;
         }
@@ -740,6 +767,10 @@ export async function runAgentStream(
         );
       },
       onToolExecutionComplete: (params) => {
+        activeToolExecutionCount = Math.max(0, activeToolExecutionCount - 1);
+        if (activeToolExecutionCount === 0) {
+          activeStreamStallDetector?.resume();
+        }
         if (params.status === "failed") {
           const decision = recordToolFailureForBudget({
             state: toolFailureBudget,
@@ -870,11 +901,10 @@ export async function runAgentStream(
     // there are still incomplete todos, we append a reminder and do another pass.
     const maxTodoFollowUpLoops = 1;
     let todoFollowUpLoops = 0;
-    // Re-engage the agent up to 2 times after the stream ends when the
-    // native target hasn't been fully delivered. Critical for weak local
-    // models that scaffold but skip customization — without this, auto-finish
-    // ships the generic baseline as the final APK.
-    const maxNativeTargetFollowUpLoops = 2;
+    // Re-engage the agent while the native target remains incomplete. Use the
+    // configured tool-step budget as the ceiling so weak local models can
+    // self-correct without falling back to a manual "Keep going" click.
+    const maxNativeTargetFollowUpLoops = maxToolCallSteps;
     let nativeTargetFollowUpLoops = 0;
     const maxPlainTextToolFollowUpLoops = 6;
     let plainTextToolFollowUpLoops = 0;
@@ -1412,7 +1442,11 @@ export async function runAgentStream(
           });
 
           let streamErrorFromIteration: unknown;
+          activeStreamStallDetector = stallDetector;
           stallDetector.start();
+          if (activeToolExecutionCount > 0) {
+            stallDetector.pause();
+          }
 
           // Diagnostic record for this stream attempt — emitted at end so the
           // user has a structured trace of what arrived from the model.
@@ -1489,6 +1523,9 @@ export async function runAgentStream(
             }
           } finally {
             stallDetector.stop();
+            if (activeStreamStallDetector === stallDetector) {
+              activeStreamStallDetector = null;
+            }
             // Emit one-line structured trace + warning hint when the model
             // appears to be emitting tool calls / thinking blocks as text
             // (the canonical Qwen-via-LM-Studio misconfiguration).
@@ -1729,7 +1766,7 @@ export async function runAgentStream(
 
       if (
         nativeTargetIntent &&
-        passEndedWithText &&
+        (passProducedChatText || steps.length > 0) &&
         (!hasCompletedNativePackage(fullResponse) || needsCustomization) &&
         nativeTargetFollowUpLoops < maxNativeTargetFollowUpLoops
       ) {
@@ -1858,6 +1895,25 @@ export async function runAgentStream(
         status: "cancelled",
         totalStepsExecuted,
       }).catch((err) => logger.warn("Failed to finish mission run:", err));
+      if (missionId && !workerId) {
+        const completedAt = new Date();
+        await db
+          .update(missions)
+          .set({
+            status: "cancelled",
+            updatedAt: completedAt,
+            completedAt,
+          })
+          .where(
+            and(
+              eq(missions.id, missionId),
+              inArray(missions.status, ["queued", "running", "paused"]),
+            ),
+          )
+          .catch((err) =>
+            logger.warn("Failed to mark cancelled mission terminal:", err),
+          );
+      }
       await createMissionCheckpoint({
         missionId,
         runId: missionRunId,
@@ -2259,6 +2315,25 @@ export async function runAgentStream(
       totalStepsExecuted,
       error: getErrorMessage(error),
     }).catch((err) => logger.warn("Failed to finish mission run:", err));
+    if (missionId && !workerId) {
+      const completedAt = new Date();
+      await db
+        .update(missions)
+        .set({
+          status: "failed",
+          updatedAt: completedAt,
+          completedAt,
+        })
+        .where(
+          and(
+            eq(missions.id, missionId),
+            inArray(missions.status, ["queued", "running", "paused"]),
+          ),
+        )
+        .catch((err) =>
+          logger.warn("Failed to mark failed mission terminal:", err),
+        );
+    }
     await createMissionCheckpoint({
       missionId,
       runId: missionRunId,

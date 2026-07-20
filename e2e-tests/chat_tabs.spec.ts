@@ -51,7 +51,9 @@ test("clicking a tab switches to that chat", async ({ po }) => {
 
   // After clicking, chat 1's message should be visible
   await expect(
-    po.page.getByText("First chat unique message alpha"),
+    po.page
+      .getByTestId("messages-list")
+      .getByText("First chat unique message alpha"),
   ).toBeVisible({ timeout: Timeout.MEDIUM });
 });
 
@@ -75,26 +77,18 @@ test("closing a tab removes it and selects adjacent tab", async ({ po }) => {
 
   // Wait for tabs to appear
   const closeButtons = po.page.getByLabel(/^Close tab:/);
-  const initialCount = await (async () => {
-    let count = 0;
-    await expect(async () => {
-      count = await closeButtons.count();
-      expect(count).toBeGreaterThanOrEqual(2);
-    }).toPass({ timeout: Timeout.MEDIUM });
-    return count;
-  })();
+  await expect(async () => {
+    expect(await closeButtons.count()).toBeGreaterThanOrEqual(2);
+  }).toPass({ timeout: Timeout.MEDIUM });
+  await expect(po.page.getByLabel(/Open more tabs/)).toBeVisible();
 
   // Close the first tab.
-  await po.page
-    .getByLabel(/^Close tab:/)
-    .first()
-    .click();
+  await closeButtons.first().click();
 
-  // After closing, tab count should decrease.
-  await expect(async () => {
-    const newCount = await closeButtons.count();
-    expect(newCount).toBe(initialCount - 1);
-  }).toPass({ timeout: Timeout.MEDIUM });
+  // A tab from overflow takes the freed visible slot. The disappearance of the
+  // overflow control proves the total tab count dropped from three to two.
+  await expect(po.page.getByLabel(/Open more tabs/)).toHaveCount(0);
+  await expect(closeButtons).toHaveCount(2);
 });
 
 test("right-click context menu: Close other tabs", async ({ po }) => {
@@ -115,12 +109,13 @@ test("right-click context menu: Close other tabs", async ({ po }) => {
   await po.sendPrompt("[dump] Chat three context menu");
   await po.chatActions.waitForChatCompletion();
 
-  // Wait for 3 tabs to appear
+  // The responsive header shows two tabs at this test viewport and moves the
+  // third into the overflow menu.
   const closeButtons = po.page.getByLabel(/^Close tab:/);
   await expect(async () => {
-    const count = await closeButtons.count();
-    expect(count).toBe(3);
+    expect(await closeButtons.count()).toBeGreaterThanOrEqual(2);
   }).toPass({ timeout: Timeout.MEDIUM });
+  await expect(po.page.getByLabel(/Open more tabs/)).toBeVisible();
 
   // Right-click on the second tab to open context menu
   const tabs = po.page.locator("div[draggable]");
@@ -134,6 +129,7 @@ test("right-click context menu: Close other tabs", async ({ po }) => {
     const newCount = await closeButtons.count();
     expect(newCount).toBe(1);
   }).toPass({ timeout: Timeout.MEDIUM });
+  await expect(po.page.getByLabel(/Open more tabs/)).toHaveCount(0);
 });
 
 test("right-click context menu: Close tabs to the right", async ({ po }) => {
@@ -159,12 +155,12 @@ test("right-click context menu: Close tabs to the right", async ({ po }) => {
   await po.sendPrompt("[dump] Right tab two");
   await po.chatActions.waitForChatCompletion();
 
-  // Wait for 4 tabs to appear
+  // Wait for the visible tab strip plus its responsive overflow control.
   const closeButtons = po.page.getByLabel(/^Close tab:/);
   await expect(async () => {
-    const count = await closeButtons.count();
-    expect(count).toBe(4);
+    expect(await closeButtons.count()).toBeGreaterThanOrEqual(2);
   }).toPass({ timeout: Timeout.MEDIUM });
+  await expect(po.page.getByLabel(/Open more tabs/)).toBeVisible();
 
   // Right-click on the second tab (index 1) to open context menu
   const tabs = po.page.locator("div[draggable]");
@@ -178,6 +174,7 @@ test("right-click context menu: Close tabs to the right", async ({ po }) => {
     const newCount = await closeButtons.count();
     expect(newCount).toBe(2);
   }).toPass({ timeout: Timeout.MEDIUM });
+  await expect(po.page.getByLabel(/Open more tabs/)).toHaveCount(0);
 });
 
 test("only shows tabs for chats opened in current session", async ({ po }) => {

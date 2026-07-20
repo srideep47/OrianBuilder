@@ -26,6 +26,7 @@ import {
   type TensorRtEngineBuildStatus,
 } from "../types/embedded_model";
 import { TensorRtNativeBackend } from "../utils/tensorrt_native_backend";
+import { releaseAllMediaAiModels } from "../utils/media_ai_backend";
 import { createTypedHandler } from "./base";
 import { getOrchestrator } from "@/main/ipc/utils/model_orchestrator";
 import {
@@ -637,6 +638,9 @@ export function registerEmbeddedModelHandlers(): void {
   getOrchestrator().setHooks({
     unloadLlm: async () => {
       await unloadModel();
+    },
+    unloadMedia: async () => {
+      await releaseAllMediaAiModels();
     },
     reloadLlm: async () => {
       const settings = readSettings() as any;

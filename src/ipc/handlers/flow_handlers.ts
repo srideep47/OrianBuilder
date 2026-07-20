@@ -16,7 +16,11 @@ import type {
 import { safeSend } from "@/ipc/utils/safe_sender";
 import { createLoggedTypedHandler } from "./base";
 import { parseIntent } from "@/main/flow/intent_parser";
-import { runFlow, resumeFlow } from "@/main/flow/flow_runner";
+import {
+  runFlow,
+  resumeFlow,
+  type FlowMediaProgress,
+} from "@/main/flow/flow_runner";
 import {
   setFlowReviewer,
   createLlmFlowReviewer,
@@ -32,9 +36,7 @@ import {
   setRemoteMediaDispatcher,
 } from "@/main/flow/capability_registry";
 import { maybeGenerateMediaOnPeer } from "@/main/compute/media-remote";
-import { getModelLeaseManager, type ModelSpec } from "@/main/flow/model_lease";
 import { getCachedHardwareProfile } from "@/main/hardware/detect";
-import { getAvailableVramMb } from "@/main/ipc/utils/vram_accounting";
 import { ORIANBUILDER_MEDIA_DIR_NAME } from "@/ipc/utils/media_path_utils";
 import {
   selectProfileForVram,
@@ -45,12 +47,10 @@ import { getModelGate } from "@/main/flow/model_gate";
 import {
   runPipeline,
   type PipelineWorkers,
-  type PhaseRecord,
+  type ModelPreparationResult,
 } from "@/main/flow/pipeline_orchestrator";
-import {
-  resolveSelection,
-  resolveDownloadPlan,
-} from "@/shared/orion_media_catalog";
+import type { AssetType } from "@/ipc/types/manifest";
+import { resolveSelection } from "@/shared/orion_media_catalog";
 import { markFactoryBuildChat } from "@/main/flow/factory_build_registry";
 import { readSettings } from "@/main/settings";
 import { createMediaAssetWorker } from "@/main/flow/asset_worker";
@@ -66,7 +66,6 @@ import type { PipelineRunResult } from "@/ipc/types/intent";
 import {
   getMediaAiBackendStatus,
   startMediaAiBackend,
-  downloadMediaAiModels,
 } from "@/ipc/utils/media_ai_backend";
 import {
   watchdogBackend,
@@ -370,19 +369,24 @@ async function responseTextOrStatus(response: Response): Promise<string> {
   return text || `HTTP ${response.status} ${response.statusText}`;
 }
 
-async function ensureMediaBackendReadyForFlow(): Promise<{
+async function ensureMediaBackendReadyForFlow(options?: {
+  signal?: AbortSignal;
+}): Promise<{
   ready: boolean;
   serverUrl: string;
   reason?: string;
   setupRoute?: string;
 }> {
+  if (options?.signal?.aborted) {
+    throw new Error("Media generation was cancelled");
+  }
   let status = await getMediaAiBackendStatus();
   if (!status.backendAvailable) {
     return {
       ready: false,
       serverUrl: status.serverUrl,
       reason: "Media AI backend files are missing.",
-      setupRoute: "/mediaai",
+      setupRoute: "/media-runtime",
     };
   }
   if (!status.depsInstalled) {
@@ -390,13 +394,16 @@ async function ensureMediaBackendReadyForFlow(): Promise<{
       ready: false,
       serverUrl: status.serverUrl,
       reason: "Media AI Python dependencies are not installed.",
-      setupRoute: "/mediaai",
+      setupRoute: "/media-runtime",
     };
   }
   if (!status.healthy) {
     await startMediaAiBackend();
     const started = Date.now();
     while (Date.now() - started < 30_000) {
+      if (options?.signal?.aborted) {
+        throw new Error("Media generation was cancelled");
+      }
       status = await getMediaAiBackendStatus();
       if (status.healthy) break;
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -408,7 +415,7 @@ async function ensureMediaBackendReadyForFlow(): Promise<{
       ready: false,
       serverUrl: status.serverUrl,
       reason: status.lastLog ?? "Media AI backend did not become healthy.",
-      setupRoute: "/mediaai",
+      setupRoute: "/media-runtime",
     };
   }
   return { ready: true, serverUrl: status.serverUrl };
@@ -808,32 +815,6 @@ async function runTracking(params: {
   }
 }
 
-function configureModelLeaseHooks(): void {
-  getModelLeaseManager().setHooks({
-    availableVramMb: async () => {
-      try {
-        const profile = await getCachedHardwareProfile();
-        const free = await getAvailableVramMb(profile);
-        return free > 0 ? free : 65536;
-      } catch (err) {
-        logger.warn(
-          "VRAM probe failed; treating model lease budget as unknown",
-          err,
-        );
-        return 65536;
-      }
-    },
-    load: async (spec: ModelSpec) => {
-      logger.info(
-        `reserve model lease ${spec.key} (${Math.round(spec.vramMb)} MB)`,
-      );
-    },
-    unload: async (key: string) => {
-      logger.info(`release model lease ${key}`);
-    },
-  });
-}
-
 /**
  * Create a fresh OrianBuilder app (scaffold + git) so a from-scratch build
  * command has a workspace. Mirrors the createApp handler's sequence using the
@@ -943,98 +924,43 @@ async function detectTotalVramMb(): Promise<number> {
  * time) → structural verify → return a build handoff so the renderer launches
  * the Autopilot coding pass against the now-generated assets.
  */
-/**
- * Pre-download the weights for the user's selected media models that aren't
- * present yet. Returns a "download" phase record for the run summary. Never
- * throws: a failed/partial download is non-fatal (generation falls back to a
- * placeholder), so the prompt is never lost. Runtime-install models (3D TripoSR,
- * music ACE-Step) ship with the media backend setup and fetch weights on first
- * use — they're surfaced here but not auto-installed mid-run.
- */
-async function predownloadSelectedModels(
-  selection: ReturnType<typeof resolveSelection>,
-  backendReady: boolean,
+/** Prepare only the model required by the next modality in the AI-authored
+ * execution plan. The media backend and unrelated weights remain untouched
+ * until that planned stage is reached. */
+async function preparePlannedModel(
+  type: AssetType,
   emit?: (e: PipelineProgress) => void,
-): Promise<PhaseRecord> {
-  if (!backendReady) {
-    emit?.({
-      kind: "download",
-      label: "Media backend not ready",
-      detail: "skipping pre-download; assets may fall back to placeholders",
-      status: "partial",
-    });
-    return {
-      phase: "download",
-      status: "partial",
-      detail: "media backend not ready; skipped pre-download",
-    };
+): Promise<ModelPreparationResult> {
+  const mediaBackend = await ensureMediaBackendReadyForFlow();
+  if (!mediaBackend.ready) {
+    const detail = `media backend not ready (${mediaBackend.reason ?? "unknown"}); generation may use a placeholder`;
+    logger.warn(detail);
+    return { status: "partial", detail };
   }
-  try {
-    emit?.({
-      kind: "download",
-      label: "Checking selected media models",
-      status: "running",
-    });
-    const status = await getMediaAiBackendStatus();
-    const downloaded = new Set(
-      status.models.filter((m) => m.downloaded).map((m) => m.id),
-    );
-    const plan = resolveDownloadPlan(selection, downloaded);
-    const notes: string[] = [];
 
-    if (plan.models.length > 0) {
-      logger.info(`pre-downloading selected models: ${plan.models.join(", ")}`);
-      emit?.({
-        kind: "download",
-        label: `Downloading ${plan.models.join(", ")}`,
-        detail: "this can take a while on first use",
-        status: "running",
-      });
-      // Forward the raw download log lines so the UI shows live progress.
-      await downloadMediaAiModels(plan.models, (chunk) => {
-        const line = chunk
-          .split(/\r?\n/)
-          .map((l) => l.trim())
-          .filter(Boolean)
-          .pop();
-        if (line) emit?.({ kind: "log", label: "download", detail: line });
-      });
-      emit?.({
-        kind: "download",
-        label: `Downloaded ${plan.models.join(", ")}`,
-        status: "ok",
-      });
-      notes.push(`downloaded ${plan.models.join(", ")}`);
-    } else {
-      emit?.({
-        kind: "download",
-        label: "Selected model weights present",
-        status: "ok",
-      });
-      notes.push("selected weights present");
-    }
-    if (plan.runtimes.length > 0) {
-      emit?.({
-        kind: "download",
-        label: `${plan.runtimes.join("/")} runtime installs on first use`,
-        status: "partial",
-      });
-      notes.push(`${plan.runtimes.join("/")} runtime installs on first use`);
-    }
-    return { phase: "download", status: "ok", detail: notes.join("; ") };
+  try {
+    const status = await getMediaAiBackendStatus();
+    const downloaded = status.models
+      .filter((model) => model.downloaded)
+      .map((model) => model.id);
+    // The dispatcher resolves each concrete asset against this set immediately
+    // before generation. Do not pre-download a saved selection here: it might
+    // be an unavailable large tier while a compatible alternative is already
+    // installed. This stage only confirms the runtime is ready.
+    emit?.({
+      kind: "log",
+      label: "model availability",
+      detail: `${type}: ${downloaded.length} tracked model group(s) installed`,
+    });
+    return { status: "ok", detail: `${type} runtime ready` };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    logger.warn(`pre-download failed (non-fatal): ${detail}`);
-    emit?.({
-      kind: "download",
-      label: "Pre-download issue",
-      detail,
-      status: "partial",
-    });
+    logger.warn(
+      `planned ${type} model preparation failed (non-fatal): ${detail}`,
+    );
     return {
-      phase: "download",
       status: "partial",
-      detail: `pre-download issue: ${detail}`,
+      detail: `${type} preparation issue: ${detail}`,
     };
   }
 }
@@ -1054,26 +980,6 @@ async function runOrionPipeline(params: {
     selection,
   );
   configureModelGateHooks();
-
-  // Auto-start the Media AI backend so local image/video/music/3D can actually
-  // run. Without this, asset generation silently degrades to placeholders
-  // ("local media backend not running"). Non-blocking: if it can't be made
-  // ready, the dispatcher's placeholder fallback still keeps the build moving.
-  const mediaBackend = await ensureMediaBackendReadyForFlow();
-  if (!mediaBackend.ready) {
-    logger.warn(
-      `media backend not ready (${mediaBackend.reason ?? "unknown"}); media assets will fall back to placeholders. Set it up at ${mediaBackend.setupRoute ?? "/mediaai"}.`,
-    );
-  }
-
-  // Pre-download any selected media-model weights that aren't present yet, BEFORE
-  // planning, so the run proceeds straight through once they're ready. The prompt
-  // is never lost; failures are non-fatal (generation falls back to placeholder).
-  const downloadPhase = await predownloadSelectedModels(
-    selection,
-    mediaBackend.ready,
-    emit,
-  );
 
   // Ensure a workspace + build chat exist; resolve the app's media dir.
   let appId = params.appId;
@@ -1104,6 +1010,7 @@ async function runOrionPipeline(params: {
         profile,
         generate: defaultGenerateText,
       }),
+    prepareModel: ({ type }) => preparePlannedModel(type, emit),
     generateAsset: createMediaAssetWorker({
       dispatch: dispatchMediaGeneration,
       generate3d: backendThreeDGenerator,
@@ -1172,7 +1079,7 @@ async function runOrionPipeline(params: {
   return {
     buildId: result.buildId,
     status: result.status,
-    phases: [downloadPhase, ...result.phases],
+    phases: result.phases,
     assetSummary: result.assetSummary,
     verifyAttempts: result.verifyAttempts,
     assetPaths,
@@ -1192,6 +1099,14 @@ async function resolveMediaProfile(): Promise<HardwareModelProfile> {
     selectProfileForVram(await detectTotalVramMb()),
     selection,
   );
+}
+
+function currentLlmSlot() {
+  return {
+    kind: "llm" as const,
+    modelId: getLastLlmModelId(),
+    vramMb: 8000,
+  };
 }
 
 /** Capability → coarse media kind + default mime, for the chat reply. */
@@ -1223,19 +1138,41 @@ function toAppRelativePath(
  * modality at the device's best settings (the profile), writing files under the
  * intent's app dir so the chat's orian-media:// protocol can resolve them.
  */
-async function runOrionMediaReply(
+export async function runOrionMediaReply(
   intent: CommandIntent,
+  options: {
+    signal?: AbortSignal;
+    onProgress?: (progress: FlowMediaProgress) => void;
+  } = {},
 ): Promise<MediaReplyResult> {
+  const firstMediaStep = intent.steps.find(
+    (step) => MEDIA_REPLY_KINDS[step.capability],
+  );
+  if (firstMediaStep) {
+    options.onProgress?.({
+      stepId: firstMediaStep.id,
+      capability: firstMediaStep.capability,
+      stage: "Preparing the local media runtime",
+      progress: null,
+    });
+  }
   // Best-effort: bring the local media backend up so generation isn't degraded.
-  const backend = await ensureMediaBackendReadyForFlow();
+  const backend = await ensureMediaBackendReadyForFlow({
+    signal: options.signal,
+  });
   if (!backend.ready) {
     logger.warn(
-      `media backend not ready (${backend.reason ?? "unknown"}); media may fall back. Set it up at ${backend.setupRoute ?? "/mediaai"}.`,
+      `media backend not ready (${backend.reason ?? "unknown"}); media may fall back. Set it up at ${backend.setupRoute ?? "/media-runtime"}.`,
     );
   }
 
   const mediaProfile = await resolveMediaProfile();
-  const flow = await runFlow(intent, { mediaProfile });
+  const flow = await runFlow(intent, {
+    mediaProfile,
+    llmSlot: currentLlmSlot(),
+    onMediaProgress: options.onProgress,
+    signal: options.signal,
+  });
 
   let appPath: string | undefined;
   if (intent.appId != null) {
@@ -1279,7 +1216,9 @@ async function runOrionMediaReply(
         prompt,
         error: typeof out.reason === "string" ? out.reason : "setup required",
         setupRoute:
-          typeof out.setupRoute === "string" ? out.setupRoute : "/mediaai",
+          typeof out.setupRoute === "string"
+            ? out.setupRoute
+            : "/media-runtime",
       });
       continue;
     }
@@ -1304,7 +1243,7 @@ async function runOrionMediaReply(
 }
 
 export function registerFlowHandlers(): void {
-  configureModelLeaseHooks();
+  configureModelGateHooks();
   // Wire the build_app capability to the Autopilot agent-build handoff.
   setBuildExecutor(prepareBuildHandoff);
   setDesignExecutor(prepareDesignArtifact);
@@ -1325,13 +1264,19 @@ export function registerFlowHandlers(): void {
 
   handle(flowContracts.runFlow, async (_event, intent) => {
     const mediaProfile = await resolveMediaProfile();
-    return runFlow(intent, { mediaProfile });
+    return runFlow(intent, {
+      mediaProfile,
+      llmSlot: currentLlmSlot(),
+    });
   });
 
   handle(flowContracts.runCommand, async (_event, { text, appId }) => {
     const intent = await parseIntent(text, appId);
     const mediaProfile = await resolveMediaProfile();
-    return runFlow(intent, { mediaProfile });
+    return runFlow(intent, {
+      mediaProfile,
+      llmSlot: currentLlmSlot(),
+    });
   });
 
   handle(flowContracts.listCapabilities, async () => {
@@ -1355,6 +1300,9 @@ export function registerFlowHandlers(): void {
 
   handle(flowContracts.resumeFlow, async (_event, { flowId }) => {
     const mediaProfile = await resolveMediaProfile();
-    return resumeFlow(flowId, { mediaProfile });
+    return resumeFlow(flowId, {
+      mediaProfile,
+      llmSlot: currentLlmSlot(),
+    });
   });
 }

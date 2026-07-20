@@ -3,20 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FlowContext } from "./capability_registry";
 
 const mocks = vi.hoisted(() => ({
-  acquire: vi.fn(),
-  release: vi.fn(),
-  releaseIdle: vi.fn(),
   dispatchMediaGeneration: vi.fn(),
   initMediaDispatcher: vi.fn(),
   getStatus: vi.fn(),
   runMediaGeneration: vi.fn(),
-}));
-
-vi.mock("@/main/flow/model_lease", () => ({
-  getModelLeaseManager: () => ({
-    acquire: mocks.acquire,
-    releaseIdle: mocks.releaseIdle,
-  }),
 }));
 
 vi.mock("@/main/ipc/utils/media_dispatcher", () => ({
@@ -33,6 +23,7 @@ vi.mock("@/main/ipc/utils/model_orchestrator", () => ({
 
 import { getCapability, setRemoteMediaDispatcher } from "./capability_registry";
 import { selectProfileForVram } from "./model_profiles";
+import { _resetModelGateForTests } from "./model_gate";
 import { afterEach } from "vitest";
 
 function makeCtx(): FlowContext {
@@ -44,29 +35,21 @@ function makeCtx(): FlowContext {
 }
 
 beforeEach(() => {
-  mocks.acquire.mockReset();
-  mocks.release.mockReset();
-  mocks.releaseIdle.mockReset();
   mocks.dispatchMediaGeneration.mockReset();
   mocks.initMediaDispatcher.mockReset();
   mocks.getStatus.mockReset();
   mocks.runMediaGeneration.mockReset();
 
-  mocks.acquire.mockResolvedValue({
-    key: "media:image",
-    release: mocks.release,
-  });
-  mocks.releaseIdle.mockResolvedValue(undefined);
   mocks.getStatus.mockReturnValue({ state: "idle" });
 });
 
+afterEach(() => {
+  setRemoteMediaDispatcher(null);
+  _resetModelGateForTests();
+});
+
 describe("capability registry", () => {
-  it("runs media dispatcher fallback when a model lease cannot fit in VRAM", async () => {
-    mocks.acquire.mockRejectedValueOnce(
-      new Error(
-        'Cannot fit model "media:image" (4096 MB): insufficient VRAM even after eviction.',
-      ),
-    );
+  it("runs the media dispatcher through the single-resident gate", async () => {
     mocks.dispatchMediaGeneration.mockResolvedValueOnce({
       success: true,
       outputPath: "C:\\tmp\\coffee-logo.png",
@@ -112,6 +95,71 @@ describe("capability registry", () => {
     );
   });
 
+  it("threads live progress and cancellation to the media provider", async () => {
+    const controller = new AbortController();
+    const onMediaProgress = vi.fn();
+    mocks.dispatchMediaGeneration.mockResolvedValueOnce({
+      success: true,
+      outputPath: "C:\\tmp\\progress.png",
+      durationMs: 9,
+    });
+
+    await getCapability("generate_image").execute(
+      { prompt: "progressive render" },
+      {
+        ...makeCtx(),
+        onMediaProgress,
+        signal: controller.signal,
+      },
+    );
+
+    expect(mocks.dispatchMediaGeneration).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onProgress: onMediaProgress,
+        signal: controller.signal,
+      }),
+    );
+  });
+
+  it("lets the unified media recipe override model and sampling controls", async () => {
+    mocks.dispatchMediaGeneration.mockResolvedValueOnce({
+      success: true,
+      outputPath: "C:\\tmp\\recipe.png",
+      durationMs: 9,
+    });
+
+    await getCapability("generate_image").execute(
+      {
+        prompt: "editorial portrait",
+        options: { steps: 8, negative_prompt: "text, watermark" },
+      },
+      {
+        ...makeCtx(),
+        mediaProfile: selectProfileForVram(16000),
+        constraints: {
+          media: {
+            modelId: "sd-turbo",
+            options: { width: 768, height: 768, guidance: 0 },
+          },
+        },
+      },
+    );
+
+    expect(mocks.dispatchMediaGeneration).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelType: "image",
+        modelId: "sd-turbo",
+        options: expect.objectContaining({
+          width: 768,
+          height: 768,
+          guidance: 0,
+          steps: 8,
+          negative_prompt: "text, watermark",
+        }),
+      }),
+    );
+  });
+
   it("routes generate_music to the music model in the profile", async () => {
     mocks.dispatchMediaGeneration.mockResolvedValueOnce({
       success: true,
@@ -134,11 +182,6 @@ describe("capability registry", () => {
   });
 
   it("returns setupRequired for unavailable video backends without failing the step", async () => {
-    mocks.acquire.mockRejectedValueOnce(
-      new Error(
-        'Cannot fit model "media:video" (8192 MB): insufficient VRAM even after eviction.',
-      ),
-    );
     mocks.dispatchMediaGeneration.mockResolvedValueOnce({
       success: false,
       outputPath: "C:\\tmp\\promo.mp4",
@@ -153,7 +196,7 @@ describe("capability registry", () => {
 
     expect(output).toMatchObject({
       setupRequired: true,
-      setupRoute: "/mediaai",
+      setupRoute: "/media-runtime",
       reason: "video backend is not running",
       modelType: "video",
       prompt: "promo video",
@@ -163,10 +206,6 @@ describe("capability registry", () => {
 });
 
 describe("P2P media dispatch", () => {
-  afterEach(() => {
-    setRemoteMediaDispatcher(null);
-  });
-
   it("uses a remote peer's result without touching the local chain", async () => {
     const remote = vi.fn().mockResolvedValue({
       success: true,

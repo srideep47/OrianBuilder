@@ -20,6 +20,7 @@ export interface LocalMusicGenOptions {
   tier?: string | null;
   duration_s?: number;
   onProgress?: (p: MediaJobProgress) => void;
+  signal?: AbortSignal;
 }
 
 const MUSIC_JOB_TIMEOUT_MS = 60 * 60 * 1000;
@@ -54,7 +55,11 @@ export async function generateMusicViaLocalBackend(
         duration_seconds: options.duration_s,
         tier: options.tier ?? undefined,
       },
-      { onProgress: options.onProgress, timeoutMs: MUSIC_JOB_TIMEOUT_MS },
+      {
+        onProgress: options.onProgress,
+        signal: options.signal,
+        timeoutMs: MUSIC_JOB_TIMEOUT_MS,
+      },
     );
     const url = result.audio_url as string | undefined;
     if (!url) {

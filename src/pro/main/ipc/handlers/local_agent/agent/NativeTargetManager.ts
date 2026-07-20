@@ -55,6 +55,11 @@ type RunState = {
   createdProjectThisTurn: boolean;
   lockedPaths: string[];
   placeholderRefusalCount: number;
+  unresolvedCommandFailure?: {
+    command: string;
+    exitCode: number;
+    output: string;
+  } | null;
 };
 
 type AutofinishToolDef =
@@ -147,6 +152,17 @@ export async function runNativeAutofinishSequence(params: {
   } = params;
 
   if (!nativeTargetIntent) {
+    return 0;
+  }
+
+  if (runState.unresolvedCommandFailure) {
+    const failure = runState.unresolvedCommandFailure;
+    logger.warn(
+      `Skipping native autofinish for chat ${req.chatId}: unresolved command failure (${failure.command}, exit ${failure.exitCode})`,
+    );
+    warningMessages.push(
+      `Native QA and packaging were deferred because \`${failure.command}\` failed with exit code ${failure.exitCode}. The autonomous agent must repair the command first.`,
+    );
     return 0;
   }
 

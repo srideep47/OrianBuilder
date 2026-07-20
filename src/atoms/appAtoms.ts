@@ -8,6 +8,8 @@ export const versionsListAtom = atom<Version[]>([]);
 export const previewModeAtom = atom<
   | "preview"
   | "code"
+  | "git"
+  | "design"
   | "problems"
   | "configure"
   | "publish"

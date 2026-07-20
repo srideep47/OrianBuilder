@@ -271,3 +271,17 @@ class TieredAudioGenerationService:
 
 
 tiered_audio_generation_service = TieredAudioGenerationService()
+
+
+def unload() -> None:
+    """Release SpeechT5/VITS fallback caches used by the legacy TTS path."""
+    import gc
+
+    with audio_generation_service._lock:
+        audio_generation_service._processor = None
+        audio_generation_service._model = None
+        audio_generation_service._vocoder = None
+        audio_generation_service._speaker_embeddings = None
+        audio_generation_service._vits_tokenizer = None
+        audio_generation_service._vits_model = None
+    gc.collect()

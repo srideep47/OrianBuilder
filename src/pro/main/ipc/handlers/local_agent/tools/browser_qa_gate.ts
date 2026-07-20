@@ -370,6 +370,29 @@ This starts or reuses the managed preview, waits for runtime readiness, captures
   },
 
   execute: async (args, ctx) => {
+    const unresolvedFailure = ctx.runState.unresolvedCommandFailure;
+    if (unresolvedFailure) {
+      ctx.runState.lastBrowserQaStatus = "failed";
+      const reason =
+        `Browser QA deferred because a required command is still failing: ` +
+        `\`${unresolvedFailure.command}\` exited with ${unresolvedFailure.exitCode}. ` +
+        `Fix or retry that command successfully before running Browser QA.\n\n` +
+        unresolvedFailure.output;
+      ctx.appendUserMessage([
+        {
+          type: "text",
+          text:
+            `[execution gate] Do not run browser_qa_gate or package_native_artifact yet. ` +
+            `The command \`${unresolvedFailure.command}\` failed with exit code ${unresolvedFailure.exitCode}. ` +
+            `Diagnose it, use the project's detected package manager, retry it, and continue automatically after it passes.`,
+        },
+      ]);
+      ctx.onXmlComplete(
+        `<orianbuilder-browser-qa status="failed" runtime-status="skipped" runtime-url="" runtime-error="${escapeXmlAttr(`unresolved command failure: ${unresolvedFailure.command}`)}" browser-error="" screenshot-status="failed" desktop-path="" mobile-path="" accessibility-status="failed" console-status="failed">${escapeXmlContent(reason)}</orianbuilder-browser-qa>`,
+      );
+      return reason;
+    }
+
     const indexPath = path.join(ctx.appPath, "app", "index.tsx");
     let indexExists = false;
     let indexSource = "";

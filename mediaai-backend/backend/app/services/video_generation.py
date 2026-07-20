@@ -133,3 +133,12 @@ class TextToVideoGenerationService:
 
 
 video_generation_service = TextToVideoGenerationService()
+
+
+def unload() -> None:
+    """Release the cached legacy text-to-video pipeline."""
+    import gc
+
+    with video_generation_service._lock:
+        video_generation_service._pipeline = None
+    gc.collect()

@@ -14,6 +14,7 @@ import { mediaRoute } from "./routes/media";
 import { mediaQueueRoute } from "./routes/media-queue";
 import { sharedContentRoute } from "./routes/shared";
 import { mediaAiRoute } from "./routes/mediaai";
+import { mediaRuntimeRoute } from "./routes/media-runtime";
 import { threeDAssetsRoute } from "./routes/threedassets";
 import { dailyAiDigestRoute } from "./routes/dailyaidigest";
 import { inferenceRoute } from "./routes/inference";
@@ -36,6 +37,7 @@ const routeTree = rootRoute.addChildren([
   mediaQueueRoute,
   sharedContentRoute,
   mediaAiRoute,
+  mediaRuntimeRoute,
   threeDAssetsRoute,
   dailyAiDigestRoute,
   chatRoute,

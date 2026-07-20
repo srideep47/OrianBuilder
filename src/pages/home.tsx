@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useAtom, useSetAtom } from "jotai";
 import {
   homeChatInputValueAtom,
@@ -13,13 +13,7 @@ import { useState, useEffect, useRef } from "react";
 import { useStreamChat } from "@/hooks/useStreamChat";
 import { HomeChatInput } from "@/components/chat/HomeChatInput";
 import { OrionCommandBar } from "@/components/orion/OrionCommandBar";
-import { OrionModelConfig } from "@/components/orion/OrionModelConfig";
-import {
-  HowItWorksPanel,
-  ModelEnginePanel,
-  OrionSessionsPanel,
-  WorkflowsPanel,
-} from "@/components/orion/OrionPanels";
+import { OrionSessionsPanel } from "@/components/orion/OrionPanels";
 import { usePostHog } from "posthog-js/react";
 import { PrivacyBanner } from "@/components/TelemetryBanner";
 import { useAppVersion } from "@/hooks/useAppVersion";
@@ -31,7 +25,16 @@ import {
 } from "@/components/ui/dialog";
 import { useTheme } from "@/contexts/ThemeContext";
 import { Button } from "@/components/ui/button";
-import { ExternalLink } from "lucide-react";
+import {
+  ArrowRight,
+  ExternalLink,
+  FolderKanban,
+  Image as ImageIcon,
+  Layers3,
+  Network,
+  Orbit,
+  Sparkles,
+} from "lucide-react";
 import { showError } from "@/lib/toast";
 import { invalidateAppQuery } from "@/hooks/useLoadApp";
 import { useQueryClient } from "@tanstack/react-query";
@@ -93,7 +96,6 @@ export default function HomePage() {
   const posthog = usePostHog();
   const appVersion = useAppVersion();
   const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
-
   const [releaseUrl, setReleaseUrl] = useState("");
   const { theme } = useTheme();
   const queryClient = useQueryClient();
@@ -425,32 +427,107 @@ export default function HomePage() {
     />
   );
 
-  // Landing state: no messages yet, keep the original centered layout.
+  // Landing state: Orion is the single primary surface. Detailed engine/model
+  // controls stay available in context without competing with the command box.
   if (chatMessages.length === 0) {
     return (
       <div className="h-full w-full overflow-y-auto">
         {forceCloseDialog}
-        <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-3 py-8 sm:px-6 lg:px-8">
-          <div>
-            <h1 className="text-xl font-semibold text-foreground">
-              Build a new app
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Start with the classic builder input, or use Orion below to chain
-              every workflow from one command.
-            </p>
+        <div className="mx-auto flex min-h-full w-full max-w-[1440px] flex-col px-4 py-5 sm:px-6 lg:px-8">
+          <header className="flex flex-wrap items-center gap-3 border-b border-border/70 pb-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-primary/25 bg-primary/12 text-primary shadow-[0_0_32px_rgba(168,140,255,0.12)]">
+              <Orbit className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-lg font-semibold tracking-tight text-foreground">
+                Orion Workspace
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                One conversation for planning, creation, verification, and
+                delivery.
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Link
+                to="/mediaai"
+                className="inline-flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+              >
+                <ImageIcon className="h-3.5 w-3.5" /> Media
+              </Link>
+              <Link
+                to="/apps"
+                className="inline-flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+              >
+                <FolderKanban className="h-3.5 w-3.5" /> Projects
+              </Link>
+              <span className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-medium text-emerald-300">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />{" "}
+                local first
+              </span>
+            </div>
+          </header>
+
+          <div className="grid flex-1 min-w-0 gap-5 pt-5 xl:grid-cols-[minmax(0,1fr)_310px]">
+            <main className="flex min-w-0 flex-col justify-center py-6 xl:py-12">
+              <div className="mb-6 max-w-3xl">
+                <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/[0.08] px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
+                  <Sparkles className="h-3 w-3" /> Unified local AI workspace
+                </div>
+                <h2 className="text-balance text-3xl font-semibold leading-tight tracking-[-0.035em] text-foreground sm:text-4xl">
+                  What should Orion finish for you?
+                </h2>
+                <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+                  Mix software, design, images, video, audio, research, testing,
+                  and deployment in the same command. Orion selects the tools
+                  and shows every result in the session.
+                </p>
+              </div>
+              <OrionCommandBar appId={appId ?? undefined} />
+
+              <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                {[
+                  {
+                    label: "Build and verify",
+                    detail: "Code · test · preview · ship",
+                    icon: Layers3,
+                    to: "/apps" as const,
+                  },
+                  {
+                    label: "Create media",
+                    detail: "Model-aware local recipes",
+                    icon: ImageIcon,
+                    to: "/mediaai" as const,
+                  },
+                  {
+                    label: "Use the network",
+                    detail: "Share compute and tasks",
+                    icon: Network,
+                    to: "/network" as const,
+                  },
+                ].map(({ label, detail, icon: Icon, to }) => (
+                  <Link
+                    key={label}
+                    to={to}
+                    className="group flex items-center gap-2.5 rounded-2xl border border-border/70 bg-card/35 px-3 py-2.5 transition-colors hover:border-primary/25 hover:bg-card/60"
+                  >
+                    <Icon className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-medium text-foreground">
+                        {label}
+                      </span>
+                      <span className="block truncate text-[10px] text-muted-foreground">
+                        {detail}
+                      </span>
+                    </span>
+                    <ArrowRight className="h-3 w-3 text-muted-foreground/50" />
+                  </Link>
+                ))}
+              </div>
+            </main>
+            <aside className="min-w-0 border-l border-border/60 pl-5">
+              <OrionSessionsPanel />
+            </aside>
           </div>
-          <HomeChatInput
-            onSubmit={handleSubmit}
-            isStreaming={isReplying}
-            onCancel={handleCancelReply}
-          />
-          <OrionModelConfig />
-          <OrionCommandBar appId={appId ?? undefined} />
-          <ModelEnginePanel />
-          <OrionSessionsPanel />
-          <WorkflowsPanel />
-          <HowItWorksPanel />
         </div>
         <PrivacyBanner />
         {releaseNotesDialog}

@@ -12,6 +12,8 @@ import {
   OrianBuilderErrorKind,
 } from "@/errors/orianbuilder_error";
 import { addLog } from "@/lib/log_store";
+import { detectProjectStack } from "@/ipc/utils/project_stack_detector";
+import { normalizePackageManagerCommand } from "./package_manager_command";
 
 const logger = log.scope("run_terminal_command");
 
@@ -106,19 +108,18 @@ After running a build command and seeing errors, fix the code and re-run to conf
   },
 
   execute: async (args, ctx: AgentContext) => {
-    const command = args.command.trim();
-    logger.log(`run_terminal_command: ${command} (cwd: ${ctx.appPath})`);
+    const requestedCommand = args.command.trim();
 
-    if (!command) {
+    if (!requestedCommand) {
       throw new OrianBuilderError(
         "Command must not be empty.",
         OrianBuilderErrorKind.Validation,
       );
     }
 
-    if (isCommandBlocked(command)) {
+    if (isCommandBlocked(requestedCommand)) {
       throw new OrianBuilderError(
-        `Command blocked for safety: "${command}". Destructive or dangerous commands are not allowed.`,
+        `Command blocked for safety: "${requestedCommand}". Destructive or dangerous commands are not allowed.`,
         OrianBuilderErrorKind.Validation,
       );
     }
@@ -126,6 +127,15 @@ After running a build command and seeing errors, fix the code and re-run to conf
     const cwd = args.working_directory
       ? require("node:path").join(ctx.appPath, args.working_directory)
       : ctx.appPath;
+    const stack = await detectProjectStack(cwd);
+    const normalized = normalizePackageManagerCommand(
+      requestedCommand,
+      stack.packageManager,
+    );
+    const command = normalized.command;
+    logger.log(
+      `run_terminal_command: ${command} (cwd: ${cwd})${normalized.rewritten ? `; requested: ${requestedCommand}` : ""}`,
+    );
 
     const timeoutMs = (args.timeout_seconds ?? 60) * 1000;
 
@@ -208,10 +218,29 @@ After running a build command and seeing errors, fix the code and re-run to conf
     const status =
       result.exitCode === 0 ? "success" : `exit code ${result.exitCode}`;
 
-    const summary = `Command: ${command}\nStatus: ${status}\n\n${truncated}`;
+    if (result.exitCode === 0) {
+      if (
+        /\b(install|add|build|test|typecheck|lint|make|package|dist)\b/i.test(
+          command,
+        )
+      ) {
+        ctx.runState.unresolvedCommandFailure = null;
+      }
+    } else {
+      ctx.runState.unresolvedCommandFailure = {
+        command,
+        exitCode: result.exitCode,
+        output: truncated.slice(0, 4000),
+      };
+    }
+
+    const normalizationNote = normalized.reason
+      ? `\nAuto-correction: ${normalized.reason}\nRequested command: ${requestedCommand}\nExecuted command: ${command}\n`
+      : "";
+    const summary = `Command: ${command}\nStatus: ${status}${normalizationNote}\n${truncated}`;
 
     ctx.onXmlComplete(
-      `<orianbuilder-terminal-command cmd="${escapeXmlAttr(command)}" exit-code="${result.exitCode}">${escapeXmlContent(summary)}</orianbuilder-terminal-command>`,
+      `<orianbuilder-terminal-command cmd="${escapeXmlAttr(command)}" requested-cmd="${escapeXmlAttr(requestedCommand)}" package-manager="${escapeXmlAttr(stack.packageManager)}" auto-corrected="${normalized.rewritten}" exit-code="${result.exitCode}">${escapeXmlContent(summary)}</orianbuilder-terminal-command>`,
     );
 
     logger.log(`run_terminal_command done: exit=${result.exitCode}`);

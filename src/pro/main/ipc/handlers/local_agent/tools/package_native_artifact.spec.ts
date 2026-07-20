@@ -3,7 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { ensureExpoAndroidPackage } from "./package_native_artifact";
+import {
+  ensureExpoAndroidPackage,
+  getNativePackagingGateFailure,
+} from "./package_native_artifact";
 
 let tempRoot: string;
 
@@ -47,5 +50,39 @@ describe("package_native_artifact Expo config helpers", () => {
       'package: "com.orianbuilder.helloworldandroidapp"',
     );
     expect(updated).toContain("adaptiveIcon");
+  });
+});
+
+describe("package_native_artifact execution gates", () => {
+  it("blocks Electron packaging when browser QA failed", () => {
+    const failure = getNativePackagingGateFailure({
+      target: "electron_desktop",
+      lastBrowserQaStatus: "failed",
+    });
+
+    expect(failure?.error).toContain("browser_qa_gate status is failed");
+  });
+
+  it("blocks every target while a command failure is unresolved", () => {
+    for (const target of ["electron_desktop", "android_apk"] as const) {
+      const failure = getNativePackagingGateFailure({
+        target,
+        lastBrowserQaStatus: "passed",
+        unresolvedCommandFailure: {
+          command: "pnpm add electron",
+          exitCode: 1,
+        },
+      });
+      expect(failure?.error).toContain("unresolved command failure");
+    }
+  });
+
+  it("allows Electron packaging after browser QA passes", () => {
+    expect(
+      getNativePackagingGateFailure({
+        target: "electron_desktop",
+        lastBrowserQaStatus: "passed",
+      }),
+    ).toBeNull();
   });
 });

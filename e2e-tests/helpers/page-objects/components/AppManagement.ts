@@ -155,7 +155,14 @@ export class AppManagement {
   }
 
   async importApp(appDir: string) {
-    await this.page.getByRole("button", { name: "Import App" }).click();
+    const importButton = this.page.getByRole("button", { name: "Import App" });
+    if (!(await importButton.isVisible().catch(() => false))) {
+      await this.page.getByRole("link", { name: "Projects" }).first().click();
+      await expect(
+        this.page.getByRole("heading", { name: "Apps" }),
+      ).toBeVisible();
+    }
+    await importButton.click();
     await eph.stubDialog(this.electronApp, "showOpenDialog", {
       filePaths: [
         path.join(

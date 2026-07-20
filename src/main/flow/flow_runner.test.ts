@@ -28,10 +28,7 @@ vi.mock("./capability_registry", () => ({
 
 import { runFlow, resumeFlow } from "./flow_runner";
 import { setFlowReviewer, type FlowReviewCheckpoint } from "./flow_review";
-import {
-  getModelLeaseManager,
-  _resetModelLeaseManagerForTests,
-} from "./model_lease";
+import { getModelGate, _resetModelGateForTests } from "./model_gate";
 import type { CommandIntent } from "@/ipc/types/intent";
 
 function makeIntent(steps: CommandIntent["steps"]): CommandIntent {
@@ -44,7 +41,7 @@ beforeEach(() => {
 
 afterEach(() => {
   setFlowReviewer(null);
-  _resetModelLeaseManagerForTests();
+  _resetModelGateForTests();
   vi.clearAllMocks();
 });
 
@@ -152,6 +149,57 @@ describe("runFlow", () => {
     const result = await runFlow(makeIntent([]));
     expect(result.status).toBe("completed");
     expect(result.steps).toHaveLength(0);
+  });
+
+  it("reports provider progress with its flow step identity", async () => {
+    executeMocks["generate_image"] = vi.fn(async (_input, ctx) => {
+      ctx.onMediaProgress?.({ stage: "Denoising", progress: 0.5 });
+      return { outputPath: "/tmp/progress.png" };
+    });
+    const onMediaProgress = vi.fn();
+
+    await runFlow(
+      makeIntent([
+        {
+          id: "hero",
+          capability: "generate_image",
+          input: { prompt: "a hero" },
+        },
+      ]),
+      { onMediaProgress },
+    );
+
+    expect(onMediaProgress).toHaveBeenCalledWith({
+      stepId: "hero",
+      capability: "generate_image",
+      stage: "Denoising",
+      progress: 0.5,
+    });
+  });
+
+  it("does not start queued steps after cancellation", async () => {
+    const controller = new AbortController();
+    executeMocks["generate_image"] = vi.fn(async () => {
+      controller.abort();
+      throw new Error("image generation was cancelled");
+    });
+    executeMocks["generate_video"] = vi.fn(async () => ({
+      outputPath: "/tmp/video.mp4",
+    }));
+
+    const result = await runFlow(
+      makeIntent([
+        { id: "img", capability: "generate_image", input: { prompt: "x" } },
+        { id: "vid", capability: "generate_video", input: { prompt: "y" } },
+      ]),
+      { signal: controller.signal },
+    );
+
+    expect(result.steps.map((step) => step.status)).toEqual([
+      "failed",
+      "skipped",
+    ]);
+    expect(executeMocks["generate_video"]).not.toHaveBeenCalled();
   });
 });
 
@@ -395,19 +443,18 @@ describe("parallel execution (maxParallel > 1)", () => {
 
 describe("swap telemetry", () => {
   it("attaches per-step swap events and aggregates flow totals", async () => {
-    const manager = getModelLeaseManager();
-    manager.setHooks({
-      availableVramMb: async () => 1024,
+    const gate = getModelGate();
+    gate.setHooks({
       load: async () => {},
       unload: async () => {},
     });
 
-    executeMocks["generate_image"] = vi.fn(async () => {
-      const lease = await manager.acquire({ key: "media:image", vramMb: 512 });
-      lease.release();
-      await manager.releaseIdle();
-      return { outputPath: "/tmp/a.png" };
-    });
+    executeMocks["generate_image"] = vi.fn(() =>
+      gate.with(
+        { kind: "image", modelId: "test-image", vramMb: 512 },
+        async () => ({ outputPath: "/tmp/a.png" }),
+      ),
+    );
     executeMocks["build_app"] = vi.fn(async () => ({ missionId: 1 }));
 
     const result = await runFlow(
@@ -419,11 +466,10 @@ describe("swap telemetry", () => {
 
     expect(result.status).toBe("completed");
     const imgStep = result.steps[0];
-    expect(imgStep.swaps?.map((s) => s.kind)).toEqual(["load", "unload"]);
-    expect(imgStep.swaps?.[0].key).toBe("media:image");
-    expect(imgStep.swaps?.[0].freeVramMbBefore).toBe(1024);
-    // The build step performed no swaps.
-    expect(result.steps[1].swaps).toBeUndefined();
+    expect(imgStep.swaps?.map((s) => s.kind)).toEqual(["load"]);
+    expect(imgStep.swaps?.[0].key).toBe("image:test-image");
+    // The following CPU-only build step evicts the preceding media model.
+    expect(result.steps[1].swaps?.map((s) => s.kind)).toEqual(["unload"]);
     expect(result.swapTotals?.count).toBe(2);
   });
 });

@@ -14,6 +14,10 @@ import {
   stopMediaAiBackend,
 } from "../utils/media_ai_backend";
 import { scanModelJunk, cleanModelJunk } from "../utils/model_cleanup";
+import {
+  beginExclusiveMediaSession,
+  endExclusiveMediaSession,
+} from "../utils/exclusive_model_residency";
 
 export function registerMediaAiHandlers() {
   createTypedHandler(mediaAiContracts.getStatus, async () => {
@@ -70,6 +74,30 @@ export function registerMediaAiHandlers() {
   createTypedHandler(mediaAiContracts.stopBackend, async () => {
     stopMediaAiBackend();
     return getMediaAiBackendStatus();
+  });
+
+  createTypedHandler(mediaAiContracts.beginExclusiveSession, async () => {
+    try {
+      await beginExclusiveMediaSession();
+      return { success: true };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  });
+
+  createTypedHandler(mediaAiContracts.endExclusiveSession, async () => {
+    try {
+      await endExclusiveMediaSession();
+      return { success: true };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
   });
 
   createTypedHandler(mediaAiContracts.cancelDownload, async () => {

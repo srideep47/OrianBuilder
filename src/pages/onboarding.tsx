@@ -87,15 +87,18 @@ export default function OnboardingPage() {
     setStep(2);
   };
 
-  const handleFinish = () => {
-    // Fire-and-forget — don't block navigation on the settings write
-    ipc.settings
-      .setUserSettings({
+  const handleFinish = async () => {
+    try {
+      await ipc.settings.setUserSettings({
         onboardingCompleted: true,
         orionNetworkEnabled: joinNetwork,
-      } as Parameters<typeof ipc.settings.setUserSettings>[0])
-      .catch(() => {});
-    navigate({ to: "/" });
+      } as Parameters<typeof ipc.settings.setUserSettings>[0]);
+      await ipc.network.setOnline({ online: joinNetwork });
+      navigate({ to: "/" });
+    } catch (error) {
+      console.error("Failed to finish Orion setup", error);
+      toast.error("Could not save Orion setup. Please try again.");
+    }
   };
 
   const copyFingerprint = () => {

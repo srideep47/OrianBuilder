@@ -57,10 +57,11 @@ const CRITICAL_PATTERNS = [
 ];
 
 const HIGH_RISK_PATTERNS = [
-  /\b(delete|remove|destroy|drop|truncate|reset|force|overwrite)\b/i,
   /\bgit\s+(reset|clean|checkout)\b/i,
+  /\bgit\s+push\b[^\r\n]*(?:--force(?:-with-lease)?|-f\b)/i,
   /\bnpm\s+(publish|unpublish)\b/i,
-  /\b(pnpm|yarn|bun)\s+(publish|remove)\b/i,
+  /\b(pnpm|yarn|bun)\s+(publish|unpublish)\b/i,
+  /\b(remove-item|rm|rmdir|del|erase)\b/i,
   /\bdocker\s+(rm|rmi|system\s+prune|volume\s+rm)\b/i,
 ];
 

@@ -265,6 +265,11 @@ Use this instead of run_terminal_command for install, lint, typecheck, build, un
     });
 
     if (result.status === "failed") {
+      ctx.runState.unresolvedCommandFailure = {
+        command,
+        exitCode: result.exitCode,
+        output: result.output.slice(0, 4000),
+      };
       await maybeQueueInstallEtargetRecovery({
         ctx,
         check: result.check,
@@ -272,6 +277,8 @@ Use this instead of run_terminal_command for install, lint, typecheck, build, un
         output: result.output,
         packageManager: stack.packageManager,
       });
+    } else {
+      ctx.runState.unresolvedCommandFailure = null;
     }
 
     const output = result.output.trim() || "(no output)";

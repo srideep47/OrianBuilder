@@ -957,6 +957,94 @@ async function isBackendHealthy() {
 export const MEDIA_AI_SERVER_URL = SERVER_URL;
 export const isMediaAiBackendHealthy = isBackendHealthy;
 
+export type MediaAiUnloadTarget =
+  | "image"
+  | "video"
+  | "audio"
+  | "stt"
+  | "music"
+  | "3d"
+  | "all";
+
+/**
+ * Ask the running media backend to release model weights without tearing down
+ * the Python process. Returning false is intentional: callers that require a
+ * hard residency guarantee can fall back to stopping the backend process.
+ */
+export async function unloadMediaAiModel(
+  modelType: MediaAiUnloadTarget = "all",
+): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(`${SERVER_URL}/v1/models/unload`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model_type: modelType }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      logger.warn(
+        `Media model unload failed for ${modelType}: HTTP ${response.status}`,
+      );
+      return false;
+    }
+    const result = (await response.json().catch(() => null)) as {
+      ok?: boolean;
+    } | null;
+    return result?.ok === true;
+  } catch (err) {
+    logger.warn(`Media model unload request failed for ${modelType}:`, err);
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Release all media weights before another model family is allowed to load.
+ * Prefer the backend's cooperative unload so a later media request can reuse
+ * the lightweight Python service. If that cannot be confirmed, terminate and
+ * await the complete process tree as the strict-residency fallback.
+ */
+export async function releaseAllMediaAiModels(): Promise<void> {
+  if (await unloadMediaAiModel("all")) {
+    logger.info("single-residency: all Media AI models released");
+    return;
+  }
+
+  logger.warn(
+    "single-residency: cooperative Media AI unload failed; stopping backend",
+  );
+  await stopMediaAiBackendAndWait();
+}
+
+/**
+ * Prepare for an LLM load with a hard process boundary.
+ *
+ * Diffusion/3D libraries use native CPU and CUDA allocators that can retain
+ * several gigabytes after Python drops the last model reference. A successful
+ * `/v1/models/unload` therefore proves that weights are no longer usable, but
+ * it does not prove that Windows reclaimed their RAM. Chat cannot safely load
+ * alongside that retained heap, so an LLM handoff always stops and awaits the
+ * Media AI process after asking it to release its workers cleanly.
+ */
+export async function releaseMediaAiForLlm(): Promise<void> {
+  const cooperativelyReleased = await unloadMediaAiModel("all");
+  if (cooperativelyReleased) {
+    logger.info(
+      "single-residency: Media AI weights released before LLM handoff",
+    );
+  } else {
+    logger.warn(
+      "single-residency: Media AI cooperative unload failed before LLM handoff",
+    );
+  }
+
+  await stopMediaAiBackendAndWait();
+  logger.info("single-residency: Media AI process stopped before LLM load");
+}
+
 // HuggingFace Hub stores repos under <HF_HOME>/hub/models--<org>--<model>/.
 // "stabilityai/sd-turbo" → "models--stabilityai--sd-turbo"
 export function hfHubRepoDir(repoId: string): string {
@@ -1603,6 +1691,31 @@ export function stopMediaAiBackend() {
     /* already dead */
   }
   pythonServer = null;
+}
+
+/** Stop Media AI and wait until its owning Python process has actually exited. */
+export async function stopMediaAiBackendAndWait(
+  timeoutMs = 15_000,
+): Promise<void> {
+  const server = pythonServer;
+  if (!server) return;
+
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const exited = new Promise<"exited" | "timeout">((resolve) => {
+    const onExit = () => resolve("exited");
+    server.once("exit", onExit);
+    server.once("close", onExit);
+    timeout = setTimeout(() => resolve("timeout"), timeoutMs);
+  });
+
+  stopMediaAiBackend();
+  const outcome = await exited;
+  if (timeout) clearTimeout(timeout);
+  if (outcome === "timeout") {
+    throw new Error(
+      `Media AI backend did not exit within ${timeoutMs} ms; refusing to load another model`,
+    );
+  }
 }
 
 export async function deleteMediaAiModel(

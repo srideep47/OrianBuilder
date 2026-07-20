@@ -92,6 +92,71 @@ describe("ModelGate", () => {
     expect(gate.getResident()?.modelId).toBe("z-image-turbo");
   });
 
+  it("evicts a model when generation fails or is cancelled", async () => {
+    const gate = new ModelGate();
+    const { hooks, events } = recordingHooks();
+    gate.setHooks(hooks);
+    const cancellation = new Error("cancelled");
+    cancellation.name = "AbortError";
+
+    await expect(
+      gate.with(slot("video", "ltx-video"), async () => {
+        throw cancellation;
+      }),
+    ).rejects.toBe(cancellation);
+
+    expect(events).toEqual(["load:video:ltx-video", "unload:video:ltx-video"]);
+    expect(gate.getResident()).toBeNull();
+  });
+
+  it("stays idle after a load process failure and accepts the next request", async () => {
+    const gate = new ModelGate();
+    const events: string[] = [];
+    let failNextLoad = true;
+    gate.setHooks({
+      load: async (s) => {
+        events.push(`load:${s.modelId}`);
+        if (failNextLoad) {
+          failNextLoad = false;
+          throw new Error("worker crashed during load");
+        }
+      },
+      unload: async (s) => {
+        events.push(`unload:${s.modelId}`);
+      },
+    });
+
+    await expect(gate.enter(slot("image", "broken"))).rejects.toThrow(
+      "worker crashed during load",
+    );
+    expect(gate.getResident()).toBeNull();
+
+    await gate.enter(slot("image", "healthy"));
+    expect(gate.getResident()?.modelId).toBe("healthy");
+    expect(events).toEqual(["load:broken", "load:healthy"]);
+  });
+
+  it("does not load a replacement when the resident model cannot unload", async () => {
+    const gate = new ModelGate();
+    const events: string[] = [];
+    gate.setHooks({
+      load: async (s) => {
+        events.push(`load:${s.modelId}`);
+      },
+      unload: async (s) => {
+        events.push(`unload:${s.modelId}`);
+        throw new Error("worker did not release VRAM");
+      },
+    });
+    await gate.enter(slot("image", "resident"));
+
+    await expect(gate.enter(slot("video", "replacement"))).rejects.toThrow(
+      "worker did not release VRAM",
+    );
+    expect(events).toEqual(["load:resident", "unload:resident"]);
+    expect(gate.getResident()?.modelId).toBe("resident");
+  });
+
   it("serializes concurrent enters so only one model is ever resident", async () => {
     const gate = new ModelGate();
     const { hooks, events } = recordingHooks();
@@ -109,6 +174,40 @@ describe("ModelGate", () => {
     expect(loads).toBe(3);
     expect(unloads).toBe(2);
     expect(gate.getResident()).not.toBeNull();
+  });
+
+  it("does not swap models while another generation is using the resident slot", async () => {
+    const gate = new ModelGate();
+    const { hooks } = recordingHooks();
+    gate.setHooks(hooks);
+    const sequence: string[] = [];
+    let releaseImage!: () => void;
+    let signalImageStarted!: () => void;
+    const imageStarted = new Promise<void>((resolve) => {
+      signalImageStarted = resolve;
+    });
+    const imageCanFinish = new Promise<void>((resolve) => {
+      releaseImage = resolve;
+    });
+
+    const imageRun = gate.with(slot("image", "a"), async () => {
+      sequence.push("image-start");
+      signalImageStarted();
+      await imageCanFinish;
+      sequence.push("image-end");
+    });
+    await imageStarted;
+    const videoRun = gate.with(slot("video", "b"), async () => {
+      sequence.push("video-start");
+    });
+
+    await Promise.resolve();
+    expect(sequence).toEqual(["image-start"]);
+    expect(gate.getResident()?.modelId).toBe("a");
+    releaseImage();
+    await Promise.all([imageRun, videoRun]);
+    expect(sequence).toEqual(["image-start", "image-end", "video-start"]);
+    expect(gate.getResident()?.modelId).toBe("b");
   });
 
   it("degrades to bookkeeping-only when no hooks are set", async () => {

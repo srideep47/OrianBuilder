@@ -14,6 +14,9 @@ import {
   Eye,
   Palette,
   Orbit,
+  Grid3X3,
+  Layers3,
+  ServerCog,
 } from "lucide-react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useState, useCallback } from "react";
@@ -35,11 +38,40 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { HelpDialog } from "./HelpDialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
-const items = [
-  { title: "Apps", to: "/", icon: Home, hasPanel: true },
-  { title: "Orion", to: "/orion", icon: Orbit, hasPanel: false },
-  { title: "Chat", to: "/chat", icon: Inbox, hasPanel: true },
+const primaryItems = [
+  { title: "Orion", to: "/", icon: Orbit, hasPanel: false },
+  {
+    title: "Chat",
+    label: "Sessions",
+    to: "/chat",
+    icon: Inbox,
+    hasPanel: true,
+  },
+  { title: "Apps", label: "Projects", to: "/apps", icon: Home, hasPanel: true },
+  { title: "Library", to: "/library", icon: BookOpen, hasPanel: true },
+] as const;
+
+const secondaryItems = [
+  { title: "Control Center", to: "/orion", icon: Orbit, hasPanel: false },
+  { title: "Media Studio", to: "/mediaai", icon: Sparkles, hasPanel: false },
+  {
+    title: "Media Queue",
+    to: "/library/media-queue",
+    icon: Layers3,
+    hasPanel: false,
+  },
+  {
+    title: "Open Design",
+    to: "/design-studio",
+    icon: Palette,
+    hasPanel: false,
+  },
   { title: "Engine", to: "/inference", icon: Cpu, hasPanel: false },
   { title: "Models", to: "/models", icon: Database, hasPanel: false },
   {
@@ -48,19 +80,21 @@ const items = [
     icon: HardDrive,
     hasPanel: false,
   },
-  { title: "Gen Assets", to: "/mediaai", icon: Sparkles, hasPanel: true },
+  { title: "Network", to: "/network", icon: Network, hasPanel: false },
+  { title: "Hub", to: "/hub", icon: Store, hasPanel: false },
   {
     title: "Daily AI Digest",
     to: "/dailyaidigest",
     icon: Newspaper,
     hasPanel: false,
   },
-  { title: "Design", to: "/design-studio", icon: Palette, hasPanel: false },
-  { title: "Network", to: "/network", icon: Network, hasPanel: false },
   { title: "Watchdog", to: "/watchdog", icon: Eye, hasPanel: false },
-  { title: "Settings", to: "/settings", icon: Settings, hasPanel: true },
-  { title: "Library", to: "/library", icon: BookOpen, hasPanel: true },
-  { title: "Hub", to: "/hub", icon: Store, hasPanel: false },
+  {
+    title: "Media Runtime",
+    to: "/media-runtime",
+    icon: ServerCog,
+    hasPanel: false,
+  },
 ] as const;
 
 // Renders a nav label, capped at two lines so every item stays compact enough
@@ -124,18 +158,32 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="pb-2">
-        <SidebarMenu>
+        <SidebarMenu className="gap-1">
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              as={Link}
+              to="/settings"
+              size="sm"
+              tooltip="Settings"
+              isActive={pathname.startsWith("/settings")}
+              className="flex h-[44px] w-full flex-col items-center justify-center gap-0.5 rounded-[13px] font-medium"
+              onClick={() => handleIconClick("Settings", true)}
+            >
+              <Settings className="h-[17px] w-[17px] shrink-0" />
+              <span className="text-center text-[9px] leading-tight">
+                Settings
+              </span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
               size="sm"
               tooltip="Help"
-              className="mb-0 flex h-[48px] w-full flex-col items-center justify-center gap-1 rounded-[14px] font-medium"
+              className="mb-0 flex h-[40px] w-full flex-col items-center justify-center gap-0.5 rounded-[13px] font-medium"
               onClick={() => setIsHelpDialogOpen(true)}
             >
               <HelpCircle className="h-[18px] w-[18px] shrink-0" />
-              <span className="text-center text-[10px] leading-tight">
-                Help
-              </span>
+              <span className="text-center text-[9px] leading-tight">Help</span>
             </SidebarMenuButton>
             <HelpDialog
               isOpen={isHelpDialogOpen}
@@ -157,15 +205,19 @@ function AppIcons({
   pathname: string;
   activePanel: SidebarPanelItem;
 }) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const isMoreActive = secondaryItems.some((item) =>
+    pathname.startsWith(item.to),
+  );
+
   return (
     <SidebarGroup className="flex min-h-0 flex-1 flex-col px-2 py-1.5">
       <SidebarGroupContent className="flex min-h-0 flex-1 flex-col">
         <SidebarMenu className="flex flex-col justify-start gap-1.5">
-          {items.map((item) => {
+          {primaryItems.map((item) => {
             const isActive =
               (item.to === "/" && pathname === "/") ||
-              (item.to !== "/" && pathname.startsWith(item.to)) ||
-              (item.title === "Gen Assets" && pathname.startsWith("/3dassets"));
+              (item.to !== "/" && pathname.startsWith(item.to));
 
             const isPanelActive = activePanel === item.title;
 
@@ -184,11 +236,66 @@ function AppIcons({
                     className="h-[18px] w-[18px] shrink-0"
                     strokeWidth={1.85}
                   />
-                  <IconLabel title={item.title} />
+                  <IconLabel
+                    title={("label" in item && item.label) || item.title}
+                  />
                 </SidebarMenuButton>
               </SidebarMenuItem>
             );
           })}
+          <SidebarMenuItem>
+            <Popover open={moreOpen} onOpenChange={setMoreOpen}>
+              <PopoverTrigger
+                aria-label="More Orion tools"
+                className={
+                  "flex h-[48px] w-full shrink-0 flex-col items-center justify-center gap-1 rounded-[14px] font-medium transition-colors " +
+                  (isMoreActive
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground")
+                }
+              >
+                <Grid3X3 className="h-[18px] w-[18px] shrink-0" />
+                <IconLabel title="Tools" />
+              </PopoverTrigger>
+              <PopoverContent
+                side="right"
+                align="start"
+                sideOffset={10}
+                className="max-h-[calc(100vh-96px)] w-80 overflow-y-auto border-border bg-popover/96 p-2 backdrop-blur-2xl"
+              >
+                <div className="px-2 pb-2 pt-1">
+                  <div className="text-sm font-semibold">Orion tools</div>
+                  <div className="text-xs text-muted-foreground">
+                    Specialist workspaces and runtime management.
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-1">
+                  {secondaryItems.map((item) => {
+                    const active = pathname.startsWith(item.to);
+                    return (
+                      <Link
+                        key={item.title}
+                        to={item.to}
+                        onClick={() => {
+                          onIconClick(item.title, item.hasPanel);
+                          setMoreOpen(false);
+                        }}
+                        className={
+                          "flex min-h-14 items-center gap-2 rounded-xl px-3 py-2 text-sm transition-colors " +
+                          (active
+                            ? "bg-primary/15 text-primary"
+                            : "text-foreground/75 hover:bg-muted/60 hover:text-foreground")
+                        }
+                      >
+                        <item.icon className="h-4 w-4 shrink-0" />
+                        <span className="leading-tight">{item.title}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </PopoverContent>
+            </Popover>
+          </SidebarMenuItem>
         </SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>

@@ -11,6 +11,7 @@ import {
   OrianBuilderError,
   OrianBuilderErrorKind,
 } from "@/errors/orianbuilder_error";
+import { releaseMediaAiForLlm } from "@/ipc/utils/media_ai_backend";
 
 import {
   AgentStreamRunner,
@@ -25,6 +26,12 @@ export async function handleLocalAgentStream(
   abortController: AbortController,
   options: AgentStreamRunnerOptions,
 ): Promise<boolean> {
+  // Enforce the LLM side of the single-resident-model contract even when the
+  // selected LLM was already loaded before this stream. This closes the race
+  // where a later Media AI session could leave its Python allocator resident
+  // and make the memory guard reject the agent before it created a run.
+  await releaseMediaAiForLlm();
+
   const totalMem = os.totalmem();
   const usedPct = ((totalMem - os.freemem()) / totalMem) * 100;
   if (usedPct >= SYSTEM_MEMORY_BLOCK_THRESHOLD_PCT) {

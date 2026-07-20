@@ -215,10 +215,15 @@ function FocusEditorPlugin({
     if (disabled) return;
 
     window.setTimeout(() => {
-      editor.focus(() => {
+      // Lexical invokes the callback passed to `focus` after its active editor
+      // context has closed. Calling `$getRoot()` there throws production error
+      // #195 on every post-send focus signal. Move the selection in an editor
+      // update first, then focus without an editor-state callback.
+      editor.update(() => {
         const root = $getRoot();
         root.selectEnd();
       });
+      editor.focus();
     }, 0);
   }, [disabled, editor, focusSignal]);
 

@@ -2,6 +2,28 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { IpcMainInvokeEvent, WebContents } from "electron";
 import { streamText } from "ai";
 
+const mockSystemMemory = vi.hoisted(() => ({
+  total: 64 * 1024 * 1024 * 1024,
+  free: 32 * 1024 * 1024 * 1024,
+}));
+const mockReleaseMediaAiForLlm = vi.hoisted(() => vi.fn(async () => {}));
+
+vi.mock("node:os", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:os")>();
+  return {
+    ...actual,
+    default: {
+      ...actual,
+      totalmem: () => mockSystemMemory.total,
+      freemem: () => mockSystemMemory.free,
+    },
+  };
+});
+
+vi.mock("@/ipc/utils/media_ai_backend", () => ({
+  releaseMediaAiForLlm: mockReleaseMediaAiForLlm,
+}));
+
 // ============================================================================
 // Test Fakes & Builders
 // ============================================================================
@@ -335,6 +357,29 @@ describe("handleLocalAgentStream", () => {
     mockPerformCompaction.mockResolvedValue({ success: true });
     mockCheckAndMarkForCompaction.mockResolvedValue(false);
     vi.mocked(streamText).mockClear();
+    mockSystemMemory.free = 32 * 1024 * 1024 * 1024;
+  });
+
+  describe("Single-resident memory preflight", () => {
+    it("releases Media AI before checking whether an agent can start", async () => {
+      mockSystemMemory.free = 2 * 1024 * 1024 * 1024;
+      const { event } = createFakeEvent();
+
+      await expect(
+        handleLocalAgentStream(
+          event,
+          { chatId: 1, prompt: "test" },
+          new AbortController(),
+          {
+            placeholderMessageId: 10,
+            systemPrompt: "You are helpful",
+            orianbuilderRequestId,
+          },
+        ),
+      ).rejects.toThrow("System memory is critically low");
+
+      expect(mockReleaseMediaAiForLlm).toHaveBeenCalledOnce();
+    });
   });
 
   describe("Chat lookup", () => {

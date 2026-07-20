@@ -11,6 +11,10 @@ import {
   MEDIA_AI_SERVER_URL,
   isMediaAiBackendHealthy,
 } from "../utils/media_ai_backend";
+import {
+  beginExclusiveMediaSession,
+  endExclusiveMediaSession,
+} from "../utils/exclusive_model_residency";
 
 const logger = log.scope("pro_handlers");
 const typedHandle = createLoggedTypedHandler(logger);
@@ -23,6 +27,16 @@ async function transcribeViaLocalBackend(
 ): Promise<string | null> {
   // Backend is started at app launch; just check current health — no blocking wait.
   if (!(await isMediaAiBackendHealthy())) {
+    return null;
+  }
+
+  try {
+    await beginExclusiveMediaSession();
+  } catch (err) {
+    logger.warn(
+      "could not reserve exclusive model memory for transcription:",
+      err,
+    );
     return null;
   }
 
@@ -49,6 +63,9 @@ async function transcribeViaLocalBackend(
     return null;
   } finally {
     await fs.unlink(tmpPath).catch(() => {});
+    await endExclusiveMediaSession().catch((err) => {
+      logger.warn("could not restore the chat model after transcription:", err);
+    });
   }
 }
 

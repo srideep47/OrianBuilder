@@ -38,7 +38,6 @@ import {
   chatMessagesByIdAtom,
   selectedChatIdAtom,
   pendingAgentConsentsAtom,
-  agentTodosByChatIdAtom,
   needsFreshPlanChatAtom,
   activeMissionByChatIdAtom,
   homeChatInputValueAtom,
@@ -79,8 +78,6 @@ import { useSummarizeInNewChat } from "./SummarizeInNewChatButton";
 import { ChatInputControls } from "../ChatInputControls";
 import { ChatErrorBox } from "./ChatErrorBox";
 import { AgentConsentBanner } from "./AgentConsentBanner";
-import { TodoList } from "./TodoList";
-import { AgentProgressList } from "./AgentProgressList";
 import { LockedFilesPanel } from "./LockedFilesPanel";
 import { QuestionnaireInput } from "./QuestionnaireInput";
 import { QueuedMessagesList } from "./QueuedMessagesList";
@@ -217,8 +214,6 @@ export function ChatInput({
     : undefined;
 
   // Get todos for this chat
-  const agentTodosByChatId = useAtomValue(agentTodosByChatIdAtom);
-  const chatTodos = chatId ? (agentTodosByChatId.get(chatId) ?? []) : [];
   const { checkProblems } = useCheckProblems(appId);
   const { refreshAppIframe } = useRunApp();
   const { navigate } = useRouter();
@@ -1224,10 +1219,6 @@ export function ChatInput({
           {/* Show active questionnaire if exists */}
           <QuestionnaireInput />
 
-          {/* Show todo list if there are todos for this chat */}
-          {chatTodos.length > 0 && <TodoList todos={chatTodos} />}
-          {/* Live multi-step progress (APK packaging, browser QA, etc.) */}
-          <AgentProgressList chatId={chatId ?? null} />
           {/* Per-chat file locks the user has set */}
           <LockedFilesPanel chatId={chatId ?? null} />
           {/* Show agent consent banner if there's a pending consent request */}

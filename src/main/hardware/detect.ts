@@ -101,14 +101,15 @@ export function parseWmicGpuOutput(csv: string): GpuInfo[] {
     if (/microsoft basic display|basic render driver/i.test(name)) continue;
     const adapterRamBytes =
       adapterRamIdx >= 0 ? parseInt(cols[adapterRamIdx]?.trim() ?? "0", 10) : 0;
-    // WMI AdapterRAM is a 32-bit field — any GPU with >4 GB VRAM overflows
-    // and returns exactly 4294967296 (0x100000000). Set to 0 so that
-    // overrideNvidiaVram() can replace it with the real value from nvidia-smi,
-    // and if nvidia-smi is absent the Python backend falls back to torch.
+    // AdapterRAM is formally a 32-bit WMI field and is therefore not
+    // authoritative for modern GPUs. Some drivers/providers still return a
+    // useful 4+ GiB value, though. Preserve that value as a conservative lower
+    // bound instead of turning it into 0; vendor-specific probes below replace
+    // it with the real capacity when available.
     const vramMb =
-      isNaN(adapterRamBytes) || adapterRamBytes >= 4294967296
-        ? 0
-        : Math.round(adapterRamBytes / (1024 * 1024));
+      Number.isFinite(adapterRamBytes) && adapterRamBytes > 0
+        ? Math.round(adapterRamBytes / (1024 * 1024))
+        : 0;
     const vendor = detectGpuVendor(name);
     gpus.push({
       vendor,
@@ -238,11 +239,15 @@ async function detectWindowsGpusPowerShell(): Promise<GpuInfo[]> {
       )
       .map((item): GpuInfo => {
         const name = item.Name!;
-        // Same 32-bit overflow as wmic: AdapterRAM >= 4 GB means the field
-        // saturated; use 0 so nvidia-smi/torch can supply the real value.
+        // Keep any positive value as a conservative lower bound. AdapterRAM is
+        // formally uint32 and may be truncated/saturated, but zero is even less
+        // useful for scheduling and memory budgeting. Vendor probes can refine
+        // it after this generic fallback.
         const adapterRam = item.AdapterRAM ?? 0;
         const vramMb =
-          adapterRam >= 4294967296 ? 0 : Math.round(adapterRam / (1024 * 1024));
+          Number.isFinite(adapterRam) && adapterRam > 0
+            ? Math.round(adapterRam / (1024 * 1024))
+            : 0;
         const vendor = detectGpuVendor(name);
         return {
           vendor,

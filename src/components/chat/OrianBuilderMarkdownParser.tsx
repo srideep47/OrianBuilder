@@ -1072,7 +1072,9 @@ function renderCustomTag(
               kind: attributes.kind || "",
               prompt: attributes.prompt || "",
               path: attributes.path || "",
+              absolutePath: attributes["absolute-path"] || "",
               mimeType: attributes["mime-type"] || "",
+              durationMs: attributes["duration-ms"] || "",
               state: getState({
                 isStreaming,
                 inProgress,

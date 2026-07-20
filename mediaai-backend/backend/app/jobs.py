@@ -25,6 +25,7 @@ reported (download chunks, denoising steps, stage boundaries).
 from __future__ import annotations
 
 import hashlib
+import functools
 import logging
 import os
 import threading
@@ -456,6 +457,84 @@ class _PersistentWorker:
 
 
 _video_worker = _PersistentWorker()
+_residency_lock = threading.RLock()
+
+
+_MAIN_PROCESS_MODEL_UNLOADERS = (
+    ("image", "app.models.image", "unload_pipeline"),
+    ("video", "app.models.video", "unload_pipeline"),
+    ("music", "app.models.music", "unload"),
+    ("tts", "app.models.tts", "unload"),
+    ("stt", "app.models.stt", "unload"),
+    ("3d", "app.models.threed", "unload"),
+    ("legacy-text", "app.services.text_generation", "unload"),
+    ("legacy-image", "app.services.image_generation", "unload"),
+    ("legacy-audio", "app.services.audio_generation", "unload"),
+    ("legacy-video", "app.services.video_generation", "unload"),
+)
+
+
+def _unload_resident_models(except_kind: Optional[str] = None) -> None:
+    """Release every cached media model except the pipeline about to run.
+
+    This is the backend-level enforcement point for single residency. It also
+    retires the persistent generation worker, whose video weights live in a
+    separate Python process and therefore cannot be released by calling
+    ``app.models.video.unload_pipeline`` in this process.
+
+    Only modules already imported are touched, so calling this on a cold
+    backend does not import torch or allocate model state.
+    """
+    import gc
+    import sys
+
+    if except_kind != "video":
+        _video_worker.retire()
+
+    for kind, module_name, unload_name in _MAIN_PROCESS_MODEL_UNLOADERS:
+        if kind == except_kind:
+            continue
+        module = sys.modules.get(module_name)
+        if module is None:
+            continue
+        try:
+            getattr(module, unload_name)()
+            log.info("single-residency: unloaded %s", module_name)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("single-residency: failed to unload %s: %s", module_name, exc)
+
+    gc.collect()
+    torch_module = sys.modules.get("torch")
+    try:
+        if torch_module is not None and torch_module.cuda.is_available():
+            torch_module.cuda.empty_cache()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def unload_resident_models(except_kind: Optional[str] = None) -> None:
+    """Thread-safe public eviction entry point."""
+    with _residency_lock:
+        _unload_resident_models(except_kind)
+
+
+def run_exclusive(kind: str, operation: Callable, *args, **kwargs):
+    """Evict other weights and hold the residency lock for an operation."""
+    with _residency_lock:
+        _unload_resident_models(kind)
+        return operation(*args, **kwargs)
+
+
+def single_resident(kind: str):
+    """Decorate a job executor so direct HTTP calls cannot overlap it."""
+    def decorate(operation: Callable):
+        @functools.wraps(operation)
+        def wrapped(*args, **kwargs):
+            return run_exclusive(kind, operation, *args, **kwargs)
+
+        return wrapped
+
+    return decorate
 
 
 def _run_in_subprocess(kind: str, params: dict, report: ProgressFn) -> dict:
@@ -610,6 +689,7 @@ def _ensure_keyframe_for_i2v(params: dict, report: ProgressFn) -> dict:
     return params
 
 
+@single_resident("video")
 def _execute_video(params: dict, report: ProgressFn) -> dict:
     """Generate a video in an isolated subprocess. The heavy LTX-2.3 tiers can
     fail two ways no in-process try/except could ever fully tame: a native
@@ -644,11 +724,10 @@ def _execute_video(params: dict, report: ProgressFn) -> dict:
         return _run_in_subprocess("video", fallback_params, report)
 
 
+@single_resident("image")
 def _execute_image(params: dict, report: ProgressFn) -> dict:
     from app.models import image as image_model
 
-    # Hand the video worker's RAM/VRAM to the image model (single residency).
-    _video_worker.retire()
     report("loading image model", None)
     data = image_model.generate_image(
         params["prompt"],
@@ -666,10 +745,10 @@ def _execute_image(params: dict, report: ProgressFn) -> dict:
     return {"image_url": url, "tier": tier["id"]}
 
 
+@single_resident("music")
 def _execute_music(params: dict, report: ProgressFn) -> dict:
     from app.models import music as music_model
 
-    _video_worker.retire()
     report("loading music model", None)
     data = music_model.generate_music(
         params["prompt"],
@@ -684,10 +763,10 @@ def _execute_music(params: dict, report: ProgressFn) -> dict:
     return {"audio_url": url, "tier": tier["id"]}
 
 
+@single_resident("tts")
 def _execute_tts(params: dict, report: ProgressFn) -> dict:
     from app.models import tts as tts_model
 
-    _video_worker.retire()
     report("loading speech model", None)
     data = tts_model.generate_speech(
         params["text"], params.get("voice"), params.get("tier")

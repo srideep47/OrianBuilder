@@ -8,6 +8,7 @@ import { useOpenApp } from "@/hooks/useOpenApp";
 import { AppShowcaseCard } from "@/components/AppShowcaseCard";
 import { useAppThumbnails } from "@/hooks/useAppThumbnails";
 import { sortAppsForShowcase } from "@/lib/sortApps";
+import { ImportAppButton } from "@/components/ImportAppButton";
 
 export default function AppsPage() {
   const router = useRouter();
@@ -51,8 +52,9 @@ export default function AppsPage() {
           Go Back
         </Button>
 
-        <header className="mb-6 text-left">
+        <header className="mb-6 flex items-center justify-between gap-3 text-left">
           <h1 className="text-3xl font-bold mb-2">Apps</h1>
+          <ImportAppButton className="px-0 pb-0" />
         </header>
 
         <div className="mb-6">

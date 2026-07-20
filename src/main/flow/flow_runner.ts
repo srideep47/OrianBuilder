@@ -9,7 +9,7 @@ import { getOrianBuilderAppPath, getUserDataPath } from "@/paths/paths";
 import { ORIANBUILDER_MEDIA_DIR_NAME } from "@/ipc/utils/media_path_utils";
 import { getCapability, type FlowContext } from "./capability_registry";
 import { getFlowReviewer } from "./flow_review";
-import { getModelLeaseManager } from "./model_lease";
+import { getModelGate, type ResidentSlot } from "./model_gate";
 import { saveFlowRunSafe, loadFlowRun } from "./flow_run_store";
 import type { HardwareModelProfile } from "./model_profiles";
 import type {
@@ -22,16 +22,29 @@ import type {
 } from "@/ipc/types/intent";
 
 /** Optional run-time wiring for a flow (e.g. the resolved media model profile). */
+export interface FlowMediaProgress {
+  stepId: string;
+  capability: CapabilityId;
+  stage: string;
+  progress: number | null;
+}
+
 export interface RunFlowOptions {
   /** Selected models + best per-stage settings; threaded to media capabilities. */
   mediaProfile?: HardwareModelProfile;
+  /** LLM restored for plan/review checkpoints after a media batch. */
+  llmSlot?: ResidentSlot;
   /**
    * Maximum dependency-independent steps to run concurrently. Default 1 keeps
    * the proven sequential order (and per-modality review batches). Values >1
    * pay off when steps are dispatched to different peers; local model use is
-   * still serialized by the lease manager / single-residency gate.
+   * serialized for the complete generation by the single-residency gate.
    */
   maxParallel?: number;
+  /** Live progress emitted by media providers for the active flow step. */
+  onMediaProgress?: (progress: FlowMediaProgress) => void;
+  /** Cancels remaining work and propagates into long-running media providers. */
+  signal?: AbortSignal;
 }
 
 const logger = log.scope("flow-runner");
@@ -102,6 +115,7 @@ async function runReviewCheckpoint(
   goal: string,
   batch: Array<{ step: FlowStep; output: Record<string, unknown> }>,
   pending: FlowStep[],
+  llmSlot: ResidentSlot,
 ): Promise<void> {
   const reviewer = getFlowReviewer();
   if (!reviewer || batch.length === 0) return;
@@ -116,17 +130,21 @@ async function runReviewCheckpoint(
   if (upcoming.length === 0) return;
 
   try {
-    const verdict = await reviewer({
-      goal,
-      completedBatch: batch.map(({ step, output }) => ({
-        stepId: step.id,
-        capability: step.capability,
-        prompt: promptOf(step),
-        outputPath:
-          typeof output.outputPath === "string" ? output.outputPath : undefined,
-      })),
-      upcoming,
-    });
+    const verdict = await getModelGate().with(llmSlot, () =>
+      reviewer({
+        goal,
+        completedBatch: batch.map(({ step, output }) => ({
+          stepId: step.id,
+          capability: step.capability,
+          prompt: promptOf(step),
+          outputPath:
+            typeof output.outputPath === "string"
+              ? output.outputPath
+              : undefined,
+        })),
+        upcoming,
+      }),
+    );
 
     const revisions = Object.entries(verdict?.promptRevisions ?? {});
     for (const [stepId, prompt] of revisions) {
@@ -173,6 +191,11 @@ async function executeFlow(
   startedAt: number,
 ): Promise<FlowRunResult> {
   const maxParallel = Math.max(1, options.maxParallel ?? 1);
+  const llmSlot: ResidentSlot = options.llmSlot ?? {
+    kind: "llm",
+    modelId: "llm",
+    vramMb: 8000,
+  };
   logger.info(
     `flow ${flowId} ${seededResults.size > 0 ? "resuming" : "starting"}: ` +
       `"${intent.goal}" (${intent.steps.length} steps, ${seededResults.size} already done` +
@@ -239,12 +262,27 @@ async function executeFlow(
       constraints: intent.constraints,
       priorOutputs,
       mediaProfile: options.mediaProfile,
+      onMediaProgress: (progress) =>
+        options.onMediaProgress?.({
+          stepId: step.id,
+          capability: step.capability,
+          ...progress,
+        }),
+      signal: options.signal,
     };
     try {
+      if (options.signal?.aborted) {
+        throw new Error("Flow was cancelled");
+      }
       const capability = getCapability(step.capability);
+      // CPU/network capabilities do not need a GPU model. Release a preceding
+      // media model before they run so it never remains resident accidentally.
+      if (!MEDIA_CAPABILITIES.has(step.capability)) {
+        await getModelGate().exit();
+      }
       const output = await capability.execute(step.input, ctx);
       priorOutputs[step.id] = output;
-      const swaps = getModelLeaseManager().drainSwapTelemetry();
+      const swaps = getModelGate().drainSwapTelemetry();
       resultsById.set(step.id, {
         stepId: step.id,
         capability: step.capability,
@@ -258,7 +296,7 @@ async function executeFlow(
     } catch (err) {
       nonSuccessfulStepIds.add(step.id);
       const message = err instanceof Error ? err.message : String(err);
-      const swaps = getModelLeaseManager().drainSwapTelemetry();
+      const swaps = getModelGate().drainSwapTelemetry();
       resultsById.set(step.id, {
         stepId: step.id,
         capability: step.capability,
@@ -284,6 +322,12 @@ async function executeFlow(
       const step = steps[i];
       if (seededResults.has(step.id)) continue;
 
+      if (options.signal?.aborted) {
+        recordSkip(step, "Skipped: flow was cancelled");
+        await persist("running");
+        continue;
+      }
+
       const unmetDep = (step.dependsOn ?? []).find((d) =>
         nonSuccessfulStepIds.has(d),
       );
@@ -294,7 +338,7 @@ async function executeFlow(
       }
 
       // Drain stale swap events so this step only reports its own swaps.
-      getModelLeaseManager().drainSwapTelemetry();
+      getModelGate().drainSwapTelemetry();
       const output = await executeStep(step);
       await persist("running");
 
@@ -309,6 +353,7 @@ async function executeFlow(
             intent.goal,
             batch,
             steps.slice(i + 1).filter((s) => !seededResults.has(s.id)),
+            llmSlot,
           );
           batch = [];
         }
@@ -326,6 +371,12 @@ async function executeFlow(
     let pending = steps.filter((s) => !seededResults.has(s.id));
 
     while (pending.length > 0) {
+      if (options.signal?.aborted) {
+        for (const step of pending) {
+          recordSkip(step, "Skipped: flow was cancelled");
+        }
+        break;
+      }
       // Propagate failures: skip anything depending on a non-successful step.
       const skipped = new Set<string>();
       for (const step of pending) {
@@ -352,7 +403,7 @@ async function executeFlow(
         break;
       }
 
-      getModelLeaseManager().drainSwapTelemetry();
+      getModelGate().drainSwapTelemetry();
       const waveBatch: Array<{
         step: FlowStep;
         output: Record<string, unknown>;
@@ -374,10 +425,32 @@ async function executeFlow(
       await persist("running");
 
       // One review checkpoint per wave: the wave's media output is the batch.
-      await runReviewCheckpoint(flowId, intent.goal, waveBatch, pending);
+      await runReviewCheckpoint(
+        flowId,
+        intent.goal,
+        waveBatch,
+        pending,
+        llmSlot,
+      );
     }
   }
 
+  // A generic command flow finishes idle. A later chat/build operation will
+  // load its LLM only when the plan reaches that phase.
+  await getModelGate().exit();
+  const finalSwaps = getModelGate().drainSwapTelemetry();
+  if (finalSwaps.length > 0) {
+    const finalStep = [...steps]
+      .reverse()
+      .find((step) => resultsById.has(step.id));
+    if (finalStep) {
+      const previous = resultsById.get(finalStep.id)!;
+      resultsById.set(finalStep.id, {
+        ...previous,
+        swaps: [...(previous.swaps ?? []), ...finalSwaps],
+      });
+    }
+  }
   const stepResults = orderedResults();
   const result: FlowRunResult = {
     flowId,

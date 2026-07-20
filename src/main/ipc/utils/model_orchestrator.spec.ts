@@ -174,15 +174,23 @@ describe("ModelOrchestrator state machine", () => {
   it("runMediaGeneration full happy path drives state through swap and back", async () => {
     const orch = getOrchestrator();
     const states: string[] = [];
+    const order: string[] = [];
     const unload = vi.fn().mockImplementation(async () => {
+      order.push("unload-llm");
+      states.push(orch.getStatus().state);
+    });
+    const unloadMedia = vi.fn().mockImplementation(async () => {
+      order.push("unload-media");
       states.push(orch.getStatus().state);
     });
     const reload = vi.fn().mockImplementation(async () => {
+      order.push("reload-llm");
       states.push(orch.getStatus().state);
     });
-    orch.setHooks({ unloadLlm: unload, reloadLlm: reload });
+    orch.setHooks({ unloadLlm: unload, unloadMedia, reloadLlm: reload });
     await orch.acquireLlm(sampleParams);
     states.length = 0; // discard the acquireLlm reload sample
+    order.length = 0;
     const result = await orch.runMediaGeneration({
       modelType: "image",
       prompt: "tiny",
@@ -194,9 +202,56 @@ describe("ModelOrchestrator state machine", () => {
     expect(states[0]).toBe("swapping-out");
     // reload should have been called from swapping-back
     expect(states[states.length - 1]).toBe("swapping-back");
+    expect(order).toEqual(["unload-llm", "unload-media", "reload-llm"]);
     // Stub PNG must exist on disk
     const stat = await fs.stat(tmpFile);
     expect(stat.size).toBeGreaterThan(0);
+  });
+
+  it("does not reload the LLM when media residency cannot be released", async () => {
+    const orch = getOrchestrator();
+    const reload = vi.fn().mockResolvedValue(undefined);
+    orch.setHooks({
+      unloadLlm: vi.fn().mockResolvedValue(undefined),
+      unloadMedia: vi.fn().mockRejectedValue(new Error("media still resident")),
+      reloadLlm: reload,
+    });
+    await orch.acquireLlm(sampleParams);
+    reload.mockClear();
+
+    const result = await orch.runMediaGeneration({
+      modelType: "image",
+      prompt: "tiny",
+      outputPath: tmpFile,
+    });
+
+    expect(result.success).toBe(true);
+    expect(reload).not.toHaveBeenCalled();
+    expect(orch.getStatus().state).toBe("idle");
+  });
+
+  it("does not load media when the resident LLM cannot be released", async () => {
+    const orch = getOrchestrator();
+    const provider = vi.fn();
+    orch.setHooks({
+      unloadLlm: vi
+        .fn()
+        .mockRejectedValue(new Error("LLM process still alive")),
+      reloadLlm: vi.fn().mockResolvedValue(undefined),
+      mediaProvider: provider,
+    });
+    await orch.acquireLlm(sampleParams);
+
+    const result = await orch.runMediaGeneration({
+      modelType: "video",
+      prompt: "tiny",
+      outputPath: tmpFile,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("LLM process still alive");
+    expect(provider).not.toHaveBeenCalled();
+    expect(orch.getStatus().state).toBe("llm-loaded");
   });
 
   it("informLlmAcquired sets state to llm-loaded without invoking reloadLlm hook", () => {

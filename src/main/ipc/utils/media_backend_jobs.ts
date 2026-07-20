@@ -54,16 +54,33 @@ async function fetchWithTimeout(
   timeoutMs: number = REQUEST_TIMEOUT_MS,
 ): Promise<Response> {
   const controller = new AbortController();
+  const externalSignal = init?.signal;
+  const abortFromExternal = () => controller.abort(externalSignal?.reason);
+  if (externalSignal?.aborted) abortFromExternal();
+  else
+    externalSignal?.addEventListener("abort", abortFromExternal, {
+      once: true,
+    });
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } finally {
     clearTimeout(timer);
+    externalSignal?.removeEventListener("abort", abortFromExternal);
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(done, ms);
+    function done() {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    }
+    signal?.addEventListener("abort", done, { once: true });
+  });
 }
 
 async function cancelBackendJob(jobId: string): Promise<void> {
@@ -95,6 +112,7 @@ export async function runBackendMediaJob(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ kind, params }),
+      signal: options.signal,
     },
   );
   if (!submitResponse.ok) {
@@ -126,6 +144,7 @@ export async function runBackendMediaJob(
     try {
       const response = await fetchWithTimeout(
         `${MEDIA_AI_SERVER_URL}/v1/jobs/${jobId}`,
+        { signal: options.signal },
       );
       if (response.status === 404) {
         // The backend restarted (crash / manual restart) and lost the job.
@@ -151,7 +170,7 @@ export async function runBackendMediaJob(
           })`,
         );
       }
-      await sleep(pollIntervalMs);
+      await sleep(pollIntervalMs, options.signal);
       continue;
     }
 
@@ -176,7 +195,7 @@ export async function runBackendMediaJob(
       throw new Error(`${kind} generation was cancelled`);
     }
 
-    await sleep(pollIntervalMs);
+    await sleep(pollIntervalMs, options.signal);
   }
 }
 

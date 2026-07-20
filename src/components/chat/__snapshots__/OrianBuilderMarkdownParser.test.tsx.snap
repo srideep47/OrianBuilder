@@ -6,7 +6,7 @@ exports[`OrianBuilderMarkdownParser orianbuilder-status > renders failed project
     aria-expanded="false"
     class="
         group/card
-        bg-(--background-lightest) hover:bg-(--background-lighter) rounded-xl border border-border/60 border-l-[3px] border-l-red-500
+        bg-(--background-lightest) hover:bg-(--background-lighter) rounded-3xl border border-border/60 border-l-[3px] border-l-red-500
         my-1.5 transition-colors duration-150
         cursor-pointer
         
@@ -18,7 +18,7 @@ exports[`OrianBuilderMarkdownParser orianbuilder-status > renders failed project
       class="flex items-center gap-2.5 px-3 py-2"
     >
       <div
-        class="flex items-center justify-center size-7 rounded-lg shrink-0 bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-400"
+        class="flex items-center justify-center size-7 rounded-2xl shrink-0 bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-400"
       >
         <svg
           class="lucide lucide-circle-x"
@@ -49,7 +49,7 @@ exports[`OrianBuilderMarkdownParser orianbuilder-status > renders failed project
         class="flex-1 min-w-0 flex items-center gap-2"
       >
         <span
-          class="inline-flex items-center text-[11px] font-semibold px-1.5 py-0.5 rounded-md ring-1 ring-inset bg-red-50 dark:bg-red-950/60 text-red-700 dark:text-red-300 ring-red-200 dark:ring-red-800"
+          class="inline-flex items-center text-[11px] font-semibold px-1.5 py-0.5 rounded-3xl ring-1 ring-inset bg-red-50 dark:bg-red-950/60 text-red-700 dark:text-red-300 ring-red-200 dark:ring-red-800"
         >
           Error
         </span>
@@ -69,12 +69,12 @@ exports[`OrianBuilderMarkdownParser orianbuilder-status > renders failed project
           npm install --legacy-peer-deps
         </span>
         <span
-          class="shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
+          class="shrink-0 rounded-3xl bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
         >
           exit 1
         </span>
         <button
-          class="ml-auto inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          class="ml-auto inline-flex h-7 shrink-0 items-center gap-1 rounded-3xl px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
           title="Copy project check output"
           type="button"
         >

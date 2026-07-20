@@ -251,3 +251,15 @@ class DirectMLImageGenerationService:
 
 
 image_generation_service = DirectMLImageGenerationService()
+
+
+def unload() -> None:
+    """Release both cached DirectML/CPU legacy image pipelines."""
+    import gc
+
+    with image_generation_service._pipeline_lock:
+        image_generation_service._pipeline = None
+        image_generation_service._pipeline_backend = None
+        image_generation_service._cpu_fallback_pipeline = None
+        image_generation_service._cpu_fallback_backend = None
+    gc.collect()

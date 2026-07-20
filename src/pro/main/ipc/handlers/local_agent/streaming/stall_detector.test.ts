@@ -68,6 +68,23 @@ describe("StreamStallDetector", () => {
 
     expect(onStall).not.toHaveBeenCalled();
   });
+
+  it("pauses during a long-running tool and restarts after resume", () => {
+    const onStall = vi.fn();
+    const d = new StreamStallDetector({ stallTimeoutMs: 1000, onStall });
+    d.start();
+
+    vi.advanceTimersByTime(700);
+    d.pause();
+    vi.advanceTimersByTime(5000);
+    expect(onStall).not.toHaveBeenCalled();
+
+    d.resume();
+    vi.advanceTimersByTime(999);
+    expect(onStall).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onStall).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("StreamStalledError", () => {

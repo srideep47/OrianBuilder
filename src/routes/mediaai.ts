@@ -5,5 +5,5 @@ import { rootRoute } from "./root";
 export const mediaAiRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/mediaai",
-  component: lazyRouteComponent(() => import("@/pages/mediaai")),
+  component: lazyRouteComponent(() => import("@/pages/media-studio")),
 });

@@ -17,10 +17,26 @@ export class Navigation {
   }
 
   async goToAppsTab() {
-    const appsLink = this.page.getByRole("link", { name: "Apps" });
-    await expect(appsLink).toBeVisible({ timeout: 60000 });
-    await appsLink.click();
-    await expect(this.page.getByText("Build a new app")).toBeVisible();
+    // The desktop information architecture now calls the former Apps area
+    // "Projects". Keep this helper name for the large existing E2E suite while
+    // driving the current navigation label.
+    const projectsLink = this.page
+      .getByRole("link", { name: "Projects" })
+      .first();
+    await expect(projectsLink).toBeVisible({ timeout: 60000 });
+    await projectsLink.click();
+    await expect(
+      this.page.getByRole("heading", { name: "Apps" }),
+    ).toBeVisible();
+  }
+
+  async goToOrionTab() {
+    const orionLink = this.page.getByRole("link", { name: "Orion" });
+    await expect(orionLink).toBeVisible({ timeout: 60000 });
+    await orionLink.click();
+    await expect(
+      this.page.getByRole("heading", { name: "Orion Workspace" }),
+    ).toBeVisible();
   }
 
   async goToChatTab() {

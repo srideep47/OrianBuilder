@@ -85,6 +85,16 @@ export interface AgentRunState {
    * local models can't dead-end the turn.
    */
   placeholderRefusalCount: number;
+  /**
+   * Most recent terminal/project-check failure that has not yet been followed
+   * by a successful recovery or verification command. Completion gates use
+   * this to avoid testing or packaging a knowingly broken project.
+   */
+  unresolvedCommandFailure?: {
+    command: string;
+    exitCode: number;
+    output: string;
+  } | null;
 }
 
 export interface AgentContext {

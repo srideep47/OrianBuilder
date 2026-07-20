@@ -5,7 +5,12 @@ export function isCancelledResponseContent(content: string): boolean {
 }
 
 export function appendCancelledResponseNotice(content: string): string {
-  const trimmedContent = content.trimEnd();
+  const trimmedContent = content
+    .replace(
+      /(<orianbuilder-status\b[^>]*\bstate=")in-progress("[^>]*>)/g,
+      "$1aborted$2",
+    )
+    .trimEnd();
   if (isCancelledResponseContent(trimmedContent)) {
     return trimmedContent;
   }

@@ -26,7 +26,9 @@ export interface LocalImageGenOptions {
    *  scenes share a consistent visual style instead of drifting between
    *  realistic / anime / 3D looks on each independent generation. */
   seed?: number;
+  negative_prompt?: string;
   onProgress?: (p: MediaJobProgress) => void;
+  signal?: AbortSignal;
 }
 
 /** Generation is fast; the budget covers a first-run multi-GB weight fetch. */
@@ -58,12 +60,12 @@ export async function generateImageViaLocalBackend(
     };
   }
 
-  const { onProgress, ...params } = options;
+  const { onProgress, signal, ...params } = options;
   try {
     const result = await runBackendMediaJob(
       "image",
       { prompt, ...params },
-      { onProgress, timeoutMs: IMAGE_JOB_TIMEOUT_MS },
+      { onProgress, signal, timeoutMs: IMAGE_JOB_TIMEOUT_MS },
     );
     const url = result.image_url as string | undefined;
     if (!url) {

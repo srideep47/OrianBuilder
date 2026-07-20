@@ -65,6 +65,7 @@ import { registerOrionSetupHandlers } from "./handlers/orion_setup_handlers";
 import { registerYouTubeHandlers } from "./handlers/youtube_handlers";
 import { registerAndroidEmulatorHandlers } from "./handlers/android_emulator_handlers";
 import { registerScheduleHandlers } from "./handlers/schedule_handlers";
+import { registerUserBudgetHandlers } from "./handlers/user_budget_handlers";
 
 export function registerIpcHandlers() {
   // Register all IPC handlers by category
@@ -135,4 +136,5 @@ export function registerIpcHandlers() {
   registerYouTubeHandlers();
   registerAndroidEmulatorHandlers();
   registerScheduleHandlers();
+  registerUserBudgetHandlers();
 }

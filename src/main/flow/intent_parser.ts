@@ -15,6 +15,7 @@ import {
   type CapabilityId,
 } from "@/ipc/types/intent";
 import { listCapabilities } from "./capability_registry";
+import { parseDirectMediaCommand } from "@/shared/orion_natural_command";
 
 const logger = log.scope("intent-parser");
 
@@ -309,6 +310,11 @@ export async function parseIntent(
   text: string,
   appId?: number,
 ): Promise<CommandIntent> {
+  // Obvious media-generation requests are deterministic. Route them before
+  // loading the coding LLM so natural language works with no resident LLM.
+  const directMediaIntent = parseDirectMediaCommand(text, appId);
+  if (directMediaIntent) return directMediaIntent;
+
   let settings;
   try {
     settings = readSettings();

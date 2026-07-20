@@ -11,6 +11,11 @@ import {
   type HardwareModelProfile,
 } from "./model_profiles";
 import type { ModelGate, ResidentSlot } from "./model_gate";
+import {
+  compileMediaGraph,
+  mediaGraphFromAssetManifest,
+  type OrionMediaGraph,
+} from "@/shared/orion_media_graph";
 
 // =============================================================================
 // Orion Orchestrated Pipeline — Conductor
@@ -65,6 +70,23 @@ export type GenerateAssetWorker = (
   args: GenerateAssetArgs,
 ) => Promise<AssetGenResult>;
 
+export interface PrepareModelArgs {
+  buildId: string;
+  type: AssetSpec["type"];
+  slot: ResidentSlot;
+}
+
+export interface ModelPreparationResult {
+  status: "ok" | "partial";
+  detail: string;
+}
+
+/** Prepare only the model needed by the next planned modality batch. This is
+ *  intentionally called after planning and immediately before gate.with(). */
+export type PrepareModelWorker = (
+  args: PrepareModelArgs,
+) => Promise<ModelPreparationResult>;
+
 export interface VerifyFixArgs {
   buildId: string;
   goal: string;
@@ -89,6 +111,7 @@ export type VerifyFixWorker = (args: VerifyFixArgs) => Promise<VerifyResult>;
 
 export interface PipelineWorkers {
   planCode: PlanCodeWorker;
+  prepareModel?: PrepareModelWorker;
   generateAsset: GenerateAssetWorker;
   verifyFix: VerifyFixWorker;
 }
@@ -96,7 +119,7 @@ export interface PipelineWorkers {
 /** A single live progress update emitted as the pipeline advances. */
 export interface PipelineProgressEvent {
   buildId: string;
-  kind: "phase" | "asset" | "info";
+  kind: "download" | "phase" | "asset" | "info";
   label: string;
   detail?: string;
   status?: "running" | "ok" | "failed" | "partial";
@@ -147,6 +170,8 @@ export interface PipelineResult {
   buildId: string;
   status: PipelineStatus;
   manifest: AssetManifest;
+  /** Versioned executor-neutral graph used for this run. */
+  mediaGraph?: OrionMediaGraph;
   phases: PhaseRecord[];
   verifyAttempts: number;
   assetSummary: { done: number; placeholder: number; failed: number };
@@ -196,50 +221,82 @@ async function runModalityBatch(
   config: PipelineConfig,
   outputPaths: Map<string, string>,
   buildId: string,
-): Promise<void> {
+): Promise<ModelPreparationResult | undefined> {
   const slot = modalitySlot(config.profile, type);
-  await config.gate.enter(slot);
-
-  for (const asset of assets) {
+  let preparation: ModelPreparationResult | undefined;
+  if (config.workers.prepareModel) {
     config.onProgress?.({
       buildId,
-      kind: "asset",
-      label: `${type}: ${asset.id}`,
-      detail: `generating with ${slot.modelId}`,
+      kind: "download",
+      label: `Preparing ${type} model`,
+      detail: slot.modelId,
       status: "running",
     });
-    const refImagePath =
-      asset.refAssetId != null ? outputPaths.get(asset.refAssetId) : undefined;
     try {
-      const res = await config.workers.generateAsset({
-        asset,
-        profile: config.profile,
-        mediaDir: config.mediaDir,
-        refImagePath,
-      });
-      asset.status = res.status;
-      if (res.outputPath) outputPaths.set(asset.id, res.outputPath);
-      logger.info(`asset ${asset.id} (${type}) → ${res.status}`);
-      config.onProgress?.({
-        buildId,
-        kind: "asset",
-        label: `${type}: ${asset.id}`,
-        detail: res.error ? `${res.status} — ${res.error}` : res.status,
-        status: assetProgressStatus(res.status),
-      });
+      preparation = await config.workers.prepareModel({ buildId, type, slot });
     } catch (err) {
-      asset.status = "failed";
-      const message = err instanceof Error ? err.message : String(err);
-      logger.error(`asset ${asset.id} (${type}) threw: ${message}`);
+      const detail = err instanceof Error ? err.message : String(err);
+      preparation = { status: "partial", detail };
+      logger.warn(`model preparation for ${type} failed: ${detail}`);
+    }
+    config.onProgress?.({
+      buildId,
+      kind: "download",
+      label:
+        preparation.status === "ok"
+          ? `${type} model ready`
+          : `${type} model preparation incomplete`,
+      detail: preparation.detail,
+      status: preparation.status,
+    });
+  }
+  // Hold residency for the complete batch so another flow cannot swap models
+  // between two assets of the same modality.
+  await config.gate.with(slot, async () => {
+    for (const asset of assets) {
       config.onProgress?.({
         buildId,
         kind: "asset",
         label: `${type}: ${asset.id}`,
-        detail: `failed — ${message}`,
-        status: "failed",
+        detail: `generating with ${slot.modelId}`,
+        status: "running",
       });
+      const refImagePath =
+        asset.refAssetId != null
+          ? outputPaths.get(asset.refAssetId)
+          : undefined;
+      try {
+        const res = await config.workers.generateAsset({
+          asset,
+          profile: config.profile,
+          mediaDir: config.mediaDir,
+          refImagePath,
+        });
+        asset.status = res.status;
+        if (res.outputPath) outputPaths.set(asset.id, res.outputPath);
+        logger.info(`asset ${asset.id} (${type}) → ${res.status}`);
+        config.onProgress?.({
+          buildId,
+          kind: "asset",
+          label: `${type}: ${asset.id}`,
+          detail: res.error ? `${res.status} — ${res.error}` : res.status,
+          status: assetProgressStatus(res.status),
+        });
+      } catch (err) {
+        asset.status = "failed";
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error(`asset ${asset.id} (${type}) threw: ${message}`);
+        config.onProgress?.({
+          buildId,
+          kind: "asset",
+          label: `${type}: ${asset.id}`,
+          detail: `failed — ${message}`,
+          status: "failed",
+        });
+      }
     }
-  }
+  });
+  return preparation;
 }
 
 /** Run Phase B over the given asset list, batched + ordered by modality. */
@@ -248,19 +305,22 @@ async function runAssetPhase(
   config: PipelineConfig,
   outputPaths: Map<string, string>,
   buildId: string,
-): Promise<void> {
+): Promise<ModelPreparationResult[]> {
   const groups = groupAssetsByModality({ buildId: "", assets });
+  const preparations: ModelPreparationResult[] = [];
   for (const group of groups) {
-    await runModalityBatch(
+    const preparation = await runModalityBatch(
       group.type,
       group.assets,
       config,
       outputPaths,
       buildId,
     );
+    if (preparation) preparations.push(preparation);
   }
   // Leave Phase B with nothing resident so Phase A/C LLM load is unobstructed.
   await config.gate.exit();
+  return preparations;
 }
 
 // ─── Conductor ───────────────────────────────────────────────────────────────
@@ -293,13 +353,14 @@ export async function runPipeline(
   });
   let manifest: AssetManifest;
   try {
-    await config.gate.enter(llmSlot(config));
-    manifest = await config.workers.planCode({
-      buildId,
-      goal: config.goal,
-      appId: config.appId,
-      appPath: config.appPath,
-    });
+    manifest = await config.gate.with(llmSlot(config), () =>
+      config.workers.planCode({
+        buildId,
+        goal: config.goal,
+        appId: config.appId,
+        appPath: config.appPath,
+      }),
+    );
   } catch (err) {
     await config.gate.exit().catch(() => {});
     const detail = err instanceof Error ? err.message : String(err);
@@ -321,27 +382,36 @@ export async function runPipeline(
     };
   }
 
-  const validation = validateManifest(manifest);
-  if (!validation.ok) {
+  const manifestValidation = validateManifest(manifest);
+  const mediaGraph = mediaGraphFromAssetManifest(manifest);
+  const graphPlan = compileMediaGraph(mediaGraph);
+  const validationErrors = [
+    ...manifestValidation.errors,
+    ...graphPlan.errors.filter(
+      (error) => !manifestValidation.errors.includes(error),
+    ),
+  ];
+  const planIsValid = manifestValidation.ok && graphPlan.ok;
+  if (!planIsValid) {
     // A malformed manifest is a planning bug, but we still try to build with
     // whatever assets are structurally usable rather than aborting outright.
     logger.warn(
-      `pipeline ${buildId} manifest validation issues: ${validation.errors.join("; ")}`,
+      `pipeline ${buildId} media plan validation issues: ${validationErrors.join("; ")}`,
     );
   }
   phases.push({
     phase: "plan-code",
-    status: validation.ok ? "ok" : "partial",
-    detail: validation.ok
-      ? `manifest with ${manifest.assets.length} assets`
-      : `manifest issues: ${validation.errors.join("; ")}`,
+    status: planIsValid ? "ok" : "partial",
+    detail: planIsValid
+      ? `media graph v${mediaGraph.version} with ${manifest.assets.length} assets in ${graphPlan.waves.length} dependency wave(s)`
+      : `media plan issues: ${validationErrors.join("; ")}`,
   });
   report?.({
     buildId,
     kind: "phase",
     label: "Plan ready",
     detail: `${manifest.assets.length} asset(s) to generate`,
-    status: validation.ok ? "ok" : "partial",
+    status: planIsValid ? "ok" : "partial",
   });
 
   // Unload the LLM before asset generation.
@@ -355,7 +425,28 @@ export async function runPipeline(
     detail: "language model unloaded; one media model resident at a time",
     status: "running",
   });
-  await runAssetPhase(manifest.assets, config, outputPaths, buildId);
+  const assetsById = new Map(manifest.assets.map((asset) => [asset.id, asset]));
+  const plannedAssets = graphPlan.ok
+    ? graphPlan.orderedNodeIds
+        .map((id) => assetsById.get(id))
+        .filter((asset): asset is AssetSpec => asset != null)
+    : manifest.assets;
+  const modelPreparations = await runAssetPhase(
+    plannedAssets,
+    config,
+    outputPaths,
+    buildId,
+  );
+  if (modelPreparations.length > 0) {
+    const incomplete = modelPreparations.some(
+      (item) => item.status === "partial",
+    );
+    phases.push({
+      phase: "download",
+      status: incomplete ? "partial" : "ok",
+      detail: modelPreparations.map((item) => item.detail).join("; "),
+    });
+  }
   const afterGen = summarize(manifest.assets);
   phases.push({
     phase: "assets",
@@ -382,15 +473,16 @@ export async function runPipeline(
       detail: "language model reloaded",
       status: "running",
     });
-    await config.gate.enter(llmSlot(config));
-    lastVerify = await config.workers.verifyFix({
-      buildId,
-      goal: config.goal,
-      manifest,
-      appId: config.appId,
-      appPath: config.appPath,
-      attempt: verifyAttempts,
-    });
+    lastVerify = await config.gate.with(llmSlot(config), () =>
+      config.workers.verifyFix({
+        buildId,
+        goal: config.goal,
+        manifest,
+        appId: config.appId,
+        appPath: config.appPath,
+        attempt: verifyAttempts,
+      }),
+    );
 
     if (lastVerify.ok) break;
 
@@ -451,6 +543,7 @@ export async function runPipeline(
     buildId,
     status,
     manifest,
+    mediaGraph,
     phases,
     verifyAttempts,
     assetSummary: finalSummary,

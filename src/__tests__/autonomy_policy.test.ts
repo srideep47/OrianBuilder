@@ -208,7 +208,7 @@ describe("autonomy policy", () => {
       }),
     ).toMatchObject({
       decision: "auto_approve",
-      risk: "high",
+      risk: "medium",
     });
   });
 

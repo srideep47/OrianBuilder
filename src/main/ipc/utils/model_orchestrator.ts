@@ -63,6 +63,9 @@ export interface MediaGenerationRequest {
   /** Live stage/percent updates from the provider (model download, denoising
    *  steps, …). Main-process only — never serialized over IPC/P2P. */
   onProgress?: (p: { stage: string; progress: number | null }) => void;
+  /** Cancels queued, loading, polling, and provider fallback work. Main-process
+   *  only; the signal itself is never serialized over IPC/P2P. */
+  signal?: AbortSignal;
 }
 
 export interface MediaGenerationResult {
@@ -98,6 +101,9 @@ export interface ModelOrchestrator {
 export interface OrchestratorHooks {
   /** Called when the orchestrator wants the LLM unloaded from VRAM. */
   unloadLlm?: () => Promise<void>;
+  /** Called after generation to release the active media pipeline before any
+   *  LLM reload. This must include child-process model workers. */
+  unloadMedia?: () => Promise<void>;
   /** Called when the orchestrator wants the LLM reloaded with previous params. */
   reloadLlm?: (params: LlmLoadParams) => Promise<void>;
   /** Actually performs media generation. If not set, runMediaGeneration writes
@@ -306,6 +312,16 @@ class OrchestratorImpl implements ModelOrchestrator {
       if (this.hooks.unloadLlm) await this.hooks.unloadLlm();
     } catch (err) {
       logger.error("unloadLlm hook failed:", err);
+      // The LLM may still own RAM/VRAM. Never continue into a media load when
+      // its release was not confirmed.
+      this.state = "llm-loaded";
+      this.lastSwapDurationMs = Date.now() - swapStarted;
+      return {
+        success: false,
+        outputPath: captured.outputPath,
+        durationMs: this.lastSwapDurationMs,
+        error: `Could not release the chat model: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
     logger.info(
       `swap-out: LLM unloaded in ${Date.now() - unloadStarted} ms (for ${captured.modelType})`,
@@ -332,6 +348,13 @@ class OrchestratorImpl implements ModelOrchestrator {
     try {
       this.transition("swapping-back");
       this.currentMediaModel = null;
+      if (this.hooks.unloadMedia) {
+        const mediaUnloadStarted = Date.now();
+        await this.hooks.unloadMedia();
+        logger.info(
+          `swap-back: media model released in ${Date.now() - mediaUnloadStarted} ms`,
+        );
+      }
       if (this.lastLlmParams && this.hooks.reloadLlm) {
         const reloadStarted = Date.now();
         try {
@@ -354,11 +377,15 @@ class OrchestratorImpl implements ModelOrchestrator {
   }
 
   async releaseAll(): Promise<void> {
-    if (this.state === "idle") return;
     try {
       if (this.hooks.unloadLlm) await this.hooks.unloadLlm();
     } catch (err) {
-      logger.error("releaseAll unload failed:", err);
+      logger.error("releaseAll LLM unload failed:", err);
+    }
+    try {
+      if (this.hooks.unloadMedia) await this.hooks.unloadMedia();
+    } catch (err) {
+      logger.error("releaseAll media unload failed:", err);
     }
     this.state = "idle";
     this.currentLlmModel = null;

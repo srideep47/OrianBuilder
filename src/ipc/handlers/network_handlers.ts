@@ -410,7 +410,10 @@ export function registerNetworkHandlers(): void {
 
 export function autoStartNetwork(): void {
   const settings = readSettings() as any;
-  if (settings.orionNetworkEnabled !== false) {
+  if (
+    settings.onboardingCompleted === true &&
+    settings.orionNetworkEnabled === true
+  ) {
     networkSwarm
       .start()
       .catch((err) => logger.error("Auto-start failed:", err));

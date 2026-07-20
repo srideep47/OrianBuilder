@@ -39,6 +39,7 @@ import { queryKeys } from "@/lib/queryKeys";
 import { applyCancellationNoticeToLastAssistantMessage } from "@/shared/chatCancellation";
 import { handleEffectiveChatModeChunk } from "@/lib/chatModeStream";
 import { ensureSelectedEmbeddedModelReady } from "@/lib/embeddedModelAutoload";
+import { parseDirectMediaCommand } from "@/shared/orion_natural_command";
 
 export function getRandomNumberId() {
   return Math.floor(Math.random() * 1_000_000_000_000_000);
@@ -207,9 +208,18 @@ export function useStreamChat({
       }
       const targetAppId =
         appId ?? resolvedAppIdFromChat ?? selectedAppId ?? null;
+      const directMediaIntent =
+        !attachments?.length && !selectedComponents?.length
+          ? parseDirectMediaCommand(prompt, targetAppId ?? undefined)
+          : null;
       let effectiveMissionId = missionId ?? activeMissionByChatId.get(chatId);
       try {
-        await ensureSelectedEmbeddedModelReady(settings);
+        // Direct natural-language media work does not need the coding LLM.
+        // The main process executes the same deterministic intent through the
+        // hardware-aware local media pipeline.
+        if (!directMediaIntent) {
+          await ensureSelectedEmbeddedModelReady(settings);
+        }
 
         const cachedChat =
           requestedChatMode === null
@@ -223,6 +233,7 @@ export function useStreamChat({
             : (requestedChatMode ?? cachedChat?.chatMode ?? undefined);
 
         if (
+          !directMediaIntent &&
           effectiveMissionId === undefined &&
           targetAppId !== null &&
           effectiveChatMode === "local-agent"
@@ -235,14 +246,13 @@ export function useStreamChat({
             autonomyProfile:
               settings?.defaultMissionAutonomyProfile ?? "trusted-workspace",
           });
-          const runningMission = await ipc.mission.updateMissionStatus({
-            missionId: createdMission.id,
-            status: "running",
-          });
-          effectiveMissionId = runningMission.id;
+          // Keep the mission queued until AgentStreamRunner has actually
+          // inserted its run. This preserves the UI invariant that a mission
+          // shown as Running always has real execution behind it.
+          effectiveMissionId = createdMission.id;
           setActiveMissionByChatId((prev) => {
             const next = new Map(prev);
-            next.set(chatId, runningMission.id);
+            next.set(chatId, createdMission.id);
             return next;
           });
           queryClient.invalidateQueries({
@@ -519,6 +529,28 @@ export function useStreamChat({
                 queryKey: queryKeys.freeAgentQuota.status,
               });
               if (effectiveMissionId !== undefined) {
+                const failedMissionId = effectiveMissionId;
+                // Startup can fail before AgentStreamRunner creates a run
+                // (for example, after the final low-memory preflight). Never
+                // leave that auto-created mission queued/running indefinitely.
+                void ipc.mission
+                  .updateMissionStatus({
+                    missionId: failedMissionId,
+                    status: "failed",
+                  })
+                  .catch((missionError) => {
+                    console.warn(
+                      `[CHAT] Failed to mark mission ${failedMissionId} failed:`,
+                      missionError,
+                    );
+                  })
+                  .finally(() => {
+                    void queryClient.invalidateQueries({
+                      queryKey: queryKeys.missions.detail({
+                        missionId: failedMissionId,
+                      }),
+                    });
+                  });
                 queryClient.invalidateQueries({
                   queryKey: queryKeys.missions.detail({
                     missionId: effectiveMissionId,
@@ -570,6 +602,27 @@ export function useStreamChat({
         pendingStreamChatIds.delete(chatId);
 
         console.error("[CHAT] Exception during streaming setup:", error);
+        if (effectiveMissionId !== undefined) {
+          const failedMissionId = effectiveMissionId;
+          void ipc.mission
+            .updateMissionStatus({
+              missionId: failedMissionId,
+              status: "failed",
+            })
+            .catch((missionError) => {
+              console.warn(
+                `[CHAT] Failed to mark mission ${failedMissionId} failed after setup error:`,
+                missionError,
+              );
+            })
+            .finally(() => {
+              void queryClient.invalidateQueries({
+                queryKey: queryKeys.missions.detail({
+                  missionId: failedMissionId,
+                }),
+              });
+            });
+        }
         setIsStreamingById((prev) => {
           const next = new Map(prev);
           if (chatId) next.set(chatId, false);

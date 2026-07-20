@@ -33,11 +33,24 @@ describe("getAutonomyPolicyDecision - trusted-workspace run_terminal_command", (
     }
   });
 
+  it("auto-approves safe package-manager recovery commands", () => {
+    const result = getAutonomyPolicyDecision({
+      profile: "trusted-workspace",
+      runtimeMode: "host",
+      toolName: "run_terminal_command",
+      inputPreview:
+        "npm cache clean --force && npm install electron electron-builder --save-dev",
+    });
+
+    expect(result.decision).toBe("auto_approve");
+  });
+
   it("asks for high-risk terminal commands in trusted-workspace", () => {
     for (const command of [
       "git reset --hard origin/main",
       "git checkout .",
       "npm publish",
+      "git push --force origin main",
       "docker rm container",
     ]) {
       const result = getAutonomyPolicyDecision({

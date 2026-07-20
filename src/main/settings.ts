@@ -50,7 +50,9 @@ const DEFAULT_SETTINGS: UserSettings = {
   enableContextCompaction: true,
   previewIdleTimeoutPolicy: "default",
   onboardingCompleted: false,
-  orionNetworkEnabled: true,
+  // First-run network listeners are opt-in. Starting before onboarding both
+  // wastes resources and triggers an unexplained firewall prompt.
+  orionNetworkEnabled: false,
 };
 
 const SETTINGS_FILE = "user-settings.json";

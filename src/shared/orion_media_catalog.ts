@@ -224,12 +224,13 @@ export interface DownloadPlan {
 export function resolveDownloadPlan(
   saved: OrionMediaSelection | undefined,
   downloadedModelIds: ReadonlySet<string>,
+  modalities: readonly OrionModality[] = ORION_MODALITIES,
 ): DownloadPlan {
   const selection = resolveSelection(saved);
   const models: MediaAiModelId[] = [];
   const runtimes: ("3d" | "music")[] = [];
 
-  for (const modality of ORION_MODALITIES) {
+  for (const modality of modalities) {
     const opt = findOption(modality, selection[modality]);
     if (!opt) continue;
     if (opt.downloadId) {

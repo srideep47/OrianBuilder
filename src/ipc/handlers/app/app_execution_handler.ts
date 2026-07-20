@@ -36,6 +36,7 @@ import {
   stopAppById,
   ensureProxyForRunningApp,
 } from "./app_shared";
+import { isOrionSessionAppId } from "@/shared/orion_session";
 /**
  * App execution, process, command, and log IPC handlers.
  */
@@ -53,6 +54,19 @@ export function registerAppExecutionHandlers() {
 
   createTypedHandler(appContracts.restartApp, async (event, params) => {
     const { appId, removeNodeModules, recreateSandbox } = params;
+    if (
+      isOrionSessionAppId(
+        appId,
+        readSettings() as ReturnType<typeof readSettings> & {
+          orionSessionAppId?: unknown;
+        },
+      )
+    ) {
+      logger.debug(
+        `Ignoring preview restart for internal Orion session app ${appId}.`,
+      );
+      return;
+    }
     logger.log(`Restarting app ${appId}`);
     return withLock(appId, async () => {
       try {
@@ -270,9 +284,13 @@ export function registerAppExecutionHandlers() {
     logger.info(`Updated commands for app ${appId}`);
   });
 
-  void reconcileCloudSandboxes().catch((error) => {
-    logger.warn("Failed to reconcile cloud sandboxes on startup:", error);
-  });
+  const proApiKey =
+    readSettings().providerSettings?.auto?.apiKey?.value?.trim();
+  if (proApiKey) {
+    void reconcileCloudSandboxes().catch((error) => {
+      logger.warn("Failed to reconcile cloud sandboxes on startup:", error);
+    });
+  }
 
   // Start the garbage collection for idle apps
 

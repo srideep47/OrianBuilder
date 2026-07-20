@@ -32,6 +32,7 @@ import {
   DownloadCloud,
   Activity,
   Terminal,
+  MessageCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ipc } from "@/ipc/types";
@@ -43,7 +44,7 @@ import { useSelectChat } from "@/hooks/useSelectChat";
 import { useInitialChatMode } from "@/hooks/useInitialChatMode";
 import { useSettings } from "@/hooks/useSettings";
 import { showError } from "@/lib/toast";
-import { ensureSelectedEmbeddedModelReady } from "@/lib/embeddedModelAutoload";
+import { ensureUsableModelForOrion } from "@/lib/embeddedModelAutoload";
 import { queryKeys } from "@/lib/queryKeys";
 import { useQueryClient } from "@tanstack/react-query";
 import { flowEventClient } from "@/ipc/types/intent";
@@ -65,6 +66,20 @@ import {
   detectAspectRatio,
   looksLikeStoryboardScript,
 } from "./storyboard_script";
+import {
+  DEFAULT_MEDIA_RECIPE,
+  OrionMediaComposerControls,
+  type OrionMediaKind,
+  type OrionMediaRecipe,
+} from "./OrionMediaComposerControls";
+import {
+  resolveSelection,
+  type OrionMediaSelection,
+} from "@/shared/orion_media_catalog";
+import { parseDirectMediaCommand } from "@/shared/orion_natural_command";
+import { ORION_SESSION_APP_NAME } from "@/shared/orion_session";
+
+export type OrionCommandFocus = "auto" | "software" | "media" | "design";
 
 const CAPABILITY_ICON: Record<CapabilityId, ReactNode> = {
   generate_design: <Palette className="w-3.5 h-3.5" />,
@@ -115,7 +130,7 @@ function formatMediaReply(command: string, assets: MediaReplyAsset[]): string {
     // All kinds (image/video/audio/model) render large + inline via the media
     // tag — ChatGPT/Gemini-style — rather than the small image-generation card.
     parts.push(
-      `<orianbuilder-media-generation kind="${escAttr(asset.kind)}" prompt="${escAttr(asset.prompt)}" path="${escAttr(asset.relativePath)}" mime-type="${escAttr(asset.mimeType)}" state="finished"></orianbuilder-media-generation>`,
+      `<orianbuilder-media-generation kind="${escAttr(asset.kind)}" prompt="${escAttr(asset.prompt)}" path="${escAttr(asset.relativePath)}" absolute-path="${escAttr(asset.absolutePath ?? "")}" mime-type="${escAttr(asset.mimeType)}" duration-ms="${asset.durationMs ?? ""}" state="finished"></orianbuilder-media-generation>`,
     );
   }
   return parts.length
@@ -130,7 +145,65 @@ const EXAMPLES = [
   "Build a todo app with a custom hero image and a Node backend",
 ];
 
-const ORION_SESSION_APP_NAME = "Orion Sessions";
+const MEDIA_KIND_CAPABILITY: Record<OrionMediaKind, CapabilityId> = {
+  image: "generate_image",
+  video: "generate_video",
+  music: "generate_music",
+  speech: "generate_audio",
+  threed: "generate_3d_asset",
+};
+
+function dimensionsForRecipe(recipe: OrionMediaRecipe): {
+  width: number;
+  height: number;
+} {
+  if (recipe.aspectRatio === "16:9") return { width: 1024, height: 576 };
+  if (recipe.aspectRatio === "9:16") return { width: 576, height: 1024 };
+  if (recipe.aspectRatio === "4:3") return { width: 896, height: 672 };
+  if (recipe.aspectRatio === "3:4") return { width: 672, height: 896 };
+  return { width: recipe.width, height: recipe.height };
+}
+
+function buildMediaIntent(
+  command: string,
+  recipe: OrionMediaRecipe,
+  selection: Required<OrionMediaSelection>,
+  appId?: number,
+): CommandIntent {
+  const modality = recipe.kind;
+  const dimensions = dimensionsForRecipe(recipe);
+  const options: Record<string, unknown> = {
+    quality: recipe.quality,
+    aspect_ratio: recipe.aspectRatio,
+    width: dimensions.width,
+    height: dimensions.height,
+    steps: recipe.steps,
+    guidance: recipe.guidance,
+    duration_s: recipe.durationSeconds,
+    ...(recipe.seed == null ? {} : { seed: recipe.seed }),
+    ...(recipe.negativePrompt.trim()
+      ? { negative_prompt: recipe.negativePrompt.trim() }
+      : {}),
+  };
+  const count = recipe.kind === "image" ? recipe.variations : 1;
+  return {
+    goal: command,
+    appId,
+    constraints: {
+      media: {
+        kind: recipe.kind,
+        modelId: selection[modality],
+        options,
+      },
+    },
+    steps: Array.from({ length: count }, (_, index) => ({
+      id: `${recipe.kind}-${index + 1}`,
+      capability: MEDIA_KIND_CAPABILITY[recipe.kind],
+      description: `Generate ${recipe.kind}${count > 1 ? ` variation ${index + 1}` : ""}`,
+      input: { prompt: command, options },
+    })),
+  };
+}
 
 function titleFromCommand(command: string): string {
   const title = command.trim().replace(/\s+/g, " ");
@@ -411,7 +484,15 @@ function StoryboardPipeline({ job }: { job: MediaJob }) {
  * chained flow via `ipc.flow.runCommand`, and renders the live step results.
  * Self-contained and additive; does not touch the chat input.
  */
-export function OrionCommandBar({ appId }: { appId?: number }) {
+export function OrionCommandBar({
+  appId,
+  initialFocus = "auto",
+}: {
+  appId?: number;
+  initialFocus?: OrionCommandFocus;
+}) {
+  const [mode, setMode] = useState<"orchestrate" | "chat">("orchestrate");
+  const [focus, setFocus] = useState<OrionCommandFocus>(initialFocus);
   const [text, setText] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<FlowRunResult | null>(null);
@@ -428,6 +509,11 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
   // Output shape for storyboard/video jobs. "auto" infers it from the script
   // ("9:16", "vertical", "shorts", …) and falls back to 16:9.
   const [aspect, setAspect] = useState<"auto" | MediaAspectRatio>("auto");
+  const [mediaRecipe, setMediaRecipe] =
+    useState<OrionMediaRecipe>(DEFAULT_MEDIA_RECIPE);
+  const [mediaSelection, setMediaSelection] = useState<
+    Required<OrionMediaSelection>
+  >(() => resolveSelection(undefined));
   // Autonomous by default: after the first prompt the agent runs end-to-end with
   // no approval prompts. Toggle off ("Ask me") to get blocking approvals on
   // risky steps. Drives the global `autonomousMode` setting the agent reads.
@@ -448,6 +534,21 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
       setAutonomous(settings.autonomousMode);
     }
   }, [settings?.autonomousMode]);
+
+  useEffect(() => {
+    const saved = (
+      settings as { orionMediaModels?: OrionMediaSelection } | null
+    )?.orionMediaModels;
+    setMediaSelection(resolveSelection(saved));
+  }, [settings]);
+
+  const updateMediaSelection = useCallback(
+    (next: Required<OrionMediaSelection>) => {
+      setMediaSelection(next);
+      void updateSettings({ orionMediaModels: next } as any);
+    },
+    [updateSettings],
+  );
 
   // Speak a short status update using the browser's built-in TTS (zero-dep).
   const speak = useCallback(
@@ -584,21 +685,45 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
         title: titleFromCommand(command),
         chatMode: "local-agent",
       });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
+      pushRecentViewedChatId(chatId);
+      return { appId: sessionAppId, chatId };
+    },
+    [getOrCreateSessionAppId, pushRecentViewedChatId, queryClient],
+  );
+
+  /** Manual flow runners persist their own prompt. Chat-stream-owned commands
+   *  must not call this because the shared stream handler inserts it exactly
+   *  once together with the live assistant placeholder. */
+  const persistCommandPrompt = useCallback(
+    async (command: string, chatId: number) => {
       await ipc.chat.appendMessages({
         chatId,
         messages: [{ role: "user", content: command }],
       });
       void queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
-      pushRecentViewedChatId(chatId);
       markCommandSessionStreaming(chatId, true);
+    },
+    [markCommandSessionStreaming, queryClient],
+  );
+
+  const createConversationSession = useCallback(
+    async (command: string) => {
+      const sessionAppId = await getOrCreateSessionAppId();
+      const chatId = await ipc.chat.createChat({
+        appId: sessionAppId,
+        initialChatMode: "conversational",
+      });
+      await ipc.chat.updateChat({
+        chatId,
+        title: titleFromCommand(command),
+        chatMode: "conversational",
+      });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
+      pushRecentViewedChatId(chatId);
       return { appId: sessionAppId, chatId };
     },
-    [
-      getOrCreateSessionAppId,
-      markCommandSessionStreaming,
-      pushRecentViewedChatId,
-      queryClient,
-    ],
+    [getOrCreateSessionAppId, pushRecentViewedChatId, queryClient],
   );
 
   const appendFlowResultToSession = useCallback(
@@ -858,7 +983,26 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
     setStoryboardJob(null);
     setStoryboardJobId(null);
     let session: { appId: number; chatId: number } | null = null;
+    let streamOwnsSession = false;
     try {
+      if (mode === "chat") {
+        const chatSession = await createConversationSession(command);
+        selectChat({ chatId: chatSession.chatId, appId: chatSession.appId });
+        if (!parseDirectMediaCommand(command, chatSession.appId)) {
+          await ensureUsableModelForOrion(settings, (model) =>
+            updateSettings({ selectedModel: model }),
+          );
+        }
+        streamMessage({
+          prompt: command,
+          chatId: chatSession.chatId,
+          appId: chatSession.appId,
+          requestedChatMode: "conversational",
+        });
+        setText("");
+        return;
+      }
+
       session = await createCommandSession(command);
       // Enter the chat immediately so the user sees their prompt right away,
       // instead of waiting on the (slow) parse + generation before navigating.
@@ -876,15 +1020,112 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
       // needed), and before intent parsing because a long script would
       // otherwise be misread as a single-clip request.
       if (looksLikeStoryboardScript(command)) {
+        await persistCommandPrompt(command, session.chatId);
         await runStoryboardCore(command, session);
         return;
       }
 
-      await ensureSelectedEmbeddedModelReady(settings);
+      // Anything mode is genuinely mode-free: an obvious natural-language
+      // media request routes immediately without loading the coding LLM or
+      // requiring the user to open/select the Media controls.
+      const naturalMediaIntent =
+        focus === "auto"
+          ? parseDirectMediaCommand(command, session.appId)
+          : null;
+
+      // Natural-language media commands use the same streamed chat lifecycle
+      // as every other message. This gives them a live placeholder, backend
+      // progress, cancellation, durable errors, and an immediate inline result
+      // without asking the user to choose a mode or model first.
+      if (naturalMediaIntent) {
+        streamOwnsSession = true;
+        streamMessage({
+          prompt: command,
+          chatId: session.chatId,
+          appId: session.appId,
+          requestedChatMode: "local-agent",
+        });
+        setText("");
+        return;
+      }
+
+      await persistCommandPrompt(command, session.chatId);
+
+      // Immediate feedback so the command's chat isn't blank during the
+      // (sometimes multi-minute) pre-build phase — loading the local model on
+      // first use, generating requested assets, then planning. Without this the
+      // user stares at an empty chat until the build chat opens.
+      const postStatus = (content: string) =>
+        ipc.chat
+          .appendMessages({
+            chatId: session!.chatId,
+            messages: [{ role: "assistant", content }],
+          })
+          .then(() =>
+            queryClient.invalidateQueries({ queryKey: queryKeys.chats.all }),
+          )
+          .catch(() => undefined);
+      await postStatus(
+        focus === "media" || naturalMediaIntent
+          ? "**Media recipe locked.** Starting the selected local model and rendering the result here."
+          : focus === "design"
+            ? "**Design workspace ready.** Turning the brief into a structured design artifact."
+            : "**On it — working locally.** Getting the right model ready, then planning and completing the work here.",
+      );
+
+      // Explicit media/design modes do not need an LLM intent parse. Skipping
+      // that load preserves RAM/VRAM for the selected generator and makes the
+      // recipe deterministic. Auto mode still plans mixed multi-tool requests.
+      if (focus === "media") {
+        const mediaIntent = buildMediaIntent(
+          command,
+          mediaRecipe,
+          mediaSelection,
+          session.appId,
+        );
+        await runMediaCore(command, mediaIntent, session);
+        return;
+      }
+
+      if (focus === "design") {
+        const designIntent: CommandIntent = {
+          goal: command,
+          appId: session.appId,
+          steps: [
+            {
+              id: "design-1",
+              capability: "generate_design",
+              description: "Create an Open Design artifact",
+              input: { prompt: command },
+            },
+          ],
+        };
+        await runFlowCore(command, designIntent, session);
+        return;
+      }
+
+      // Guarantee Orion has a usable model: if the picker is on a cloud/"auto"
+      // model that can't run here (no keys / offline), load the local embedded
+      // model and select it so the whole pipeline (parse → plan → agent build)
+      // runs locally instead of failing. The status callback keeps the chat
+      // alive during a slow first-time model load.
+      await ensureUsableModelForOrion(
+        settings,
+        (model) => updateSettings({ selectedModel: model }),
+        postStatus,
+      );
+
+      if (focus === "software") {
+        await runFactoryCore(command, session);
+        return;
+      }
 
       let intent: CommandIntent | null = null;
       try {
-        intent = await ipc.flow.parseCommand({ text: command, appId });
+        intent = await ipc.flow.parseCommand({
+          text: command,
+          appId: session.appId,
+        });
       } catch {
         /* parse failed → fall through to the Factory build path */
       }
@@ -913,19 +1154,26 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
       showError(message);
       speak("Sorry, the command failed.");
     } finally {
-      if (session) {
+      if (session && !streamOwnsSession) {
         markCommandSessionStreaming(session.chatId, false);
       }
       setIsRunning(false);
     }
   }, [
     text,
+    mode,
+    focus,
     appId,
     isRunning,
     autonomous,
+    mediaRecipe,
+    mediaSelection,
     updateSettings,
     settings,
+    createConversationSession,
     createCommandSession,
+    persistCommandPrompt,
+    streamMessage,
     selectChat,
     runMediaCore,
     runFlowCore,
@@ -944,16 +1192,50 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
   };
 
   return (
-    <div className="w-full rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-lg backdrop-blur">
+    <div className="w-full rounded-[22px] border border-border/80 bg-card/72 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.18)] backdrop-blur-xl">
       <div className="mb-3 flex items-center gap-2">
         <div className="flex h-7 w-7 items-center justify-center rounded-2xl bg-primary/20 text-primary">
           <Sparkles className="h-4 w-4" />
         </div>
         <div className="flex-1">
-          <h3 className="text-sm font-semibold text-white/90">Orion Command</h3>
-          <p className="text-xs text-white/50">
-            One command, all workflows - chained automatically.
+          <h3 className="text-sm font-semibold text-foreground">
+            {mode === "chat" ? "Chat with Orion" : "Orion Command"}
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            {mode === "chat"
+              ? "A focused conversation using your local model."
+              : "One command, all workflows - chained automatically."}
           </p>
+        </div>
+        <div className="inline-flex rounded-xl border border-border/70 bg-muted/30 p-0.5 text-xs">
+          <button
+            type="button"
+            onClick={() => setMode("orchestrate")}
+            disabled={isRunning}
+            className={
+              "inline-flex items-center gap-1 rounded-3xl px-2.5 py-1 transition-colors " +
+              (mode === "orchestrate"
+                ? "bg-primary/20 text-primary"
+                : "text-muted-foreground hover:text-foreground")
+            }
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Create
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("chat")}
+            disabled={isRunning}
+            className={
+              "inline-flex items-center gap-1 rounded-3xl px-2.5 py-1 transition-colors " +
+              (mode === "chat"
+                ? "bg-primary/20 text-primary"
+                : "text-muted-foreground hover:text-foreground")
+            }
+          >
+            <MessageCircle className="h-3.5 w-3.5" />
+            Chat
+          </button>
         </div>
         <Button
           type="button"
@@ -961,7 +1243,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
           variant="ghost"
           title={muted ? "Unmute spoken status" : "Mute spoken status"}
           onClick={() => setMuted((m) => !m)}
-          className="h-7 w-7 text-white/50 hover:text-white/90"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground"
         >
           {muted ? (
             <VolumeX className="h-4 w-4" />
@@ -974,12 +1256,18 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
       <div className="relative">
         <textarea
           ref={textareaRef}
+          data-testid="orion-command-input"
+          aria-label={mode === "chat" ? "Chat with Orion" : "Orion command"}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
           rows={2}
-          placeholder='Describe what to build or generate... e.g. "Build a todo app with a hero image"'
-          className="w-full resize-none rounded-3xl border border-white/10 bg-black/20 px-3 py-2.5 pr-24 text-sm text-white/90 placeholder:text-white/30 outline-none focus:border-primary/50"
+          placeholder={
+            mode === "chat"
+              ? "Ask Orion anything..."
+              : 'Describe what to build or generate... e.g. "Build a todo app with a hero image"'
+          }
+          className="w-full resize-none rounded-2xl border border-border bg-background/60 px-3 py-3 pr-24 text-sm text-foreground placeholder:text-muted-foreground/60 outline-none transition-colors focus:border-primary/55"
           disabled={isRunning}
         />
         <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1.5">
@@ -990,7 +1278,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
             title={isRecording ? "Stop dictation" : "Dictate command"}
             onClick={toggleRecording}
             disabled={isRunning || isTranscribing}
-            className="h-8 w-8 text-white/70 hover:text-white"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
           >
             {isTranscribing ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -1004,6 +1292,7 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
             type="button"
             size="icon"
             title="Run command (Cmd/Ctrl + Enter)"
+            aria-label="Run Orion command"
             onClick={() => void launch()}
             disabled={isRunning || !text.trim()}
             className="h-8 w-8"
@@ -1017,75 +1306,134 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
         </div>
       </div>
 
-      {/* Autonomy toggle - autonomous by default; "Ask me" enables approvals */}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-2xl border border-white/10 bg-black/20 p-0.5 text-xs">
-          <button
-            type="button"
-            onClick={() => setAutonomous(true)}
-            disabled={isRunning}
-            className={
-              "inline-flex items-center gap-1 rounded-3xl px-2.5 py-1 transition-colors " +
-              (autonomous
-                ? "bg-primary/20 text-primary"
-                : "text-white/50 hover:text-white/80")
-            }
-          >
-            <Zap className="h-3.5 w-3.5" />
-            Autonomous
-          </button>
-          <button
-            type="button"
-            onClick={() => setAutonomous(false)}
-            disabled={isRunning}
-            className={
-              "inline-flex items-center gap-1 rounded-3xl px-2.5 py-1 transition-colors " +
-              (!autonomous
-                ? "bg-amber-500/20 text-amber-300"
-                : "text-white/50 hover:text-white/80")
-            }
-          >
-            <Hand className="h-3.5 w-3.5" />
-            Ask me
-          </button>
-        </div>
-        <span className="text-xs text-white/40">
-          {autonomous
-            ? "Runs end-to-end - no interruptions."
-            : "Pauses for approval on risky steps."}
-        </span>
-
-        {/* Aspect ratio for video/storyboard output. Auto reads the script. */}
-        <div className="ml-auto inline-flex items-center gap-1.5">
-          <span className="text-xs text-white/40">Ratio</span>
-          <div className="inline-flex rounded-2xl border border-white/10 bg-black/20 p-0.5 text-xs">
-            {(["auto", "16:9", "9:16", "1:1"] as const).map((r) => (
+      {mode === "orchestrate" && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-medium text-muted-foreground">
+            Make
+          </span>
+          <div className="inline-flex rounded-xl border border-border/70 bg-muted/25 p-0.5 text-xs">
+            {(
+              [
+                ["auto", "Anything", Sparkles],
+                ["software", "Software", Hammer],
+                ["media", "Media", ImageIcon],
+                ["design", "Design", Palette],
+              ] as const
+            ).map(([value, label, Icon]) => (
               <button
-                key={r}
+                key={value}
                 type="button"
-                onClick={() => setAspect(r)}
+                onClick={() => setFocus(value)}
                 disabled={isRunning}
-                title={
-                  r === "auto"
-                    ? "Detect from the script (vertical/shorts → 9:16); defaults to 16:9"
-                    : `Render video at ${r}`
-                }
                 className={
-                  "rounded-3xl px-2 py-1 transition-colors " +
-                  (aspect === r
-                    ? "bg-primary/20 text-primary"
-                    : "text-white/50 hover:text-white/80")
+                  "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 transition-colors " +
+                  (focus === value
+                    ? "bg-primary/16 text-primary"
+                    : "text-muted-foreground hover:bg-background/50 hover:text-foreground")
                 }
               >
-                {r === "auto" ? "Auto" : r}
+                <Icon className="h-3.5 w-3.5" />
+                {label}
               </button>
             ))}
           </div>
+          <span className="text-[11px] text-muted-foreground">
+            {focus === "auto"
+              ? "Orion chooses and chains the right tools."
+              : focus === "media"
+                ? "Uses this recipe without loading an LLM first."
+                : focus === "software"
+                  ? "Plans, builds, tests, and prepares delivery."
+                  : "Creates an editable Open Design artifact."}
+          </span>
         </div>
-      </div>
+      )}
+
+      {mode === "orchestrate" && focus === "media" && (
+        <OrionMediaComposerControls
+          value={mediaRecipe}
+          selection={mediaSelection}
+          onChange={setMediaRecipe}
+          onSelectionChange={updateMediaSelection}
+          disabled={isRunning}
+        />
+      )}
+
+      {/* Autonomy toggle - autonomous by default; "Ask me" enables approvals */}
+      {mode === "orchestrate" && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-xl border border-border/70 bg-muted/25 p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setAutonomous(true)}
+              disabled={isRunning}
+              className={
+                "inline-flex items-center gap-1 rounded-3xl px-2.5 py-1 transition-colors " +
+                (autonomous
+                  ? "bg-primary/20 text-primary"
+                  : "text-muted-foreground hover:text-foreground")
+              }
+            >
+              <Zap className="h-3.5 w-3.5" />
+              Autonomous
+            </button>
+            <button
+              type="button"
+              onClick={() => setAutonomous(false)}
+              disabled={isRunning}
+              className={
+                "inline-flex items-center gap-1 rounded-3xl px-2.5 py-1 transition-colors " +
+                (!autonomous
+                  ? "bg-amber-500/20 text-amber-300"
+                  : "text-muted-foreground hover:text-foreground")
+              }
+            >
+              <Hand className="h-3.5 w-3.5" />
+              Ask me
+            </button>
+          </div>
+          <span className="text-xs text-muted-foreground">
+            {autonomous
+              ? "Runs end-to-end - no interruptions."
+              : "Pauses for approval on risky steps."}
+          </span>
+
+          {/* Aspect ratio for video/storyboard output. Auto reads the script. */}
+          {focus !== "media" && (
+            <div className="ml-auto inline-flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">
+                Storyboard ratio
+              </span>
+              <div className="inline-flex rounded-xl border border-border/70 bg-muted/25 p-0.5 text-xs">
+                {(["auto", "16:9", "9:16", "1:1"] as const).map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setAspect(r)}
+                    disabled={isRunning}
+                    title={
+                      r === "auto"
+                        ? "Detect from the script (vertical/shorts → 9:16); defaults to 16:9"
+                        : `Render video at ${r}`
+                    }
+                    className={
+                      "rounded-3xl px-2 py-1 transition-colors " +
+                      (aspect === r
+                        ? "bg-primary/20 text-primary"
+                        : "text-muted-foreground hover:text-foreground")
+                    }
+                  >
+                    {r === "auto" ? "Auto" : r}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Example chips - shown only before a run */}
-      {!result && !pipelineResult && !isRunning && (
+      {mode === "orchestrate" && !result && !pipelineResult && !isRunning && (
         <div className="mt-3 flex flex-wrap gap-2">
           {EXAMPLES.map((ex) => (
             <button
@@ -1101,21 +1449,25 @@ export function OrionCommandBar({ appId }: { appId?: number }) {
       )}
 
       {/* Capability hints */}
-      {capabilities.length > 0 && !result && !pipelineResult && !isRunning && (
-        <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs text-white/40">
-          <span>Capabilities:</span>
-          {capabilities.map((c) => (
-            <span
-              key={c.id}
-              className="inline-flex items-center gap-1 rounded-3xl bg-white/[0.04] px-2 py-0.5 text-white/55"
-              title={c.description}
-            >
-              {CAPABILITY_ICON[c.id]}
-              {c.label}
-            </span>
-          ))}
-        </div>
-      )}
+      {mode === "orchestrate" &&
+        capabilities.length > 0 &&
+        !result &&
+        !pipelineResult &&
+        !isRunning && (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs text-white/40">
+            <span>Capabilities:</span>
+            {capabilities.map((c) => (
+              <span
+                key={c.id}
+                className="inline-flex items-center gap-1 rounded-3xl bg-white/[0.04] px-2 py-0.5 text-white/55"
+                title={c.description}
+              >
+                {CAPABILITY_ICON[c.id]}
+                {c.label}
+              </span>
+            ))}
+          </div>
+        )}
 
       {/* Running indicator */}
       {isRunning && (

@@ -143,7 +143,7 @@ export default function MediaPage() {
           onClick={() => void navigate({ to: "/mediaai" })}
         >
           <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-          Generate in Gen Assets
+          Generate in Media Studio
         </Button>
       </div>
 
@@ -169,7 +169,7 @@ export default function MediaPage() {
                   className="text-primary underline"
                   onClick={() => void navigate({ to: "/mediaai" })}
                 >
-                  Gen Assets
+                  Media Studio
                 </button>{" "}
                 — they appear here automatically.
               </p>

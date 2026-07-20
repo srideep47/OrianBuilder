@@ -19,6 +19,7 @@ import { remotePeerProvider } from "./providers/RemotePeerProvider";
 import type { ModelClient } from "./providers";
 import { getEnvVar } from "./read_env";
 import { getComputeTarget } from "@/main/compute/routing";
+import { getServerStatus } from "./embedded_inference_server";
 
 export type { ModelClient } from "./providers";
 
@@ -194,8 +195,28 @@ export async function getModelClient(
       }
     }
 
+    // Local-first fallback: no cloud key is available for "auto", but the
+    // embedded inference server already has a model loaded — use it instead of
+    // failing. This keeps the offline / local path working (Orion command
+    // builds, intent parsing, the autonomous agent) without a cloud account.
+    // Only reached when "auto" would otherwise throw, so cloud users with keys
+    // configured are unaffected and other workflows are not disturbed.
+    const embeddedStatus = getServerStatus();
+    if (embeddedStatus.modelLoaded) {
+      logger.info(
+        `\x1b[1;30;43m[auto] No cloud key available — falling back to loaded embedded model "${embeddedStatus.modelName}"\x1b[0m`,
+      );
+      return getModelClient(
+        {
+          provider: "embedded",
+          name: embeddedStatus.modelName ?? "embedded",
+        },
+        settings,
+      );
+    }
+
     throw new Error(
-      "No API keys available for any model supported by the 'auto' provider.",
+      "No API keys available for any model supported by the 'auto' provider, and no local Engine model is loaded. Open Engine, load a model (or pick one in the model selector), then try again.",
     );
   }
 

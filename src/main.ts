@@ -185,13 +185,19 @@ export async function onReady() {
   initializeDatabase();
   autoStartNetwork();
   recoverInterruptedMissionsOnStartup()
-    .then(({ recoveredRunCount, recoveredWorkerCount }) => {
-      if (recoveredRunCount > 0 || recoveredWorkerCount > 0) {
-        logger.warn(
-          `Recovered ${recoveredRunCount} interrupted mission run(s) and ${recoveredWorkerCount} worker(s) after startup.`,
-        );
-      }
-    })
+    .then(
+      ({ recoveredRunCount, recoveredMissionCount, recoveredWorkerCount }) => {
+        if (
+          recoveredRunCount > 0 ||
+          recoveredMissionCount > 0 ||
+          recoveredWorkerCount > 0
+        ) {
+          logger.warn(
+            `Recovered ${recoveredMissionCount} mission(s), ${recoveredRunCount} interrupted run(s), and ${recoveredWorkerCount} worker(s) after startup.`,
+          );
+        }
+      },
+    )
     .catch((err) =>
       logger.warn("Failed to recover interrupted mission runs:", err),
     );
@@ -476,8 +482,12 @@ declare global {
 
 let mainWindow: BrowserWindow | null = null;
 let pendingForceCloseData: any = null;
+let rendererRecoveryTimer: NodeJS.Timeout | null = null;
 
 const createWindow = () => {
+  const shouldOpenDevTools =
+    process.env.NODE_ENV === "development" &&
+    process.env.ORION_OPEN_DEVTOOLS === "true";
   // Create the browser window.
   mainWindow = new BrowserWindow({
     width: process.env.NODE_ENV === "development" ? 1280 : 960,
@@ -504,8 +514,10 @@ const createWindow = () => {
     // backgroundColor: "#00000001",
     // frame: false,
   });
-  // In development, wait for DevTools to open, then reload the page once so React DevTools initializes correctly
-  if (process.env.NODE_ENV === "development") {
+  // DevTools is opt-in. Opening it for every development launch adds a heavy
+  // renderer and a forced reload even when the developer is testing runtime
+  // performance or ordinary product behavior.
+  if (shouldOpenDevTools) {
     mainWindow.webContents.once("devtools-opened", () => {
       setTimeout(() => {
         const windowRef = mainWindow;
@@ -530,28 +542,42 @@ const createWindow = () => {
   let forceCloseMessageSent = false;
   let devToolsReloadedCount = 0;
 
-  // Recover from renderer crashes (most commonly OOM during a long agent run
-  // that floods the console-entries atom). Without this the user sees a
-  // permanent blank window and has to quit/restart the app from the dock.
+  // Recover from renderer crashes (most commonly OOM during a long agent run).
+  // Reloading the dead WebContents synchronously can itself trip Chromium's
+  // observer assertions on Windows. Queue one window-level navigation instead:
+  // it creates a fresh renderer after Chromium has finished tearing the old
+  // one down, while keeping the Electron main process and inference child
+  // alive.
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
     log.error(
-      `Renderer process gone: reason=${details.reason} exitCode=${details.exitCode}. Attempting auto-reload.`,
+      `Renderer process gone: reason=${details.reason} exitCode=${details.exitCode}. Scheduling recovery.`,
     );
     if (details.reason === "killed") {
       return;
     }
-    const windowRef = mainWindow;
-    if (windowRef && !windowRef.isDestroyed()) {
-      try {
-        windowRef.webContents.reloadIgnoringCache();
-      } catch (err) {
-        log.warn("Failed to auto-reload after renderer crash:", err);
+    if (rendererRecoveryTimer !== null) return;
+
+    rendererRecoveryTimer = setTimeout(() => {
+      rendererRecoveryTimer = null;
+      const windowRef = mainWindow;
+      if (!windowRef || windowRef.isDestroyed()) {
+        log.warn("Cannot recover renderer because its window is gone.");
+        return;
       }
-    }
+
+      const reload = MAIN_WINDOW_VITE_DEV_SERVER_URL
+        ? windowRef.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL)
+        : windowRef.loadFile(
+            path.join(__dirname, "../renderer/main_window/index.html"),
+          );
+      void reload.catch((err) =>
+        log.error("Failed to create a fresh renderer after crash:", err),
+      );
+    }, 750);
   });
 
   mainWindow.webContents.on("did-finish-load", () => {
-    if (process.env.NODE_ENV === "development") {
+    if (shouldOpenDevTools) {
       // In dev, wait until AFTER the DevTools-triggered reload before sending the message
       if (devToolsReloadedCount === 0) {
         devToolsReloadedCount++;

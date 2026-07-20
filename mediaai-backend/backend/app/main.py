@@ -127,11 +127,9 @@ async def hardware_info() -> dict:
 
 @app.post("/v1/pipeline/unload")
 async def unload_pipeline() -> dict:
-    """Evict the in-memory image pipeline so it reloads (on the correct device)
-    on the next generation request. Useful when the first generation ran on CPU
-    because CUDA was not yet visible at startup."""
-    image_model.unload_pipeline()
-    return {"status": "ok", "message": "pipeline evicted"}
+    """Evict every media pipeline, including child-process workers."""
+    await run_in_threadpool(media_jobs.unload_resident_models)
+    return {"status": "ok", "message": "media pipelines evicted"}
 
 
 # ─── Filename helpers ────────────────────────────────────────────────────────
@@ -169,6 +167,8 @@ class V1ImageResponse(BaseModel):
 async def v1_generate_image(req: V1ImageRequest) -> V1ImageResponse:
     try:
         data = await run_in_threadpool(
+            media_jobs.run_exclusive,
+            "image",
             image_model.generate_image,
             req.prompt,
             req.steps,
@@ -296,6 +296,8 @@ class V1VideoResponse(BaseModel):
 async def v1_generate_video(req: V1VideoRequest) -> V1VideoResponse:
     try:
         result = await run_in_threadpool(
+            media_jobs.run_exclusive,
+            "video",
             video_model.generate_video,
             req.prompt,
             req.tier,
@@ -456,7 +458,12 @@ class V1TtsResponse(BaseModel):
 async def v1_generate_tts(req: V1TtsRequest) -> V1TtsResponse:
     try:
         data = await run_in_threadpool(
-            tts_model.generate_speech, req.text, req.voice, req.tier
+            media_jobs.run_exclusive,
+            "tts",
+            tts_model.generate_speech,
+            req.text,
+            req.voice,
+            req.tier,
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"tts failed: {exc}") from exc
@@ -576,6 +583,8 @@ class V1MusicResponse(BaseModel):
 async def v1_generate_music(req: V1MusicRequest) -> V1MusicResponse:
     try:
         data = await run_in_threadpool(
+            media_jobs.run_exclusive,
+            "music",
             music_model.generate_music,
             req.prompt,
             req.duration_seconds,
@@ -790,12 +799,10 @@ async def v1_generate_3d(
     if not image_bytes:
         raise HTTPException(status_code=400, detail="empty image upload")
 
-    # Evict the image pipeline before loading TripoSR — both models together
-    # exceed 10 GB and will OOM-kill the backend on 16 GB systems.
-    image_model.unload_pipeline()
-
     try:
         data = await run_in_threadpool(
+            media_jobs.run_exclusive,
+            "3d",
             threed_model.generate_3d_from_image,
             image_bytes,
             tier,
@@ -835,7 +842,14 @@ async def v1_transcribe(
         _shutil.copyfileobj(audio.file, tmp)
         tmp_path = tmp.name
     try:
-        text = await run_in_threadpool(stt_model.transcribe, tmp_path, language, tier)
+        text = await run_in_threadpool(
+            media_jobs.run_exclusive,
+            "stt",
+            stt_model.transcribe,
+            tmp_path,
+            language,
+            tier,
+        )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"transcription failed: {exc}") from exc
     finally:
@@ -930,24 +944,12 @@ class V1UnloadResponse(BaseModel):
 
 @app.post("/v1/models/unload", response_model=V1UnloadResponse)
 async def v1_unload(req: V1UnloadRequest) -> V1UnloadResponse:
-    if req.model_type == "image":
-        image_model.unload_pipeline()
-    elif req.model_type == "video":
-        video_model.unload_pipeline()
-    elif req.model_type == "audio":
-        tts_model.unload()
-    elif req.model_type == "stt":
-        stt_model.unload()
-    elif req.model_type == "music":
-        music_model.unload()
-    elif req.model_type == "all":
-        image_model.unload_pipeline()
-        video_model.unload_pipeline()
-        tts_model.unload()
-        stt_model.unload()
-        music_model.unload()
-    else:
+    if req.model_type not in {"image", "video", "audio", "stt", "music", "3d", "all"}:
         raise HTTPException(status_code=400, detail=f"unknown model_type: {req.model_type}")
+    # The persistent video worker owns weights in a child process. Route every
+    # release through the shared resident-model manager so it cannot survive an
+    # unload request unnoticed.
+    await run_in_threadpool(media_jobs.unload_resident_models)
     return V1UnloadResponse(ok=True)
 
 
@@ -959,13 +961,19 @@ class V1LoadRequest(BaseModel):
 @app.post("/v1/models/load", response_model=V1UnloadResponse)
 async def v1_load(req: V1LoadRequest) -> V1UnloadResponse:
     if req.model_type == "image":
-        await run_in_threadpool(image_model.get_pipeline, req.tier)
+        await run_in_threadpool(
+            media_jobs.run_exclusive, "image", image_model.get_pipeline, req.tier
+        )
         return V1UnloadResponse(ok=True)
     if req.model_type == "video":
-        await run_in_threadpool(video_model.get_pipeline, req.tier)
+        await run_in_threadpool(
+            media_jobs.run_exclusive, "video", video_model.get_pipeline, req.tier
+        )
         return V1UnloadResponse(ok=True)
     if req.model_type == "stt":
-        await run_in_threadpool(stt_model.get_pipeline, req.tier)
+        await run_in_threadpool(
+            media_jobs.run_exclusive, "stt", stt_model.get_pipeline, req.tier
+        )
         return V1UnloadResponse(ok=True)
     raise HTTPException(status_code=400, detail=f"load not supported for: {req.model_type}")
 

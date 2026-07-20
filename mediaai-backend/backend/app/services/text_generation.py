@@ -149,3 +149,17 @@ class LlamaCppTextGenerationService:
 
 text_generation_service = LlamaCppTextGenerationService()
 
+
+def unload() -> None:
+    """Release the legacy in-process llama.cpp model, if it was used."""
+    import gc
+
+    with text_generation_service._lock:
+        llm = text_generation_service._llm
+        text_generation_service._llm = None
+        text_generation_service._model_path = None
+    close = getattr(llm, "close", None)
+    if callable(close):
+        close()
+    gc.collect()
+

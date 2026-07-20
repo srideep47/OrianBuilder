@@ -50,6 +50,13 @@ export interface LlamaServerArgInput {
   /** Quantization for KV cache (e.g., "q8_0" reduces VRAM at small quality cost). */
   cacheTypeK?: string;
   cacheTypeV?: string;
+  /** Concurrent inference slots. One slot is the safe default for a desktop
+   *  app: extra slots duplicate context working sets and are unnecessary while
+   *  the UI serializes local generations. */
+  parallelSlots?: number;
+  /** Upper bound for llama-server's saved prompt checkpoints in system RAM.
+   *  This is separate from the live KV cache. */
+  promptCacheMb?: number;
   /** Force-disable mmap (rarely needed). */
   noMmap?: boolean;
   /** Mlock model into RAM (Linux/macOS; ignored on Windows). */
@@ -69,6 +76,45 @@ export interface LlamaServerArgs {
   flags: string[];
   /** Resolved GPU layer count — exposed so we can report it via status. */
   resolvedGpuLayers: number;
+}
+
+/**
+ * The configured context is an upper bound, not a promise that it is safe to
+ * allocate on every machine.  Long contexts have a substantial *system RAM*
+ * cost even when the model weights and most layers fit in VRAM: llama-server's
+ * live KV cache, prompt checkpoints, the multimodal projector, and Electron
+ * all coexist in the same process set.
+ *
+ * Keep large (12 GiB+) GGUFs on a 64 GiB-or-smaller workstation within a
+ * 48k-token working window.  This comfortably supports the agent's project
+ * context while preventing the unbounded 131k setting from evicting the
+ * renderer.  When the machine is already under pressure, use 32k instead.
+ * The saved user preference is intentionally left untouched; this only
+ * resolves the safe runtime value for this launch.
+ */
+export function resolveSafeRuntimeContextSize(input: {
+  requestedContextSize: number;
+  modelSizeBytes: number;
+  totalMemoryBytes: number;
+  freeMemoryBytes: number;
+  hasMultimodalProjector: boolean;
+}): number {
+  const requested = Math.max(2_048, Math.floor(input.requestedContextSize));
+  const gib = 1024 ** 3;
+  const isLargeModel = input.modelSizeBytes >= 12 * gib;
+  const isConstrainedWorkstation = input.totalMemoryBytes <= 72 * gib;
+
+  if (!isLargeModel || !isConstrainedWorkstation || requested <= 32_768) {
+    return requested;
+  }
+
+  // A vision projector adds another large native allocation.  It is a useful
+  // signal for logging, while the model/RAM limits above remain the actual
+  // safety boundary for text-only large models too.
+  const normalCap = input.hasMultimodalProjector ? 49_152 : 57_344;
+  const lowMemoryCap = 32_768;
+  const safeCap = input.freeMemoryBytes < 14 * gib ? lowMemoryCap : normalCap;
+  return Math.min(requested, safeCap);
 }
 
 export function buildLlamaServerArgs(
@@ -116,6 +162,19 @@ export function buildLlamaServerArgs(
   if (input.cacheTypeV) {
     flags.push("--cache-type-v", input.cacheTypeV);
   }
+
+  // llama-server otherwise auto-selects four slots and an 8 GiB prompt cache.
+  // Those defaults are intended for a shared server, not a single-user
+  // Electron app, and were enough to exhaust a 64 GiB workstation during a
+  // long agent session. Keep one request slot and a bounded checkpoint cache;
+  // both can be overridden explicitly by a future advanced setting.
+  const parallelSlots = Math.max(1, Math.floor(input.parallelSlots ?? 1));
+  // Prompt checkpoints duplicate portions of the live context in system RAM.
+  // 256 MiB is enough to speed up short retries without allowing a long agent
+  // session to reserve multiple gigabytes of duplicate KV state.
+  const promptCacheMb = Math.max(0, Math.floor(input.promptCacheMb ?? 256));
+  flags.push("--parallel", String(parallelSlots));
+  flags.push("--cache-ram", String(promptCacheMb));
 
   if (input.noMmap) {
     flags.push("--no-mmap");

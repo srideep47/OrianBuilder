@@ -88,6 +88,20 @@ function shouldAutoResume(input: {
   );
 }
 
+export function findOrphanedRunningMissionIds(input: {
+  runningMissionIds: number[];
+  runningRunMissionIds: number[];
+  runningWorkerMissionIds: number[];
+}): number[] {
+  const missionsWithExecution = new Set([
+    ...input.runningRunMissionIds,
+    ...input.runningWorkerMissionIds,
+  ]);
+  return input.runningMissionIds.filter(
+    (missionId) => !missionsWithExecution.has(missionId),
+  );
+}
+
 export async function recoverInterruptedMissionsOnStartup() {
   const settings = readSettings();
   const autoResumeSetting = settings.autoResumeMissionsOnStartup === true;
@@ -102,10 +116,22 @@ export async function recoverInterruptedMissionsOnStartup() {
     .select()
     .from(missionWorkers)
     .where(eq(missionWorkers.status, "running"));
+  const runningMissions = await db
+    .select()
+    .from(missions)
+    .where(eq(missions.status, "running"));
+  const orphanedMissionIds = findOrphanedRunningMissionIds({
+    runningMissionIds: runningMissions.map((mission) => mission.id),
+    runningRunMissionIds: interruptedRuns.map((run) => run.missionId),
+    runningWorkerMissionIds: interruptedWorkers.map(
+      (worker) => worker.missionId,
+    ),
+  });
   const missionIds = [
     ...new Set([
       ...interruptedRuns.map((run) => run.missionId),
       ...interruptedWorkers.map((worker) => worker.missionId),
+      ...orphanedMissionIds,
     ]),
   ];
 
@@ -131,6 +157,7 @@ export async function recoverInterruptedMissionsOnStartup() {
   const pauseMissionIds: number[] = [];
   for (const mission of affectedMissions) {
     if (mission.status !== "running") continue;
+    if (orphanedMissionIds.includes(mission.id)) continue;
     if (
       shouldAutoResume({
         autoResumeSetting,
@@ -160,6 +187,31 @@ export async function recoverInterruptedMissionsOnStartup() {
         updatedAt: recoveredAt,
       })
       .where(inArray(missions.id, pauseMissionIds));
+  }
+  if (orphanedMissionIds.length > 0) {
+    await db
+      .update(missions)
+      .set({
+        status: "failed",
+        updatedAt: recoveredAt,
+        completedAt: recoveredAt,
+      })
+      .where(inArray(missions.id, orphanedMissionIds));
+
+    for (const missionId of orphanedMissionIds) {
+      await logMissionEvent({
+        missionId,
+        eventType: "mission_startup_preflight_failed",
+        summary: "Mission failed before an agent run started",
+        body: "The app restarted while this mission was marked running, but no run or worker execution existed.",
+        metadata: {
+          recovery: "orphaned_running_mission",
+          recoveredAt: recoveredAt.toISOString(),
+        },
+      }).catch((err) =>
+        logger.warn(`Failed to log orphaned mission ${missionId}:`, err),
+      );
+    }
   }
 
   for (const run of interruptedRuns) {

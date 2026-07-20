@@ -4,13 +4,7 @@ import { atom } from "jotai";
 export const dropdownOpenAtom = atom<boolean>(false);
 
 // Atom to track which sidebar panel is open (null = closed)
-export type SidebarPanelItem =
-  | "Apps"
-  | "Chat"
-  | "Settings"
-  | "Library"
-  | "Gen Assets"
-  | null;
+export type SidebarPanelItem = "Apps" | "Chat" | "Settings" | "Library" | null;
 export const sidebarPanelAtom = atom<SidebarPanelItem>(null);
 
 // Controls the in-page peer-list panel on the /network route.

@@ -344,7 +344,11 @@ const COMMENT_MODE_SCRIPT = `<script id="__od_comment__">
 // =============================================================================
 // Main page
 // =============================================================================
-export default function DesignStudioPage() {
+export default function DesignStudioPage({
+  embedded = false,
+}: {
+  embedded?: boolean;
+}) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -421,7 +425,7 @@ export default function DesignStudioPage() {
 
   // UI state
   const [frame, setFrame] = useState<FrameOption>("desktop");
-  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
+  const [leftPanelOpen, setLeftPanelOpen] = useState(!embedded);
   const [skillFilter, setSkillFilter] = useState("");
   const [dsFilter, setDsFilter] = useState("");
   const [scenarioFilter, setScenarioFilter] = useState("all");

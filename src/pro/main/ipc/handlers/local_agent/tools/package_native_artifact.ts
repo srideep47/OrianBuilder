@@ -78,6 +78,44 @@ type CommandResult = {
 
 type NativeTarget = "android_apk" | "electron_desktop";
 
+type PackagingGateInput = {
+  target: NativeTarget;
+  lastBrowserQaStatus: "passed" | "failed" | null;
+  unresolvedCommandFailure?: {
+    command: string;
+    exitCode: number;
+  } | null;
+};
+
+export function getNativePackagingGateFailure(
+  input: PackagingGateInput,
+): { error: string; instruction: string } | null {
+  if (input.unresolvedCommandFailure) {
+    const failure = input.unresolvedCommandFailure;
+    return {
+      error: `Refusing to package: unresolved command failure (${failure.command}, exit ${failure.exitCode}).`,
+      instruction:
+        `[execution gate] Packaging was blocked because \`${failure.command}\` failed with exit code ${failure.exitCode}. ` +
+        `Repair and successfully rerun the command, then run browser_qa_gate, then retry package_native_artifact automatically.`,
+    };
+  }
+
+  if (
+    input.target === "electron_desktop" &&
+    input.lastBrowserQaStatus !== "passed"
+  ) {
+    const qaStatus = input.lastBrowserQaStatus ?? "not run";
+    return {
+      error: `Refusing to package Electron artifact: browser_qa_gate status is ${qaStatus}.`,
+      instruction:
+        `[gate] Electron packaging requires a passing browser_qa_gate; current status is ${qaStatus}. ` +
+        `Finish the implementation, fix checks, run browser_qa_gate, and retry packaging automatically.`,
+    };
+  }
+
+  return null;
+}
+
 type Artifact = {
   path: string;
   sizeBytes: number;
@@ -1009,6 +1047,21 @@ After this tool creates native-download-site/, use deploy_preview with provider 
         args.target === "auto" || !args.target
           ? await inferTarget(ctx.appPath)
           : args.target;
+
+      const packagingGateFailure = getNativePackagingGateFailure({
+        target,
+        lastBrowserQaStatus: ctx.runState.lastBrowserQaStatus,
+        unresolvedCommandFailure: ctx.runState.unresolvedCommandFailure,
+      });
+      if (packagingGateFailure) {
+        ctx.appendUserMessage([
+          {
+            type: "text",
+            text: packagingGateFailure.instruction,
+          },
+        ]);
+        throw new Error(packagingGateFailure.error);
+      }
 
       if (target === "android_apk") {
         // Reject when the Expo project was scaffolded but app/index.tsx was

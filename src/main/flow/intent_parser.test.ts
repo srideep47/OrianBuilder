@@ -3,6 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // Mocks
 
 const generateTextMock = vi.fn();
+const getModelClientMock = vi.fn(async (..._args: unknown[]) => ({
+  modelClient: { model: {}, builtinProviderId: undefined },
+}));
 vi.mock("ai", () => ({
   generateText: (...args: unknown[]) => generateTextMock(...args),
 }));
@@ -12,9 +15,7 @@ vi.mock("@/main/settings", () => ({
   }),
 }));
 vi.mock("@/ipc/utils/get_model_client", () => ({
-  getModelClient: vi.fn(async () => ({
-    modelClient: { model: {}, builtinProviderId: undefined },
-  })),
+  getModelClient: (...args: unknown[]) => getModelClientMock(...args),
 }));
 vi.mock("@/ipc/utils/provider_options", () => ({
   getProviderOptions: () => ({}),
@@ -161,6 +162,20 @@ describe("fallbackParse", () => {
 });
 
 describe("parseIntent", () => {
+  it("routes an obvious image command without loading the coding LLM", async () => {
+    const intent = await parseIntent(
+      "Generate a cinematic hero image of a mountain sunrise",
+      12,
+    );
+
+    expect(intent.appId).toBe(12);
+    expect(intent.steps.map((step) => step.capability)).toEqual([
+      "generate_image",
+    ]);
+    expect(getModelClientMock).not.toHaveBeenCalled();
+    expect(generateTextMock).not.toHaveBeenCalled();
+  });
+
   it("uses the LLM output when it is valid JSON", async () => {
     generateTextMock.mockResolvedValue({
       text: JSON.stringify({

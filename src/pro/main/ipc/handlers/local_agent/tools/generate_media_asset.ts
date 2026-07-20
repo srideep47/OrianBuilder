@@ -7,6 +7,17 @@ import {
   OrianBuilderErrorKind,
 } from "@/errors/orianbuilder_error";
 import { ORIANBUILDER_MEDIA_DIR_NAME } from "@/ipc/utils/media_path_utils";
+import { getCachedHardwareProfile } from "@/main/hardware/detect";
+import {
+  applySelectionToProfile,
+  modelConfigForAsset,
+  selectProfileForVram,
+} from "@/main/flow/model_profiles";
+import { getModelGate } from "@/main/flow/model_gate";
+import { configureModelGateHooks } from "@/main/flow/pipeline_wiring";
+import { dispatchMediaGeneration } from "@/main/ipc/utils/media_dispatcher";
+import { readSettings } from "@/main/settings";
+import { resolveSelection } from "@/shared/orion_media_catalog";
 import {
   AgentContext,
   escapeXmlAttr,
@@ -164,6 +175,54 @@ function sanitizePromptForFileName(prompt: string) {
   );
 }
 
+async function generateThroughOrionRuntime(input: {
+  kind: GenerateMediaAssetArgs["kind"];
+  prompt: string;
+  appPath: string;
+}): Promise<{ relativePath: string; mimeType: string }> {
+  const assetType = input.kind === "audio" ? "speech" : input.kind;
+  const hardware = await getCachedHardwareProfile();
+  const settings = readSettings();
+  const profile = applySelectionToProfile(
+    selectProfileForVram(hardware?.primaryGpu?.vramMb ?? 0),
+    resolveSelection(settings.orionMediaModels),
+  );
+  const stage = modelConfigForAsset(profile, assetType);
+  const mediaDir = path.join(input.appPath, ORIANBUILDER_MEDIA_DIR_NAME);
+  await fs.mkdir(mediaDir, { recursive: true });
+  const extension = DEFAULT_EXTENSION[input.kind];
+  const fileName = `generated-${input.kind}-${sanitizePromptForFileName(input.prompt)}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}${extension}`;
+  const outputPath = path.join(mediaDir, fileName);
+
+  configureModelGateHooks();
+  const result = await getModelGate().with(
+    {
+      kind: assetType,
+      modelId: stage.modelId,
+      vramMb: stage.vramMb,
+    },
+    () =>
+      dispatchMediaGeneration({
+        modelType: input.kind,
+        prompt: input.prompt,
+        outputPath,
+        modelId: stage.modelId,
+        options: stage.defaultSettings,
+      }),
+  );
+
+  if (!result.success || result.error?.toLowerCase().includes("placeholder")) {
+    throw new OrianBuilderError(
+      result.error ?? `Orion could not generate the ${input.kind} asset.`,
+      OrianBuilderErrorKind.External,
+    );
+  }
+  return {
+    relativePath: path.join(ORIANBUILDER_MEDIA_DIR_NAME, fileName),
+    mimeType: DEFAULT_MIME[input.kind],
+  };
+}
+
 async function fetchWithTimeout(
   url: string,
   init: RequestInit,
@@ -246,7 +305,7 @@ export const generateMediaAssetTool: ToolDefinition<GenerateMediaAssetArgs> = {
   name: "generate_media_asset",
   description: `Generate image, audio, or video assets through a configurable local media backend and save the result to the app's .orianbuilder/media directory.
 
-Use this when the app needs durable generated media beyond a single image: audio clips, short videos, or image assets from a local media pipeline. The default backend is http://localhost:8000 and should expose POST /generate/image, /generate/audio, and /generate/video endpoints that return either a media URL or a base64 payload.`,
+Use this when the app needs durable generated media beyond a single image: audio clips, short videos, or image assets. The default uses Orion's plan-aware single-resident runtime and the user's selected local model. A custom backend URL may expose POST /generate/image, /generate/audio, and /generate/video endpoints that return a media URL or base64 payload.`,
   inputSchema: generateMediaAssetSchema,
   defaultConsent: "always",
   modifiesState: true,
@@ -265,6 +324,19 @@ Use this when the app needs durable generated media beyond a single image: audio
     ctx.onXmlStream(
       `<orianbuilder-media-generation kind="${escapeXmlAttr(args.kind)}" prompt="${escapeXmlAttr(args.prompt)}" provider="${escapeXmlAttr(backendUrl)}">Generating ${escapeXmlContent(args.kind)}...`,
     );
+
+    if (backendUrl.replace(/\/+$/, "") === DEFAULT_MEDIA_BACKEND_URL) {
+      const saved = await generateThroughOrionRuntime({
+        kind: args.kind,
+        prompt: args.prompt,
+        appPath: ctx.appPath,
+      });
+      const summary = `${args.kind} generated and saved to ${saved.relativePath}`;
+      ctx.onXmlComplete(
+        `<orianbuilder-media-generation kind="${escapeXmlAttr(args.kind)}" prompt="${escapeXmlAttr(args.prompt)}" provider="orion-runtime" path="${escapeXmlAttr(saved.relativePath)}" mime-type="${escapeXmlAttr(saved.mimeType)}">${escapeXmlContent(summary)}</orianbuilder-media-generation>`,
+      );
+      return summary;
+    }
 
     const endpoint = `${backendUrl.replace(/\/+$/, "")}/generate/${args.kind}`;
     let response: Response;

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
 import {
   Bot,
+  Activity,
+  AlertTriangle,
   BellRing,
   Camera,
   CheckCircle2,
@@ -32,7 +34,10 @@ import {
 
 import {
   activeMissionByChatIdAtom,
+  agentProgressByChatIdAtom,
+  agentTodosByChatIdAtom,
   chatInputValueAtom,
+  isStreamingByIdAtom,
   queuePausedByIdAtom,
   streamCompletedSuccessfullyByIdAtom,
 } from "@/atoms/chatAtoms";
@@ -43,6 +48,7 @@ import { MissionWorkerDashboard } from "@/components/chat/MissionWorkerDashboard
 import { ToolCapabilitiesPanel } from "@/components/chat/ToolCapabilitiesPanel";
 import { useMissions } from "@/hooks/useMissions";
 import { useSettings } from "@/hooks/useSettings";
+import { useStreamChat } from "@/hooks/useStreamChat";
 import { cn } from "@/lib/utils";
 import {
   buildWorkerIntegrationPlan,
@@ -59,7 +65,10 @@ export function MissionControl({ chatId }: { chatId?: number }) {
   const [showWorkerReview, setShowWorkerReview] = useState(false);
   const [showToolCapabilities, setShowToolCapabilities] = useState(false);
   const appId = useAtomValue(selectedAppIdAtom);
-  const inputValue = useAtomValue(chatInputValueAtom);
+  const [inputValue, setChatInputValue] = useAtom(chatInputValueAtom);
+  const agentTodosByChatId = useAtomValue(agentTodosByChatIdAtom);
+  const agentProgressByChatId = useAtomValue(agentProgressByChatIdAtom);
+  const isStreamingById = useAtomValue(isStreamingByIdAtom);
   const [activeMissionByChatId, setActiveMissionByChatId] = useAtom(
     activeMissionByChatIdAtom,
   );
@@ -68,6 +77,7 @@ export function MissionControl({ chatId }: { chatId?: number }) {
     streamCompletedSuccessfullyByIdAtom,
   );
   const { settings } = useSettings();
+  const { streamMessage } = useStreamChat({ hasChatId: false });
   const activeMissionId = chatId
     ? (activeMissionByChatId.get(chatId) ?? null)
     : null;
@@ -118,9 +128,34 @@ export function MissionControl({ chatId }: { chatId?: number }) {
     [permissionRequests],
   );
   const goal = inputValue.trim() || "Autonomous development mission";
-  const completedTaskCount = tasks.filter(
+  const liveTodos = chatId ? (agentTodosByChatId.get(chatId) ?? []) : [];
+  const displayTasks = useMemo(
+    () =>
+      liveTodos.length > 0
+        ? liveTodos.map((todo) => ({
+            id: `todo-${todo.id}`,
+            title: todo.content,
+            status: todo.status,
+          }))
+        : tasks.map((task) => ({
+            id: `mission-${task.id}`,
+            title: task.title,
+            status: task.status,
+          })),
+    [liveTodos, tasks],
+  );
+  const completedTaskCount = displayTasks.filter(
     (task) => task.status === "completed",
   ).length;
+  const activeTask = displayTasks.find((task) => task.status === "in_progress");
+  const progressEntries = useMemo(() => {
+    if (!chatId) return [];
+    return Array.from(agentProgressByChatId.get(chatId)?.values() ?? []);
+  }, [agentProgressByChatId, chatId]);
+  const isStreaming = chatId ? (isStreamingById.get(chatId) ?? false) : false;
+  const activeProgress = isStreaming
+    ? progressEntries.find((entry) => entry.status === "in-progress")
+    : undefined;
   const verificationChecks = useMemo(
     () =>
       [
@@ -167,6 +202,19 @@ export function MissionControl({ chatId }: { chatId?: number }) {
       }),
     [events],
   );
+  const failedChecks = useMemo(
+    () =>
+      [...verificationChecks, ...visualChecks].filter(
+        (check) => check.status === "failed",
+      ),
+    [verificationChecks, visualChecks],
+  );
+  const passedVerificationCount = verificationChecks.filter(
+    (check) => check.status === "passed",
+  ).length;
+  const passedVisualCount = visualChecks.filter(
+    (check) => check.status === "passed",
+  ).length;
 
   const screenshotArtifacts = useMemo(
     () =>
@@ -327,11 +375,7 @@ export function MissionControl({ chatId }: { chatId?: number }) {
   }, [events, postCreateRequiredChecks]);
 
   useEffect(() => {
-    if (
-      !chatId ||
-      activeMissionId !== null ||
-      latestMissionForChat?.status !== "running"
-    ) {
+    if (!chatId || activeMissionId !== null || !latestMissionForChat) {
       return;
     }
     setActiveMissionByChatId((prev) => {
@@ -341,12 +385,51 @@ export function MissionControl({ chatId }: { chatId?: number }) {
     });
   }, [activeMissionId, chatId, latestMissionForChat, setActiveMissionByChatId]);
 
+  useEffect(() => {
+    setShowTimeline(false);
+    setShowWorkerReview(false);
+    setShowToolCapabilities(false);
+  }, [chatId, visibleMission?.id]);
+
   const setActiveMission = (missionId: number) => {
     if (!chatId) return;
     setActiveMissionByChatId((prev) => {
       const next = new Map(prev);
       next.set(chatId, missionId);
       return next;
+    });
+  };
+
+  const startMissionAgent = async (mission: {
+    id: number;
+    goal: string;
+    status: string;
+  }) => {
+    if (!chatId || !mission.goal.trim() || isStreaming) return;
+
+    setActiveMission(mission.id);
+    // MissionControl used to change this status to "running" without ever
+    // dispatching the chat agent. Queue it first; AgentStreamRunner changes it
+    // to running only after it has created the durable mission-run record.
+    if (mission.status !== "queued") {
+      await updateMissionStatus({ missionId: mission.id, status: "queued" });
+    }
+    setQueuePausedById((prev) => {
+      const next = new Map(prev);
+      next.set(chatId, false);
+      return next;
+    });
+    setStreamCompletedSuccessfullyById((prev) => {
+      const next = new Map(prev);
+      next.set(chatId, false);
+      return next;
+    });
+
+    await streamMessage({
+      prompt: mission.goal,
+      chatId,
+      requestedChatMode: "local-agent",
+      missionId: mission.id,
     });
   };
 
@@ -360,28 +443,13 @@ export function MissionControl({ chatId }: { chatId?: number }) {
       autonomyProfile:
         settings?.defaultMissionAutonomyProfile ?? "full-autopilot-sandbox",
     });
-    setActiveMission(created.id);
-    await updateMissionStatus({ missionId: created.id, status: "running" });
+    await startMissionAgent(created);
+    setChatInputValue("");
   };
 
   const handleResumeMission = async () => {
     if (!visibleMission) return;
-    setActiveMission(visibleMission.id);
-    await updateMissionStatus({
-      missionId: visibleMission.id,
-      status: "running",
-    });
-    if (!chatId) return;
-    setQueuePausedById((prev) => {
-      const next = new Map(prev);
-      next.set(chatId, false);
-      return next;
-    });
-    setStreamCompletedSuccessfullyById((prev) => {
-      const next = new Map(prev);
-      next.set(chatId, true);
-      return next;
-    });
+    await startMissionAgent(visibleMission);
   };
 
   const handlePauseMission = async () => {
@@ -567,16 +635,210 @@ export function MissionControl({ chatId }: { chatId?: number }) {
   const isAutoAdvanceMission =
     visibleMission.autonomyProfile === "trusted-workspace" ||
     visibleMission.autonomyProfile === "full-autopilot-sandbox";
+  const taskProgressPercent =
+    displayTasks.length > 0
+      ? Math.round((completedTaskCount / displayTasks.length) * 100)
+      : 0;
+  const overallState = pendingPermissionRequests.length
+    ? "waiting"
+    : visibleMission.status === "failed"
+      ? "failed"
+      : visibleMission.status === "cancelled"
+        ? "cancelled"
+        : isStreaming || activeProgress
+          ? "working"
+          : failedChecks.length > 0
+            ? "attention"
+            : visibleMission.status === "completed"
+              ? "completed"
+              : "ready";
+  const overallLabel = {
+    waiting: "Waiting for approval",
+    failed: "Failed",
+    cancelled: "Cancelled",
+    working: "Working",
+    attention: "Needs attention",
+    completed: "Completed",
+    ready: isAutoAdvanceMission ? "Ready to continue" : "Ready",
+  }[overallState];
+  const currentActivity =
+    activeProgress?.label ??
+    activeTask?.title ??
+    (failedChecks.length > 0
+      ? `Blocked by ${failedChecks.map((check) => check.label).join(", ")}`
+      : (latestEvent?.summary ?? "Waiting for the next step"));
 
   return (
     <div
       className={cn(
-        "rounded-3xl border border-border/60 px-3 py-2 shadow-[0_4px_16px_-8px_rgba(0,0,0,0.4)]",
-        isActive ? "bg-primary/10" : "bg-muted/30",
+        "rounded-2xl border px-3 py-2.5 shadow-[0_8px_24px_-18px_rgba(0,0,0,0.6)] backdrop-blur-sm",
+        isActive
+          ? "border-primary/20 bg-card/80"
+          : "border-border/60 bg-muted/30",
       )}
     >
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-start gap-2.5">
+          <div
+            className={cn(
+              "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border",
+              overallState === "working" &&
+                "border-primary/30 bg-primary/15 text-primary",
+              (overallState === "attention" || overallState === "waiting") &&
+                "border-amber-500/30 bg-amber-500/10 text-amber-500",
+              (overallState === "failed" || overallState === "cancelled") &&
+                "border-red-500/30 bg-red-500/10 text-red-500",
+              overallState === "completed" &&
+                "border-emerald-500/30 bg-emerald-500/10 text-emerald-500",
+              overallState === "ready" &&
+                "border-border bg-muted text-muted-foreground",
+            )}
+          >
+            {overallState === "working" ? (
+              <Activity className="size-3.5 animate-pulse" />
+            ) : overallState === "attention" || overallState === "waiting" ? (
+              <AlertTriangle className="size-3.5" />
+            ) : overallState === "failed" || overallState === "cancelled" ? (
+              <XCircle className="size-3.5" />
+            ) : overallState === "completed" ? (
+              <CheckCircle2 className="size-3.5" />
+            ) : (
+              <Bot className="size-3.5" />
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-sm font-semibold">
+                {visibleMission.title}
+              </span>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "h-5 shrink-0 px-2 text-[10px]",
+                  overallState === "working" &&
+                    "border-primary/30 bg-primary/10 text-primary",
+                  (overallState === "attention" ||
+                    overallState === "waiting") &&
+                    "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-300",
+                  overallState === "failed" &&
+                    "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-300",
+                  overallState === "completed" &&
+                    "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
+                )}
+              >
+                {overallLabel}
+              </Badge>
+            </div>
+            <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span className="shrink-0">
+                {isAutoAdvanceMission ? "Auto" : "Manual"}
+              </span>
+              <span aria-hidden="true">·</span>
+              <span className="truncate">
+                {getAutonomyProfileLabel(visibleMission.autonomyProfile)}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-0.5">
+          {visibleMission.status === "running" ? (
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-7"
+              onClick={handlePauseMission}
+              title="Pause mission"
+            >
+              <CirclePause className="size-3.5" />
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-7"
+              onClick={handleResumeMission}
+              title="Resume mission"
+            >
+              <Play className="size-3.5" />
+            </Button>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1 px-2 text-[11px]"
+            onClick={() => setShowTimeline((value) => !value)}
+            aria-expanded={showTimeline}
+          >
+            Details
+            {showTimeline ? (
+              <ChevronUp className="size-3.5" />
+            ) : (
+              <ChevronDown className="size-3.5" />
+            )}
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-2 rounded-2xl border border-border/50 bg-background/20 px-2.5 py-2">
+        <div className="flex min-w-0 items-center justify-between gap-3 text-xs">
+          <span className="truncate text-foreground/90">{currentActivity}</span>
+          {displayTasks.length > 0 && (
+            <span className="shrink-0 tabular-nums text-muted-foreground">
+              {completedTaskCount}/{displayTasks.length}
+            </span>
+          )}
+        </div>
+        {displayTasks.length > 0 && (
+          <div
+            className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted"
+            role="progressbar"
+            aria-label="Mission task progress"
+            aria-valuemin={0}
+            aria-valuemax={displayTasks.length}
+            aria-valuenow={completedTaskCount}
+          >
+            <div
+              className={cn(
+                "h-full rounded-full transition-[width] duration-300",
+                failedChecks.length > 0 ? "bg-amber-500" : "bg-primary",
+              )}
+              style={{ width: `${taskProgressPercent}%` }}
+            />
+          </div>
+        )}
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+          <span>
+            Build {passedVerificationCount}/{verificationChecks.length}
+          </span>
+          <span>
+            UI {passedVisualCount}/{visualChecks.length}
+          </span>
+          {artifacts.length > 0 && (
+            <span>
+              {artifacts.length} artifact{artifacts.length === 1 ? "" : "s"}
+            </span>
+          )}
+          {failedChecks.length > 0 && (
+            <span className="flex min-w-0 items-center gap-1 text-amber-600 dark:text-amber-300">
+              <AlertTriangle className="size-3 shrink-0" />
+              <span className="truncate">
+                {failedChecks.map((check) => check.label).join(", ")} failed
+              </span>
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div
+        className={cn(
+          "mt-2 items-center justify-end gap-3 border-t border-border/50 pt-2",
+          showTimeline ? "flex" : "hidden",
+        )}
+      >
+        <div className="hidden">
           <Bot className="size-4 text-primary" />
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-2">
@@ -793,303 +1055,314 @@ export function MissionControl({ chatId }: { chatId?: number }) {
           </Button>
         </div>
       </div>
-      <div className="mt-2 grid grid-cols-5 gap-1.5">
-        {verificationChecks.map((check) => (
-          <div
-            key={check.key}
-            className={cn(
-              "flex min-w-0 items-center justify-center gap-1 rounded-3xl border px-1.5 py-1 text-xs",
-              check.status === "passed" &&
-                "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-              check.status === "failed" &&
-                "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
-              !check.status && "text-muted-foreground",
-            )}
-            title={check.event?.summary ?? `${check.label} not verified yet`}
-          >
-            {check.status === "passed" ? (
-              <CheckCircle2 className="size-3.5 shrink-0" />
-            ) : check.status === "failed" ? (
-              <XCircle className="size-3.5 shrink-0" />
-            ) : check.key === "install" ? (
-              <PackageCheck className="size-3.5 shrink-0" />
-            ) : (
-              <Clock3 className="size-3.5 shrink-0" />
-            )}
-            <span className="truncate">{check.label}</span>
+      {showTimeline && (
+        <div className="mt-2">
+          <div className="grid grid-cols-5 gap-1.5">
+            {verificationChecks.map((check) => (
+              <div
+                key={check.key}
+                className={cn(
+                  "flex min-w-0 items-center justify-center gap-1 rounded-3xl border px-1.5 py-1 text-xs",
+                  check.status === "passed" &&
+                    "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+                  check.status === "failed" &&
+                    "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
+                  !check.status && "text-muted-foreground",
+                )}
+                title={
+                  check.event?.summary ?? `${check.label} not verified yet`
+                }
+              >
+                {check.status === "passed" ? (
+                  <CheckCircle2 className="size-3.5 shrink-0" />
+                ) : check.status === "failed" ? (
+                  <XCircle className="size-3.5 shrink-0" />
+                ) : check.key === "install" ? (
+                  <PackageCheck className="size-3.5 shrink-0" />
+                ) : (
+                  <Clock3 className="size-3.5 shrink-0" />
+                )}
+                <span className="truncate">{check.label}</span>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <div className="mt-1.5 grid grid-cols-4 gap-1.5">
-        {visualChecks.map((check) => {
-          const Icon = check.icon;
-          return (
-            <div
-              key={check.key}
-              className={cn(
-                "flex min-w-0 items-center justify-center gap-1 rounded-3xl border px-1.5 py-1 text-xs",
-                check.status === "passed" &&
-                  "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-                check.status === "failed" &&
-                  "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
-                !check.status && "text-muted-foreground",
+          <div className="mt-1.5 grid grid-cols-4 gap-1.5">
+            {visualChecks.map((check) => {
+              const Icon = check.icon;
+              return (
+                <div
+                  key={check.key}
+                  className={cn(
+                    "flex min-w-0 items-center justify-center gap-1 rounded-3xl border px-1.5 py-1 text-xs",
+                    check.status === "passed" &&
+                      "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+                    check.status === "failed" &&
+                      "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
+                    !check.status && "text-muted-foreground",
+                  )}
+                  title={
+                    check.event?.summary ?? `${check.label} not checked yet`
+                  }
+                >
+                  <Icon className="size-3.5 shrink-0" />
+                  <span className="truncate">{check.label}</span>
+                </div>
+              );
+            })}
+          </div>
+          {(artifacts.length > 0 || screenshotArtifacts.length > 0) && (
+            <div className="mt-1.5 space-y-1 text-xs text-muted-foreground">
+              <div className="flex min-w-0 items-center gap-2">
+                <ImageIcon className="size-3.5 shrink-0" />
+                <span className="truncate">
+                  {artifacts.length} artifact{artifacts.length === 1 ? "" : "s"}
+                  {screenshotArtifacts.length > 0
+                    ? ` - ${screenshotArtifacts.length} screenshot${
+                        screenshotArtifacts.length === 1 ? "" : "s"
+                      }`
+                    : ""}
+                  {mediaArtifacts.length > 0
+                    ? ` - ${mediaArtifacts.length} media`
+                    : ""}
+                  {deploymentArtifacts.length > 0
+                    ? ` - ${deploymentArtifacts.length} deployment${
+                        deploymentArtifacts.length === 1 ? "" : "s"
+                      }`
+                    : ""}
+                </span>
+              </div>
+              {latestArtifacts.length > 0 && (
+                <div className="grid gap-1 sm:grid-cols-3">
+                  {latestArtifacts.map((artifact) => {
+                    const Icon = getArtifactIcon(artifact.artifactType);
+                    const provider = getMissionEventMetadataString(
+                      artifact.metadata,
+                      "provider",
+                    );
+                    const status = getMissionEventMetadataString(
+                      artifact.metadata,
+                      "status",
+                    );
+                    const state = getMissionEventMetadataString(
+                      artifact.metadata,
+                      "state",
+                    );
+                    return (
+                      <div
+                        key={artifact.id}
+                        className="flex min-w-0 items-start gap-1.5 rounded border bg-transparent/60 px-2 py-1"
+                        title={artifact.body ?? artifact.uri ?? artifact.title}
+                      >
+                        <Icon className="mt-0.5 size-3.5 shrink-0" />
+                        <div className="min-w-0">
+                          <div className="truncate text-foreground">
+                            {artifact.title}
+                          </div>
+                          <div className="truncate">
+                            {[provider, status, state, artifact.uri]
+                              .filter(Boolean)
+                              .join(" - ")}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
-              title={check.event?.summary ?? `${check.label} not checked yet`}
+            </div>
+          )}
+          {previewUrl && (
+            <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+              <Play className="size-3.5 shrink-0" />
+              <span className="truncate">{previewUrl}</span>
+            </div>
+          )}
+          {deploymentArtifacts[0] && (
+            <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+              <Rocket className="size-3.5 shrink-0" />
+              <span className="truncate">
+                Latest deployment:{" "}
+                {[
+                  getMissionEventMetadataString(
+                    deploymentArtifacts[0].metadata,
+                    "provider",
+                  ),
+                  getMissionEventMetadataString(
+                    deploymentArtifacts[0].metadata,
+                    "status",
+                  ),
+                  getMissionEventMetadataString(
+                    deploymentArtifacts[0].metadata,
+                    "state",
+                  ),
+                  deploymentArtifacts[0].uri,
+                ]
+                  .filter(Boolean)
+                  .join(" - ")}
+              </span>
+            </div>
+          )}
+          {interrupts.length > 0 && (
+            <div
+              className={cn(
+                "mt-1 flex min-w-0 items-center gap-2 text-xs",
+                pendingInterrupts.length > 0
+                  ? "text-amber-700 dark:text-amber-300"
+                  : "text-muted-foreground",
+              )}
             >
-              <Icon className="size-3.5 shrink-0" />
-              <span className="truncate">{check.label}</span>
-            </div>
-          );
-        })}
-      </div>
-      {(artifacts.length > 0 || screenshotArtifacts.length > 0) && (
-        <div className="mt-1.5 space-y-1 text-xs text-muted-foreground">
-          <div className="flex min-w-0 items-center gap-2">
-            <ImageIcon className="size-3.5 shrink-0" />
-            <span className="truncate">
-              {artifacts.length} artifact{artifacts.length === 1 ? "" : "s"}
-              {screenshotArtifacts.length > 0
-                ? ` - ${screenshotArtifacts.length} screenshot${
-                    screenshotArtifacts.length === 1 ? "" : "s"
-                  }`
-                : ""}
-              {mediaArtifacts.length > 0
-                ? ` - ${mediaArtifacts.length} media`
-                : ""}
-              {deploymentArtifacts.length > 0
-                ? ` - ${deploymentArtifacts.length} deployment${
-                    deploymentArtifacts.length === 1 ? "" : "s"
-                  }`
-                : ""}
-            </span>
-          </div>
-          {latestArtifacts.length > 0 && (
-            <div className="grid gap-1 sm:grid-cols-3">
-              {latestArtifacts.map((artifact) => {
-                const Icon = getArtifactIcon(artifact.artifactType);
-                const provider = getMissionEventMetadataString(
-                  artifact.metadata,
-                  "provider",
-                );
-                const status = getMissionEventMetadataString(
-                  artifact.metadata,
-                  "status",
-                );
-                const state = getMissionEventMetadataString(
-                  artifact.metadata,
-                  "state",
-                );
-                return (
-                  <div
-                    key={artifact.id}
-                    className="flex min-w-0 items-start gap-1.5 rounded border bg-transparent/60 px-2 py-1"
-                    title={artifact.body ?? artifact.uri ?? artifact.title}
-                  >
-                    <Icon className="mt-0.5 size-3.5 shrink-0" />
-                    <div className="min-w-0">
-                      <div className="truncate text-foreground">
-                        {artifact.title}
-                      </div>
-                      <div className="truncate">
-                        {[provider, status, state, artifact.uri]
-                          .filter(Boolean)
-                          .join(" - ")}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              <BellRing className="size-3.5 shrink-0" />
+              <span className="truncate">
+                {pendingInterrupts.length > 0
+                  ? `${pendingInterrupts.length} pending interrupt${
+                      pendingInterrupts.length === 1 ? "" : "s"
+                    }`
+                  : `${interrupts.length} interrupt${
+                      interrupts.length === 1 ? "" : "s"
+                    } handled`}
+                {latestInterrupt ? `: ${latestInterrupt.title}` : ""}
+              </span>
             </div>
           )}
-        </div>
-      )}
-      {previewUrl && (
-        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          <Play className="size-3.5 shrink-0" />
-          <span className="truncate">{previewUrl}</span>
-        </div>
-      )}
-      {deploymentArtifacts[0] && (
-        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          <Rocket className="size-3.5 shrink-0" />
-          <span className="truncate">
-            Latest deployment:{" "}
-            {[
-              getMissionEventMetadataString(
-                deploymentArtifacts[0].metadata,
-                "provider",
-              ),
-              getMissionEventMetadataString(
-                deploymentArtifacts[0].metadata,
-                "status",
-              ),
-              getMissionEventMetadataString(
-                deploymentArtifacts[0].metadata,
-                "state",
-              ),
-              deploymentArtifacts[0].uri,
-            ]
-              .filter(Boolean)
-              .join(" - ")}
-          </span>
-        </div>
-      )}
-      {interrupts.length > 0 && (
-        <div
-          className={cn(
-            "mt-1 flex min-w-0 items-center gap-2 text-xs",
-            pendingInterrupts.length > 0
-              ? "text-amber-700 dark:text-amber-300"
-              : "text-muted-foreground",
+          {pendingPermissionRequests.length > 0 && (
+            <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
+              <ShieldAlert className="size-3.5 shrink-0" />
+              <span className="truncate">
+                {pendingPermissionRequests.length} permission request
+                {pendingPermissionRequests.length === 1 ? "" : "s"} awaiting
+                approval: {pendingPermissionRequests[0].action}
+              </span>
+            </div>
           )}
-        >
-          <BellRing className="size-3.5 shrink-0" />
-          <span className="truncate">
-            {pendingInterrupts.length > 0
-              ? `${pendingInterrupts.length} pending interrupt${
-                  pendingInterrupts.length === 1 ? "" : "s"
-                }`
-              : `${interrupts.length} interrupt${
-                  interrupts.length === 1 ? "" : "s"
-                } handled`}
-            {latestInterrupt ? `: ${latestInterrupt.title}` : ""}
-          </span>
-        </div>
-      )}
-      {pendingPermissionRequests.length > 0 && (
-        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
-          <ShieldAlert className="size-3.5 shrink-0" />
-          <span className="truncate">
-            {pendingPermissionRequests.length} permission request
-            {pendingPermissionRequests.length === 1 ? "" : "s"} awaiting
-            approval: {pendingPermissionRequests[0].action}
-          </span>
-        </div>
-      )}
-      {memories.length > 0 && (
-        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          <ShieldCheck className="size-3.5 shrink-0" />
-          <span className="truncate">
-            {memories.length} memory record{memories.length === 1 ? "" : "s"}:
-            {` ${memories[0].title}`}
-          </span>
-        </div>
-      )}
-      {workers.length > 0 && (
-        <div className="mt-1.5 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          <UsersRound className="size-3.5 shrink-0" />
-          <span className="truncate">
-            {workers.length} worker{workers.length === 1 ? "" : "s"}:{" "}
-            {workers
-              .slice(0, 4)
-              .map((worker) => `${worker.workerKey} ${worker.status}`)
-              .join(", ")}
-            {workers.length > 4 ? ", ..." : ""}
-          </span>
-        </div>
-      )}
-      {unpreparedWorkers.length > 0 && (
-        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          <GitBranch className="size-3.5 shrink-0" />
-          <span className="truncate">
-            {unpreparedWorkers.length} isolated workspace
-            {unpreparedWorkers.length === 1 ? "" : "s"} need preparation
-          </span>
-        </div>
-      )}
-      {dispatchableWorkers.length > 0 && (
-        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          <Send className="size-3.5 shrink-0" />
-          <span className="truncate">
-            {dispatchableWorkers.length} worker
-            {dispatchableWorkers.length === 1 ? "" : "s"} ready to dispatch:{" "}
-            {dispatchableWorkers.map((worker) => worker.workerKey).join(", ")}
-          </span>
-        </div>
-      )}
-      {retryableWorkers.length > 0 && (
-        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
-          <RotateCcw className="size-3.5 shrink-0" />
-          <span className="truncate">
-            {retryableWorkers.length} failed/stale worker
-            {retryableWorkers.length === 1 ? "" : "s"} can be retried
-          </span>
-        </div>
-      )}
-      {workerReports.length > 0 && (
-        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          <CheckCircle2 className="size-3.5 shrink-0" />
-          <span className="truncate">
-            Latest worker report: {workerReports[0].worker.workerKey} -{" "}
-            {workerReports[0].report?.summary}
-          </span>
-        </div>
-      )}
-      {workerIntegrationPlan.pendingWorkerKeys.length > 0 && (
-        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          <PackageCheck className="size-3.5 shrink-0" />
-          <span className="truncate">
-            {workerIntegrationPlan.pendingWorkerKeys.length} worker report
-            {workerIntegrationPlan.pendingWorkerKeys.length === 1
-              ? ""
-              : "s"}{" "}
-            pending integration review
-          </span>
-        </div>
-      )}
-      {acceptedUnappliedWorkers.length > 0 && (
-        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          <PackageCheck className="size-3.5 shrink-0" />
-          <span className="truncate">
-            {acceptedUnappliedWorkers.length} accepted worker output
-            {acceptedUnappliedWorkers.length === 1 ? "" : "s"} ready to apply
-          </span>
-        </div>
-      )}
-      {cleanupReadyWorkers.length > 0 && (
-        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          <Trash2 className="size-3.5 shrink-0" />
-          <span className="truncate">
-            {cleanupReadyWorkers.length} applied worker workspace
-            {cleanupReadyWorkers.length === 1 ? "" : "s"} ready for cleanup
-          </span>
-        </div>
-      )}
-      {workerIntegrationPlan.conflicts.length > 0 && (
-        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
-          <XCircle className="size-3.5 shrink-0" />
-          <span className="truncate">
-            Worker output conflict:{" "}
-            {workerIntegrationPlan.conflicts[0].firstWorkerKey} /{" "}
-            {workerIntegrationPlan.conflicts[0].secondWorkerKey}
-          </span>
-        </div>
-      )}
-      {workerConflicts.length > 0 && (
-        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
-          <XCircle className="size-3.5 shrink-0" />
-          <span className="truncate">
-            Worker scope conflict: {workerConflicts[0].firstWorkerKey} /{" "}
-            {workerConflicts[0].secondWorkerKey}
-          </span>
-        </div>
-      )}
-      {latestCheckpoint && (
-        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          <PackageCheck className="size-3.5 shrink-0" />
-          <span className="truncate">
-            Rollback checkpoint available: {latestCheckpoint.summary}
-          </span>
-        </div>
-      )}
-      {postCreateRequiredChecks.length > 0 && (
-        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          <Target className="size-3.5 shrink-0" />
-          <span className="truncate">
-            Post-create gate {postCreateCompletedChecks}/
-            {postCreateRequiredChecks.length}:{" "}
-            {postCreateRequiredChecks.join(", ")}
-          </span>
+          {memories.length > 0 && (
+            <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+              <ShieldCheck className="size-3.5 shrink-0" />
+              <span className="truncate">
+                {memories.length} memory record
+                {memories.length === 1 ? "" : "s"}:{` ${memories[0].title}`}
+              </span>
+            </div>
+          )}
+          {workers.length > 0 && (
+            <div className="mt-1.5 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+              <UsersRound className="size-3.5 shrink-0" />
+              <span className="truncate">
+                {workers.length} worker{workers.length === 1 ? "" : "s"}:{" "}
+                {workers
+                  .slice(0, 4)
+                  .map((worker) => `${worker.workerKey} ${worker.status}`)
+                  .join(", ")}
+                {workers.length > 4 ? ", ..." : ""}
+              </span>
+            </div>
+          )}
+          {unpreparedWorkers.length > 0 && (
+            <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+              <GitBranch className="size-3.5 shrink-0" />
+              <span className="truncate">
+                {unpreparedWorkers.length} isolated workspace
+                {unpreparedWorkers.length === 1 ? "" : "s"} need preparation
+              </span>
+            </div>
+          )}
+          {dispatchableWorkers.length > 0 && (
+            <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+              <Send className="size-3.5 shrink-0" />
+              <span className="truncate">
+                {dispatchableWorkers.length} worker
+                {dispatchableWorkers.length === 1 ? "" : "s"} ready to dispatch:{" "}
+                {dispatchableWorkers
+                  .map((worker) => worker.workerKey)
+                  .join(", ")}
+              </span>
+            </div>
+          )}
+          {retryableWorkers.length > 0 && (
+            <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
+              <RotateCcw className="size-3.5 shrink-0" />
+              <span className="truncate">
+                {retryableWorkers.length} failed/stale worker
+                {retryableWorkers.length === 1 ? "" : "s"} can be retried
+              </span>
+            </div>
+          )}
+          {workerReports.length > 0 && (
+            <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+              <CheckCircle2 className="size-3.5 shrink-0" />
+              <span className="truncate">
+                Latest worker report: {workerReports[0].worker.workerKey} -{" "}
+                {workerReports[0].report?.summary}
+              </span>
+            </div>
+          )}
+          {workerIntegrationPlan.pendingWorkerKeys.length > 0 && (
+            <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+              <PackageCheck className="size-3.5 shrink-0" />
+              <span className="truncate">
+                {workerIntegrationPlan.pendingWorkerKeys.length} worker report
+                {workerIntegrationPlan.pendingWorkerKeys.length === 1
+                  ? ""
+                  : "s"}{" "}
+                pending integration review
+              </span>
+            </div>
+          )}
+          {acceptedUnappliedWorkers.length > 0 && (
+            <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+              <PackageCheck className="size-3.5 shrink-0" />
+              <span className="truncate">
+                {acceptedUnappliedWorkers.length} accepted worker output
+                {acceptedUnappliedWorkers.length === 1 ? "" : "s"} ready to
+                apply
+              </span>
+            </div>
+          )}
+          {cleanupReadyWorkers.length > 0 && (
+            <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+              <Trash2 className="size-3.5 shrink-0" />
+              <span className="truncate">
+                {cleanupReadyWorkers.length} applied worker workspace
+                {cleanupReadyWorkers.length === 1 ? "" : "s"} ready for cleanup
+              </span>
+            </div>
+          )}
+          {workerIntegrationPlan.conflicts.length > 0 && (
+            <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
+              <XCircle className="size-3.5 shrink-0" />
+              <span className="truncate">
+                Worker output conflict:{" "}
+                {workerIntegrationPlan.conflicts[0].firstWorkerKey} /{" "}
+                {workerIntegrationPlan.conflicts[0].secondWorkerKey}
+              </span>
+            </div>
+          )}
+          {workerConflicts.length > 0 && (
+            <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
+              <XCircle className="size-3.5 shrink-0" />
+              <span className="truncate">
+                Worker scope conflict: {workerConflicts[0].firstWorkerKey} /{" "}
+                {workerConflicts[0].secondWorkerKey}
+              </span>
+            </div>
+          )}
+          {latestCheckpoint && (
+            <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+              <PackageCheck className="size-3.5 shrink-0" />
+              <span className="truncate">
+                Rollback checkpoint available: {latestCheckpoint.summary}
+              </span>
+            </div>
+          )}
+          {postCreateRequiredChecks.length > 0 && (
+            <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+              <Target className="size-3.5 shrink-0" />
+              <span className="truncate">
+                Post-create gate {postCreateCompletedChecks}/
+                {postCreateRequiredChecks.length}:{" "}
+                {postCreateRequiredChecks.join(", ")}
+              </span>
+            </div>
+          )}
         </div>
       )}
       {showWorkerReview && workerReviewItems.length > 0 && (
@@ -1103,9 +1376,9 @@ export function MissionControl({ chatId }: { chatId?: number }) {
       {showToolCapabilities && <ToolCapabilitiesPanel />}
       {showTimeline && (
         <div className="mt-2 max-h-48 overflow-y-auto border-t pt-2">
-          {tasks.length > 0 && (
+          {displayTasks.length > 0 && (
             <div className="mb-2 space-y-1.5">
-              {tasks.map((task) => (
+              {displayTasks.map((task) => (
                 <div
                   key={task.id}
                   className="flex items-start gap-2 text-xs text-muted-foreground"

@@ -164,14 +164,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <DeepLinkProvider>
           <SidebarProvider
             defaultOpen={true}
-            style={{ "--sidebar-width": "5.5rem" } as CSSProperties}
+            style={{ "--sidebar-width": "4.75rem" } as CSSProperties}
           >
             <TitleBar />
             <AppSidebar />
             <SidebarPanel />
             <div
               id="layout-main-content-container"
-              className="liquid-glass flex h-screenish flex-1 min-w-0 overflow-hidden relative z-0 mt-[var(--app-titlebar-height)] mb-2 mr-2 rounded-[24px] border border-black/[0.06] bg-card/80 shadow-[0_24px_80px_rgba(15,23,42,0.08)] dark:border-white/[0.08] dark:bg-card/70 dark:shadow-[0_24px_80px_rgba(0,0,0,0.4)] sm:mb-3 sm:mr-3"
+              className="relative z-0 mt-[var(--app-titlebar-height)] flex h-screenish min-w-0 flex-1 overflow-hidden border-l border-t border-border/70 bg-background/78 shadow-[0_18px_70px_rgba(0,0,0,0.2)] backdrop-blur-xl"
             >
               {children}
             </div>

@@ -18,9 +18,18 @@ export class ChatActions {
   }
 
   getChatInput() {
-    return this.page.locator(
-      '[data-lexical-editor="true"][aria-placeholder^="Ask OrianBuilder to build"]',
-    );
+    return this.page
+      .locator(
+        '[data-testid="orion-command-input"], [data-lexical-editor="true"][aria-placeholder^="Ask OrianBuilder to build"]',
+      )
+      .first();
+  }
+
+  private async dismissTelemetryIfPresent() {
+    const laterButton = this.page.getByTestId("telemetry-later-button");
+    if (await laterButton.isVisible().catch(() => false)) {
+      await laterButton.click();
+    }
   }
 
   /**
@@ -88,6 +97,7 @@ export class ChatActions {
       timeout,
     }: { skipWaitForCompletion?: boolean; timeout?: number } = {},
   ) {
+    await this.dismissTelemetryIfPresent();
     // Retry fill + assertions to survive Lexical/jotai races during chat
     // switches: the per-chat input atom is keyed off selectedChatIdAtom and
     // there's a render window where the editor's onChange writes to the old
@@ -95,7 +105,9 @@ export class ChatActions {
     // the next render, so the Send button stays disabled. Re-filling once the
     // atoms have settled deterministically recovers.
     const chatInput = this.getChatInput();
-    const sendButton = this.page.getByRole("button", { name: "Send message" });
+    const sendButton = this.page
+      .getByRole("button", { name: /^(Send message|Run Orion command)$/ })
+      .first();
 
     await expect(chatInput).toBeVisible();
     await expect(async () => {
@@ -115,6 +127,21 @@ export class ChatActions {
   async selectChatMode(
     mode: "build" | "ask" | "agent" | "local-agent" | "basic-agent" | "plan",
   ) {
+    if (
+      await this.page
+        .getByTestId("orion-command-input")
+        .isVisible()
+        .catch(() => false)
+    ) {
+      await this.page
+        .getByRole("button", {
+          name: mode === "ask" ? "Chat" : "Software",
+          exact: true,
+        })
+        .click();
+      return;
+    }
+
     await this.page.getByTestId("chat-mode-selector").click();
     const mapping: Record<string, string> = {
       build: "Build Generate and edit code",

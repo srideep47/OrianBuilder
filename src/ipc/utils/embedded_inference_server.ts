@@ -25,9 +25,11 @@
 
 import http from "node:http";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { BrowserWindow } from "electron";
 import log from "electron-log";
+import { releaseMediaAiForLlm } from "./media_ai_backend";
 
 import {
   findDefaultTensorRtEngineDir,
@@ -63,6 +65,7 @@ import {
   type InferenceLogEntry,
 } from "./inference/stats_tracker";
 import { LlamaServerBackend } from "@/main/llm/llama_server_backend";
+import { resolveSafeRuntimeContextSize } from "@/main/llm/llama_server_args";
 
 export type { InferenceState, InferenceStats, InferenceLogEntry };
 
@@ -349,6 +352,11 @@ export async function loadModel(config: EmbeddedModelConfig): Promise<void> {
   emitStatusChanged();
 
   try {
+    // This is the final boundary shared by manual loads, startup auto-loads,
+    // and orchestrator reloads. Python's native ML allocators may retain RAM
+    // after a cooperative model unload, so terminate and await the Media AI
+    // process before allocating an LLM.
+    await releaseMediaAiForLlm();
     if (config.inferenceBackend === "tensorrt-native") {
       await loadTensorRtModel(config);
     } else {
@@ -478,6 +486,23 @@ async function loadLlamaServerModel(
 
   const mmprojPath = findCompanionMmproj(config.modelPath);
 
+  let modelSizeBytes = 0;
+  try {
+    modelSizeBytes = fs.statSync(config.modelPath).size;
+  } catch (err) {
+    logger.warn(
+      `Could not stat model at ${config.modelPath}; using requested context size:`,
+      err,
+    );
+  }
+  const runtimeContextSize = resolveSafeRuntimeContextSize({
+    requestedContextSize: config.contextSize,
+    modelSizeBytes,
+    totalMemoryBytes: os.totalmem(),
+    freeMemoryBytes: os.freemem(),
+    hasMultimodalProjector: mmprojPath !== null,
+  });
+
   // Estimate the VRAM footprint of the multimodal projector. llama.cpp's own
   // "estimated memory usage of mmproj" figure tracks the on-disk GGUF size
   // very closely (the file IS the device upload — scratch buffers are tiny),
@@ -497,7 +522,11 @@ async function loadLlamaServerModel(
   }
 
   logger.info(
-    `Loading: ${config.modelPath} | ctx=${config.contextSize} | ` +
+    `Loading: ${config.modelPath} | ctx=${runtimeContextSize}` +
+      (runtimeContextSize !== config.contextSize
+        ? ` (requested ${config.contextSize}; runtime memory guard applied)`
+        : "") +
+      " | " +
       `gpuLayersMode=${config.gpuLayersMode ?? "auto"}` +
       (cpuOnly ? " (forced CPU)" : "") +
       (mmprojPath
@@ -511,7 +540,7 @@ async function loadLlamaServerModel(
       modelPath: config.modelPath,
       mmprojPath,
       port: EMBEDDED_PORT,
-      contextSize: config.contextSize,
+      contextSize: runtimeContextSize,
       batchSize: config.batchSize ?? 512,
       flashAttention: config.flashAttention ?? true,
       gpuLayersMode: cpuOnly ? "manual" : (config.gpuLayersMode ?? "auto"),
@@ -536,6 +565,9 @@ async function loadLlamaServerModel(
       // who needs unquantized cache can pass cacheTypeK/V="f16" in the config.
       cacheTypeK: config.cacheTypeK ?? "q8_0",
       cacheTypeV: config.cacheTypeV ?? "q8_0",
+      // The cache stores duplicate prompt/KV checkpoints in RAM. Keep it
+      // deliberately small on the guarded large-model path.
+      promptCacheMb: runtimeContextSize <= 49_152 ? 128 : 256,
       variantOverride,
       overrideDevice,
     });
@@ -545,7 +577,7 @@ async function loadLlamaServerModel(
     currentModelPath = config.modelPath;
     currentTotalLayers = totalLayers;
     currentGpuLayers = llamaServerBackend.getStatus().resolvedGpuLayers;
-    currentActualContextSize = config.contextSize;
+    currentActualContextSize = runtimeContextSize;
     setState("idle", "Model ready");
     emitStatusChanged();
   } catch (err) {

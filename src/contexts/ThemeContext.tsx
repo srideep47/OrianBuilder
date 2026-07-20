@@ -13,7 +13,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
     // Try to get the saved theme from localStorage
     const savedTheme = localStorage.getItem("theme") as Theme;
-    return savedTheme || "system";
+    // Android Orion is intentionally Cosmos-dark. Use the same default on
+    // desktop while continuing to respect an explicit saved light/system choice.
+    return savedTheme || "dark";
   });
 
   useEffect(() => {

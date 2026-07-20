@@ -24,6 +24,33 @@ export class ModelPicker {
     await modelItem.click();
   }
 
+  async selectTestModelViaIpc() {
+    await this.page.evaluate(async () => {
+      const providers = (await (window as any).electron.ipcRenderer.invoke(
+        "get-language-model-providers",
+      )) as Array<{ id: string; name: string }>;
+      const provider = providers.find(
+        (candidate) => candidate.name === "test-provider",
+      );
+      if (!provider) throw new Error("E2E test provider was not created");
+      const models = (await (window as any).electron.ipcRenderer.invoke(
+        "get-language-models",
+        { providerId: provider.id },
+      )) as Array<{ id?: number; apiName: string }>;
+      const model = models.find(
+        (candidate) => candidate.apiName === "test-model",
+      );
+      if (!model) throw new Error("E2E test model was not created");
+      await (window as any).electron.ipcRenderer.invoke("set-user-settings", {
+        selectedModel: {
+          name: "test-model",
+          provider: provider.id,
+          customModelId: model.id,
+        },
+      });
+    });
+  }
+
   async selectTestOllamaModel() {
     await this.page.getByTestId("model-picker").click();
     await this.page.getByText("Local models").click();

@@ -35,6 +35,7 @@ export class StreamStallDetector {
   private timer: NodeJS.Timeout | null = null;
   private lastPulse = 0;
   private started = false;
+  private paused = false;
   private fired = false;
   private readonly opts: StreamStallDetectorOptions;
 
@@ -45,13 +46,33 @@ export class StreamStallDetector {
   start(): void {
     if (this.started) return;
     this.started = true;
+    this.paused = false;
     this.fired = false;
     this.lastPulse = Date.now();
     this.arm();
   }
 
   pulse(): void {
-    if (!this.started || this.fired) return;
+    if (!this.started || this.paused || this.fired) return;
+    this.lastPulse = Date.now();
+    this.arm();
+  }
+
+  /** Suspend token-stall detection while a long-running tool is executing. */
+  pause(): void {
+    if (!this.started || this.paused) return;
+    this.paused = true;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+  }
+
+  /** Resume with a fresh timeout after the active tool completes. */
+  resume(): void {
+    if (!this.started || !this.paused) return;
+    this.paused = false;
+    this.fired = false;
     this.lastPulse = Date.now();
     this.arm();
   }
@@ -62,12 +83,13 @@ export class StreamStallDetector {
       this.timer = null;
     }
     this.started = false;
+    this.paused = false;
   }
 
   private arm(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => {
-      if (!this.started || this.fired) return;
+      if (!this.started || this.paused || this.fired) return;
       this.fired = true;
       const elapsed = Date.now() - this.lastPulse;
       this.opts.onStall(elapsed);

@@ -38,30 +38,39 @@ export function useMissions(appId: number | null, missionId?: number | null) {
     queryKey: queryKeys.missions.detail({ missionId: missionId ?? null }),
     queryFn: () => ipc.mission.getMission({ missionId: missionId! }),
     enabled: missionId !== undefined && missionId !== null,
+    refetchInterval: (query) =>
+      query.state.data?.status === "running" ? 1500 : false,
   });
+
+  const liveMissionRefreshInterval =
+    missionQuery.data?.status === "running" ? 1500 : false;
 
   const eventsQuery = useQuery({
     queryKey: queryKeys.missions.events({ missionId: missionId ?? null }),
     queryFn: () => ipc.mission.listMissionEvents({ missionId: missionId! }),
     enabled: missionId !== undefined && missionId !== null,
+    refetchInterval: liveMissionRefreshInterval,
   });
 
   const tasksQuery = useQuery({
     queryKey: queryKeys.missions.tasks({ missionId: missionId ?? null }),
     queryFn: () => ipc.mission.listMissionTasks({ missionId: missionId! }),
     enabled: missionId !== undefined && missionId !== null,
+    refetchInterval: liveMissionRefreshInterval,
   });
 
   const runsQuery = useQuery({
     queryKey: queryKeys.missions.runs({ missionId: missionId ?? null }),
     queryFn: () => ipc.mission.listMissionRuns({ missionId: missionId! }),
     enabled: missionId !== undefined && missionId !== null,
+    refetchInterval: liveMissionRefreshInterval,
   });
 
   const workersQuery = useQuery({
     queryKey: queryKeys.missions.workers({ missionId: missionId ?? null }),
     queryFn: () => ipc.mission.listMissionWorkers({ missionId: missionId! }),
     enabled: missionId !== undefined && missionId !== null,
+    refetchInterval: liveMissionRefreshInterval,
   });
 
   const checkpointsQuery = useQuery({
@@ -69,18 +78,21 @@ export function useMissions(appId: number | null, missionId?: number | null) {
     queryFn: () =>
       ipc.mission.listMissionCheckpoints({ missionId: missionId! }),
     enabled: missionId !== undefined && missionId !== null,
+    refetchInterval: liveMissionRefreshInterval,
   });
 
   const artifactsQuery = useQuery({
     queryKey: queryKeys.missions.artifacts({ missionId: missionId ?? null }),
     queryFn: () => ipc.mission.listMissionArtifacts({ missionId: missionId! }),
     enabled: missionId !== undefined && missionId !== null,
+    refetchInterval: liveMissionRefreshInterval,
   });
 
   const interruptsQuery = useQuery({
     queryKey: queryKeys.missions.interrupts({ missionId: missionId ?? null }),
     queryFn: () => ipc.mission.listMissionInterrupts({ missionId: missionId! }),
     enabled: missionId !== undefined && missionId !== null,
+    refetchInterval: liveMissionRefreshInterval,
   });
 
   const memoriesQuery = useQuery({
@@ -103,6 +115,7 @@ export function useMissions(appId: number | null, missionId?: number | null) {
     queryFn: () =>
       ipc.mission.listMissionPermissionRequests({ missionId: missionId! }),
     enabled: missionId !== undefined && missionId !== null,
+    refetchInterval: liveMissionRefreshInterval,
   });
 
   const invalidateMissionQueries = async (targetMissionId?: number | null) => {

@@ -66,6 +66,15 @@ describe("runPipeline — happy path", () => {
 
     expect(res.status).toBe("completed");
     expect(res.assetSummary).toEqual({ done: 3, placeholder: 0, failed: 0 });
+    expect(res.mediaGraph).toMatchObject({
+      version: 1,
+      execution: { placement: "local-first", allowPaidFallback: false },
+    });
+    expect(res.mediaGraph?.nodes.map((node) => node.id)).toEqual([
+      "song",
+      "clip",
+      "hero",
+    ]);
     // Assets generated in modality order: image → video → music.
     expect(genCalls).toEqual(["hero", "clip", "song"]);
     // Gate timeline: LLM (plan) → exit → image → video → music → exit → LLM (verify) → exit.
@@ -81,6 +90,47 @@ describe("runPipeline — happy path", () => {
       "load:llm",
       "unload:llm",
     ]);
+  });
+  it("prepares only planned modalities, after planning and before model load", async () => {
+    const events: string[] = [];
+    const manifest = baseManifest([
+      { id: "hero", type: "image", targetFilename: "hero.png", prompt: "i" },
+    ]);
+    const workers: PipelineWorkers = {
+      planCode: async () => {
+        events.push("plan");
+        return manifest;
+      },
+      prepareModel: async ({ type }) => {
+        events.push(`prepare:${type}`);
+        return { status: "ok", detail: `${type} ready` };
+      },
+      generateAsset: async ({ asset }) => {
+        events.push(`generate:${asset.type}`);
+        return { status: "done", outputPath: `/out/${asset.targetFilename}` };
+      },
+      verifyFix: async () => ({ ok: true }),
+    };
+
+    const result = await runPipeline(makeConfig({ workers }, events));
+
+    expect(events).toEqual([
+      "load:llm",
+      "plan",
+      "unload:llm",
+      "prepare:image",
+      "load:image",
+      "generate:image",
+      "unload:image",
+      "load:llm",
+      "unload:llm",
+    ]);
+    expect(events).not.toContain("prepare:video");
+    expect(result.phases.find((phase) => phase.phase === "download")).toEqual({
+      phase: "download",
+      status: "ok",
+      detail: "image ready",
+    });
   });
 });
 

@@ -179,7 +179,7 @@ export function ModelEnginePanel() {
 const WORKFLOWS = [
   {
     to: "/mediaai",
-    label: "Gen Assets",
+    label: "Media Studio",
     icon: ImageIcon,
     desc: "Image · audio · video · music",
   },

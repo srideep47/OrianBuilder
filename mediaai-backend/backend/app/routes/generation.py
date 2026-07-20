@@ -2,6 +2,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from starlette.concurrency import run_in_threadpool
+from app import jobs as media_jobs
 
 from app.schemas import (
     AudioGenerationRequest,
@@ -55,7 +56,12 @@ def _asset_path(filename: str) -> str:
 @router.post("/text", response_model=TextGenerationResponse)
 async def generate_text(request: TextGenerationRequest) -> TextGenerationResponse:
     try:
-        generated = await run_in_threadpool(text_generation_service.generate, request)
+        generated = await run_in_threadpool(
+            media_jobs.run_exclusive,
+            "legacy-text",
+            text_generation_service.generate,
+            request,
+        )
     except TextGenerationDependencyError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except TextGenerationError as exc:
@@ -80,7 +86,12 @@ async def generate_image(request: ImageGenerationRequest) -> ImageGenerationResp
         }
     )
     try:
-        generated = await run_in_threadpool(image_generation_service.generate, constrained_request)
+        generated = await run_in_threadpool(
+            media_jobs.run_exclusive,
+            "legacy-image",
+            image_generation_service.generate,
+            constrained_request,
+        )
     except ImageGenerationDependencyError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ImageGenerationDirectMLError as exc:
@@ -101,7 +112,12 @@ async def generate_image(request: ImageGenerationRequest) -> ImageGenerationResp
 @router.post("/audio", response_model=AudioGenerationResponse)
 async def generate_audio(request: AudioGenerationRequest) -> AudioGenerationResponse:
     try:
-        generated = await run_in_threadpool(tiered_audio_generation_service.generate, request)
+        generated = await run_in_threadpool(
+            media_jobs.run_exclusive,
+            "tts",
+            tiered_audio_generation_service.generate,
+            request,
+        )
     except AudioGenerationDependencyError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except AudioGenerationError as exc:
@@ -128,7 +144,12 @@ async def generate_video(request: VideoGenerationRequest) -> VideoGenerationResp
         }
     )
     try:
-        generated = await run_in_threadpool(video_generation_service.generate, constrained_request)
+        generated = await run_in_threadpool(
+            media_jobs.run_exclusive,
+            "legacy-video",
+            video_generation_service.generate,
+            constrained_request,
+        )
     except VideoGenerationDependencyError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except VideoGenerationError as exc:

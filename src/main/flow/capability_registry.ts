@@ -10,11 +10,7 @@ import {
   initMediaDispatcher,
   dispatchMediaGeneration,
 } from "@/main/ipc/utils/media_dispatcher";
-import {
-  getModelLeaseManager,
-  type Lease,
-  type ModelSpec,
-} from "@/main/flow/model_lease";
+import { getModelGate, type ResidentSlot } from "@/main/flow/model_gate";
 import {
   modelConfigForAsset,
   type HardwareModelProfile,
@@ -53,6 +49,10 @@ export interface FlowContext {
    * by the IPC layer via `applySelectionToProfile(selectProfileForVram(...))`.
    */
   mediaProfile?: HardwareModelProfile;
+  /** Live progress for the currently executing media step. */
+  onMediaProgress?: (p: { stage: string; progress: number | null }) => void;
+  /** Cancels long-running local/remote provider work for this flow. */
+  signal?: AbortSignal;
 }
 
 /** A flow-level capability. Pure async function over (input, ctx). */
@@ -172,53 +172,23 @@ export function setRemoteMediaDispatcher(
 // Media helpers
 // =============================================================================
 
-const CAPABILITY_MODEL_SPECS: Partial<Record<CapabilityId, ModelSpec>> = {
-  generate_design: { key: "design:html", vramMb: 1024, priority: 5 },
-  generate_image: { key: "media:image", vramMb: 4096, priority: 10 },
-  generate_audio: { key: "media:audio", vramMb: 2048, priority: 8 },
-  generate_music: { key: "media:music", vramMb: 8192, priority: 11 },
-  generate_video: { key: "media:video", vramMb: 8192, priority: 12 },
-  generate_3d_asset: { key: "media:3d", vramMb: 8192, priority: 12 },
-  research_news: { key: "network:news", vramMb: 256, priority: 2 },
-  track_website: { key: "watchdog:website", vramMb: 512, priority: 3 },
-  track_price: { key: "watchdog:price", vramMb: 512, priority: 3 },
+const DEFAULT_MEDIA_VRAM_MB: Record<AssetType, number> = {
+  image: 4096,
+  speech: 2048,
+  music: 8192,
+  video: 8192,
+  "3d": 8192,
 };
 
-async function withModelLease<T>(
-  spec: ModelSpec | undefined,
-  run: () => Promise<T>,
-): Promise<T> {
-  if (!spec) return run();
-
-  const manager = getModelLeaseManager();
-  let lease: Lease | null = null;
-  try {
-    lease = await manager.acquire(spec);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (
-      message.includes("hooks not configured") ||
-      message.includes("insufficient VRAM") ||
-      message.includes("Cannot fit model")
-    ) {
-      logger.warn(
-        `model lease unavailable for ${spec.key}: ${message}; continuing with capability-level fallback`,
-      );
-      return run();
-    }
-    throw err;
-  }
-
-  if (!lease) return run();
-
-  try {
-    return await run();
-  } finally {
-    lease.release();
-    await manager.releaseIdle().catch((err) => {
-      logger.warn(`failed to release idle model leases after ${spec.key}`, err);
-    });
-  }
+function mediaResidentSlot(
+  assetType: AssetType,
+  config?: { modelId: string; vramMb: number },
+): ResidentSlot {
+  return {
+    kind: assetType,
+    modelId: config?.modelId ?? `${assetType}:auto`,
+    vramMb: config?.vramMb ?? DEFAULT_MEDIA_VRAM_MB[assetType],
+  };
 }
 
 function reserveMediaPath(mediaDir: string, ext: string): string {
@@ -236,7 +206,12 @@ async function runMedia(
   modelType: "image" | "audio" | "video" | "music",
   prompt: string,
   outputPath: string,
-  opts?: { modelId?: string; options?: Record<string, unknown> },
+  opts?: {
+    modelId?: string;
+    options?: Record<string, unknown>;
+    onProgress?: (p: { stage: string; progress: number | null }) => void;
+    signal?: AbortSignal;
+  },
 ): Promise<MediaGenerationResult> {
   const request: MediaGenerationRequest = {
     modelType,
@@ -244,7 +219,18 @@ async function runMedia(
     outputPath,
     modelId: opts?.modelId,
     options: opts?.options,
+    onProgress: opts?.onProgress,
+    signal: opts?.signal,
   };
+
+  if (request.signal?.aborted) {
+    return {
+      success: false,
+      outputPath,
+      durationMs: 0,
+      error: `${modelType} generation was cancelled`,
+    };
+  }
 
   // P2P placement first: a trusted peer may be better suited (or explicitly
   // selected). A remote failure is NOT final — the job is requeued locally by
@@ -307,15 +293,54 @@ function makeMediaCapability(
       const stageCfg = ctx.mediaProfile
         ? modelConfigForAsset(ctx.mediaProfile, assetType)
         : undefined;
+      const mediaConstraint =
+        ctx.constraints?.media &&
+        typeof ctx.constraints.media === "object" &&
+        !Array.isArray(ctx.constraints.media)
+          ? (ctx.constraints.media as Record<string, unknown>)
+          : undefined;
+      const constraintOptions =
+        mediaConstraint?.options &&
+        typeof mediaConstraint.options === "object" &&
+        !Array.isArray(mediaConstraint.options)
+          ? (mediaConstraint.options as Record<string, unknown>)
+          : {};
+      const inputOptions =
+        input.options &&
+        typeof input.options === "object" &&
+        !Array.isArray(input.options)
+          ? (input.options as Record<string, unknown>)
+          : {};
+      const requestedModel =
+        typeof mediaConstraint?.modelId === "string" &&
+        mediaConstraint.modelId !== "auto"
+          ? mediaConstraint.modelId
+          : undefined;
+      const selectedModel = requestedModel ?? stageCfg?.modelId;
+      const generationOptions = {
+        ...stageCfg?.defaultSettings,
+        ...constraintOptions,
+        ...inputOptions,
+      };
+      const residentConfig = selectedModel
+        ? {
+            modelId: selectedModel,
+            vramMb: stageCfg?.vramMb ?? DEFAULT_MEDIA_VRAM_MB[assetType],
+          }
+        : undefined;
       logger.info(
         `[${id}] generating -> ${outputPath}` +
-          (stageCfg ? ` (model=${stageCfg.modelId})` : " (auto tier)"),
+          (selectedModel ? ` (model=${selectedModel})` : " (auto tier)"),
       );
-      const result = await withModelLease(CAPABILITY_MODEL_SPECS[id], () =>
-        runMedia(modelType, prompt, outputPath, {
-          modelId: stageCfg?.modelId,
-          options: stageCfg?.defaultSettings,
-        }),
+      const result = await getModelGate().with(
+        mediaResidentSlot(assetType, residentConfig),
+        () =>
+          runMedia(modelType, prompt, outputPath, {
+            modelId: selectedModel,
+            options: generationOptions,
+            onProgress: ctx.onMediaProgress,
+            signal: ctx.signal,
+          }),
       );
       if (!result.success) {
         if (
@@ -325,7 +350,7 @@ function makeMediaCapability(
         ) {
           return {
             setupRequired: true,
-            setupRoute: "/mediaai",
+            setupRoute: "/media-runtime",
             reason: result.error ?? `${id} backend unavailable`,
             modelType,
             prompt,
@@ -340,7 +365,7 @@ function makeMediaCapability(
       if ((result.error ?? "").toLowerCase().includes("placeholder")) {
         return {
           setupRequired: true,
-          setupRoute: "/mediaai",
+          setupRoute: "/media-runtime",
           reason:
             "No media model produced output — make sure the Media AI backend is running and the selected model is downloaded.",
           modelType,
@@ -384,15 +409,13 @@ const generateDesignCapability: Capability = {
       };
     }
 
-    return withModelLease(CAPABILITY_MODEL_SPECS.generate_design, () =>
-      executor({
-        goal: ctx.goal,
-        prompt,
-        appId: ctx.appId,
-        appPath: ctx.appPath,
-        mediaDir: ctx.mediaDir,
-      }),
-    );
+    return executor({
+      goal: ctx.goal,
+      prompt,
+      appId: ctx.appId,
+      appPath: ctx.appPath,
+      mediaDir: ctx.mediaDir,
+    });
   },
 };
 
@@ -468,7 +491,10 @@ const generate3dAssetCapability: Capability = {
       };
     }
 
-    return withModelLease(CAPABILITY_MODEL_SPECS.generate_3d_asset, () =>
+    const stageCfg = ctx.mediaProfile
+      ? modelConfigForAsset(ctx.mediaProfile, "3d")
+      : undefined;
+    return getModelGate().with(mediaResidentSlot("3d", stageCfg), () =>
       executor({
         goal: ctx.goal,
         prompt,
@@ -506,9 +532,12 @@ const researchNewsCapability: Capability = {
       return { runNews: false, reason: "news-executor-not-registered", query };
     }
 
-    return withModelLease(CAPABILITY_MODEL_SPECS.research_news, () =>
-      executor({ goal: ctx.goal, query, category, mediaDir: ctx.mediaDir }),
-    );
+    return executor({
+      goal: ctx.goal,
+      query,
+      category,
+      mediaDir: ctx.mediaDir,
+    });
   },
 };
 
@@ -560,9 +589,7 @@ function makeTrackingCapability(
         };
       }
 
-      return withModelLease(CAPABILITY_MODEL_SPECS[id], () =>
-        executor({ goal: ctx.goal, prompt, kind, url, targetPrice }),
-      );
+      return executor({ goal: ctx.goal, prompt, kind, url, targetPrice });
     },
   };
 }

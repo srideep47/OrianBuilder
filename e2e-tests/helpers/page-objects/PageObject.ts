@@ -113,11 +113,11 @@ export class PageObject {
     }
     await this.settings.setUpTestProvider();
     await this.settings.setUpTestModel();
-    await this.navigation.goToAppsTab();
+    await this.modelPicker.selectTestModelViaIpc();
+    await this.navigation.goToOrionTab();
     if (!enableBasicAgent) {
       await this.chatActions.selectChatMode("build");
     }
-    await this.modelPicker.selectTestModel();
   }
 
   async setUpOrianBuilderPro({

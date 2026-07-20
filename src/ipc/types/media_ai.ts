@@ -133,6 +133,16 @@ export const mediaAiContracts = {
     input: z.void(),
     output: MediaAiStatusSchema,
   }),
+  beginExclusiveSession: defineContract({
+    channel: "media-ai:begin-exclusive-session",
+    input: z.void(),
+    output: z.object({ success: z.boolean(), error: z.string().optional() }),
+  }),
+  endExclusiveSession: defineContract({
+    channel: "media-ai:end-exclusive-session",
+    input: z.void(),
+    output: z.object({ success: z.boolean(), error: z.string().optional() }),
+  }),
   cancelDownload: defineContract({
     channel: "media-ai:cancel-download",
     input: z.void(),

@@ -21,7 +21,7 @@ import { PreviewIframe } from "./PreviewIframe";
 import { Problems } from "./Problems";
 import { ConfigurePanel } from "./ConfigurePanel";
 import { ChevronDown, ChevronUp, Logs } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
 import { Console } from "./Console";
 import { useRunApp } from "@/hooks/useRunApp";
@@ -31,6 +31,22 @@ import { PlanPanel } from "./PlanPanel";
 import { useSupabase } from "@/hooks/useSupabase";
 import { useTranslation } from "react-i18next";
 import { ipc } from "@/ipc/types";
+import { ActionHeader } from "./ActionHeader";
+
+const LazyGitHubConnector = lazy(() =>
+  import("@/components/GitHubConnector").then((module) => ({
+    default: module.GitHubConnector,
+  })),
+);
+const LazyDesignStudio = lazy(() => import("@/pages/design-studio"));
+
+function PanelLoading({ label }: { label: string }) {
+  return (
+    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+      Loading {label}…
+    </div>
+  );
+}
 
 interface ConsoleHeaderProps {
   isOpen: boolean;
@@ -139,6 +155,7 @@ export function PreviewPanel() {
 
   return (
     <div className="flex flex-col h-full">
+      <ActionHeader />
       <div className="flex-1 overflow-hidden">
         <PanelGroup direction="vertical">
           <Panel id="content" minSize={30}>
@@ -183,6 +200,28 @@ export function PreviewPanel() {
                 )
               ) : previewMode === "code" ? (
                 <CodeView loading={loading} app={app} />
+              ) : previewMode === "git" ? (
+                app?.id ? (
+                  <div className="mx-auto w-full max-w-4xl p-4">
+                    <Suspense
+                      fallback={<PanelLoading label="source control" />}
+                    >
+                      <LazyGitHubConnector
+                        appId={app.id}
+                        folderName={app.path}
+                        expanded
+                      />
+                    </Suspense>
+                  </div>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                    Select a project to manage its Git repository.
+                  </div>
+                )
+              ) : previewMode === "design" ? (
+                <Suspense fallback={<PanelLoading label="Open Design" />}>
+                  <LazyDesignStudio embedded />
+                </Suspense>
               ) : previewMode === "configure" ? (
                 <ConfigurePanel />
               ) : previewMode === "publish" ? (

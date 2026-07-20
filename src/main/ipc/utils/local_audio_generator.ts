@@ -20,6 +20,7 @@ export interface LocalAudioGenOptions {
   voice?: string;
   tier?: string | null;
   onProgress?: (p: MediaJobProgress) => void;
+  signal?: AbortSignal;
 }
 
 /** First TTS run may download model weights; generation itself is quick. */
@@ -50,7 +51,11 @@ export async function generateAudioViaLocalBackend(
     const result = await runBackendMediaJob(
       "tts",
       { text, voice: options.voice, tier: options.tier ?? undefined },
-      { onProgress: options.onProgress, timeoutMs: TTS_JOB_TIMEOUT_MS },
+      {
+        onProgress: options.onProgress,
+        signal: options.signal,
+        timeoutMs: TTS_JOB_TIMEOUT_MS,
+      },
     );
     const url = result.audio_url as string | undefined;
     if (!url) {

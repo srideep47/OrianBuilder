@@ -4,7 +4,6 @@ import { ChatList } from "./ChatList";
 import { AppList } from "./AppList";
 import { SettingsList } from "./SettingsList";
 import { LibraryList } from "./LibraryList";
-import { GenAssetsList } from "./GenAssetsList";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "@/components/ui/sidebar";
 
@@ -20,10 +19,10 @@ export function SidebarPanel() {
     <div
       data-panel="sidebar-panel"
       className={cn(
-        "h-screenish mt-[var(--app-titlebar-height)] mb-2 overflow-hidden rounded-r-[24px] sm:mb-3",
+        "h-screenish mt-[var(--app-titlebar-height)] overflow-hidden",
         "transition-[width,opacity,transform] duration-300 ease-[var(--ease-macos)] will-change-[width,opacity,transform]",
         visible
-          ? "liquid-glass-thick w-[288px] translate-x-0 opacity-100 border-y border-r border-black/[0.06] bg-card/78 shadow-[0_22px_60px_rgba(15,23,42,0.08)] dark:border-white/[0.08] dark:bg-card/70 dark:shadow-[0_22px_60px_rgba(0,0,0,0.34)]"
+          ? "w-[288px] translate-x-0 border-l border-t border-border/70 bg-card/82 opacity-100 shadow-[0_16px_50px_rgba(0,0,0,0.2)] backdrop-blur-xl"
           : "w-0 -translate-x-3 opacity-0",
       )}
     >
@@ -32,7 +31,6 @@ export function SidebarPanel() {
         <ChatList show={visible && panelItem === "Chat"} />
         <SettingsList show={visible && panelItem === "Settings"} />
         <LibraryList show={visible && panelItem === "Library"} />
-        <GenAssetsList show={visible && panelItem === "Gen Assets"} />
       </div>
     </div>
   );

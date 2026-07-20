@@ -21,8 +21,108 @@ import { generateVideoViaLocalBackend } from "./local_video_generator";
 import { getAvailableVramMb } from "./vram_accounting";
 import { getCachedHardwareProfile } from "@/main/hardware/detect";
 import { getLastLlmParams, estimateFreedLlmVramMb } from "./model_orchestrator";
+import type { MediaAiModelId } from "@/ipc/types/media_ai";
+import {
+  downloadMediaAiModels,
+  getMediaAiBackendStatus,
+} from "@/ipc/utils/media_ai_backend";
+import { ensureLlmSwapForMedia } from "./media_llm_guard";
 
 const logger = log.scope("media-dispatcher");
+
+type DispatchableModelType = "image" | "audio" | "music" | "video";
+
+/** The Media AI status API records downloadable *weight groups*, while
+ * generation uses individual tier ids. Keep that translation here so every
+ * caller (chat, factory pipeline, and direct media requests) gets identical
+ * fallback behavior. */
+const TIER_DOWNLOAD_IDS: Partial<Record<string, MediaAiModelId>> = {
+  "z-image-turbo": "image-z-image-turbo",
+  "sd-turbo": "image-sd-turbo",
+  "speecht5-cpu": "audio",
+};
+
+function downloadIdForTier(
+  modelType: DispatchableModelType,
+  tierId: string | null,
+): MediaAiModelId | undefined {
+  if (tierId && TIER_DOWNLOAD_IDS[tierId]) return TIER_DOWNLOAD_IDS[tierId];
+  // A video marker represents the machine-matched tier selected by the
+  // downloader. Reverting to auto lets the backend reuse that same tier.
+  if (modelType === "video") return "video";
+  return undefined;
+}
+
+/**
+ * Pick an installed compatible tier before downloading anything. If no known
+ * tier is installed, use the hardware-selected tier rather than forcing a
+ * user-selected model that may not fit the current device.
+ *
+ * Exported as a pure function so fallback ordering stays regression-testable.
+ */
+export function resolveAvailableMediaTier(args: {
+  modelType: DispatchableModelType;
+  preferredTierId: string | null;
+  hardwareTierId: string | null;
+  downloadedModelIds: ReadonlySet<string>;
+}): { tierId: string | null; downloadId?: MediaAiModelId; reason: string } {
+  const { modelType, preferredTierId, hardwareTierId, downloadedModelIds } =
+    args;
+
+  // The video status marker is intentionally hardware-specific rather than
+  // tier-specific: the downloader resolves the best tier for this machine.
+  // Never force a possibly different saved tier over those downloaded weights.
+  if (modelType === "video" && downloadedModelIds.has("video")) {
+    return {
+      tierId: hardwareTierId,
+      reason:
+        hardwareTierId === preferredTierId
+          ? "requested tier is installed"
+          : "installed alternative",
+    };
+  }
+  const candidates = [preferredTierId, hardwareTierId];
+
+  // Image tiers are the only ones with per-tier download markers today. When
+  // the requested/highest-quality tier is absent, SD Turbo is a compatible,
+  // much smaller installed alternative. Prefer it over a new download.
+  if (modelType === "image") {
+    candidates.push("z-image-turbo", "sd-turbo");
+  } else if (modelType === "audio") {
+    candidates.push("speecht5-cpu");
+  }
+
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    if (!candidate || candidate === AUTO_TIER_ID || seen.has(candidate))
+      continue;
+    seen.add(candidate);
+    const downloadId = downloadIdForTier(modelType, candidate);
+    if (downloadId && downloadedModelIds.has(downloadId)) {
+      return {
+        tierId: candidate,
+        reason:
+          candidate === preferredTierId
+            ? "requested tier is installed"
+            : "installed alternative",
+      };
+    }
+  }
+
+  // No tracked alternative exists. Let automatic tiers stay automatic so the
+  // backend can apply its complete VRAM/RAM checks; otherwise install the
+  // hardware-selected concrete tier.
+  const tierId = hardwareTierId ?? preferredTierId;
+  const downloadId = downloadIdForTier(modelType, tierId);
+  return {
+    tierId,
+    downloadId:
+      downloadId && !downloadedModelIds.has(downloadId)
+        ? downloadId
+        : undefined,
+    reason: "best tier for this hardware",
+  };
+}
 
 /** 1x1 transparent PNG used as last-resort placeholder when no provider
  *  can satisfy a request. */
@@ -88,21 +188,65 @@ async function pickTierForRequest(
 async function dispatch(
   request: MediaGenerationRequest,
 ): Promise<MediaGenerationResult> {
-  // An explicit modelId (Orion Factory user selection) wins over automatic
-  // VRAM-based tier selection; only `tier.id` is needed downstream. The
-  // "auto" sentinel means "no explicit choice" — fall through to selection.
-  let tierId: string | null;
-  if (request.modelId && request.modelId !== AUTO_TIER_ID) {
-    tierId = request.modelId;
-    logger.info(
-      `tier-selected ${request.modelType}: ${tierId} (user-selected)`,
-    );
-  } else {
-    const tier = await pickTierForRequest(request);
-    tierId = tier?.id ?? null;
-    if (tier) {
+  const cancelledResult = (): MediaGenerationResult => ({
+    success: false,
+    outputPath: request.outputPath,
+    durationMs: 0,
+    error: `${request.modelType} generation was cancelled`,
+  });
+  if (request.signal?.aborted) return cancelledResult();
+  // Always compute the hardware tier, even when the user selected a model.
+  // It is the safe download target when neither the selection nor an
+  // alternative is installed on this machine.
+  const hardwareTier = await pickTierForRequest(request);
+  const preferredTierId =
+    request.modelId && request.modelId !== AUTO_TIER_ID
+      ? request.modelId
+      : (hardwareTier?.id ?? null);
+  let tierId = preferredTierId;
+
+  if (request.modelType !== "transcribe") {
+    try {
+      const status = await getMediaAiBackendStatus();
+      const downloadedModelIds = new Set(
+        status.models
+          .filter((model) => model.downloaded)
+          .map((model) => model.id),
+      );
+      const resolution = resolveAvailableMediaTier({
+        modelType: request.modelType,
+        preferredTierId,
+        hardwareTierId: hardwareTier?.id ?? null,
+        downloadedModelIds,
+      });
+      tierId = resolution.tierId;
+
+      if (resolution.downloadId) {
+        request.onProgress?.({
+          stage: `Downloading ${resolution.downloadId}`,
+          progress: null,
+        });
+        logger.info(
+          `downloading ${resolution.downloadId} for ${request.modelType} (${resolution.reason})`,
+        );
+        await downloadMediaAiModels([resolution.downloadId], (chunk) => {
+          const progress = /"percentage"\s*:\s*([0-9.]+)/.exec(chunk)?.[1];
+          request.onProgress?.({
+            stage: `Downloading ${resolution.downloadId}`,
+            progress: progress ? Number(progress) / 100 : null,
+          });
+        });
+      }
+
       logger.info(
-        `tier-selected ${request.modelType}: ${tier.id} (${tier.quality})`,
+        `tier-selected ${request.modelType}: ${tierId ?? "auto"} (${resolution.reason})`,
+      );
+    } catch (err) {
+      // Model preparation should not suppress provider/cloud fallbacks. The
+      // backend can still resolve first-use downloads if a pre-download fails.
+      logger.warn(
+        `model availability check failed for ${request.modelType}; continuing with ${tierId ?? "auto"}:`,
+        err,
       );
     }
   }
@@ -118,12 +262,18 @@ async function dispatch(
       const local = await generateImageViaLocalBackend(
         request.prompt,
         request.outputPath,
-        { ...request.options, tier: tierId, onProgress: request.onProgress },
+        {
+          ...request.options,
+          tier: tierId,
+          onProgress: request.onProgress,
+          signal: request.signal,
+        },
       );
       if (local.success) {
         logger.info(`local image gen succeeded (tier=${local.tier ?? "?"})`);
         return local;
       }
+      if (request.signal?.aborted) return cancelledResult();
       logger.info(
         `local image gen unavailable (${local.error ?? "unknown"}); trying cloud`,
       );
@@ -144,7 +294,12 @@ async function dispatch(
       const music = await generateMusicViaLocalBackend(
         request.prompt,
         request.outputPath,
-        { ...request.options, tier: tierId, onProgress: request.onProgress },
+        {
+          ...request.options,
+          tier: tierId,
+          onProgress: request.onProgress,
+          signal: request.signal,
+        },
       );
       if (music.success) {
         logger.info(`local music gen succeeded (tier=${music.tier ?? "?"})`);
@@ -161,7 +316,12 @@ async function dispatch(
       const audio = await generateAudioViaLocalBackend(
         request.prompt,
         request.outputPath,
-        { ...request.options, tier: tierId, onProgress: request.onProgress },
+        {
+          ...request.options,
+          tier: tierId,
+          onProgress: request.onProgress,
+          signal: request.signal,
+        },
       );
       if (audio.success) {
         logger.info(`local audio gen succeeded (tier=${audio.tier ?? "?"})`);
@@ -178,7 +338,12 @@ async function dispatch(
       const video = await generateVideoViaLocalBackend(
         request.prompt,
         request.outputPath,
-        { ...request.options, tier: tierId, onProgress: request.onProgress },
+        {
+          ...request.options,
+          tier: tierId,
+          onProgress: request.onProgress,
+          signal: request.signal,
+        },
       );
       if (video.success) {
         logger.info(`local video gen succeeded (tier=${video.tier ?? "?"})`);
@@ -213,9 +378,13 @@ async function dispatch(
  * LLM *is* loaded, callers should use `orchestrator.runMediaGeneration` instead
  * so the LLM is unloaded/reloaded around generation.
  */
-export function dispatchMediaGeneration(
+export async function dispatchMediaGeneration(
   request: MediaGenerationRequest,
 ): Promise<MediaGenerationResult> {
+  initMediaDispatcher();
+  if (ensureLlmSwapForMedia()) {
+    return getOrchestrator().runMediaGeneration(request);
+  }
   return dispatch(request);
 }
 

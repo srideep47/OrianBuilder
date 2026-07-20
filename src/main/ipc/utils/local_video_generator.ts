@@ -36,7 +36,9 @@ export interface LocalVideoGenOptions {
   /** Fixed RNG seed — storyboards pass one stable seed across all clips so the
    *  motion/look stays consistent scene to scene. */
   seed?: number;
+  negative_prompt?: string;
   onProgress?: (p: MediaJobProgress) => void;
+  signal?: AbortSignal;
 }
 
 /** Video gen can include a multi-GB first-run model download plus minutes of
@@ -66,12 +68,12 @@ export async function generateVideoViaLocalBackend(
     };
   }
 
-  const { onProgress, ...params } = options;
+  const { onProgress, signal, ...params } = options;
   try {
     const result = await runBackendMediaJob(
       "video",
       { prompt, ...params },
-      { onProgress, timeoutMs: VIDEO_JOB_TIMEOUT_MS },
+      { onProgress, signal, timeoutMs: VIDEO_JOB_TIMEOUT_MS },
     );
     const url = result.video_url as string | undefined;
     if (!url) {

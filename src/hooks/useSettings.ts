@@ -1,5 +1,5 @@
 import { useEffect, useCallback } from "react";
-import { useAtom } from "jotai";
+import { useSetAtom } from "jotai";
 import { userSettingsAtom, envVarsAtom } from "@/atoms/appAtoms";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ipc } from "@/ipc/types";
@@ -25,11 +25,15 @@ export function isOrianBuilderProUser(): boolean {
 }
 
 let isInitialLoad = false;
+let lastSyncedSettings: UserSettings | null = null;
+let lastSyncedEnvVars: Record<string, string | undefined> | null = null;
 
 export function useSettings() {
   const posthog = usePostHog();
-  const [, setSettingsAtom] = useAtom(userSettingsAtom);
-  const [, setEnvVarsAtom] = useAtom(envVarsAtom);
+  // Setter-only hooks avoid subscribing every useSettings consumer to the
+  // mirror atoms. React Query remains the read source of truth.
+  const setSettingsAtom = useSetAtom(userSettingsAtom);
+  const setEnvVarsAtom = useSetAtom(envVarsAtom);
   const appVersion = useAppVersion();
   const queryClient = useQueryClient();
 
@@ -47,9 +51,10 @@ export function useSettings() {
 
   // Process telemetry side effects when settings load/change
   useEffect(() => {
-    if (settingsQuery.data) {
-      processSettingsForTelemetry(settingsQuery.data);
-      const isPro = hasOrianBuilderProKey(settingsQuery.data);
+    if (settingsQuery.data && settingsQuery.data !== lastSyncedSettings) {
+      lastSyncedSettings = settingsQuery.data;
+      processSettingsForTelemetry(lastSyncedSettings);
+      const isPro = hasOrianBuilderProKey(lastSyncedSettings);
       posthog.people.set({ isPro });
       if (!isInitialLoad && appVersion) {
         posthog.capture("app:initial-load", {
@@ -58,14 +63,16 @@ export function useSettings() {
         });
         isInitialLoad = true;
       }
-      setSettingsAtom(settingsQuery.data);
+      setSettingsAtom(lastSyncedSettings);
     }
   }, [settingsQuery.data, appVersion, posthog, setSettingsAtom]);
 
   // Sync env vars to Jotai atom
   useEffect(() => {
-    if (envVarsQuery.data) {
-      setEnvVarsAtom(envVarsQuery.data);
+    if (envVarsQuery.data && envVarsQuery.data !== lastSyncedEnvVars) {
+      const envVars = envVarsQuery.data;
+      lastSyncedEnvVars = envVars;
+      setEnvVarsAtom(envVars);
     }
   }, [envVarsQuery.data, setEnvVarsAtom]);
 
@@ -76,9 +83,6 @@ export function useSettings() {
     },
     onSuccess: (updatedSettings) => {
       queryClient.setQueryData(queryKeys.settings.user, updatedSettings);
-      processSettingsForTelemetry(updatedSettings);
-      posthog.people.set({ isPro: hasOrianBuilderProKey(updatedSettings) });
-      setSettingsAtom(updatedSettings);
     },
     meta: { showErrorToast: true },
   });

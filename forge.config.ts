@@ -25,13 +25,16 @@ const packagedRuntimeModules = [
   "@noble",
   "adaptive-timeout",
   "b4a",
+  "bare-addon-resolve",
   "bare-ansi-escapes",
   "bare-assert",
   "bare-events",
   "bare-fs",
   "bare-inspect",
+  "bare-module-resolve",
   "bare-os",
   "bare-path",
+  "bare-semver",
   "bare-stream",
   "bare-type",
   "bare-url",
@@ -74,6 +77,17 @@ const packagedRuntimeModules = [
   "text-decoder",
   "time-ordered-set",
   "timeout-refresh",
+  // Runtime closure for the externalized, on-demand ts-morph AST editor.
+  "ts-morph",
+  "@ts-morph",
+  "code-block-writer",
+  "minimatch",
+  "brace-expansion",
+  "balanced-match",
+  "path-browserify",
+  "tinyglobby",
+  "fdir",
+  "picomatch",
   "udx-native",
   "unordered-set",
   "unslab",
@@ -90,6 +104,9 @@ const ignore = (file: string) => {
     return false;
   }
   if (file.startsWith("/drizzle")) {
+    return false;
+  }
+  if (file === "/assets" || file.startsWith("/assets/icon")) {
     return false;
   }
   if (file.startsWith("/scaffold")) {
@@ -280,6 +297,10 @@ const config: ForgeConfig = {
   plugins: [
     new AutoUnpackNativesPlugin({}),
     new VitePlugin({
+      // Forge otherwise starts every main/preload/worker build concurrently.
+      // This repository has a large main-process graph; serialising those jobs
+      // trades a little startup time for a much lower peak-memory footprint.
+      concurrent: 1,
       // `build` can specify multiple entry builds, which can be Main process, Preload scripts, Worker process, etc.
       // If you are familiar with Vite configuration, it will look really familiar.
       build: [

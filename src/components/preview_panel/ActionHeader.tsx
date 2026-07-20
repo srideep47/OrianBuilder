@@ -1,23 +1,28 @@
+import { useCallback } from "react";
 import { useAtom, useAtomValue } from "jotai";
-import { previewModeAtom, selectedAppIdAtom } from "../../atoms/appAtoms";
-import { ipc } from "@/ipc/types";
-
+import { useMutation } from "@tanstack/react-query";
 import {
-  Eye,
-  Code,
-  MoreVertical,
-  Cog,
-  Trash2,
   AlertTriangle,
-  Wrench,
+  Code,
+  Cog,
+  Eye,
+  GitBranch,
   Globe,
+  ListChecks,
+  MoreHorizontal,
   Shield,
+  Sparkles,
+  Trash2,
+  Wrench,
 } from "lucide-react";
-import { motion } from "framer-motion";
-import { useEffect, useRef, useState, useCallback } from "react";
-
+import { previewModeAtom, selectedAppIdAtom } from "../../atoms/appAtoms";
+import { isPreviewOpenAtom } from "@/atoms/viewAtoms";
+import { ipc } from "@/ipc/types";
 import { useRunApp } from "@/hooks/useRunApp";
 import { useSettings } from "@/hooks/useSettings";
+import { useCheckProblems } from "@/hooks/useCheckProblems";
+import { showError, showSuccess } from "@/lib/toast";
+import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,298 +31,210 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   Tooltip,
-  TooltipTrigger,
   TooltipContent,
+  TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { showError, showSuccess } from "@/lib/toast";
-import { useMutation } from "@tanstack/react-query";
-import { useCheckProblems } from "@/hooks/useCheckProblems";
-import { isPreviewOpenAtom } from "@/atoms/viewAtoms";
-import { useTranslation } from "react-i18next";
 
 export type PreviewMode =
   | "preview"
   | "code"
+  | "git"
+  | "design"
+  | "plan"
   | "problems"
   | "configure"
   | "publish"
   | "security";
 
-// Preview Header component with preview mode toggle
+const PANELS: ReadonlyArray<{
+  mode: PreviewMode;
+  label: string;
+  icon: typeof Eye;
+  testId: string;
+  group: "output" | "workspace" | "delivery";
+}> = [
+  {
+    mode: "preview",
+    label: "Preview",
+    icon: Eye,
+    testId: "preview-mode-button",
+    group: "output",
+  },
+  {
+    mode: "problems",
+    label: "Problems",
+    icon: AlertTriangle,
+    testId: "problems-mode-button",
+    group: "output",
+  },
+  {
+    mode: "code",
+    label: "Files",
+    icon: Code,
+    testId: "code-mode-button",
+    group: "workspace",
+  },
+  {
+    mode: "git",
+    label: "Git",
+    icon: GitBranch,
+    testId: "git-mode-button",
+    group: "workspace",
+  },
+  {
+    mode: "design",
+    label: "Design",
+    icon: Sparkles,
+    testId: "design-mode-button",
+    group: "workspace",
+  },
+  {
+    mode: "plan",
+    label: "Plan",
+    icon: ListChecks,
+    testId: "plan-mode-button",
+    group: "workspace",
+  },
+  {
+    mode: "configure",
+    label: "Configure",
+    icon: Wrench,
+    testId: "configure-mode-button",
+    group: "delivery",
+  },
+  {
+    mode: "security",
+    label: "Security",
+    icon: Shield,
+    testId: "security-mode-button",
+    group: "delivery",
+  },
+  {
+    mode: "publish",
+    label: "Publish",
+    icon: Globe,
+    testId: "publish-mode-button",
+    group: "delivery",
+  },
+];
+
+/** One compact contextual toolbar replaces the duplicated preview header + rail. */
 export const ActionHeader = () => {
-  const { t } = useTranslation("home");
   const [previewMode, setPreviewMode] = useAtom(previewModeAtom);
   const [isPreviewOpen, setIsPreviewOpen] = useAtom(isPreviewOpenAtom);
   const selectedAppId = useAtomValue(selectedAppIdAtom);
-  const previewRef = useRef<HTMLButtonElement>(null);
-  const codeRef = useRef<HTMLButtonElement>(null);
-  const problemsRef = useRef<HTMLButtonElement>(null);
-  const configureRef = useRef<HTMLButtonElement>(null);
-  const publishRef = useRef<HTMLButtonElement>(null);
-  const securityRef = useRef<HTMLButtonElement>(null);
-  const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
-  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const { problemReport } = useCheckProblems(selectedAppId);
   const { restartApp, refreshAppIframe } = useRunApp();
   const { settings } = useSettings();
-  const isCloudSandboxMode = settings?.runtimeMode2 === "cloud";
-
-  const isCompact = windowWidth < 888;
-
-  // Track window width
-  useEffect(() => {
-    const handleResize = () => {
-      setWindowWidth(window.innerWidth);
-    };
-
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
+  const problemCount = problemReport?.problems.length ?? 0;
 
   const selectPanel = (panel: PreviewMode) => {
-    if (previewMode === panel) {
-      setIsPreviewOpen(!isPreviewOpen);
-    } else {
+    if (previewMode === panel) setIsPreviewOpen(!isPreviewOpen);
+    else {
       setPreviewMode(panel);
       setIsPreviewOpen(true);
     }
   };
 
-  const onCleanRestart = useCallback(() => {
-    restartApp({ removeNodeModules: true });
-  }, [restartApp]);
+  const clearSession = useMutation({
+    mutationFn: () => ipc.system.clearSessionData(),
+    onSuccess: async () => {
+      await refreshAppIframe();
+      showSuccess("Preview data cleared");
+    },
+    onError: (error) => showError(`Error clearing preview data: ${error}`),
+  });
 
-  const useClearSessionData = () => {
-    return useMutation({
-      mutationFn: () => {
-        return ipc.system.clearSessionData();
-      },
-      onSuccess: async () => {
-        await refreshAppIframe();
-        showSuccess("Preview data cleared");
-      },
-      onError: (error) => {
-        showError(`Error clearing preview data: ${error}`);
-      },
-    });
-  };
-
-  const { mutate: clearSessionData } = useClearSessionData();
-
-  const onClearSessionData = useCallback(() => {
-    clearSessionData();
-  }, [clearSessionData]);
-
-  const onRecreateSandbox = useCallback(() => {
-    restartApp({ recreateSandbox: true });
-  }, [restartApp]);
-
-  // Get the problem count for the selected app
-  const problemCount = problemReport ? problemReport.problems.length : 0;
-
-  // Format the problem count for display
-  const formatProblemCount = (count: number): string => {
-    if (count === 0) return "";
-    if (count > 100) return "100+";
-    return count.toString();
-  };
-
-  const displayCount = formatProblemCount(problemCount);
-
-  // Update indicator position when mode changes
-  useEffect(() => {
-    const updateIndicator = () => {
-      let targetRef: React.RefObject<HTMLButtonElement | null>;
-
-      switch (previewMode) {
-        case "preview":
-          targetRef = previewRef;
-          break;
-        case "code":
-          targetRef = codeRef;
-          break;
-        case "problems":
-          targetRef = problemsRef;
-          break;
-        case "configure":
-          targetRef = configureRef;
-          break;
-        case "publish":
-          targetRef = publishRef;
-          break;
-        case "security":
-          targetRef = securityRef;
-          break;
-        default:
-          return;
-      }
-
-      if (targetRef.current) {
-        const button = targetRef.current;
-        const container = button.parentElement;
-        if (container) {
-          const containerRect = container.getBoundingClientRect();
-          const buttonRect = button.getBoundingClientRect();
-          const left = buttonRect.left - containerRect.left;
-          const width = buttonRect.width;
-
-          setIndicatorStyle({ left, width });
-          if (!isPreviewOpen) {
-            setIndicatorStyle({ left: left, width: 0 });
-          }
-        }
-      }
-    };
-
-    // Small delay to ensure DOM is updated
-    const timeoutId = setTimeout(updateIndicator, 10);
-    return () => clearTimeout(timeoutId);
-  }, [previewMode, displayCount, isPreviewOpen, isCompact]);
-
-  const renderButton = (
-    mode: PreviewMode,
-    ref: React.RefObject<HTMLButtonElement | null>,
-    icon: React.ReactNode,
-    text: string,
-    testId: string,
-    badge?: React.ReactNode,
-  ) => {
-    return (
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <button
-              data-testid={testId}
-              ref={ref}
-              className="no-app-region-drag cursor-pointer relative flex items-center gap-0.5 px-2 py-0.5 rounded-3xl text-xs font-medium z-10 hover:bg-[var(--background)] flex-col"
-              onClick={() => selectPanel(mode)}
-            />
-          }
-        >
-          {icon}
-          <span>
-            {!isCompact && <span>{text}</span>}
-            {badge}
-          </span>
-        </TooltipTrigger>
-        {isCompact && <TooltipContent>{text}</TooltipContent>}
-      </Tooltip>
-    );
-  };
-  const iconSize = 15;
+  const onCleanRestart = useCallback(
+    () => restartApp({ removeNodeModules: true }),
+    [restartApp],
+  );
 
   return (
-    <div className="flex items-center justify-between px-2 py-2 border-b border-border bg-(--sidebar)">
-      <div className="relative flex rounded-3xl p-0.5 gap-0.5">
-        <motion.div
-          className="absolute top-0.5 bottom-0.5 bg-[var(--background-lightest)] shadow rounded-3xl"
-          animate={{
-            left: indicatorStyle.left,
-            width: indicatorStyle.width,
-          }}
-          transition={{
-            type: "spring",
-            stiffness: 600,
-            damping: 35,
-            mass: 0.6,
-          }}
-        />
-        {renderButton(
-          "preview",
-          previewRef,
-          <Eye size={iconSize} />,
-          t("preview.title"),
-          "preview-mode-button",
-        )}
-        {renderButton(
-          "problems",
-          problemsRef,
-          <AlertTriangle size={iconSize} />,
-          t("preview.problems"),
-          "problems-mode-button",
-          displayCount && (
-            <span className="ml-0.5 px-1 py-0.5 text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-full min-w-[16px] text-center">
-              {displayCount}
-            </span>
-          ),
-        )}
-        {renderButton(
-          "code",
-          codeRef,
-          <Code size={iconSize} />,
-          t("preview.code"),
-          "code-mode-button",
-        )}
-        {renderButton(
-          "configure",
-          configureRef,
-          <Wrench size={iconSize} />,
-          t("preview.configure"),
-          "configure-mode-button",
-        )}
-        {renderButton(
-          "security",
-          securityRef,
-          <Shield size={iconSize} />,
-          t("preview.security"),
-          "security-mode-button",
-        )}
-        {renderButton(
-          "publish",
-          publishRef,
-          <Globe size={iconSize} />,
-          t("preview.publish"),
-          "publish-mode-button",
-        )}
+    <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border/70 bg-card/55 px-2 backdrop-blur-xl">
+      <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {PANELS.map(({ mode, label, icon: Icon, testId, group }, index) => {
+          const previous = PANELS[index - 1];
+          const active = previewMode === mode && isPreviewOpen;
+          const badge = mode === "problems" && problemCount > 0;
+          return (
+            <div key={mode} className="contents">
+              {previous && previous.group !== group && (
+                <span className="mx-1 h-5 w-px shrink-0 bg-border" />
+              )}
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      data-testid={testId}
+                      onClick={() => selectPanel(mode)}
+                      className={cn(
+                        "no-app-region-drag relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition-colors",
+                        active
+                          ? "bg-primary/15 text-primary"
+                          : "text-muted-foreground hover:bg-muted/55 hover:text-foreground",
+                      )}
+                    />
+                  }
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  <span className="hidden 2xl:inline">{label}</span>
+                  {badge && (
+                    <span className="absolute -right-0.5 -top-0.5 min-w-3.5 rounded-full bg-destructive px-1 text-center text-[9px] leading-3.5 text-destructive-foreground">
+                      {problemCount > 99 ? "99+" : problemCount}
+                    </span>
+                  )}
+                </TooltipTrigger>
+                <TooltipContent>{label}</TooltipContent>
+              </Tooltip>
+            </div>
+          );
+        })}
       </div>
-      <div className="flex items-center gap-1">
-        <DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <DropdownMenuTrigger
-                  data-testid="preview-more-options-button"
-                  className="no-app-region-drag flex items-center justify-center p-1.5 rounded-3xl text-sm hover:bg-[var(--background-darkest)] transition-colors"
-                />
-              }
+
+      <DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <DropdownMenuTrigger
+                data-testid="preview-more-options-button"
+                className="no-app-region-drag flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/55 hover:text-foreground"
+              />
+            }
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </TooltipTrigger>
+          <TooltipContent>Runtime actions</TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuItem onClick={onCleanRestart}>
+            <Cog className="h-4 w-4" />
+            <div>
+              <div>Clean rebuild</div>
+              <div className="text-xs text-muted-foreground">
+                Reinstall dependencies and restart
+              </div>
+            </div>
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => clearSession.mutate()}>
+            <Trash2 className="h-4 w-4" />
+            <div>
+              <div>Clear preview data</div>
+              <div className="text-xs text-muted-foreground">
+                Reset cookies and local storage
+              </div>
+            </div>
+          </DropdownMenuItem>
+          {settings?.runtimeMode2 === "cloud" && (
+            <DropdownMenuItem
+              onClick={() => restartApp({ recreateSandbox: true })}
             >
-              <MoreVertical size={16} />
-            </TooltipTrigger>
-            <TooltipContent>{t("preview.moreOptions")}</TooltipContent>
-          </Tooltip>
-          <DropdownMenuContent align="end" className="w-60">
-            <DropdownMenuItem onClick={onCleanRestart}>
-              <Cog size={16} />
-              <div className="flex flex-col">
-                <span>{t("preview.rebuild")}</span>
-                <span className="text-xs text-muted-foreground">
-                  {t("preview.rebuildDescription")}
-                </span>
-              </div>
+              <Cog className="h-4 w-4" /> Recreate cloud sandbox
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={onClearSessionData}>
-              <Trash2 size={16} />
-              <div className="flex flex-col">
-                <span>{t("preview.clearCache")}</span>
-                <span className="text-xs text-muted-foreground">
-                  {t("preview.clearCacheDescription")}
-                </span>
-              </div>
-            </DropdownMenuItem>
-            {isCloudSandboxMode && (
-              <DropdownMenuItem onClick={onRecreateSandbox}>
-                <Cog size={16} />
-                <div className="flex flex-col">
-                  <span>{t("preview.recreateSandbox")}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {t("preview.recreateSandboxDescription")}
-                  </span>
-                </div>
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 };

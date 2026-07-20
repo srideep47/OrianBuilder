@@ -139,6 +139,9 @@ import {
 } from "./chat_text_utils";
 import { prepareMessageWithAttachments } from "./chat_message_prep";
 import { getMcpTools, processStreamChunks } from "./chat_stream_processor";
+import { parseDirectMediaCommand } from "@/shared/orion_natural_command";
+import { formatOrionMediaReply } from "@/shared/orion_media_reply";
+import { runOrionMediaReply } from "../flow_handlers";
 
 export {
   formatMessagesForSummary,
@@ -454,6 +457,14 @@ ${componentSnippet}
         }
       }
 
+      // Route unambiguous media-generation commands before touching the
+      // selected coding model. Attachments and selected components stay on the
+      // agent path until their edit/reference semantics can be preserved.
+      const directMediaIntent =
+        !req.attachments?.length && componentsToProcess.length === 0
+          ? parseDirectMediaCommand(req.prompt, chat.app.id)
+          : null;
+
       const [insertedUserMessage] = await db
         .insert(messages)
         .values({
@@ -495,8 +506,9 @@ ${componentSnippet}
           role: "assistant",
           content: "", // Start with empty content
           requestId: orianbuilderRequestId,
-          model:
-            settings.selectedModel.provider === "embedded"
+          model: directMediaIntent
+            ? "Orion Media Runtime"
+            : settings.selectedModel.provider === "embedded"
               ? (getServerStatus().modelName ?? settings.selectedModel.name)
               : settings.selectedModel.name,
           sourceCommitHash: await getCurrentCommitHash({
@@ -535,7 +547,87 @@ ${componentSnippet}
       // Check if this is a test prompt
       const testResponse = getTestResponse(req.prompt);
 
-      if (testResponse) {
+      if (directMediaIntent) {
+        const capabilities = directMediaIntent.steps
+          .map((step) => step.capability.replace("generate_", ""))
+          .join(", ");
+        const mediaStartedAt = Date.now();
+        let currentStage = "Preparing the local media runtime";
+        let currentProgress: number | null = null;
+        let lastStatus = "";
+        let progressPersistence = Promise.resolve();
+        const updateMediaStatus = (stage: string, progress: number | null) => {
+          currentStage = stage.trim() || "Generating media";
+          currentProgress = progress;
+          const elapsedSeconds = Math.max(
+            1,
+            Math.round((Date.now() - mediaStartedAt) / 1000),
+          );
+          const percent =
+            progress == null
+              ? ""
+              : ` · ${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%`;
+          const visibleTitle = `Generating ${capabilities} · ${currentStage}${percent} · ${elapsedSeconds}s`;
+          const status = `<orianbuilder-status title="${escapeXmlContent(visibleTitle)}" state="in-progress">Running locally. The result will appear in this message automatically.</orianbuilder-status>`;
+          if (status === lastStatus) return;
+          lastStatus = status;
+          partialResponses.set(req.chatId, status);
+          safeSend(event.sender, "chat:response:chunk", {
+            chatId: req.chatId,
+            streamingMessageId: placeholderAssistantMessage.id,
+            streamingContent: status,
+          });
+          progressPersistence = progressPersistence
+            .then(() =>
+              db
+                .update(messages)
+                .set({ content: status })
+                .where(eq(messages.id, placeholderAssistantMessage.id)),
+            )
+            .then(() => undefined)
+            .catch((error) => {
+              logger.warn("Unable to persist media progress:", error);
+            });
+        };
+
+        updateMediaStatus(currentStage, currentProgress);
+        const heartbeat = setInterval(
+          () => updateMediaStatus(currentStage, currentProgress),
+          5_000,
+        );
+        heartbeat.unref?.();
+        try {
+          const reply = await runOrionMediaReply(directMediaIntent, {
+            signal: abortController.signal,
+            onProgress: ({ stage, progress }) =>
+              updateMediaStatus(stage, progress),
+          });
+          if (!abortController.signal.aborted) {
+            fullResponse = formatOrionMediaReply(req.prompt, reply.assets);
+            partialResponses.delete(req.chatId);
+            safeSend(event.sender, "chat:response:chunk", {
+              chatId: req.chatId,
+              streamingMessageId: placeholderAssistantMessage.id,
+              streamingContent: fullResponse,
+            });
+          }
+        } catch (error) {
+          if (!abortController.signal.aborted) {
+            const detail =
+              error instanceof Error ? error.message : String(error);
+            fullResponse = `<orianbuilder-status title="Media generation failed" state="aborted">${escapeXmlContent(detail)} Retry this command after checking the local media runtime.</orianbuilder-status>`;
+            partialResponses.delete(req.chatId);
+            safeSend(event.sender, "chat:response:chunk", {
+              chatId: req.chatId,
+              streamingMessageId: placeholderAssistantMessage.id,
+              streamingContent: fullResponse,
+            });
+          }
+        } finally {
+          clearInterval(heartbeat);
+          await progressPersistence;
+        }
+      } else if (testResponse) {
         // For test prompts, use the dedicated function
         fullResponse = await streamTestResponse(
           event,
@@ -1723,7 +1815,11 @@ ${problemReport.problems
           .set({ content: fullResponse })
           .where(eq(messages.id, placeholderAssistantMessage.id));
         const latestSettings = readSettings();
-        if (latestSettings.autoApproveChanges && selectedChatMode !== "ask") {
+        if (
+          !directMediaIntent &&
+          latestSettings.autoApproveChanges &&
+          selectedChatMode !== "ask"
+        ) {
           const status = await processFullResponseActions(
             fullResponse,
             req.chatId,

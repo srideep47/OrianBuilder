@@ -469,7 +469,7 @@ export function ChatPanel({
                 }
               />
             )}
-            <div className="px-2 mb-3">
+            <div className="mb-2 px-2">
               <div className="max-w-3xl mx-auto w-full">
                 <MissionControl chatId={chatId} />
                 <NotificationBanner />

@@ -3,9 +3,20 @@ import { describe, expect, it } from "vitest";
 import {
   buildInterruptedRunRecoveryMetadata,
   buildInterruptedWorkerRecoveryMetadata,
+  findOrphanedRunningMissionIds,
 } from "@/ipc/utils/mission_recovery";
 
 describe("mission recovery", () => {
+  it("detects running missions that never created a run or worker", () => {
+    expect(
+      findOrphanedRunningMissionIds({
+        runningMissionIds: [10, 11, 12],
+        runningRunMissionIds: [11],
+        runningWorkerMissionIds: [12],
+      }),
+    ).toEqual([10]);
+  });
+
   it("builds paused metadata for interrupted runs when auto-resume is off", () => {
     expect(
       buildInterruptedRunRecoveryMetadata({

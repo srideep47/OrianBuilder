@@ -6,6 +6,7 @@ test("cancelled message shows cancelled indicator and is excluded from context",
   po,
 }) => {
   await po.setUp();
+  await po.importApp("minimal");
 
   // Send a message with a slow response so we have time to cancel
   await po.sendPrompt("tc=cancelled-test [sleep=medium]", {

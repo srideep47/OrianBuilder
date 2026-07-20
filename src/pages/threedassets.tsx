@@ -1,4 +1,11 @@
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   Box,
   BookMarked,
@@ -18,10 +25,8 @@ import {
   Upload,
   Wrench,
 } from "lucide-react";
-import { Canvas } from "@react-three/fiber";
-import { Bounds, Center, OrbitControls, useGLTF } from "@react-three/drei";
-
 import { ipc, type MediaAiStatus } from "@/ipc/types";
+import { useExclusiveMediaSession } from "@/hooks/useExclusiveMediaSession";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -110,60 +115,10 @@ function saveCachedDownloadedTiers(tiers: Set<string>): void {
   }
 }
 
-function GlbModel({ url }: { url: string }) {
-  const { scene } = useGLTF(url);
-  return <primitive object={scene} />;
-}
-
-function ModelViewer({ url }: { url: string }) {
-  // Keying the Canvas on the GLB URL forces a fresh WebGL context per
-  // generation — without this, a previous lost context (the "Context Lost"
-  // event we saw at Max quality) survives into the next render and the
-  // model shows up black even though it loaded.
-  return (
-    <div className="relative h-[420px] w-full rounded-2xl border border-border bg-[oklch(0.13_0.02_280)] overflow-hidden">
-      <Canvas
-        key={url}
-        camera={{ position: [2, 1.5, 2.5], fov: 40 }}
-        gl={{ preserveDrawingBuffer: true, antialias: true }}
-        dpr={[1, 2]}
-      >
-        {/* Explicit lights instead of <Environment preset="city" />: the
-            preset fetches a HDR from drei's CDN, which Electron's CSP can
-            block silently and leave the scene black. These lights work
-            offline and give the mesh enough definition to read its shape. */}
-        <color attach="background" args={["#1a1226"]} />
-        <ambientLight intensity={0.65} />
-        <directionalLight position={[5, 8, 5]} intensity={1.1} />
-        <directionalLight position={[-5, 3, -3]} intensity={0.55} />
-        <directionalLight position={[0, -4, 4]} intensity={0.35} />
-        <Suspense fallback={null}>
-          {/* Bounds auto-frames the model on first render so it's always
-              centered and at a reasonable distance, regardless of how the
-              GLB exporter sized the mesh. */}
-          <Bounds fit clip observe margin={1.25}>
-            <Center>
-              <GlbModel url={url} />
-            </Center>
-          </Bounds>
-        </Suspense>
-        <OrbitControls
-          enablePan
-          enableZoom
-          enableRotate
-          autoRotate
-          autoRotateSpeed={1.2}
-          makeDefault
-        />
-      </Canvas>
-      <div className="pointer-events-none absolute bottom-2 left-2 rounded bg-black/40 px-2 py-1 text-[10px] text-white/80">
-        Drag to rotate · scroll to zoom
-      </div>
-    </div>
-  );
-}
+const ModelViewer = lazy(() => import("@/components/threed/ModelViewer"));
 
 export default function ThreeDAssetsPage() {
+  const mediaSession = useExclusiveMediaSession();
   const [status, setStatus] = useState<MediaAiStatus | null>(null);
   const [tiers, setTiers] = useState<ThreeDTierInfo[]>([]);
   const [tiersLoading, setTiersLoading] = useState(false);
@@ -851,7 +806,19 @@ export default function ThreeDAssetsPage() {
     // scrolling. Without h-full + overflow-y-auto the bottom of the page
     // (Generate button, 3D viewer, Download button) is clipped on shorter
     // displays and the user can't scroll to reach it.
-    <div className="h-full w-full overflow-y-auto">
+    <div className="relative h-full w-full overflow-y-auto">
+      {!mediaSession.ready && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm">
+          <div className="max-w-md rounded-2xl border bg-card p-6 text-center shadow-xl">
+            <Loader2 className="mx-auto mb-3 h-7 w-7 animate-spin text-primary" />
+            <p className="font-medium">Reserving memory for 3D generation</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {mediaSession.error ??
+                "Releasing the chat model before loading the 3D pipeline…"}
+            </p>
+          </div>
+        </div>
+      )}
       <div className="container mx-auto py-6 px-6 pb-12 space-y-6 max-w-5xl">
         <header className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
@@ -1661,7 +1628,15 @@ export default function ThreeDAssetsPage() {
                   <Sparkles className="h-4 w-4" />
                   3D model ready
                 </p>
-                <ModelViewer url={glbUrl} />
+                <Suspense
+                  fallback={
+                    <div className="flex h-[420px] items-center justify-center rounded-2xl border border-border bg-muted/20 text-sm text-muted-foreground">
+                      Loading 3D preview…
+                    </div>
+                  }
+                >
+                  <ModelViewer url={glbUrl} />
+                </Suspense>
                 <div className="flex items-center gap-2">
                   <Button
                     variant="outline"

@@ -96,4 +96,19 @@ describe("orion_media_catalog", () => {
     expect(partial.models).not.toContain("image-z-image-turbo");
     expect(partial.models).toContain("audio");
   });
+
+  it("resolveDownloadPlan can prepare only the modality required by the plan", () => {
+    const explicit = {
+      ...defaultSelection(),
+      image: "z-image-turbo",
+    };
+
+    const imageOnly = resolveDownloadPlan(explicit, new Set(), ["image"]);
+    expect(imageOnly.models).toEqual(["image-z-image-turbo"]);
+    expect(imageOnly.runtimes).toEqual([]);
+
+    const speechOnly = resolveDownloadPlan(explicit, new Set(), ["speech"]);
+    expect(speechOnly.models).toEqual(["audio"]);
+    expect(speechOnly.runtimes).toEqual([]);
+  });
 });

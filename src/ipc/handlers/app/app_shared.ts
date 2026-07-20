@@ -38,6 +38,7 @@ import {
   OrianBuilderError,
   OrianBuilderErrorKind,
 } from "@/errors/orianbuilder_error";
+import { isOrionSessionAppId } from "@/shared/orion_session";
 
 // Import our utility modules
 
@@ -456,6 +457,19 @@ export async function runAppById(
   event: Electron.IpcMainInvokeEvent,
   appId: number,
 ): Promise<void> {
+  if (
+    isOrionSessionAppId(
+      appId,
+      readSettings() as ReturnType<typeof readSettings> & {
+        orionSessionAppId?: unknown;
+      },
+    )
+  ) {
+    logger.debug(
+      `Skipping preview runtime for internal Orion session app ${appId}.`,
+    );
+    return;
+  }
   return withLock(appId, async () => {
     // Check if app is already running
     if (runningApps.has(appId)) {
