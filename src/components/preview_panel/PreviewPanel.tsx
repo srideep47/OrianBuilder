@@ -31,6 +31,8 @@ import { PlanPanel } from "./PlanPanel";
 import { useSupabase } from "@/hooks/useSupabase";
 import { useTranslation } from "react-i18next";
 import { ipc } from "@/ipc/types";
+import { EmptyState, LoadingState } from "@/components/liquid";
+import { GitBranch } from "lucide-react";
 import { ActionHeader } from "./ActionHeader";
 
 const LazyGitHubConnector = lazy(() =>
@@ -39,11 +41,20 @@ const LazyGitHubConnector = lazy(() =>
   })),
 );
 const LazyDesignStudio = lazy(() => import("@/pages/design-studio"));
+// Lazy: pulls in the viewport poller and scene tree, which nobody needs until
+// they actually open a game.
+const LazyGamePanel = lazy(() =>
+  import("./GamePanel").then((m) => ({ default: m.GamePanel })),
+);
+// Lazy: xterm plus its CSS is ~250 KB, and most sessions never open a shell.
+const LazyTerminalPanel = lazy(() =>
+  import("./TerminalPanel").then((m) => ({ default: m.TerminalPanel })),
+);
 
 function PanelLoading({ label }: { label: string }) {
   return (
-    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-      Loading {label}…
+    <div className="flex h-full items-center justify-center">
+      <LoadingState label={label} />
     </div>
   );
 }
@@ -52,34 +63,47 @@ interface ConsoleHeaderProps {
   isOpen: boolean;
   onToggle: () => void;
   latestMessage?: string;
+  entryCount: number;
 }
 
-// Console header component
+/**
+ * The console drawer's handle. Doubles as a status line when collapsed: the
+ * latest message and a count, so you can tell whether opening it is worth it.
+ * Previously the collapsed state clipped the message at a fixed 200px with no
+ * count, which made it noise rather than information.
+ */
 const ConsoleHeader = ({
   isOpen,
   onToggle,
   latestMessage,
+  entryCount,
 }: ConsoleHeaderProps) => {
   const { t } = useTranslation("home");
   return (
-    <div
+    <button
+      type="button"
       onClick={onToggle}
-      className="flex items-start gap-2 px-4 py-1.5 border-t border-border cursor-pointer hover:bg-[var(--background-darkest)] transition-colors"
+      aria-expanded={isOpen}
+      className="flex h-9 w-full shrink-0 items-center gap-2 border-t border-white/[0.07] px-3 text-left outline-none transition-colors hover:bg-white/[0.05] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40"
     >
-      <Logs size={16} className="mt-0.5" />
-      <div className="flex flex-col">
-        <span className="text-sm font-medium">
-          {t("preview.systemMessages")}
+      <Logs size={14} className="shrink-0 text-muted-foreground" />
+      <span className="shrink-0 text-[12px] font-medium text-foreground">
+        {t("preview.systemMessages")}
+      </span>
+      {entryCount > 0 && (
+        <span className="shrink-0 rounded-full bg-white/[0.09] px-1.5 font-mono text-[10px] leading-4 tabular-nums text-muted-foreground">
+          {entryCount > 999 ? "999+" : entryCount}
         </span>
-        {!isOpen && latestMessage && (
-          <span className="text-xs text-gray-500 truncate max-w-[200px] md:max-w-[400px]">
-            {latestMessage}
-          </span>
-        )}
-      </div>
-      <div className="flex-1" />
-      {isOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-    </div>
+      )}
+      {!isOpen && latestMessage && (
+        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/80">
+          {latestMessage}
+        </span>
+      )}
+      <span className="ml-auto shrink-0 text-muted-foreground">
+        {isOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+      </span>
+    </button>
   );
 };
 
@@ -202,7 +226,7 @@ export function PreviewPanel() {
                 <CodeView loading={loading} app={app} />
               ) : previewMode === "git" ? (
                 app?.id ? (
-                  <div className="mx-auto w-full max-w-4xl p-4">
+                  <div className="mx-auto w-full max-w-[840px] p-4">
                     <Suspense
                       fallback={<PanelLoading label="source control" />}
                     >
@@ -214,10 +238,20 @@ export function PreviewPanel() {
                     </Suspense>
                   </div>
                 ) : (
-                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                    Select a project to manage its Git repository.
-                  </div>
+                  <EmptyState
+                    icon={<GitBranch />}
+                    title="No project selected"
+                    description="Open a project to manage its branches, commits and remotes."
+                  />
                 )
+              ) : previewMode === "terminal" ? (
+                <Suspense fallback={<PanelLoading label="the terminal" />}>
+                  <LazyTerminalPanel />
+                </Suspense>
+              ) : previewMode === "game" ? (
+                <Suspense fallback={<PanelLoading label="the game engine" />}>
+                  <LazyGamePanel />
+                </Suspense>
               ) : previewMode === "design" ? (
                 <Suspense fallback={<PanelLoading label="Open Design" />}>
                   <LazyDesignStudio embedded />
@@ -237,13 +271,14 @@ export function PreviewPanel() {
           </Panel>
           {isConsoleOpen && (
             <>
-              <PanelResizeHandle className="h-1 bg-border hover:bg-gray-400 transition-colors cursor-row-resize" />
-              <Panel id="console" minSize={10} defaultSize={30}>
-                <div className="flex flex-col h-full">
+              <PanelResizeHandle className="h-px shrink-0 cursor-row-resize bg-white/[0.07] transition-colors hover:bg-primary/45 data-[resize-handle-active]:bg-primary" />
+              <Panel id="console" minSize={12} defaultSize={30}>
+                <div className="flex h-full flex-col">
                   <ConsoleHeader
                     isOpen={true}
                     onToggle={() => setIsConsoleOpen(false)}
                     latestMessage={latestMessage}
+                    entryCount={consoleEntries.length}
                   />
                   <Console />
                 </div>
@@ -257,6 +292,7 @@ export function PreviewPanel() {
           isOpen={false}
           onToggle={() => setIsConsoleOpen(true)}
           latestMessage={latestMessage}
+          entryCount={consoleEntries.length}
         />
       )}
     </div>

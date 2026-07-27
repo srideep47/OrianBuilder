@@ -3,9 +3,15 @@
    ══════════════════════════════════════════════════════════════ */
 
 /* ══════════════════════════════════════════════════════════════
-   PROJECT ORION — COSMIC RAYS BACKGROUND (from Cosmic Rays.html)
-   Warm amber bottom-left → near-black navy top-right
-   Canvas rays use mix-blend-mode: screen over this stage.
+   PROJECT ORION — COSMIC BACKDROP
+   Violet nebula over near-black, mirroring OrionAndroid's
+   core/design/CosmicBackground.kt so both clients share one backdrop.
+
+   This replaced a warm amber "cosmic rays" stage that fought the violet
+   Cosmos accent: the app's brand colour is violet, so an orange backdrop
+   made every accent read as an accident. Same four nebula clouds and
+   star density as Android, expressed as CSS gradients rather than a
+   canvas — no rAF loop, no GPU buffer, no per-frame cost.
    ══════════════════════════════════════════════════════════════ */
 
 .cosmos {
@@ -16,41 +22,57 @@
   z-index: 0;
 }
 
-/* Deep-space wash — exact stage gradient from the design file */
+/* Deep-space wash. Cloud centres and alphas match CosmicBackground.kt's
+   drawRect calls: violet 0.35 top-left, blue 0.28 bottom-right, pink 0.18
+   centre, sky-blue 0.22 top-right. */
 .orion-stage {
   position: absolute;
-  inset: 0;
+  inset: -8%;
   background:
     radial-gradient(
-      55% 70% at 18% 82%,
-      rgba(200, 95, 55, 0.55) 0%,
-      rgba(160, 70, 50, 0.22) 35%,
-      transparent 65%
+      60% 60% at 22% 28%,
+      color-mix(in srgb, var(--cosmos-violet) 32%, transparent) 0%,
+      transparent 68%
     ),
     radial-gradient(
-      40% 50% at 32% 60%,
-      rgba(245, 175, 100, 0.3) 0%,
-      transparent 55%
+      65% 65% at 80% 72%,
+      color-mix(in srgb, var(--cosmos-violet-2) 26%, transparent) 0%,
+      transparent 66%
     ),
     radial-gradient(
-      38% 45% at 48% 38%,
-      rgba(135, 85, 150, 0.25) 0%,
-      transparent 60%
+      70% 70% at 52% 50%,
+      color-mix(in srgb, var(--cosmos-pink) 14%, transparent) 0%,
+      transparent 64%
     ),
     radial-gradient(
-      50% 60% at 80% 20%,
-      rgba(8, 6, 22, 1) 0%,
-      rgba(4, 3, 12, 1) 70%
+      45% 45% at 82% 20%,
+      color-mix(in srgb, var(--cosmos-blue) 18%, transparent) 0%,
+      transparent 62%
     ),
-    radial-gradient(
-      45% 55% at 88% 78%,
-      rgba(60, 75, 125, 0.28) 0%,
-      transparent 60%
-    ),
-    linear-gradient(125deg, #1c0a06 0%, #0a0612 55%, #03030a 100%);
+    linear-gradient(
+      145deg,
+      var(--cosmos-deep) 0%,
+      var(--cosmos-bg) 58%,
+      #010004 100%
+    );
+  /* Same 60s reversing drift as Android's `swirl` transition. */
+  animation: orion-nebula-drift 60s ease-in-out infinite alternate;
+  will-change: transform;
 }
 
-/* Drifting starfield for extra depth */
+@keyframes orion-nebula-drift {
+  from {
+    transform: translate3d(-1.5%, -1.2%, 0) scale(1.02);
+  }
+  to {
+    transform: translate3d(1.5%, 1.2%, 0) scale(1.05);
+  }
+}
+
+/* Starfield. Neutral white points, tiled so density stays constant at any
+   window size instead of thinning out on a wide monitor (the old fixed
+   percentage positions gave eight stars total). Two layers at different
+   scales read as depth. */
 .orion-stars {
   position: absolute;
   inset: 0;
@@ -58,55 +80,55 @@
   background-image:
     radial-gradient(
       1px 1px at 12% 18%,
-      rgba(255, 240, 220, 0.85),
+      rgba(255, 255, 255, 0.8),
       transparent 60%
     ),
     radial-gradient(
-      1px 1px at 27% 64%,
-      rgba(255, 230, 210, 0.6),
+      1px 1px at 68% 34%,
+      rgba(255, 255, 255, 0.55),
       transparent 60%
     ),
     radial-gradient(
-      1.2px 1.2px at 45% 22%,
-      rgba(220, 210, 255, 0.55),
-      transparent 60%
-    ),
-    radial-gradient(
-      1px 1px at 63% 78%,
-      rgba(255, 220, 200, 0.65),
-      transparent 60%
-    ),
-    radial-gradient(
-      1px 1px at 78% 12%,
+      1.3px 1.3px at 41% 72%,
       rgba(220, 210, 255, 0.6),
       transparent 60%
     ),
     radial-gradient(
-      1.4px 1.4px at 88% 48%,
-      rgba(255, 235, 215, 0.55),
+      1px 1px at 88% 81%,
+      rgba(255, 255, 255, 0.5),
       transparent 60%
     ),
     radial-gradient(
-      1px 1px at 8% 88%,
-      rgba(255, 235, 215, 0.5),
-      transparent 60%
-    ),
-    radial-gradient(
-      1px 1px at 38% 92%,
+      1px 1px at 24% 91%,
       rgba(220, 210, 255, 0.45),
       transparent 60%
     );
-  opacity: 0.7;
+  background-size:
+    340px 340px,
+    260px 260px,
+    420px 420px,
+    300px 300px,
+    380px 380px;
+  opacity: 0.55;
+  animation: orion-twinkle 7s ease-in-out infinite alternate;
 }
 
-/* Canvas — cosmic rays, screen-blended over the warm stage */
+/* Matches Android's 7s `twinkleT` sweep — a breathing opacity, not per-star
+   animation, which would mean 110 animated nodes for no visible gain. */
+@keyframes orion-twinkle {
+  from {
+    opacity: 0.4;
+  }
+  to {
+    opacity: 0.68;
+  }
+}
+
+/* Legacy canvas layers from the retired rays design. Kept as no-ops so any
+   stale markup renders nothing rather than a stray blend-mode box. */
 .starfield,
 .orion-streaks {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  mix-blend-mode: screen;
+  display: none;
 }
 
 /* Filmic grain */
@@ -175,8 +197,8 @@
 }
 .glow {
   box-shadow:
-    0 0 0 1px rgba(0, 122, 255, 0.18),
-    0 12px 60px -20px rgba(0, 122, 255, 0.26);
+    0 0 0 1px color-mix(in srgb, var(--cosmos-violet) 20%, transparent),
+    0 12px 60px -20px color-mix(in srgb, var(--cosmos-violet) 30%, transparent);
 }
 
 /* ══════════════════════════════════════════════════════════════

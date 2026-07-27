@@ -132,9 +132,14 @@ export default function ChatPage() {
             });
           }
         }}
+        // Wider when collapsed so the handle stays grabbable once the
+        // conversation is squeezed to a sliver, and it lights up in the accent
+        // colour while dragging so the interaction is visible rather than
+        // guessed at.
         className={cn(
-          "relative shrink-0 self-stretch bg-border hover:bg-gray-400 transition-colors cursor-col-resize",
-          isChatPanelHidden ? "w-2" : "w-0.5",
+          "relative shrink-0 cursor-col-resize self-stretch bg-white/[0.07] transition-colors",
+          "hover:bg-primary/45 data-[resize-handle-active]:bg-primary",
+          isChatPanelHidden ? "w-1.5" : "w-px",
         )}
       />
 

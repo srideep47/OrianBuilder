@@ -5,7 +5,7 @@ import { chatRoute } from "./routes/chat";
 import { settingsRoute } from "./routes/settings";
 import { providerSettingsRoute } from "./routes/settings/providers/$provider";
 import { appDetailsRoute } from "./routes/app-details";
-import { hubRoute } from "./routes/hub";
+import { templatesRoute, hubRedirectRoute } from "./routes/templates";
 import { libraryRoute } from "./routes/library";
 import { appsRoute } from "./routes/apps";
 import { themesRoute } from "./routes/themes";
@@ -24,11 +24,13 @@ import { networkRoute } from "./routes/network";
 import { watchdogRoute } from "./routes/watchdog";
 import { designStudioRoute } from "./routes/design-studio";
 import { orionRoute } from "./routes/orion";
+import { gameRoute } from "./routes/game";
 
 const routeTree = rootRoute.addChildren([
   homeRoute,
   orionRoute,
-  hubRoute,
+  templatesRoute,
+  hubRedirectRoute,
   libraryRoute,
   appsRoute,
   themesRoute,
@@ -50,6 +52,7 @@ const routeTree = rootRoute.addChildren([
   networkRoute,
   watchdogRoute,
   designStudioRoute,
+  gameRoute,
 ]);
 
 // src/components/NotFoundRedirect.tsx

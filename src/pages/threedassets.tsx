@@ -25,6 +25,8 @@ import {
   Upload,
   Wrench,
 } from "lucide-react";
+import { SpaceHeader } from "@/shell/SpaceHeader";
+import { LBadge } from "@/components/liquid";
 import { ipc, type MediaAiStatus } from "@/ipc/types";
 import { useExclusiveMediaSession } from "@/hooks/useExclusiveMediaSession";
 import { Button } from "@/components/ui/button";
@@ -819,17 +821,15 @@ export default function ThreeDAssetsPage() {
           </div>
         </div>
       )}
-      <div className="container mx-auto py-6 px-6 pb-12 space-y-6 max-w-5xl">
-        <header className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-            <Box className="h-6 w-6 text-primary" />
-            3D Assets
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Generate 3D models from a text prompt or a reference image —
-            locally, hardware-accelerated.
-          </p>
-        </header>
+      <div className="mx-auto w-full max-w-[1100px] space-y-6 px-6 pb-12">
+        <SpaceHeader
+          description="Generate 3D models from a text prompt or a reference image — locally, hardware-accelerated."
+          meta={
+            <LBadge tone={isBackendOnline ? "success" : "neutral"} dot>
+              {isBackendOnline ? "Backend online" : "Backend stopped"}
+            </LBadge>
+          }
+        />
 
         <div className="rounded-2xl border border-border bg-card px-4 py-2 flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2 text-sm">

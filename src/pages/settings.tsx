@@ -11,9 +11,8 @@ import { MaxToolCallStepsSelector } from "@/components/MaxToolCallStepsSelector"
 import { ThinkingBudgetSelector } from "@/components/ThinkingBudgetSelector";
 import { useSettings } from "@/hooks/useSettings";
 import { useAppVersion } from "@/hooks/useAppVersion";
-import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
-import { useRouter } from "@tanstack/react-router";
+import { Settings as SettingsIcon } from "lucide-react";
+import { PageHeader } from "@/components/liquid";
 import { GitHubIntegration } from "@/components/GitHubIntegration";
 import { VercelIntegration } from "@/components/VercelIntegration";
 import { SupabaseIntegration } from "@/components/SupabaseIntegration";
@@ -51,7 +50,6 @@ export default function SettingsPage() {
   const [isResetting, setIsResetting] = useState(false);
   const appVersion = useAppVersion();
   const { settings, updateSettings } = useSettings();
-  const router = useRouter();
   const setActiveSettingsSection = useSetAtom(activeSettingsSectionAtom);
 
   useEffect(() => {
@@ -75,20 +73,15 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="settings-content flex-1 overflow-y-auto px-8 py-4">
-      <div className="max-w-5xl mx-auto">
-        <Button
-          onClick={() => router.history.back()}
-          variant="outline"
-          size="sm"
-          className="flex items-center gap-2 mb-4 bg-(--background-lightest) py-5"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Go Back
-        </Button>
-        <div className="flex justify-between mb-4">
-          <h1 className="text-3xl font-bold text-foreground">Settings</h1>
-        </div>
+    <div className="settings-content flex-1 overflow-y-auto px-6">
+      <div className="mx-auto w-full max-w-[1100px] pb-8">
+        {/* No "Go Back" button: the nav rail is always present, so there was
+            never anywhere for it to go back to. */}
+        <PageHeader
+          title="Settings"
+          description="Providers, agent behaviour, integrations, privacy and storage for this installation."
+          icon={<SettingsIcon />}
+        />
 
         <div className="space-y-6">
           <GeneralSettings appVersion={appVersion} />

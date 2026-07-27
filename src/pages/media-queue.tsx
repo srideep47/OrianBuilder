@@ -30,6 +30,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { SpaceHeader } from "@/shell/SpaceHeader";
+import {
+  EmptyState,
+  LBadge,
+  LButton,
+  PageShell,
+  Panel,
+} from "@/components/liquid";
 import { ipc } from "@/ipc/types";
 import type { MediaJob, MediaJobKind, MediaAspectRatio } from "@/ipc/types";
 
@@ -274,21 +282,35 @@ export default function MediaQueuePage() {
     if (!ok) toast.error(failMsg);
   };
 
-  return (
-    <div className="mx-auto flex h-full max-w-4xl flex-col gap-6 overflow-y-auto p-6">
-      <div>
-        <h1 className="flex items-center gap-2 text-xl font-semibold">
-          <ListVideo className="h-5 w-5" />
-          Media Queue
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Queue prompts with targets — each job is generated one at a time.
-          Friends can submit to your queue, and you can submit to theirs.
-        </p>
-      </div>
+  const active = jobs.filter(
+    (job) => job.status === "running" || job.status === "queued",
+  ).length;
 
+  return (
+    <PageShell
+      width="content"
+      header={
+        <SpaceHeader
+          meta={
+            active > 0 ? (
+              <LBadge tone="accent" dot>
+                {active} active
+              </LBadge>
+            ) : jobs.length > 0 ? (
+              <LBadge tone="neutral">{jobs.length} jobs</LBadge>
+            ) : undefined
+          }
+        />
+      }
+      bodyClassName="flex flex-col gap-6"
+    >
       {/* Submission form */}
-      <div className="flex flex-col gap-4 rounded-3xl border bg-card p-4">
+      <Panel
+        title="New job"
+        subtitle="Runs one at a time, in order. A trusted peer can be the target instead of this machine."
+        icon={<ListVideo />}
+        bodyClassName="flex flex-col gap-4 p-4"
+      >
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="flex flex-col gap-1.5">
             <Label>Type</Label>
@@ -421,28 +443,25 @@ export default function MediaQueuePage() {
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={submit} disabled={submitting}>
-            {submitting ? (
-              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-            ) : (
-              <Plus className="mr-1.5 h-4 w-4" />
-            )}
+          <LButton
+            tone="primary"
+            onClick={submit}
+            disabled={submitting}
+            icon={submitting ? <Loader2 className="animate-spin" /> : <Plus />}
+          >
             Add to queue
-          </Button>
+          </LButton>
         </div>
-      </div>
+      </Panel>
 
       {/* Job list */}
       <div className="flex flex-col gap-2 pb-6">
         {jobs.length === 0 ? (
-          <p
-            className={cn(
-              "rounded-3xl border border-dashed p-8 text-center text-sm text-muted-foreground",
-            )}
-          >
-            Nothing queued yet — add a prompt above. Finished media lands in
-            Library → Media.
-          </p>
+          <EmptyState
+            icon={<ListVideo />}
+            title="Nothing queued"
+            description="Add a prompt above. Finished media lands in Create → Gallery."
+          />
         ) : (
           jobs.map((job) => (
             <JobRow
@@ -470,6 +489,6 @@ export default function MediaQueuePage() {
           ))
         )}
       </div>
-    </div>
+    </PageShell>
   );
 }

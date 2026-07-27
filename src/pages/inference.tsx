@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { ipc } from "@/ipc/types";
 import { HardwareCard } from "@/components/HardwareCard";
 import { LlamaBinaryDownloader } from "@/components/LlamaBinaryDownloader";
+import { SpaceHeader } from "@/shell/SpaceHeader";
+import { LBadge } from "@/components/liquid";
 import type {
   GpuInfo,
   GpuStats,
@@ -1108,42 +1110,42 @@ export default function InferencePage() {
           <LlamaBinaryDownloader />
         </div>
       )}
-      <div className="sticky top-0 z-10 bg-transparent/80 backdrop-blur-xl border-b border-border/50 px-6 py-4 flex items-center justify-between shrink-0">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2 page-title">
-            <Zap className="w-5 h-5 text-yellow-500" />
-            Inference Engine
-          </h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Embedded tensor inference · llama-server ·{" "}
-            {gpuInfo?.backend
+      <div className="sticky top-0 z-10 shrink-0 border-b border-white/[0.07] bg-[color-mix(in_srgb,var(--cosmos-bg)_62%,transparent)] px-6 backdrop-blur-[24px]">
+        <SpaceHeader
+          description={`Embedded tensor inference · llama-server · ${
+            gpuInfo?.backend
               ? (BACKEND_LABELS[gpuInfo.backend]?.label ??
                 gpuInfo.backend.toUpperCase())
               : gpuInfo?.tensorCoreGen
                 ? `CUDA ${gpuInfo.tensorCoreGen}`
-                : "—"}
-          </p>
-        </div>
-        {modelLoaded ? (
-          <div className="flex flex-col items-end gap-1">
-            <span className="flex items-center gap-1.5 text-xs font-medium text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 px-3 py-1.5 rounded-full border border-green-200 dark:border-green-800">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Active · {modelName}
-            </span>
-            <span className="text-[10px] text-muted-foreground px-1">
-              {loadedGpuLayers} layers GPU · {loadedCpuLayers} CPU · ctx{" "}
-              {actualCtx.toLocaleString()} tokens
-            </span>
-          </div>
-        ) : (
-          <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground bg-muted px-3 py-1.5 rounded-full border">
-            <AlertCircle className="w-3.5 h-3.5" />
-            No model loaded
-          </span>
-        )}
+                : "—"
+          }`}
+          meta={
+            modelLoaded ? (
+              <LBadge tone="success" dot>
+                {modelName}
+              </LBadge>
+            ) : (
+              <LBadge tone="neutral">
+                <AlertCircle className="h-3 w-3" />
+                No model loaded
+              </LBadge>
+            )
+          }
+          actions={
+            modelLoaded ? (
+              // Residency facts, in the mono face with tabular figures so the
+              // numbers don't jump as layers move between GPU and CPU.
+              <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                {loadedGpuLayers} GPU · {loadedCpuLayers} CPU · ctx{" "}
+                {actualCtx.toLocaleString()}
+              </span>
+            ) : undefined
+          }
+        />
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 max-w-7xl mx-auto w-full">
+      <div className="mx-auto w-full max-w-[1440px] flex-1 space-y-5 overflow-y-auto px-6 py-5">
         <HardwareCard />
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px] items-start">
           <div className="space-y-5 min-w-0">

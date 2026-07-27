@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useAtom, useSetAtom } from "jotai";
 import {
   homeChatInputValueAtom,
@@ -14,6 +14,7 @@ import { useStreamChat } from "@/hooks/useStreamChat";
 import { HomeChatInput } from "@/components/chat/HomeChatInput";
 import { OrionCommandBar } from "@/components/orion/OrionCommandBar";
 import { OrionSessionsPanel } from "@/components/orion/OrionPanels";
+import { OrionAdvanced } from "@/components/orion/OrionAdvanced";
 import { usePostHog } from "posthog-js/react";
 import { PrivacyBanner } from "@/components/TelemetryBanner";
 import { useAppVersion } from "@/hooks/useAppVersion";
@@ -24,16 +25,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useTheme } from "@/contexts/ThemeContext";
-import { Button } from "@/components/ui/button";
 import {
-  ArrowRight,
-  ExternalLink,
-  FolderKanban,
+  ArrowUpRight,
+  Boxes,
+  Gamepad2,
   Image as ImageIcon,
-  Layers3,
   Network,
-  Orbit,
-  Sparkles,
 } from "lucide-react";
 import { showError } from "@/lib/toast";
 import { invalidateAppQuery } from "@/hooks/useLoadApp";
@@ -49,6 +46,15 @@ import { getEffectiveDefaultChatMode } from "@/lib/schemas";
 import { useFreeAgentQuota } from "@/hooks/useFreeAgentQuota";
 import { useInitialChatMode } from "@/hooks/useInitialChatMode";
 import { OrianBuilderMarkdownParser } from "@/components/chat/OrianBuilderMarkdownParser";
+import { SpaceHeader } from "@/shell/SpaceHeader";
+import {
+  Card,
+  LBadge,
+  LButton,
+  LoadingState,
+  PageShell,
+  Stack,
+} from "@/components/liquid";
 
 let hasCheckedReleaseNotes = false;
 
@@ -57,6 +63,16 @@ export interface HomeSubmitOptions {
   selectedApp?: ListedApp;
 }
 
+/**
+ * The Orion space — the app's front door.
+ *
+ * One job: turn a sentence into work. Everything that used to compete with the
+ * command box for attention (engine panels, model tiers, storage, workflow
+ * catalogue, a second copy of the composer, and a whole duplicate `/orion`
+ * page) is either gone or behind the `OrionAdvanced` disclosure. What's left on
+ * the page is the composer, four concrete next steps, and the sessions you
+ * might want to return to.
+ */
 export default function HomePage() {
   const { t } = useTranslation("home");
   const [inputValue, setInputValue] = useAtom(homeChatInputValueAtom);
@@ -358,42 +374,16 @@ export default function HomePage() {
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full w-full">
-        <div className="flex flex-col items-center">
-          <div className="relative w-20 h-20 mb-6">
-            <div className="absolute inset-0 border-8 border-gray-200 dark:border-gray-700 rounded-full" />
-            <div className="absolute inset-0 border-8 border-t-primary rounded-full animate-spin" />
-          </div>
-          <h2 className="text-xl font-bold mb-2 text-gray-800 dark:text-gray-200">
-            {loadingMode === "existing" ? t("startingChat") : t("buildingApp")}
-          </h2>
-          <p className="text-gray-600 dark:text-gray-400 text-center max-w-sm">
-            {loadingMode === "existing" ? (
-              t("creatingNewChat")
-            ) : (
-              <>
-                {t("settingUp")}
-                <br />
-                {t("mightTakeMoment")}
-              </>
-            )}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   const releaseNotesDialog = (
     <Dialog open={releaseNotesOpen} onOpenChange={setReleaseNotesOpen}>
-      <DialogContent className="max-w-4xl bg-(--docs-bg) pr-0 pt-4 pl-4 gap-1">
+      <DialogContent className="max-w-4xl gap-1 bg-(--docs-bg) pl-4 pr-0 pt-4">
         <DialogHeader>
           <DialogTitle>{t("whatsNew", { version: appVersion })}</DialogTitle>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="absolute right-10 top-2 focus-visible:ring-0 focus-visible:ring-offset-0"
+          <LButton
+            tone="ghost"
+            size="compact"
+            className="absolute right-10 top-2"
+            icon={<ArrowUpRight />}
             onClick={() =>
               window.open(
                 releaseUrl.replace("?hideHeader=true&theme=" + theme, ""),
@@ -401,15 +391,15 @@ export default function HomePage() {
               )
             }
           >
-            <ExternalLink className="w-4 h-4" />
-          </Button>
+            Open
+          </LButton>
         </DialogHeader>
-        <div className="overflow-auto h-[70vh] flex flex-col">
+        <div className="flex h-[70vh] flex-col overflow-auto">
           {releaseUrl && (
             <div className="flex-1">
               <iframe
                 src={releaseUrl}
-                className="w-full h-full border-0 rounded-2xl"
+                className="h-full w-full rounded-2xl border-0"
                 title={t("releaseNotesTitle", { version: appVersion })}
               />
             </div>
@@ -427,136 +417,85 @@ export default function HomePage() {
     />
   );
 
-  // Landing state: Orion is the single primary surface. Detailed engine/model
-  // controls stay available in context without competing with the command box.
-  if (chatMessages.length === 0) {
+  if (isLoading) {
     return (
-      <div className="h-full w-full overflow-y-auto">
-        {forceCloseDialog}
-        <div className="mx-auto flex min-h-full w-full max-w-[1440px] flex-col px-4 py-5 sm:px-6 lg:px-8">
-          <header className="flex flex-wrap items-center gap-3 border-b border-border/70 pb-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-primary/25 bg-primary/12 text-primary shadow-[0_0_32px_rgba(168,140,255,0.12)]">
-              <Orbit className="h-5 w-5" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <h1 className="text-lg font-semibold tracking-tight text-foreground">
-                Orion Workspace
-              </h1>
-              <p className="text-xs text-muted-foreground">
-                One conversation for planning, creation, verification, and
-                delivery.
-              </p>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Link
-                to="/mediaai"
-                className="inline-flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-              >
-                <ImageIcon className="h-3.5 w-3.5" /> Media
-              </Link>
-              <Link
-                to="/apps"
-                className="inline-flex h-8 items-center gap-1.5 rounded-xl px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-              >
-                <FolderKanban className="h-3.5 w-3.5" /> Projects
-              </Link>
-              <span className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-medium text-emerald-300">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />{" "}
-                local first
-              </span>
-            </div>
-          </header>
-
-          <div className="grid flex-1 min-w-0 gap-5 pt-5 xl:grid-cols-[minmax(0,1fr)_310px]">
-            <main className="flex min-w-0 flex-col justify-center py-6 xl:py-12">
-              <div className="mb-6 max-w-3xl">
-                <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/[0.08] px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
-                  <Sparkles className="h-3 w-3" /> Unified local AI workspace
-                </div>
-                <h2 className="text-balance text-3xl font-semibold leading-tight tracking-[-0.035em] text-foreground sm:text-4xl">
-                  What should Orion finish for you?
-                </h2>
-                <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-                  Mix software, design, images, video, audio, research, testing,
-                  and deployment in the same command. Orion selects the tools
-                  and shows every result in the session.
-                </p>
-              </div>
-              <OrionCommandBar appId={appId ?? undefined} />
-
-              <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                {[
-                  {
-                    label: "Build and verify",
-                    detail: "Code · test · preview · ship",
-                    icon: Layers3,
-                    to: "/apps" as const,
-                  },
-                  {
-                    label: "Create media",
-                    detail: "Model-aware local recipes",
-                    icon: ImageIcon,
-                    to: "/mediaai" as const,
-                  },
-                  {
-                    label: "Use the network",
-                    detail: "Share compute and tasks",
-                    icon: Network,
-                    to: "/network" as const,
-                  },
-                ].map(({ label, detail, icon: Icon, to }) => (
-                  <Link
-                    key={label}
-                    to={to}
-                    className="group flex items-center gap-2.5 rounded-2xl border border-border/70 bg-card/35 px-3 py-2.5 transition-colors hover:border-primary/25 hover:bg-card/60"
-                  >
-                    <Icon className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-xs font-medium text-foreground">
-                        {label}
-                      </span>
-                      <span className="block truncate text-[10px] text-muted-foreground">
-                        {detail}
-                      </span>
-                    </span>
-                    <ArrowRight className="h-3 w-3 text-muted-foreground/50" />
-                  </Link>
-                ))}
-              </div>
-            </main>
-            <aside className="min-w-0 border-l border-border/60 pl-5">
-              <OrionSessionsPanel />
-            </aside>
-          </div>
+      <PageShell width="content" fill>
+        <div className="flex h-full items-center justify-center">
+          <LoadingState
+            label={
+              loadingMode === "existing"
+                ? t("creatingNewChat")
+                : t("settingUp").replace(/\.$/, "")
+            }
+          />
         </div>
-        <PrivacyBanner />
-        {releaseNotesDialog}
-      </div>
+      </PageShell>
     );
   }
 
-  // Chat state: messages exist, standard chat-app layout.
+  // Landing state: the command surface is the page.
+  if (chatMessages.length === 0) {
+    return (
+      <>
+        <PageShell
+          width="wide"
+          header={
+            <SpaceHeader
+              title="What should Orion finish for you?"
+              description="Mix software, design, images, video, audio, research, testing and deployment in one command. Orion picks the tools and shows every result in the session."
+              meta={
+                <LBadge tone="success" dot>
+                  local first
+                </LBadge>
+              }
+            />
+          }
+        >
+          {forceCloseDialog}
+          <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <main className="flex min-w-0 flex-col">
+              <Stack gap="base">
+                <OrionCommandBar appId={appId ?? undefined} />
+                <QuickStart />
+                <OrionAdvanced />
+              </Stack>
+            </main>
+
+            {/* Sessions sit in a rail, not inline: they're a way back into work
+                you already started, which is a different intent from starting
+                something new and shouldn't interrupt the composer's column. */}
+            <aside className="min-w-0 xl:border-l xl:border-white/[0.07] xl:pl-6">
+              <OrionSessionsPanel />
+            </aside>
+          </div>
+        </PageShell>
+        <PrivacyBanner />
+        {releaseNotesDialog}
+      </>
+    );
+  }
+
+  // Conversation state: transcript with the composer pinned to the bottom.
   return (
-    <div className="flex flex-col h-full w-full overflow-hidden">
+    <div className="flex h-full w-full flex-col overflow-hidden">
       {forceCloseDialog}
       {releaseNotesDialog}
 
-      {/* Scrollable message history */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="w-full max-w-4xl mx-auto px-3 sm:px-6 lg:px-8 py-6 flex flex-col gap-4">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex w-full max-w-[860px] flex-col gap-4 px-4 py-6 sm:px-6">
           {chatMessages.map((msg, i) =>
             msg.role === "user" ? (
               <div key={i} className="flex justify-end">
-                <div className="rounded-[18px] border border-primary/20 bg-primary px-4 py-2.5 max-w-[72%] text-sm text-primary-foreground shadow-[0_12px_32px_rgba(0,122,255,0.22)] whitespace-pre-wrap">
+                <div className="max-w-[76%] whitespace-pre-wrap rounded-[18px] rounded-br-[6px] border border-white/25 bg-gradient-to-b from-[var(--cosmos-violet)] to-[var(--cosmos-violet-2)] px-4 py-2.5 text-[13px] leading-[1.55] text-white shadow-[0_10px_28px_rgba(107,79,216,0.28)]">
                   {msg.content}
                 </div>
               </div>
             ) : (
-              <div key={i} className="flex gap-3 items-start">
-                <div className="w-7 h-7 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center flex-shrink-0 mt-0.5 text-xs text-primary font-bold select-none">
+              <div key={i} className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-7 w-7 shrink-0 select-none items-center justify-center rounded-full border border-primary/30 bg-primary/18 text-[11px] font-bold text-primary">
                   O
                 </div>
-                <div className="liquid-glass border border-black/[0.06] text-foreground rounded-[18px] px-4 py-3 max-w-[72%] text-sm leading-relaxed min-h-[2.5rem] prose dark:prose-invert prose-headings:mb-2 prose-p:my-1 prose-pre:my-2 prose-ol:my-2 prose-ul:my-2 prose-li:my-0.5 dark:border-white/[0.08]">
+                <div className="prose prose-sm dark:prose-invert min-h-[2.5rem] max-w-[76%] rounded-[18px] rounded-bl-[6px] border border-white/[0.10] bg-gradient-to-b from-white/[0.075] to-white/[0.025] px-4 py-3 text-[13px] leading-[1.6] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.09)] prose-headings:mb-2 prose-p:my-1 prose-ol:my-2 prose-ul:my-2 prose-li:my-0.5 prose-pre:my-2">
                   {msg.content ? (
                     <OrianBuilderMarkdownParser
                       content={msg.content}
@@ -564,24 +503,22 @@ export default function HomePage() {
                       isStreaming={isReplying && i === chatMessages.length - 1}
                     />
                   ) : isReplying && i === chatMessages.length - 1 ? (
-                    <span className="flex gap-1 items-center h-5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:0ms]" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:150ms]" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:300ms]" />
+                    <span className="flex h-5 items-center gap-1">
+                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:0ms]" />
+                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:150ms]" />
+                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:300ms]" />
                     </span>
                   ) : null}
                 </div>
               </div>
             ),
           )}
-          {/* Scroll anchor */}
           <div ref={messagesEndRef} />
         </div>
       </div>
 
-      {/* Input pinned to bottom */}
-      <div className="shrink-0 bg-transparent/80 backdrop-blur-sm">
-        <div className="w-full max-w-4xl mx-auto px-3 sm:px-6 lg:px-8 py-3">
+      <div className="shrink-0 border-t border-white/[0.07] bg-[color-mix(in_srgb,var(--cosmos-bg)_55%,transparent)] backdrop-blur-[24px]">
+        <div className="mx-auto w-full max-w-[860px] px-4 py-3 sm:px-6">
           <HomeChatInput
             onSubmit={handleSubmit}
             isStreaming={isReplying}
@@ -589,6 +526,70 @@ export default function HomePage() {
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Four concrete starting points, one per space that can begin work. Named for
+ * the outcome rather than the destination — "Create media" says more about what
+ * you'll get than "Media Studio" does.
+ */
+const QUICK_START = [
+  {
+    to: "/apps",
+    label: "Open a project",
+    // Detail lines are kept short enough to survive a three-across grid in a
+    // 1280px window — the first drafts truncated mid-word at that size, which
+    // reads as breakage rather than brevity.
+    detail: "Pick up where you left off",
+    icon: Boxes,
+  },
+  {
+    to: "/game",
+    label: "Make a game",
+    detail: "Godot, driven by hand or by Orion",
+    icon: Gamepad2,
+  },
+  {
+    to: "/mediaai",
+    label: "Create media",
+    detail: "Image, video, audio and 3D",
+    icon: ImageIcon,
+  },
+  {
+    to: "/network",
+    label: "Use the network",
+    detail: "Share compute with peers",
+    icon: Network,
+  },
+] as const;
+
+function QuickStart() {
+  const navigate = useNavigate();
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+      {QUICK_START.map(({ to, label, detail, icon: Icon }) => (
+        <Card
+          key={to}
+          corner="sm"
+          onSelect={() => navigate({ to })}
+          className="group flex items-center gap-3 px-3.5 py-3"
+        >
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[11px] bg-white/[0.07] text-muted-foreground transition-colors group-hover:bg-primary/15 group-hover:text-primary">
+            <Icon className="h-4 w-4" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[13px] font-medium text-foreground">
+              {label}
+            </span>
+            <span className="block truncate text-[11px] text-muted-foreground">
+              {detail}
+            </span>
+          </span>
+          <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/45 transition-colors group-hover:text-primary" />
+        </Card>
+      ))}
     </div>
   );
 }

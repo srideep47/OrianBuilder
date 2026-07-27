@@ -34,7 +34,6 @@ import { useCurrentBranch } from "@/hooks/useCurrentBranch";
 import { useCheckoutVersion } from "@/hooks/useCheckoutVersion";
 import { useRenameBranch } from "@/hooks/useRenameBranch";
 import { isAnyCheckoutVersionInProgressAtom } from "@/store/appAtoms";
-import { sidebarPanelAtom } from "@/atoms/uiAtoms";
 import { LoadingBar } from "../ui/LoadingBar";
 import { UncommittedFilesBanner } from "./UncommittedFilesBanner";
 import { useInitialChatMode } from "@/hooks/useInitialChatMode";
@@ -66,7 +65,6 @@ export function ChatHeader({
   const isAnyCheckoutVersionInProgress = useAtomValue(
     isAnyCheckoutVersionInProgressAtom,
   );
-  const setSidebarPanel = useSetAtom(sidebarPanelAtom);
 
   const {
     branchInfo,
@@ -105,7 +103,6 @@ export function ChatHeader({
         });
         await invalidateChats();
         selectChat({ chatId, appId });
-        setSidebarPanel(null);
       } catch (error) {
         showError(t("failedCreateChat", { error: (error as any).toString() }));
       }
@@ -125,7 +122,6 @@ export function ChatHeader({
         setHomeChatHistory((prev) => [entry, ...prev]);
       }
       setHomeChatMessages([]);
-      setSidebarPanel(null);
       navigate({ to: "/" });
     }
   };

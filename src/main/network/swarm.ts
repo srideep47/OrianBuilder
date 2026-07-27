@@ -376,8 +376,10 @@ class NetworkSwarm extends EventEmitter<SwarmEvents> {
     channel: PeerChannel,
     msg: ChannelMessage,
   ) {
-    // Media sharing — only between trusted peers. Delegated to the coordinator.
-    if (msg.type.startsWith("MEDIA_")) {
+    // Media sharing and asset push — trusted peers only, delegated to the
+    // coordinator. Asset push is gated here as well as inside the handler:
+    // an untrusted peer must not even be able to raise an accept prompt.
+    if (msg.type.startsWith("MEDIA_") || msg.type.startsWith("ASSET_PUSH_")) {
       if (!isTrustedPeer(remoteKeyHex)) return;
       void mediaShare.handleMessage(remoteKeyHex, channel, msg);
       return;

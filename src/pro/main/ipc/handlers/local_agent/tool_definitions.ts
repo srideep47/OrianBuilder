@@ -62,6 +62,9 @@ import { editAstTool } from "./tools/edit_ast";
 import { githubPrTool } from "./tools/github_pr";
 import { connectGithubRepoTool } from "./tools/connect_github_repo";
 import { connectVercelProjectTool } from "./tools/connect_vercel_project";
+import { GODOT_TOOLS } from "./tools/godot_engine";
+import { BLENDER_TOOLS } from "./tools/blender_tools";
+import { generateGameAssetTool } from "./tools/game_asset";
 import type { LanguageModelV3ToolResultOutput } from "@ai-sdk/provider";
 import {
   escapeXmlAttr,
@@ -153,6 +156,11 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   runProjectCheckTool,
   runTypeChecksTool,
   readGuideTool,
+  // Game development: the Godot engine, Blender, and the asset pipeline that
+  // feeds generated content into a real project.
+  ...GODOT_TOOLS,
+  ...BLENDER_TOOLS,
+  generateGameAssetTool,
   // Plan mode tools
   planningQuestionnaireTool,
   writePlanTool,

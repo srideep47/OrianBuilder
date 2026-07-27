@@ -22,4 +22,16 @@ export function registerSharedMediaHandlers(): void {
       return mediaShare.requestDownload(peerKey, fileName);
     },
   );
+
+  createTypedHandler(sharedMediaContracts.pushAsset, async (_e, input) =>
+    mediaShare.offerAsset(input),
+  );
+
+  createTypedHandler(sharedMediaContracts.respondToPush, async (_e, input) =>
+    mediaShare.respondToPush(input),
+  );
+
+  createTypedHandler(sharedMediaContracts.pendingPushOffers, async () =>
+    mediaShare.pendingPushOffers(),
+  );
 }

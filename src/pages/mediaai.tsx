@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type React from "react";
 import { useExclusiveMediaSession } from "@/hooks/useExclusiveMediaSession";
+import { SpaceHeader } from "@/shell/SpaceHeader";
 import {
   CheckCircle2,
   ChevronDown,
@@ -2366,18 +2367,14 @@ export default function MediaAIPage() {
           </div>
         </div>
       )}
-      <div className="mx-auto max-w-5xl">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="flex items-center text-3xl font-bold">
-            <Sparkles className="mr-3 h-8 w-8 text-primary" />
-            Media AI
-          </h1>
-          <p className="mt-2 text-muted-foreground">
-            Local image, audio, transcription, and video generation — hardware
-            accelerated.
-          </p>
-        </div>
+      <div className="mx-auto w-full max-w-[1100px]">
+        {/* Header. Was a `text-3xl` title with an 8×8 icon — the largest heading
+            in the app for one of ~20 pages. Now the shared header, so Studio
+            ranks the same as every other view. */}
+        <SpaceHeader
+          title="Media Studio"
+          description="Local image, audio, transcription and video generation — hardware accelerated."
+        />
 
         <SetupBanner
           phase={setupPhase}

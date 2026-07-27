@@ -24,6 +24,7 @@ import {
   Eye,
   CircleDollarSign,
   Hammer,
+  Gamepad2,
   Palette,
   Volume2,
   VolumeX,
@@ -45,6 +46,8 @@ import { useInitialChatMode } from "@/hooks/useInitialChatMode";
 import { useSettings } from "@/hooks/useSettings";
 import { showError } from "@/lib/toast";
 import { ensureUsableModelForOrion } from "@/lib/embeddedModelAutoload";
+import { OrionExecutorPicker, type OrionExecutor } from "./OrionExecutorPicker";
+import { runClaudeCodeTurn } from "./runClaudeCodeTurn";
 import { queryKeys } from "@/lib/queryKeys";
 import { useQueryClient } from "@tanstack/react-query";
 import { flowEventClient } from "@/ipc/types/intent";
@@ -92,6 +95,7 @@ const CAPABILITY_ICON: Record<CapabilityId, ReactNode> = {
   track_website: <Eye className="w-3.5 h-3.5" />,
   track_price: <CircleDollarSign className="w-3.5 h-3.5" />,
   build_app: <Hammer className="w-3.5 h-3.5" />,
+  make_game: <Gamepad2 className="w-3.5 h-3.5" />,
 };
 
 /** Capabilities whose output is media we render inline as a chat reply. */
@@ -492,6 +496,11 @@ export function OrionCommandBar({
   initialFocus?: OrionCommandFocus;
 }) {
   const [mode, setMode] = useState<"orchestrate" | "chat">("orchestrate");
+  /**
+   * Who runs this command. Null until the picker seeds itself from the persisted
+   * model selection, which is also what runs if the user never opens it.
+   */
+  const [executor, setExecutor] = useState<OrionExecutor | null>(null);
   const [focus, setFocus] = useState<OrionCommandFocus>(initialFocus);
   const [text, setText] = useState("");
   const [isRunning, setIsRunning] = useState(false);
@@ -985,6 +994,64 @@ export function OrionCommandBar({
     let session: { appId: number; chatId: number } | null = null;
     let streamOwnsSession = false;
     try {
+      // Claude Code runs the command itself, with its own Read/Write/Edit/Bash
+      // against the project directory. It does not go through Orion's planner —
+      // that would mean intercepting and re-implementing the tools that make it
+      // worth using. It still lands in a normal chat session, so the transcript,
+      // history and tabs behave like every other conversation.
+      if (executor?.kind === "claude-code") {
+        const ccSession =
+          mode === "chat"
+            ? await createConversationSession(command)
+            : await createCommandSession(command);
+        selectChat({ chatId: ccSession.chatId, appId: ccSession.appId });
+        await persistCommandPrompt(command, ccSession.chatId);
+        setText("");
+
+        const turn = await runClaudeCodeTurn({
+          prompt: command,
+          appId: ccSession.appId,
+          handlers: {
+            // Each tool the CLI runs becomes an activity line, so the user can
+            // watch it work instead of staring at a spinner.
+            onToolStart: (tool) =>
+              setProgress((prev) => [
+                ...prev,
+                {
+                  kind: "log",
+                  label: tool.name,
+                  detail:
+                    typeof tool.input.file_path === "string"
+                      ? tool.input.file_path
+                      : typeof tool.input.command === "string"
+                        ? tool.input.command
+                        : undefined,
+                  status: "running",
+                },
+              ]),
+            onToolEnd: (tool) =>
+              setProgress((prev) => [
+                ...prev,
+                {
+                  kind: "log",
+                  label: tool.ok ? "done" : "failed",
+                  status: tool.ok ? "ok" : "failed",
+                },
+              ]),
+          },
+        });
+        if (!turn.ok) {
+          // Written into the transcript rather than faked as a FlowRunResult:
+          // this turn never went through the flow pipeline, so presenting it as
+          // a flow result would misreport what actually ran.
+          await appendFlowErrorToSession(
+            ccSession.chatId,
+            turn.error ?? "Claude Code did not complete the turn.",
+          );
+        }
+        return;
+      }
+
       if (mode === "chat") {
         const chatSession = await createConversationSession(command);
         selectChat({ chatId: chatSession.chatId, appId: chatSession.appId });
@@ -1166,6 +1233,7 @@ export function OrionCommandBar({
     appId,
     isRunning,
     autonomous,
+    executor,
     mediaRecipe,
     mediaSelection,
     updateSettings,
@@ -1207,6 +1275,9 @@ export function OrionCommandBar({
               : "One command, all workflows - chained automatically."}
           </p>
         </div>
+        {/* Who runs this. Sits next to the mode toggle because the two together
+            are the whole routing decision: what kind of work, and on what. */}
+        <OrionExecutorPicker value={executor} onChange={setExecutor} />
         <div className="inline-flex rounded-xl border border-border/70 bg-muted/30 p-0.5 text-xs">
           <button
             type="button"

@@ -15,7 +15,6 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Eye,
   Loader2,
   CheckCircle2,
   AlertCircle,
@@ -36,6 +35,7 @@ import type {
   WatchdogSetupPhase,
   WatchdogSetupProgress,
 } from "@/ipc/types";
+import { SpaceHeader } from "@/shell/SpaceHeader";
 import { createWatchdogApi, type WatchdogApi } from "@/components/watchdog/api";
 import { WebsiteRadar } from "@/components/watchdog/WebsiteRadar";
 import { PriceMonitor } from "@/components/watchdog/PriceMonitor";
@@ -237,22 +237,16 @@ function Header({ status }: { status: WatchdogStatus | null }) {
   const running = status?.running ?? false;
   const setupComplete = status?.setupComplete ?? false;
   return (
-    <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-card/40">
-      <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-2xl bg-primary/10 flex items-center justify-center">
-          <Eye className="w-5 h-5 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-lg font-semibold">Watchdog</h1>
-          <p className="text-xs text-muted-foreground">
-            Track website changes and product prices, with AI-summarised diffs.
-          </p>
-        </div>
-      </div>
-      <StatusPill
-        running={running}
-        setupComplete={setupComplete}
-        port={status?.port ?? null}
+    <div className="border-b border-white/[0.07] px-6">
+      <SpaceHeader
+        description="Track website changes and product prices, with AI-summarised diffs."
+        meta={
+          <StatusPill
+            running={running}
+            setupComplete={setupComplete}
+            port={status?.port ?? null}
+          />
+        }
       />
     </div>
   );

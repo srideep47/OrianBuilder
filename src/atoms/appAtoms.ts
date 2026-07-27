@@ -5,6 +5,8 @@ import type { RuntimeMode2, UserSettings } from "@/lib/schemas";
 export const currentAppAtom = atom<App | null>(null);
 export const selectedAppIdAtom = atom<number | null>(null);
 export const versionsListAtom = atom<Version[]>([]);
+/** Which panel the Build workspace dock is showing. Mirrors `PreviewMode` in
+ *  `preview_panel/ActionHeader.tsx`; keep the two in step. */
 export const previewModeAtom = atom<
   | "preview"
   | "code"
@@ -15,6 +17,8 @@ export const previewModeAtom = atom<
   | "publish"
   | "security"
   | "plan"
+  | "game"
+  | "terminal"
 >("preview");
 export const selectedVersionIdAtom = atom<string | null>(null);
 

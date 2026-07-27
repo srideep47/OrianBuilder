@@ -9,7 +9,6 @@ import {
   Film,
   Music,
   Box,
-  Loader2,
   Scissors,
   CheckSquare,
   Square,
@@ -19,7 +18,8 @@ import { OrianBuilderAppMediaFolder } from "@/components/OrianBuilderAppMediaFol
 import { GeneratedMediaCard } from "@/components/GeneratedMediaCard";
 import { LibrarySearchBar } from "@/components/LibrarySearchBar";
 import { VideoEditDialog } from "@/components/VideoEditDialog";
-import { Button } from "@/components/ui/button";
+import { SpaceHeader } from "@/shell/SpaceHeader";
+import { LBadge, LButton, LoadingState, PageShell } from "@/components/liquid";
 import { filterMediaAppsByQuery } from "@/lib/mediaUtils";
 import { useNavigate } from "@tanstack/react-router";
 import type { GeneratedMediaKind, GeneratedMediaItem } from "@/ipc/types";
@@ -130,34 +130,36 @@ export default function MediaPage() {
     filteredMediaApps.length === 0 && filteredGenerated.length === 0;
 
   return (
-    <div className="flex h-full flex-col overflow-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b px-6 pb-4 pt-6">
-        <div className="flex items-center gap-2">
-          <ImageIcon className="h-5 w-5 text-primary" />
-          <h1 className="text-base font-semibold">Media</h1>
-        </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => void navigate({ to: "/mediaai" })}
-        >
-          <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-          Generate in Media Studio
-        </Button>
-      </div>
-
-      {/* Search */}
-      <div className="px-6 pt-4">
-        <LibrarySearchBar value={searchQuery} onChange={setSearchQuery} />
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 px-6 py-4 pb-24">
+    <PageShell
+      width="wide"
+      header={
+        <SpaceHeader
+          meta={
+            !isLoading && filteredGenerated.length > 0 ? (
+              <LBadge tone="neutral">{filteredGenerated.length} items</LBadge>
+            ) : undefined
+          }
+          actions={
+            <LButton
+              size="compact"
+              tone="primary"
+              icon={<Sparkles />}
+              onClick={() => void navigate({ to: "/mediaai" })}
+            >
+              Generate
+            </LButton>
+          }
+          toolbar={
+            <LibrarySearchBar value={searchQuery} onChange={setSearchQuery} />
+          }
+        />
+      }
+      // Room for the floating multi-select bar so it never covers the last row.
+      bodyClassName="pb-24"
+    >
+      <div>
         {isLoading ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
+          <LoadingState label="media" />
         ) : isEmpty ? (
           <div className="flex flex-col items-center justify-center gap-4 py-20 text-center">
             <Search className="h-10 w-10 text-muted-foreground/30" />
@@ -185,32 +187,28 @@ export default function MediaPage() {
               const isVideoSection = kind === "video";
               return (
                 <section key={kind}>
-                  <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-                    <Icon className="h-4 w-4 text-muted-foreground" />
-                    {label}
-                    <span className="text-xs font-normal text-muted-foreground">
-                      ({items.length})
+                  {/* Section head sizing matches `Section` in the design system
+                      so media sections rank the same as sections elsewhere. */}
+                  <div className="mb-3 flex min-w-0 items-center gap-2">
+                    <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <h2 className="text-[15px] font-semibold tracking-[-0.006em] text-foreground">
+                      {label}
+                    </h2>
+                    <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                      {items.length}
                     </span>
                     {isVideoSection && items.length >= 2 && (
-                      <Button
-                        size="sm"
-                        variant={selecting ? "outline" : "default"}
-                        className="ml-auto h-8 gap-1.5 px-3 text-xs font-medium shadow-md"
+                      <LButton
+                        size="compact"
+                        tone={selecting ? "glass" : "primary"}
+                        className="ml-auto"
                         onClick={selecting ? exitSelection : enterSelection}
+                        icon={selecting ? <X /> : <Scissors />}
                       >
-                        {selecting ? (
-                          <>
-                            <X className="h-3.5 w-3.5" /> Cancel
-                          </>
-                        ) : (
-                          <>
-                            <Scissors className="h-3.5 w-3.5" />
-                            Edit (join clips)
-                          </>
-                        )}
-                      </Button>
+                        {selecting ? "Cancel" : "Join clips"}
+                      </LButton>
                     )}
-                  </h2>
+                  </div>
                   <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
                     {items.map((item) => {
                       if (isVideoSection && selecting) {
@@ -278,7 +276,9 @@ export default function MediaPage() {
             {/* Per-app media (files generated inside specific apps) */}
             {filteredMediaApps.length > 0 && (
               <section>
-                <h2 className="mb-3 text-sm font-semibold">App media</h2>
+                <h2 className="mb-3 text-[15px] font-semibold tracking-[-0.006em] text-foreground">
+                  App media
+                </h2>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
                   {filteredMediaApps.map((app) => (
                     <OrianBuilderAppMediaFolder
@@ -302,26 +302,40 @@ export default function MediaPage() {
         )}
       </div>
 
-      {/* Floating action bar — appears while videos are being multi-selected. */}
+      {/* Floating action bar — appears while videos are being multi-selected.
+          On the Liquid material with a real backdrop blur, so it reads as
+          chrome hovering over the grid rather than a stray card in it. */}
       {selecting && (
-        <div className="fixed inset-x-0 bottom-4 z-30 flex justify-center px-4">
-          <div className="flex items-center gap-3 rounded-full border bg-transparent/95 px-4 py-2 shadow-lg backdrop-blur">
-            <span className="text-sm">
-              <span className="font-semibold">{selectedVideos.length}</span>{" "}
+        <div className="pointer-events-none fixed inset-x-0 bottom-5 z-30 flex justify-center px-4">
+          <div
+            className={cn(
+              "pointer-events-auto flex items-center gap-3 rounded-full px-4 py-2",
+              "border border-white/[0.16] bg-gradient-to-b from-white/[0.13] to-white/[0.05]",
+              "shadow-[0_18px_60px_rgba(0,0,0,0.42)] backdrop-blur-[24px] backdrop-saturate-[180%]",
+            )}
+          >
+            <span className="text-[13px] text-foreground">
+              <span className="font-mono font-semibold tabular-nums">
+                {selectedVideos.length}
+              </span>{" "}
               {selectedVideos.length === 1 ? "video" : "videos"} selected
             </span>
-            <Button size="sm" variant="ghost" onClick={exitSelection}>
+            <LButton size="compact" tone="ghost" onClick={exitSelection}>
               Cancel
-            </Button>
-            <Button
-              size="sm"
+            </LButton>
+            <LButton
+              size="compact"
+              tone="primary"
               disabled={selectedVideos.length < 2}
               onClick={() => setEditOpen(true)}
+              icon={<Scissors />}
             >
-              <Scissors className="mr-1.5 h-4 w-4" />
-              Edit & join{" "}
-              {selectedVideos.length >= 2 ? selectedVideos.length : ""} clips
-            </Button>
+              Edit &amp; join
+              {selectedVideos.length >= 2
+                ? ` ${selectedVideos.length}`
+                : ""}{" "}
+              clips
+            </LButton>
           </div>
         </div>
       )}
@@ -335,6 +349,6 @@ export default function MediaPage() {
           exitSelection();
         }}
       />
-    </div>
+    </PageShell>
   );
 }

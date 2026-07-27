@@ -1,10 +1,11 @@
 import { SidebarProvider } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/app-sidebar";
-import { SidebarPanel } from "@/components/SidebarPanel";
+import { NavRail } from "@/shell/NavRail";
+import { ContextPanel } from "@/shell/ContextPanel";
+import { CosmicBackdrop } from "@/components/liquid";
 import { ThemeProvider } from "../contexts/ThemeContext";
 import { DeepLinkProvider } from "../contexts/DeepLinkContext";
 import { Toaster } from "sonner";
-import { TitleBar } from "./TitleBar";
+import { TitleBar } from "@/shell/TitleBar";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { useRunApp, useAppOutputSubscription } from "@/hooks/useRunApp";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -162,16 +163,28 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <>
       <ThemeProvider>
         <DeepLinkProvider>
+          {/* The nebula sits behind everything, so the Liquid surfaces above it
+              have something real to refract. */}
+          <CosmicBackdrop />
           <SidebarProvider
             defaultOpen={true}
-            style={{ "--sidebar-width": "4.75rem" } as CSSProperties}
+            // `bg-transparent` overrides the provider's own `bg-sidebar`, which
+            // is a 72%-opaque near-black spanning the whole viewport — it sat on
+            // top of the nebula and was the reason the app read as flat black
+            // however translucent everything above it was. The rail and the
+            // context panel carry their own translucent backgrounds, so the
+            // wrapper doesn't need one.
+            className="bg-transparent"
+            style={
+              { "--sidebar-width": "var(--shell-rail-width)" } as CSSProperties
+            }
           >
             <TitleBar />
-            <AppSidebar />
-            <SidebarPanel />
+            <NavRail />
+            <ContextPanel />
             <div
               id="layout-main-content-container"
-              className="relative z-0 mt-[var(--app-titlebar-height)] flex h-screenish min-w-0 flex-1 overflow-hidden border-l border-t border-border/70 bg-background/78 shadow-[0_18px_70px_rgba(0,0,0,0.2)] backdrop-blur-xl"
+              className="relative z-0 mt-[var(--app-titlebar-height)] flex h-screenish min-w-0 flex-1 overflow-hidden rounded-tl-[20px] border-l border-t border-white/[0.07] bg-[color-mix(in_srgb,var(--cosmos-bg)_72%,transparent)] shadow-[0_18px_70px_rgba(0,0,0,0.32)] backdrop-blur-[28px]"
             >
               {children}
             </div>

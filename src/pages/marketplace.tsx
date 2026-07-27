@@ -10,13 +10,14 @@ import { Button } from "@/components/ui/button";
 import { showError, showSuccess } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "@tanstack/react-router";
+import { SpaceHeader } from "@/shell/SpaceHeader";
+import { LBadge } from "@/components/liquid";
 import {
   Search,
   Loader2,
   Download,
   X,
   ExternalLink,
-  HardDrive,
   Heart,
   Sparkles,
   Clock,
@@ -186,26 +187,19 @@ export default function MarketplacePage() {
     <div className="marketplace-page flex h-full overflow-hidden bg-transparent">
       {/* ─── Main pane ─── */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="border-b border-border/50 px-6 py-4 bg-transparent/80 backdrop-blur-xl sticky top-0 z-10">
-          <div className="flex items-center justify-between gap-4 mb-3">
-            <div>
-              <h1 className="text-xl font-bold flex items-center gap-2 page-title">
-                <HardDrive className="w-5 h-5 text-primary" />
-                Model Marketplace
-              </h1>
-              <p className="text-xs text-muted-foreground">
-                Browse Hugging Face GGUF models · download for the in-app
-                inference engine
-              </p>
-            </div>
-            {activeDownloads.length > 0 && (
-              <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full font-medium flex items-center gap-1.5">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                {activeDownloads.length} downloading
-              </span>
-            )}
-          </div>
+        {/* Header. The page-level identity now comes from SpaceHeader, so this
+            row only carries the controls that belong to the results below. */}
+        <div className="sticky top-0 z-10 border-b border-white/[0.07] bg-[color-mix(in_srgb,var(--cosmos-bg)_62%,transparent)] px-6 py-3 backdrop-blur-[24px]">
+          <SpaceHeader
+            className="py-0 pb-3"
+            meta={
+              activeDownloads.length > 0 ? (
+                <LBadge tone="accent" dot>
+                  {activeDownloads.length} downloading
+                </LBadge>
+              ) : undefined
+            }
+          />
 
           {/* Search bar */}
           <div className="flex gap-2 items-center">

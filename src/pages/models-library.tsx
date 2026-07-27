@@ -9,6 +9,14 @@ import { Button } from "@/components/ui/button";
 import { showError, showSuccess } from "@/lib/toast";
 import { useNavigate } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
+import { SpaceHeader } from "@/shell/SpaceHeader";
+import {
+  EmptyState,
+  LButton,
+  PageShell,
+  Stack,
+  StatTile,
+} from "@/components/liquid";
 import {
   HardDrive,
   Trash2,
@@ -19,7 +27,6 @@ import {
   AlertCircle,
   Cpu,
   Layers,
-  Database,
   Folder,
 } from "lucide-react";
 
@@ -139,97 +146,87 @@ export default function ModelsLibraryPage() {
   );
 
   return (
-    <div className="models-page flex flex-col h-full overflow-y-auto bg-transparent">
-      <div className="border-b border-border/50 px-6 py-4 sticky top-0 z-10 bg-transparent/80 backdrop-blur-xl">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-bold flex items-center gap-2 page-title">
-              <Database className="w-5 h-5 text-primary" />
-              Models Library
-            </h1>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Downloaded GGUF models · load any of them into the in-app
-              inference engine
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate({ to: "/marketplace" })}
-            >
-              <HardDrive className="w-4 h-4 mr-1.5" />
-              Browse Marketplace
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate({ to: "/inference" })}
-            >
-              <Cpu className="w-4 h-4 mr-1.5" />
-              Engine Settings
-            </Button>
-          </div>
-        </div>
-
+    <PageShell
+      width="wide"
+      header={
+        <SpaceHeader
+          actions={
+            <>
+              <LButton
+                size="compact"
+                icon={<HardDrive />}
+                onClick={() => navigate({ to: "/marketplace" })}
+              >
+                Marketplace
+              </LButton>
+              <LButton
+                size="compact"
+                icon={<Cpu />}
+                onClick={() => navigate({ to: "/inference" })}
+              >
+                Cockpit
+              </LButton>
+            </>
+          }
+        />
+      }
+    >
+      <Stack gap="section">
+        {/* Three measurements, one shape. These used to be hand-rolled cards
+            with a different type scale from every other stat in the app. */}
         {dirInfo && (
-          <div className="grid grid-cols-3 gap-3 mt-3">
-            <div className="rounded-2xl border bg-card p-3">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                Models on disk
-              </p>
-              <p className="text-lg font-bold tabular-nums">{models.length}</p>
-            </div>
-            <div className="rounded-2xl border bg-card p-3">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                Total size
-              </p>
-              <p className="text-lg font-bold tabular-nums">
-                {fmtBytes(dirInfo.totalBytes)}
-              </p>
-            </div>
-            <div className="rounded-2xl border bg-card p-3 truncate">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                <Folder className="w-3 h-3" />
-                Storage path
-              </p>
-              <p className="text-xs font-mono truncate" title={dirInfo.dir}>
-                {dirInfo.dir}
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="flex-1 px-6 py-5 space-y-3 max-w-5xl mx-auto w-full">
-        {models.length === 0 ? (
-          <div className="text-center py-20 rounded-3xl border bg-card">
-            <FolderOpen className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
-            <p className="text-sm font-medium">No models downloaded yet</p>
-            <p className="text-xs text-muted-foreground mt-1 mb-4">
-              Browse the Marketplace to download GGUF models from Hugging Face.
-            </p>
-            <Button onClick={() => navigate({ to: "/marketplace" })}>
-              <HardDrive className="w-4 h-4 mr-1.5" />
-              Open Marketplace
-            </Button>
-          </div>
-        ) : (
-          models.map((m) => (
-            <ModelRow
-              key={m.filePath}
-              model={m}
-              metadata={metadata[m.filePath]}
-              isLoaded={status?.modelPath === m.filePath}
-              isLoading={loadingPath === m.filePath}
-              isDeleting={deletingPath === m.filePath}
-              onLoad={() => loadIntoEngine(m)}
-              onDelete={() => removeModel(m)}
+          <div className="grid gap-3 sm:grid-cols-3">
+            <StatTile label="Models on disk" value={models.length} />
+            <StatTile label="Total size" value={fmtBytes(dirInfo.totalBytes)} />
+            <StatTile
+              label="Storage path"
+              icon={<Folder />}
+              value={
+                <span
+                  className="block truncate text-[12px]"
+                  title={dirInfo.dir}
+                >
+                  {dirInfo.dir}
+                </span>
+              }
             />
-          ))
+          </div>
         )}
-      </div>
-    </div>
+
+        <div className="flex flex-col gap-2">
+          {models.length === 0 ? (
+            <EmptyState
+              icon={<FolderOpen />}
+              title="No models downloaded yet"
+              description="Browse the Marketplace to pull GGUF models from Hugging Face onto this machine."
+              action={
+                <LButton
+                  tone="primary"
+                  size="compact"
+                  icon={<HardDrive />}
+                  onClick={() => navigate({ to: "/marketplace" })}
+                >
+                  Open Marketplace
+                </LButton>
+              }
+            />
+          ) : (
+            models.map((m) => (
+              <ModelRow
+                key={m.filePath}
+                model={m}
+                metadata={metadata[m.filePath]}
+                isLoaded={status?.modelPath === m.filePath}
+                isLoading={loadingPath === m.filePath}
+                isDeleting={deletingPath === m.filePath}
+                onLoad={() => loadIntoEngine(m)}
+                onDelete={() => removeModel(m)}
+              />
+            ))
+          )}
+        </div>
+      </Stack>
+    </PageShell>
   );
 }
 

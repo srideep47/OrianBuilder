@@ -608,6 +608,59 @@ const trackPriceCapability = makeTrackingCapability(
   "Add a product URL to Watchdog price monitoring.",
 );
 
+/**
+ * Games are built by the same autonomous agent as apps, because that is where the
+ * `godot_*`, `blender_*` and `generate_game_asset` tools live — a separate
+ * executor here would either duplicate that tool loop or bypass it.
+ *
+ * What this capability adds is *framing*. Without it the planner reaches for
+ * `build_app` and the agent scaffolds a web project, because that is what
+ * "build" has always meant here. This tells it the deliverable is a playable
+ * Godot project and names the tools that get it there, so the plan starts with a
+ * project scaffold and ends with a screenshot rather than a dev server.
+ */
+const makeGameCapability: Capability = {
+  id: "make_game",
+  label: "Make a game",
+  description:
+    "Create or extend a Godot game: scaffold the project, build the scene, generate and import assets, and verify it by running the engine.",
+  async execute(input, ctx) {
+    const goal =
+      typeof input.goal === "string" && input.goal.trim()
+        ? (input.goal as string)
+        : ctx.goal;
+
+    if (!buildExecutor) {
+      logger.warn(
+        "make_game invoked but no build executor is registered; returning handoff descriptor.",
+      );
+      return { runBuild: false, reason: "build-executor-not-registered", goal };
+    }
+
+    const assetRefs: string[] = [];
+    for (const output of Object.values(ctx.priorOutputs)) {
+      for (const candidate of [output.outputPath, output.artifactPath]) {
+        if (typeof candidate === "string") assetRefs.push(candidate);
+      }
+    }
+
+    return buildExecutor({
+      goal: [
+        goal,
+        "",
+        "Deliver this as a Godot 4 game in this project.",
+        "Call godot_create_project if there is no project yet, then godot_launch",
+        "(headless while iterating), godot_create_node and godot_set_property to",
+        "build the scene, generate_game_asset for meshes, textures, music, sound",
+        "and voice, blender_* to clean up or rig any generated mesh, and",
+        "godot_screenshot to look at your work before godot_save_scene.",
+      ].join("\n"),
+      appId: ctx.appId,
+      mediaRefs: assetRefs,
+    });
+  },
+};
+
 const buildAppCapability: Capability = {
   id: "build_app",
   label: "Build app",
@@ -658,6 +711,7 @@ const CAPABILITIES: Record<CapabilityId, Capability> = {
   track_website: trackWebsiteCapability,
   track_price: trackPriceCapability,
   build_app: buildAppCapability,
+  make_game: makeGameCapability,
 };
 
 export function getCapability(id: CapabilityId): Capability {

@@ -1,14 +1,29 @@
 import React, { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
-import { useRouter } from "@tanstack/react-router";
+import { LayoutTemplate } from "lucide-react";
 import { useSettings } from "@/hooks/useSettings";
 import { useTemplates } from "@/hooks/useTemplates";
 import { TemplateCard } from "@/components/TemplateCard";
 import { CreateAppDialog } from "@/components/CreateAppDialog";
+import { SpaceHeader } from "@/shell/SpaceHeader";
+import {
+  EmptyState,
+  LBadge,
+  LoadingState,
+  PageShell,
+  Section,
+  Stack,
+} from "@/components/liquid";
 
-const HubPage: React.FC = () => {
-  const router = useRouter();
+/**
+ * Project starting points, split into what we ship and what the community
+ * contributed.
+ *
+ * Reached at `/templates`; it used to live at `/hub`, which meant something
+ * completely different in the rest of the product. The selected template is
+ * marked with a badge in the header so the page states its own effect — before,
+ * the only signal was a highlight on one card somewhere down the grid.
+ */
+const TemplatesPage: React.FC = () => {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const { templates, isLoading } = useTemplates();
   const { settings, updateSettings } = useSettings();
@@ -18,85 +33,91 @@ const HubPage: React.FC = () => {
     updateSettings({ selectedTemplateId: templateId });
   };
 
-  const handleCreateApp = () => {
-    setIsCreateDialogOpen(true);
-  };
-  // Separate templates into official and community
-  const officialTemplates =
-    templates?.filter((template) => template.isOfficial) || [];
-  const communityTemplates =
-    templates?.filter((template) => !template.isOfficial) || [];
+  const handleCreateApp = () => setIsCreateDialogOpen(true);
+
+  const officialTemplates = templates?.filter((t) => t.isOfficial) ?? [];
+  const communityTemplates = templates?.filter((t) => !t.isOfficial) ?? [];
+  const selected = templates?.find((t) => t.id === selectedTemplateId);
+  const hasAny = officialTemplates.length + communityTemplates.length > 0;
 
   return (
-    <div className="min-h-screen px-8 py-4">
-      <div className="max-w-5xl mx-auto pb-12">
-        <Button
-          onClick={() => router.history.back()}
-          variant="outline"
-          size="sm"
-          className="flex items-center gap-2 mb-4 bg-(--background-lightest) py-5"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Go Back
-        </Button>
-        <header className="mb-8 text-left">
-          <h1 className="text-3xl font-bold text-foreground mb-2 page-title">
-            Pick your default template
-          </h1>
-          <p className="text-md text-muted-foreground">
-            Choose a starting point for your new project.
-            {isLoading && " Loading additional templates..."}
-          </p>
-        </header>
+    <PageShell
+      width="wide"
+      header={
+        <SpaceHeader
+          title="Templates"
+          description="Pick the default starting point for new projects. Orion still overrides it when your prompt clearly implies a different stack."
+          meta={
+            selected ? (
+              <LBadge tone="accent" dot>
+                Default: {selected.title}
+              </LBadge>
+            ) : undefined
+          }
+        />
+      }
+    >
+      {isLoading && !hasAny ? (
+        <LoadingState label="templates" />
+      ) : !hasAny ? (
+        <EmptyState
+          icon={<LayoutTemplate />}
+          title="No templates available"
+          description="The bundled templates failed to load. Check your connection and reopen this view."
+        />
+      ) : (
+        <Stack gap="major">
+          {officialTemplates.length > 0 && (
+            <Section
+              title="Official"
+              description="Maintained by Orion and kept current with each release."
+            >
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+                {officialTemplates.map((template) => (
+                  <TemplateCard
+                    key={template.id}
+                    template={template}
+                    isSelected={template.id === selectedTemplateId}
+                    onSelect={handleTemplateSelect}
+                    onCreateApp={handleCreateApp}
+                  />
+                ))}
+              </div>
+            </Section>
+          )}
 
-        {/* Official Templates Section */}
-        {officialTemplates.length > 0 && (
-          <section className="mb-12">
-            <h2 className="text-2xl font-bold text-foreground mb-6">
-              Official templates
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {officialTemplates.map((template) => (
-                <TemplateCard
-                  key={template.id}
-                  template={template}
-                  isSelected={template.id === selectedTemplateId}
-                  onSelect={handleTemplateSelect}
-                  onCreateApp={handleCreateApp}
-                />
-              ))}
-            </div>
-          </section>
-        )}
+          {communityTemplates.length > 0 && (
+            <Section
+              title="Community"
+              description="Contributed templates. Review the source before shipping anything built on one."
+            >
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+                {communityTemplates.map((template) => (
+                  <TemplateCard
+                    key={template.id}
+                    template={template}
+                    isSelected={template.id === selectedTemplateId}
+                    onSelect={handleTemplateSelect}
+                    onCreateApp={handleCreateApp}
+                  />
+                ))}
+              </div>
+            </Section>
+          )}
 
-        {/* Community Templates Section */}
-        {communityTemplates.length > 0 && (
-          <section className="mb-12">
-            <h2 className="text-2xl font-bold text-foreground mb-6">
-              Community templates
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {communityTemplates.map((template) => (
-                <TemplateCard
-                  key={template.id}
-                  template={template}
-                  isSelected={template.id === selectedTemplateId}
-                  onSelect={handleTemplateSelect}
-                  onCreateApp={handleCreateApp}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-      </div>
+          {isLoading && (
+            <LoadingState compact label="more community templates" />
+          )}
+        </Stack>
+      )}
 
       <CreateAppDialog
         open={isCreateDialogOpen}
         onOpenChange={setIsCreateDialogOpen}
-        template={templates?.find((t) => t.id === settings?.selectedTemplateId)}
+        template={selected}
       />
-    </div>
+    </PageShell>
   );
 };
 
-export default HubPage;
+export default TemplatesPage;

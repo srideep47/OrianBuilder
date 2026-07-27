@@ -50,6 +50,9 @@ import { registerEmbeddedModelHandlers } from "./handlers/embedded_model_handler
 import { registerMarketplaceHandlers } from "./handlers/model_marketplace_handler";
 import { registerMissionHandlers } from "./handlers/mission_handlers";
 import { registerHardwareHandlers } from "./handlers/hardware_handlers";
+import { registerGameHandlers } from "./handlers/game_handlers";
+import { registerWorkspaceHandlers } from "./handlers/workspace_handlers";
+import { registerClaudeCodeHandlers } from "./handlers/claude_code_handlers";
 import { registerOrchestratorHandlers } from "./handlers/orchestrator_handlers";
 import { registerFlowHandlers } from "./handlers/flow_handlers";
 import { registerLlamaBinaryHandlers } from "./handlers/llama_binary_handler";
@@ -121,6 +124,9 @@ export function registerIpcHandlers() {
   registerMarketplaceHandlers();
   registerMissionHandlers();
   registerHardwareHandlers();
+  registerGameHandlers();
+  registerWorkspaceHandlers();
+  registerClaudeCodeHandlers();
   registerOrchestratorHandlers();
   registerFlowHandlers();
   registerLlamaBinaryHandlers();

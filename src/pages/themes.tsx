@@ -1,52 +1,68 @@
 import { useState } from "react";
+import { Palette, Plus } from "lucide-react";
 import { useCustomThemes } from "@/hooks/useCustomThemes";
 import { CustomThemeDialog } from "@/components/CustomThemeDialog";
-import { Button } from "@/components/ui/button";
-import { Plus, Palette } from "lucide-react";
 import { LibraryCard } from "@/components/LibraryCard";
+import { SpaceHeader } from "@/shell/SpaceHeader";
+import {
+  EmptyState,
+  LBadge,
+  LButton,
+  LoadingState,
+  PageShell,
+} from "@/components/liquid";
 
+/** Visual presets applied to generated apps. */
 export default function ThemesPage() {
   const { customThemes, isLoading } = useCustomThemes();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
+  const newThemeButton = (
+    <LButton
+      tone="primary"
+      size="compact"
+      icon={<Plus />}
+      onClick={() => setCreateDialogOpen(true)}
+    >
+      New theme
+    </LButton>
+  );
+
   return (
-    <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="flex items-center text-2xl font-bold sm:text-3xl">
-            <Palette className="mr-2 h-7 w-7 sm:h-8 sm:w-8" />
-            Themes
-          </h1>
-          <Button
-            className="w-full sm:w-auto"
-            onClick={() => setCreateDialogOpen(true)}
-          >
-            <Plus className="mr-2 h-4 w-4" /> New Theme
-          </Button>
-        </div>
-
-        {isLoading ? (
-          <div>Loading...</div>
-        ) : customThemes.length === 0 ? (
-          <div className="text-muted-foreground">
-            No custom themes yet. Create one to get started.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {customThemes.map((theme) => (
-              <LibraryCard
-                key={theme.id}
-                item={{ type: "theme", data: theme }}
-              />
-            ))}
-          </div>
-        )}
-
-        <CustomThemeDialog
-          open={createDialogOpen}
-          onOpenChange={setCreateDialogOpen}
+    <PageShell
+      width="wide"
+      header={
+        <SpaceHeader
+          meta={
+            customThemes.length > 0 ? (
+              <LBadge tone="neutral">{customThemes.length} custom</LBadge>
+            ) : undefined
+          }
+          actions={newThemeButton}
         />
-      </div>
-    </div>
+      }
+    >
+      {isLoading ? (
+        <LoadingState label="themes" />
+      ) : customThemes.length === 0 ? (
+        <EmptyState
+          icon={<Palette />}
+          title="No custom themes yet"
+          description="A theme fixes the palette, type and spacing Orion uses when it generates an interface, so every project you ship looks like yours."
+          action={newThemeButton}
+        />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
+          {customThemes.map((theme) => (
+            <LibraryCard key={theme.id} item={{ type: "theme", data: theme }} />
+          ))}
+        </div>
+      )}
+
+      <CustomThemeDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+      />
+    </PageShell>
   );
 }

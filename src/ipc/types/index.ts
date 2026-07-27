@@ -196,6 +196,50 @@ export {
 } from "./hardware";
 export type { HardwareGpuInfo, HardwareProfile } from "./hardware";
 export {
+  godotContracts,
+  godotClient,
+  godotEvents,
+  godotEventClient,
+  blenderContracts,
+  blenderClient,
+} from "./game";
+export {
+  claudeCodeContracts,
+  claudeCodeClient,
+  claudeCodeEvents,
+  claudeCodeEventClient,
+} from "./claude_code";
+export type {
+  ClaudeAvailability,
+  ClaudeEvent,
+  ClaudeEffort,
+  ClaudePermissionMode,
+  ClaudeTurnUsage,
+} from "./claude_code";
+export {
+  terminalContracts,
+  terminalClient,
+  terminalEvents,
+  terminalEventClient,
+  workspaceFilesContracts,
+  workspaceFilesClient,
+} from "./workspace";
+export type {
+  TerminalInfo,
+  WorkspaceFileEntry,
+  WorkspaceEntryProperties,
+} from "./workspace";
+export type {
+  GodotInstallInfo,
+  GodotMode,
+  GodotStatus,
+  GodotProject,
+  GodotAssetKind,
+  GodotExportTarget,
+  BlenderInstallInfo,
+  BlenderOpName,
+} from "./game";
+export {
   llamaBinaryContracts,
   llamaBinaryClient,
   llamaBinaryEvents,
@@ -650,6 +694,13 @@ import {
 } from "./model_marketplace";
 import { missionClient } from "./mission";
 import { hardwareClient } from "./hardware";
+import { godotClient, blenderClient, godotEventClient } from "./game";
+import { claudeCodeClient, claudeCodeEventClient } from "./claude_code";
+import {
+  terminalClient,
+  terminalEventClient,
+  workspaceFilesClient,
+} from "./workspace";
 import { orchestratorClient } from "./model_orchestrator";
 import { flowClient } from "./intent";
 import { llamaBinaryClient, llamaBinaryEventClient } from "./llama_binary";
@@ -739,6 +790,11 @@ export const ipc = {
   marketplace: modelMarketplaceClient,
   mission: missionClient,
   hardware: hardwareClient,
+  godot: godotClient,
+  blender: blenderClient,
+  claudeCode: claudeCodeClient,
+  terminal: terminalClient,
+  workspaceFiles: workspaceFilesClient,
   orchestrator: orchestratorClient,
   flow: flowClient,
   llamaBinary: llamaBinaryClient,
@@ -775,5 +831,8 @@ export const ipc = {
     youtube: youtubeEventClient,
     androidEmulator: androidEmulatorEventClient,
     schedule: scheduleEventClient,
+    godot: godotEventClient,
+    terminal: terminalEventClient,
+    claudeCode: claudeCodeEventClient,
   },
 } as const;

@@ -55,6 +55,13 @@ import {
 } from "../types/model_marketplace";
 import { missionContracts } from "../types/mission";
 import { hardwareContracts } from "../types/hardware";
+import { godotContracts, godotEvents, blenderContracts } from "../types/game";
+import { claudeCodeContracts, claudeCodeEvents } from "../types/claude_code";
+import {
+  terminalContracts,
+  terminalEvents,
+  workspaceFilesContracts,
+} from "../types/workspace";
 import { orchestratorContracts } from "../types/model_orchestrator";
 import { flowContracts, flowEvents } from "../types/intent";
 import { llamaBinaryContracts, llamaBinaryEvents } from "../types/llama_binary";
@@ -160,6 +167,11 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(youtubeContracts),
   ...getInvokeChannels(androidEmulatorContracts),
   ...getInvokeChannels(scheduleContracts),
+  ...getInvokeChannels(godotContracts),
+  ...getInvokeChannels(blenderContracts),
+  ...getInvokeChannels(terminalContracts),
+  ...getInvokeChannels(workspaceFilesContracts),
+  ...getInvokeChannels(claudeCodeContracts),
 
   // Test-only channels
   ...TEST_INVOKE_CHANNELS,
@@ -198,6 +210,9 @@ export const VALID_RECEIVE_CHANNELS = [
   ...getReceiveChannels(youtubeEvents),
   ...getReceiveChannels(androidEmulatorEvents),
   ...getReceiveChannels(flowEvents),
+  ...getReceiveChannels(godotEvents),
+  ...getReceiveChannels(terminalEvents),
+  ...getReceiveChannels(claudeCodeEvents),
   ...getReceiveChannels(scheduleEvents),
 ] as const;
 

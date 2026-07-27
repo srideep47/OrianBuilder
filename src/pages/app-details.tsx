@@ -7,7 +7,14 @@ import { useLoadApps } from "@/hooks/useLoadApps";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
+  PageShell,
+  PageHeader,
+  EmptyState,
+  LButton,
+} from "@/components/liquid";
+import {
   ArrowLeft,
+  FolderOpen,
   MoreVertical,
   MessageCircle,
   Pencil,
@@ -328,43 +335,55 @@ export default function AppDetailsPage() {
 
   if (!selectedApp) {
     return (
-      <div className="relative min-h-screen p-8">
-        <Button
-          onClick={() => router.history.back()}
-          variant="outline"
-          size="sm"
-          className="absolute top-4 left-4 flex items-center gap-1 bg-(--background-lightest) py-5"
-        >
-          <ArrowLeft className="h-3 w-4" />
-          Back
-        </Button>
-        <div className="flex flex-col items-center justify-center h-full">
-          <h2 className="text-xl font-bold">App not found</h2>
-        </div>
-      </div>
+      <PageShell width="content">
+        <EmptyState
+          icon={<FolderOpen />}
+          title="Project not found"
+          description="It may have been deleted or moved outside the projects folder."
+          action={
+            <LButton
+              size="compact"
+              icon={<ArrowLeft />}
+              onClick={() => router.history.back()}
+            >
+              Back
+            </LButton>
+          }
+        />
+      </PageShell>
     );
   }
 
   const currentAppPath = selectedApp.resolvedPath || "";
 
   return (
-    <div
-      className="relative h-full w-full overflow-y-auto p-4"
-      data-testid="app-details-page"
+    <PageShell
+      width="content"
+      className="relative"
+      // A detail page reached from a list is one of the few places a Back
+      // affordance is honest — but it now sits in the header instead of being
+      // absolutely positioned on top of the content it was overlapping.
+      header={
+        <PageHeader
+          title={selectedApp.name}
+          description={currentAppPath || undefined}
+          actions={
+            <LButton
+              size="compact"
+              icon={<ArrowLeft />}
+              onClick={() => router.history.back()}
+            >
+              Back
+            </LButton>
+          }
+        />
+      }
     >
-      <Button
-        onClick={() => router.history.back()}
-        variant="outline"
-        size="sm"
-        className="absolute top-4 left-4 flex items-center gap-1 bg-(--background-lightest) py-2"
-      >
-        <ArrowLeft className="h-3 w-4" />
-        Back
-      </Button>
-
-      <div className="w-full max-w-2xl mx-auto mt-10 p-4 bg-card rounded-2xl border border-border/60 shadow-md relative">
+      <div data-testid="app-details-page" className="relative w-full">
         <div className="flex items-center mb-3">
-          <h2 className="text-2xl font-bold">{selectedApp.name}</h2>
+          <h2 className="text-[15px] font-semibold text-foreground">
+            {selectedApp.name}
+          </h2>
           <Tooltip>
             <TooltipTrigger
               render={
@@ -964,6 +983,6 @@ export default function AppDetailsPage() {
           </DialogContent>
         </Dialog>
       </div>
-    </div>
+    </PageShell>
   );
 }

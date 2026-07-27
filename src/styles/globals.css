@@ -81,7 +81,10 @@ body[data-scroll-locked] .app-region-drag {
   --card-foreground: #1d1d1f;
   --popover: rgba(255, 255, 255, 0.95);
   --popover-foreground: #1d1d1f;
-  --primary: #007aff; /* macOS system blue */
+  /* Cosmos violet is the brand accent in BOTH themes. It used to be macOS blue
+     in light and violet in dark, so the accent changed identity with the theme
+     and no component could rely on what "primary" meant. */
+  --primary: var(--cosmos-violet-2);
   --primary-foreground: #ffffff;
   --secondary: rgba(0, 0, 0, 0.05);
   --secondary-foreground: #1d1d1f;
@@ -93,13 +96,13 @@ body[data-scroll-locked] .app-region-drag {
   --destructive-foreground: #ffffff;
   --border: rgba(0, 0, 0, 0.1);
   --input: rgba(0, 0, 0, 0.1);
-  --ring: rgba(0, 122, 255, 0.5);
+  --ring: color-mix(in srgb, var(--cosmos-violet-2) 50%, transparent);
 
-  --chart-1: #007aff;
+  --chart-1: var(--cosmos-violet-2);
   --chart-2: #34c759;
-  --chart-3: #5856d6;
+  --chart-3: var(--cosmos-blue);
   --chart-4: #ff9500;
-  --chart-5: #ff2d55;
+  --chart-5: var(--cosmos-pink);
 
   --radius: 1.25rem; /* 20px macOS 26 Liquid Glass curves */
   --glass-blur: 40px;
@@ -123,12 +126,19 @@ body[data-scroll-locked] .app-region-drag {
 
   --sidebar: rgba(245, 245, 247, 0.85);
   --sidebar-foreground: #1d1d1f;
-  --sidebar-primary: #007aff;
+  --sidebar-primary: var(--cosmos-violet-2);
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: rgba(0, 0, 0, 0.06);
+  --sidebar-accent: color-mix(in srgb, var(--cosmos-violet-2) 12%, transparent);
   --sidebar-accent-foreground: #1d1d1f;
   --sidebar-border: rgba(0, 0, 0, 0.1);
-  --sidebar-ring: rgba(0, 122, 255, 0.5);
+  --sidebar-ring: color-mix(in srgb, var(--cosmos-violet-2) 50%, transparent);
+
+  /* ── Shell geometry ───────────────────────────────────────────────────────
+     The redesigned shell has exactly two horizontal chrome widths. Declaring
+     them here means the sidebar, the secondary panel and the content container
+     can never drift out of agreement. */
+  --shell-rail-width: 5.5rem; /* icon + label nav rail */
+  --shell-panel-width: 17.5rem; /* contextual list panel */
 }
 
 .prose {
@@ -230,6 +240,30 @@ body[data-scroll-locked] .app-region-drag {
   }
 }
 
+/* ── Liquid design-system animation ─────────────────────────────────────────
+   Used by `components/liquid`. Declared here, next to the tokens it animates,
+   rather than in a Tailwind plugin. */
+@keyframes liquid-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+/* Respect the OS setting. Liquid leans on press-scale and panel slides, both of
+   which are decoration — every layout stays fully usable without them. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* ── Global animation timing tokens ──────────────────────────────────────────
    At 120 Hz a frame is 8.3 ms.  Transitions should feel immediate but polished:
    · hover feedback  → 80 ms   (≈ 10 frames at 120 Hz)
@@ -279,7 +313,10 @@ body.galaxy-mode .bg-card {
 
 /* Dark glass for the main content container */
 .dark #layout-main-content-container {
-  background: var(--background);
+  /* Translucent, not opaque. This used to be `background: var(--background)`,
+     which painted solid #04030a over the nebula and made the whole app read as
+     flat black — the Liquid material above it had nothing to refract. */
+  background: color-mix(in srgb, var(--cosmos-bg) 58%, transparent);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-color: var(--border);
@@ -2210,6 +2247,8 @@ select {
 }
 
 #layout-main-content-container {
+  /* Light mode keeps the frosted-grey surface. Dark mode is overridden below to
+     a Cosmos wash, because this grey at 86% opacity buried the nebula. */
   background: color-mix(
     in srgb,
     var(--macos-surface-strong) 86%,
@@ -2217,6 +2256,11 @@ select {
   ) !important;
   border-color: var(--macos-border) !important;
   box-shadow: var(--macos-shadow) !important;
+}
+
+.dark #layout-main-content-container {
+  background: color-mix(in srgb, var(--cosmos-bg) 58%, transparent) !important;
+  border-color: rgba(255, 255, 255, 0.07) !important;
 }
 
 :where(

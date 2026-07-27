@@ -92,7 +92,33 @@ export type ChannelMessage =
       data: string;
       eof: boolean;
     }
-  | { type: "MEDIA_DOWNLOAD_ERROR"; requestId: string; error: string };
+  | { type: "MEDIA_DOWNLOAD_ERROR"; requestId: string; error: string }
+  // ── Asset push (phone-originated; closes a wire divergence) ────────────────
+  //
+  // The pull flow above (MEDIA_DOWNLOAD_*) is the receiver asking for a file it
+  // already saw announced. Push is the opposite: the *sender* offers one file
+  // the receiver has never heard of, and the receiver's user accepts or rejects
+  // before any bytes move. OrionAndroid added these ops in `p2p-bridge.js`, with
+  // a comment noting there was no desktop counterpart — this is that
+  // counterpart, message-for-message.
+  | {
+      type: "ASSET_PUSH_OFFER";
+      requestId: string;
+      fileName: string;
+      sizeBytes: number;
+      /** Best-effort MIME type, for the accept prompt. */
+      mimeType?: string;
+    }
+  | { type: "ASSET_PUSH_ACCEPT"; requestId: string }
+  | { type: "ASSET_PUSH_REJECT"; requestId: string; reason?: string }
+  | { type: "ASSET_PUSH_CHUNK"; requestId: string; data: string; eof: boolean }
+  | { type: "ASSET_PUSH_ERROR"; requestId: string; error: string }
+  | {
+      type: "ASSET_PUSH_RESULT";
+      requestId: string;
+      ok: boolean;
+      error?: string;
+    };
 
 /** Metadata describing a shared media item (sent in MEDIA_ANNOUNCE). */
 export interface SharedMediaMeta {

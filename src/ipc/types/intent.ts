@@ -35,6 +35,7 @@ export const CapabilityIdSchema = z.enum([
   "track_website",
   "track_price",
   "build_app",
+  "make_game",
 ]);
 export type CapabilityId = z.infer<typeof CapabilityIdSchema>;
 

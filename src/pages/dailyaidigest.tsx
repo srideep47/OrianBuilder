@@ -14,8 +14,6 @@ import {
   Maximize2,
   Pencil,
   Settings,
-  Wifi,
-  WifiOff,
   Loader2,
   Newspaper,
   Cpu,
@@ -35,6 +33,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SpaceHeader } from "@/shell/SpaceHeader";
+import { Chip, LBadge } from "@/components/liquid";
 import {
   Card,
   CardContent,
@@ -646,82 +646,77 @@ export default function DailyAIDigestPage() {
   const readerOpen = selectedStory !== null;
 
   return (
-    <div className="h-full w-full overflow-y-auto bg-transparent px-4 py-4 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1600px]">
-        {/* Header bar */}
-        <div className="mb-4 flex items-start justify-between">
-          <div>
-            <p className="text-xs text-muted-foreground">{formatDate(now)}</p>
-            <h1 className="text-2xl font-semibold">{getGreeting(now)}</h1>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className="mr-2 flex items-center gap-2 rounded-3xl border px-2 py-1">
-              {feedStatus === "live" ? (
-                <>
-                  <Wifi className="h-3.5 w-3.5 text-green-500" />
-                  <span className="text-xs text-green-600">Live Feed</span>
-                </>
-              ) : feedStatus === "failed" ? (
-                <>
-                  <WifiOff className="h-3.5 w-3.5 text-red-500" />
-                  <span className="text-xs text-red-600">Feed Error</span>
-                </>
-              ) : (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-yellow-500" />
-                  <span className="text-xs text-yellow-600">Loading</span>
-                </>
-              )}
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => loadCategory(activeCategory)}
-              title="Refresh"
-            >
-              <RefreshCw
-                className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
-              />
-            </Button>
-            <Button variant="ghost" size="icon" title="Expand">
-              <Maximize2 className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon" title="Customize">
-              <Pencil className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              title="Settings"
-              onClick={() => setShowSettings((s) => !s)}
-              className={showSettings ? "bg-accent" : ""}
-            >
-              <Settings className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-
-        {/* Category pills */}
-        <div className="mb-4 flex flex-wrap gap-2">
-          {CATEGORIES.map((cat) => {
-            const Icon = cat.icon;
-            const active = cat.id === activeCategoryId;
-            return (
-              <button
-                key={cat.id}
-                onClick={() => setActiveCategoryId(cat.id)}
-                className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition ${
-                  active
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border hover:bg-accent"
-                }`}
+    <div className="h-full w-full overflow-y-auto bg-transparent px-4 py-4 sm:px-6">
+      <div className="mx-auto max-w-[1440px]">
+        {/* Header bar. The greeting stays — it's the point of a daily digest —
+            but it now sits in the shared header so the space breadcrumb, feed
+            state and controls line up with every other page. */}
+        <SpaceHeader
+          className="pt-0"
+          title={getGreeting(now)}
+          description={formatDate(now)}
+          meta={
+            feedStatus === "live" ? (
+              <LBadge tone="success" dot>
+                Live feed
+              </LBadge>
+            ) : feedStatus === "failed" ? (
+              <LBadge tone="danger" dot>
+                Feed error
+              </LBadge>
+            ) : (
+              <LBadge tone="warning" dot>
+                Loading
+              </LBadge>
+            )
+          }
+          actions={
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => loadCategory(activeCategory)}
+                title="Refresh"
               >
-                <Icon className="h-3.5 w-3.5" />
-                {cat.label}
-              </button>
-            );
-          })}
-        </div>
+                <RefreshCw
+                  className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
+                />
+              </Button>
+              <Button variant="ghost" size="icon" title="Expand">
+                <Maximize2 className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="icon" title="Customize">
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Settings"
+                onClick={() => setShowSettings((s) => !s)}
+                className={showSettings ? "bg-accent" : ""}
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
+            </div>
+          }
+          toolbar={
+            <div className="flex flex-wrap gap-2">
+              {CATEGORIES.map((cat) => {
+                const Icon = cat.icon;
+                return (
+                  <Chip
+                    key={cat.id}
+                    selected={cat.id === activeCategoryId}
+                    onClick={() => setActiveCategoryId(cat.id)}
+                    icon={<Icon />}
+                  >
+                    {cat.label}
+                  </Chip>
+                );
+              })}
+            </div>
+          }
+        />
 
         {showSettings && (
           <Card className="mb-4">

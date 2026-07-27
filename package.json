@@ -90,6 +90,8 @@
     "@vercel/sdk": "^1.18.0",
     "@vitejs/plugin-react": "^4.3.4",
     "@vscode/ripgrep": "^1.17.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
     "ai": "^6.0.68",
     "b4a": "^1.8.1",
     "better-sqlite3": "^12.6.2",

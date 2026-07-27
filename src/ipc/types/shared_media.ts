@@ -35,6 +35,29 @@ export type SharedDownloadProgress = z.infer<
   typeof SharedDownloadProgressSchema
 >;
 
+/**
+ * An inbound asset a peer wants to send us, awaiting the user's answer.
+ *
+ * OrionAndroid added this flow to its P2P bridge and its own commit noted there
+ * was no desktop counterpart. This is that counterpart, message-for-message.
+ */
+export const PushOfferSchema = z.object({
+  requestId: z.string(),
+  peerKey: z.string(),
+  displayName: z.string(),
+  fileName: z.string(),
+  sizeBytes: z.number(),
+  mimeType: z.string().nullable().optional(),
+});
+export type SharedPushOffer = z.infer<typeof PushOfferSchema>;
+
+export const PushResultSchema = z.object({
+  requestId: z.string(),
+  ok: z.boolean(),
+  error: z.string().nullable().optional(),
+});
+export type SharedPushResult = z.infer<typeof PushResultSchema>;
+
 export const sharedMediaContracts = {
   /** All peers' advertised shared catalogs (grouped by peer). */
   getCatalog: defineContract({
@@ -54,6 +77,43 @@ export const sharedMediaContracts = {
     input: z.object({ peerKey: z.string(), fileName: z.string() }),
     output: z.object({ ok: z.boolean(), message: z.string() }),
   }),
+  /**
+   * Offer one local file to a trusted peer. Nothing transfers until they accept.
+   *
+   * The counterpart to `download`: there, we ask for something a peer announced.
+   * Here we push something they never asked for, which is why it needs their
+   * explicit accept rather than just our trust in them.
+   */
+  pushAsset: defineContract({
+    channel: "shared-media:push-asset",
+    input: z.object({
+      peerKey: z.string(),
+      absolutePath: z.string(),
+      fileName: z.string().optional(),
+      mimeType: z.string().optional(),
+    }),
+    output: z.object({
+      ok: z.boolean(),
+      requestId: z.string().optional(),
+      message: z.string().optional(),
+    }),
+  }),
+  /** Accept or decline an inbound offer. */
+  respondToPush: defineContract({
+    channel: "shared-media:respond-to-push",
+    input: z.object({
+      requestId: z.string(),
+      accept: z.boolean(),
+      reason: z.string().optional(),
+    }),
+    output: z.object({ ok: z.boolean() }),
+  }),
+  /** Offers still awaiting an answer, so a reopened UI can show them. */
+  pendingPushOffers: defineContract({
+    channel: "shared-media:pending-push-offers",
+    input: z.void(),
+    output: z.array(PushOfferSchema),
+  }),
 } as const;
 
 export const sharedMediaClient = createClient(sharedMediaContracts);
@@ -66,6 +126,14 @@ export const sharedMediaEvents = {
   downloadProgress: defineEvent({
     channel: "shared-media:download-progress",
     payload: SharedDownloadProgressSchema,
+  }),
+  pushOffer: defineEvent({
+    channel: "shared-media:push-offer",
+    payload: PushOfferSchema,
+  }),
+  pushResult: defineEvent({
+    channel: "shared-media:push-result",
+    payload: PushResultSchema,
   }),
 } as const;
 

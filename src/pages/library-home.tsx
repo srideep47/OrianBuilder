@@ -8,6 +8,7 @@ import { Loader2 } from "lucide-react";
 import { CreateOrEditPromptDialog } from "@/components/CreatePromptDialog";
 import { CustomThemeDialog } from "@/components/CustomThemeDialog";
 import { NewLibraryItemMenu } from "@/components/NewLibraryItemMenu";
+import { SpaceHeader } from "@/shell/SpaceHeader";
 import { LibraryCard, type LibraryItem } from "@/components/LibraryCard";
 import { LibrarySearchBar } from "@/components/LibrarySearchBar";
 import {
@@ -142,30 +143,24 @@ export default function LibraryHomePage() {
     filteredGeneratedMedia.length === 0;
 
   return (
-    <div className="min-h-screen w-full bg-transparent transition-colors duration-300">
-      <div className="mx-auto max-w-[1440px] px-6 py-8 lg:px-8 lg:py-10">
+    <div className="h-full w-full overflow-y-auto bg-transparent">
+      <div className="mx-auto w-full max-w-[1440px] px-6 pb-8">
         <div className="flex flex-col gap-2">
-          {/* Header */}
-          <div className="mb-8 flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-[34px] font-semibold tracking-tight text-foreground">
-                Library
-              </h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Manage your themes, prompts, and generated media
-              </p>
-            </div>
-            <div className="flex items-center gap-3 self-start">
-              <ImageGenerationProgressButton />
-              <div className="liquid-glass-thin rounded-full border border-black/[0.05] p-1 shadow-[0_12px_32px_rgba(15,23,42,0.06)] dark:border-white/[0.08] dark:shadow-[0_12px_32px_rgba(0,0,0,0.24)]">
+          {/* Header. Was a 34px title — the biggest in the app — on a page that
+              ranks the same as its siblings. */}
+          <SpaceHeader
+            description="Prompts, themes and generated media you own."
+            actions={
+              <>
+                <ImageGenerationProgressButton />
                 <NewLibraryItemMenu
                   onNewPrompt={() => setPromptDialogOpen(true)}
                   onNewTheme={() => setCreateThemeDialogOpen(true)}
                   onNewImage={() => setImageGeneratorOpen(true)}
                 />
-              </div>
-            </div>
-          </div>
+              </>
+            }
+          />
 
           {/* Dialogs (controlled externally) */}
           <CreateOrEditPromptDialog

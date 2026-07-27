@@ -39,12 +39,37 @@ interface PendingDownload {
   received: number;
 }
 
+/** An inbound push we have offered to the user but not yet answered. */
+interface IncomingPush {
+  peerKey: string;
+  requestId: string;
+  fileName: string;
+  sizeBytes: number;
+  mimeType?: string;
+  chunks: Buffer[];
+  received: number;
+  /** Only true once the local user said yes. Chunks before this are dropped. */
+  accepted: boolean;
+}
+
+/** An outbound push waiting for the receiver to accept. */
+interface OutgoingPush {
+  peerKey: string;
+  requestId: string;
+  absolutePath: string;
+  fileName: string;
+}
+
 class MediaShare {
   private bridge: MediaShareBridge | null = null;
   /** peerKey → { displayName, items } */
   private remoteCatalogs = new Map<string, SharedPeerCatalog>();
-  /** requestId → in-flight download */
+  /** requestId → in-flight pull download */
   private pending = new Map<string, PendingDownload>();
+  /** requestId → inbound push, from the offer until the last chunk */
+  private incomingPushes = new Map<string, IncomingPush>();
+  /** requestId → outbound push, from the offer until accept or reject */
+  private outgoingPushes = new Map<string, OutgoingPush>();
   private reqCounter = 0;
 
   init(bridge: MediaShareBridge): void {
@@ -195,6 +220,77 @@ class MediaShare {
         return;
       }
 
+      // ── Asset push ──────────────────────────────────────────
+
+      case "ASSET_PUSH_OFFER": {
+        // Recorded and surfaced, never auto-accepted. A trusted peer is trusted
+        // to *ask*; writing a file they chose, under a name they chose, is a
+        // separate decision that belongs to the user.
+        this.incomingPushes.set(msg.requestId, {
+          peerKey,
+          requestId: msg.requestId,
+          fileName: msg.fileName,
+          sizeBytes: msg.sizeBytes,
+          mimeType: msg.mimeType,
+          chunks: [],
+          received: 0,
+          accepted: false,
+        });
+        this.broadcastToRenderer("shared-media:push-offer", {
+          peerKey,
+          displayName: this.bridge?.getDisplayName(peerKey) ?? "Peer",
+          requestId: msg.requestId,
+          fileName: msg.fileName,
+          sizeBytes: msg.sizeBytes,
+          mimeType: msg.mimeType ?? null,
+        });
+        logger.info(
+          `Asset push offered by ${peerKey.slice(0, 12)}…: ${msg.fileName} (${msg.sizeBytes} bytes)`,
+        );
+        return;
+      }
+
+      case "ASSET_PUSH_ACCEPT": {
+        const out = this.outgoingPushes.get(msg.requestId);
+        if (!out) return;
+        await this.sendPushBytes(channel, out);
+        return;
+      }
+
+      case "ASSET_PUSH_REJECT": {
+        this.outgoingPushes.delete(msg.requestId);
+        logger.info(
+          `Asset push ${msg.requestId} rejected${msg.reason ? `: ${msg.reason}` : ""}`,
+        );
+        this.broadcastToRenderer("shared-media:push-result", {
+          requestId: msg.requestId,
+          ok: false,
+          error: msg.reason ?? "Declined by the peer",
+        });
+        return;
+      }
+
+      case "ASSET_PUSH_CHUNK": {
+        await this.receivePushChunk(channel, msg.requestId, msg.data, msg.eof);
+        return;
+      }
+
+      case "ASSET_PUSH_ERROR": {
+        this.incomingPushes.delete(msg.requestId);
+        logger.warn(`Asset push failed on the sender side: ${msg.error}`);
+        return;
+      }
+
+      case "ASSET_PUSH_RESULT": {
+        this.outgoingPushes.delete(msg.requestId);
+        this.broadcastToRenderer("shared-media:push-result", {
+          requestId: msg.requestId,
+          ok: msg.ok,
+          error: msg.error ?? null,
+        });
+        return;
+      }
+
       default:
         return;
     }
@@ -280,6 +376,187 @@ class MediaShare {
       );
     } finally {
       this.pending.delete(requestId);
+    }
+  }
+
+  // ── Asset push ───────────────────────────────────────────────
+
+  /**
+   * Offers one file to a trusted peer. Nothing transfers until they accept.
+   *
+   * Offer-then-accept rather than pushing bytes straight away: a push writes a
+   * file the receiver never asked for, so their user gets to see what it is and
+   * how big before any of it reaches their disk.
+   */
+  async offerAsset(params: {
+    peerKey: string;
+    absolutePath: string;
+    fileName?: string;
+    mimeType?: string;
+  }): Promise<{ ok: boolean; requestId?: string; message?: string }> {
+    if (!this.bridge) return { ok: false, message: "Network is not running" };
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+
+    let sizeBytes: number;
+    try {
+      const stat = await fs.stat(params.absolutePath);
+      if (!stat.isFile()) return { ok: false, message: "Not a file" };
+      sizeBytes = stat.size;
+    } catch {
+      return { ok: false, message: "File not found" };
+    }
+
+    const requestId = `push-${Date.now()}-${++this.reqCounter}`;
+    // Only the basename crosses the wire. The receiver derives its own filename
+    // from this, and a path here is something a receiver could be tricked into
+    // honouring.
+    const fileName = path.basename(params.fileName ?? params.absolutePath);
+
+    const sent = this.bridge.sendToPeer(params.peerKey, {
+      type: "ASSET_PUSH_OFFER",
+      requestId,
+      fileName,
+      sizeBytes,
+      mimeType: params.mimeType,
+    });
+    if (!sent) return { ok: false, message: "Peer is not connected" };
+
+    this.outgoingPushes.set(requestId, {
+      peerKey: params.peerKey,
+      requestId,
+      absolutePath: params.absolutePath,
+      fileName,
+    });
+    return { ok: true, requestId };
+  }
+
+  /** The local user's answer to an inbound offer. */
+  respondToPush(params: {
+    requestId: string;
+    accept: boolean;
+    reason?: string;
+  }): { ok: boolean } {
+    const incoming = this.incomingPushes.get(params.requestId);
+    if (!incoming || !this.bridge) return { ok: false };
+    if (params.accept) {
+      incoming.accepted = true;
+      this.bridge.sendToPeer(incoming.peerKey, {
+        type: "ASSET_PUSH_ACCEPT",
+        requestId: params.requestId,
+      });
+    } else {
+      this.incomingPushes.delete(params.requestId);
+      this.bridge.sendToPeer(incoming.peerKey, {
+        type: "ASSET_PUSH_REJECT",
+        requestId: params.requestId,
+        reason: params.reason,
+      });
+    }
+    return { ok: true };
+  }
+
+  /** Offers awaiting an answer, so a reopened UI can still show them. */
+  pendingPushOffers(): Array<{
+    requestId: string;
+    peerKey: string;
+    displayName: string;
+    fileName: string;
+    sizeBytes: number;
+  }> {
+    return Array.from(this.incomingPushes.values())
+      .filter((push) => !push.accepted)
+      .map((push) => ({
+        requestId: push.requestId,
+        peerKey: push.peerKey,
+        displayName: this.bridge?.getDisplayName(push.peerKey) ?? "Peer",
+        fileName: push.fileName,
+        sizeBytes: push.sizeBytes,
+      }));
+  }
+
+  private async sendPushBytes(
+    channel: { send: (m: ChannelMessage) => boolean },
+    out: OutgoingPush,
+  ): Promise<void> {
+    try {
+      const fs = await import("node:fs/promises");
+      const bytes = await fs.readFile(out.absolutePath);
+      for (let off = 0; off < bytes.length; off += CHUNK_SIZE) {
+        const slice = bytes.subarray(off, off + CHUNK_SIZE);
+        channel.send({
+          type: "ASSET_PUSH_CHUNK",
+          requestId: out.requestId,
+          data: slice.toString("base64"),
+          eof: off + CHUNK_SIZE >= bytes.length,
+        });
+        // Yield between chunks so a large file doesn't stall the event loop.
+        await new Promise((r) => setImmediate(r));
+      }
+      logger.info(`Pushed ${out.fileName} to ${out.peerKey.slice(0, 12)}…`);
+    } catch (err) {
+      channel.send({
+        type: "ASSET_PUSH_ERROR",
+        requestId: out.requestId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      this.outgoingPushes.delete(out.requestId);
+    }
+  }
+
+  private async receivePushChunk(
+    channel: { send: (m: ChannelMessage) => boolean },
+    requestId: string,
+    dataB64: string,
+    eof: boolean,
+  ): Promise<void> {
+    const incoming = this.incomingPushes.get(requestId);
+    // Chunks for an offer that was never accepted are dropped: without this, a
+    // peer could skip the accept step and stream bytes anyway.
+    if (!incoming || !incoming.accepted) return;
+
+    const buf = Buffer.from(dataB64, "base64");
+    incoming.chunks.push(buf);
+    incoming.received += buf.length;
+
+    // Refuse to buffer far past what was offered, so a misbehaving peer can't
+    // exhaust memory by ignoring the size it declared.
+    if (incoming.received > incoming.sizeBytes * 2 + CHUNK_SIZE) {
+      this.incomingPushes.delete(requestId);
+      channel.send({
+        type: "ASSET_PUSH_RESULT",
+        requestId,
+        ok: false,
+        error: "Sender exceeded the offered size",
+      });
+      return;
+    }
+
+    if (!eof) return;
+
+    try {
+      const full = Buffer.concat(incoming.chunks);
+      const stem = incoming.fileName.replace(/\.[^.]+$/, "") || "received";
+      await store.saveBuffer(full, {
+        ext: extFromName(incoming.fileName),
+        promptOrStem: stem,
+      });
+      channel.send({ type: "ASSET_PUSH_RESULT", requestId, ok: true });
+      this.broadcastToRenderer("generated-media:changed", {
+        count: store.list().length,
+      });
+      logger.info(
+        `Received pushed asset ${incoming.fileName} from ${incoming.peerKey.slice(0, 12)}…`,
+      );
+    } catch (err) {
+      channel.send({
+        type: "ASSET_PUSH_RESULT",
+        requestId,
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      this.incomingPushes.delete(requestId);
     }
   }
 }
