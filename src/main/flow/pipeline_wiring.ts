@@ -92,7 +92,7 @@ export function getLastLlmModelId(): string {
 let gateConfigured = false;
 
 /**
- * Wire the single-resident ModelGate to real load/unload:
+ * Wire the ModelGate's **exclusive** tier to real load/unload:
  *  - kind "llm"  → the orchestrator's LLM lifecycle (`acquireLlm`/`releaseAll`),
  *    whose hooks `embedded_model_handler` already binds to the *enriched* real
  *    load path (`loadModelFromConfig`) + `unloadModel`. We reuse that rather
@@ -100,6 +100,11 @@ let gateConfigured = false;
  *  - media kinds → keep the Python service warm, but unload all model weights
  *    at stage boundaries. Process stop remains the hard fallback.
  * Idempotent.
+ *
+ * The companion tier (Marta) is wired separately via `setCompanionHooks`, from
+ * `src/main/marta/`. Do not fold the two back into one `setHooks` call: this
+ * function and Marta's runtime start at unpredictable relative times, and a
+ * single setter meant whichever ran second erased the other's hooks.
  */
 export function configureModelGateHooks(): void {
   if (gateConfigured) return;

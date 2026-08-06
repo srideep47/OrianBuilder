@@ -127,21 +127,8 @@ export class ChatActions {
   async selectChatMode(
     mode: "build" | "ask" | "agent" | "local-agent" | "basic-agent" | "plan",
   ) {
-    if (
-      await this.page
-        .getByTestId("orion-command-input")
-        .isVisible()
-        .catch(() => false)
-    ) {
-      await this.page
-        .getByRole("button", {
-          name: mode === "ask" ? "Chat" : "Software",
-          exact: true,
-        })
-        .click();
-      return;
-    }
-
+    // The home command bar that used to carry a Software/Chat toggle is gone
+    // with the Stage; the chat surface's own selector is the only path now.
     await this.page.getByTestId("chat-mode-selector").click();
     const mapping: Record<string, string> = {
       build: "Build Generate and edit code",

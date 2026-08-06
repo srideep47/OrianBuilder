@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { exec as execCallback } from "node:child_process";
+import { promisify } from "node:util";
 import log from "electron-log";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -33,6 +35,9 @@ import {
   setNewsExecutor,
   setThreeDExecutor,
   setTrackingExecutor,
+  setHarmonyExecutor,
+  type HarmonyCapabilityId,
+  type FlowContext,
   setRemoteMediaDispatcher,
 } from "@/main/flow/capability_registry";
 import { maybeGenerateMediaOnPeer } from "@/main/compute/media-remote";
@@ -79,9 +84,30 @@ import { getTemplateRuntimeCommands } from "./app/app_runtime_commands";
 import { createFromTemplate } from "./createFromTemplate";
 import { gitAdd, gitCommit, gitInit } from "@/ipc/utils/git_utils";
 import { DEFAULT_TEMPLATE_ID } from "@/shared/templates";
+import { BLENDER_OPS, type BlenderOp } from "@/main/blender/harness";
+import { runBlender } from "@/main/blender/run";
+import {
+  composeImportedModels,
+  createGodotProject,
+  findGodotProject,
+  GODOT_ASSET_DIRS,
+  importAsset,
+  type GodotAssetKind,
+} from "@/main/godot/project";
+import {
+  checkProject as checkGodotProject,
+  exportProject as exportGodotProject,
+  type ExportTarget,
+  EXPORT_TARGETS,
+} from "@/main/godot/export";
+import {
+  OrianBuilderError,
+  OrianBuilderErrorKind,
+} from "@/errors/orianbuilder_error";
 
 const logger = log.scope("flow_handlers");
 const handle = createLoggedTypedHandler(logger);
+const execAsync = promisify(execCallback);
 
 /** Build a filesystem-safe, unique app name from a free-text goal. */
 function deriveAppName(goal: string): string {
@@ -907,6 +933,480 @@ async function prepareBuildHandoff(params: {
   return { runBuild: true, appId, chatId, createdApp, buildGoal };
 }
 
+function requireProjectPath(ctx: FlowContext, capability: string): string {
+  if (!ctx.appPath) {
+    throw new OrianBuilderError(
+      `${capability} needs an active project. Open or name a project and try again.`,
+      OrianBuilderErrorKind.Precondition,
+    );
+  }
+  return ctx.appPath;
+}
+
+function inputString(
+  input: Record<string, unknown>,
+  ...keys: string[]
+): string | undefined {
+  for (const key of keys) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function insideProject(projectPath: string, requested: string): string {
+  const target = path.resolve(projectPath, requested);
+  const relative = path.relative(projectPath, target);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new OrianBuilderError(
+      `Refusing to write outside the active project: ${requested}`,
+      OrianBuilderErrorKind.Validation,
+    );
+  }
+  return target;
+}
+
+async function runProjectCommand(
+  projectPath: string,
+  command: string,
+  timeoutMs: number,
+): Promise<{
+  command: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}> {
+  if (!command.trim() || command.length > 4_000) {
+    throw new OrianBuilderError(
+      "Terminal capability needs a non-empty command under 4,000 characters.",
+      OrianBuilderErrorKind.Validation,
+    );
+  }
+  try {
+    const { stdout, stderr } = await execAsync(command, {
+      cwd: projectPath,
+      timeout: Math.min(Math.max(timeoutMs, 1_000), 20 * 60_000),
+      maxBuffer: 16 * 1024 * 1024,
+      windowsHide: true,
+    });
+    return { command, exitCode: 0, stdout, stderr };
+  } catch (error) {
+    const failure = error as {
+      code?: number | string;
+      stdout?: string;
+      stderr?: string;
+      message?: string;
+    };
+    const tail = `${failure.stdout ?? ""}\n${failure.stderr ?? ""}`.trim();
+    throw new OrianBuilderError(
+      `${command} failed (${String(failure.code ?? "unknown")}): ${tail.slice(-4_000) || failure.message || "no output"}`,
+      OrianBuilderErrorKind.External,
+    );
+  }
+}
+
+function artifactPaths(ctx: FlowContext): string[] {
+  return (ctx.artifacts ?? [])
+    .map((artifact) => artifact.uri)
+    .filter((uri) => !/^https?:\/\//i.test(uri));
+}
+
+function godotKindForArtifact(kind: string): GodotAssetKind | null {
+  switch (kind) {
+    case "mesh":
+      return "models";
+    case "image":
+      return "textures";
+    case "music":
+      return "music";
+    case "audio":
+      return "audio";
+    case "video":
+      return "video";
+    default:
+      return null;
+  }
+}
+
+interface ImportedGodotArtifact {
+  resPath: string;
+  absolutePath: string;
+  kind: GodotAssetKind;
+}
+
+async function sha256File(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash("sha256");
+    const stream = fs.createReadStream(filePath);
+    stream.on("error", reject);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolve(hash.digest("hex")));
+  });
+}
+
+async function findEquivalentImportedAsset(params: {
+  source: string;
+  targetDir: string;
+  sourceSize: number;
+}): Promise<string | null> {
+  const entries = await fs.promises
+    .readdir(params.targetDir, { withFileTypes: true })
+    .catch(() => []);
+  const candidates: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || entry.name.endsWith(".import")) continue;
+    const candidate = path.join(params.targetDir, entry.name);
+    const stat = await fs.promises.stat(candidate).catch(() => null);
+    if (stat?.size === params.sourceSize) candidates.push(candidate);
+  }
+  if (candidates.length === 0) return null;
+  const sourceHash = await sha256File(params.source);
+  for (const candidate of candidates) {
+    if ((await sha256File(candidate)) === sourceHash) return candidate;
+  }
+  return null;
+}
+
+async function importGodotArtifacts(
+  projectDir: string,
+  artifacts: FlowContext["artifacts"],
+): Promise<ImportedGodotArtifact[]> {
+  const imported: ImportedGodotArtifact[] = [];
+  const root = path.resolve(projectDir);
+  for (const artifact of artifacts ?? []) {
+    const kind = godotKindForArtifact(artifact.kind);
+    if (!kind) continue;
+    const sourceStat = await fs.promises.stat(artifact.uri).catch(() => null);
+    if (!sourceStat?.isFile()) continue;
+
+    const source = path.resolve(artifact.uri);
+    const relative = path.relative(root, source);
+    const assetDir = GODOT_ASSET_DIRS[kind];
+    const existingAsset = path.join(
+      projectDir,
+      assetDir,
+      path.basename(source),
+    );
+    const insideProject =
+      relative !== "" &&
+      !relative.startsWith(`..${path.sep}`) &&
+      !path.isAbsolute(relative);
+    const alreadyInAssetDir =
+      insideProject &&
+      (relative === assetDir || relative.startsWith(`${assetDir}${path.sep}`));
+
+    if (alreadyInAssetDir) {
+      imported.push({
+        absolutePath: source,
+        resPath: `res://${relative.replace(/\\/g, "/")}`,
+        kind,
+      });
+      continue;
+    }
+
+    const existingStat = await fs.promises
+      .stat(existingAsset)
+      .catch(() => null);
+    if (existingStat?.isFile() && existingStat.size === sourceStat.size) {
+      imported.push({
+        absolutePath: existingAsset,
+        resPath: `res://${assetDir}/${path.basename(source)}`.replace(
+          /\\/g,
+          "/",
+        ),
+        kind,
+      });
+      continue;
+    }
+
+    const equivalentAsset = await findEquivalentImportedAsset({
+      source,
+      targetDir: path.join(projectDir, assetDir),
+      sourceSize: sourceStat.size,
+    });
+    if (equivalentAsset) {
+      imported.push({
+        absolutePath: equivalentAsset,
+        resPath: `res://${assetDir}/${path.basename(equivalentAsset)}`.replace(
+          /\\/g,
+          "/",
+        ),
+        kind,
+      });
+      continue;
+    }
+
+    const result = await importAsset({
+      projectDir,
+      sourcePath: source,
+      kind,
+    });
+    imported.push({ ...result, kind });
+  }
+  return imported;
+}
+
+async function runHarmonyCapability(params: {
+  capability: HarmonyCapabilityId;
+  input: Record<string, unknown>;
+  context: FlowContext;
+}): Promise<Record<string, unknown>> {
+  const { capability, input, context } = params;
+  const projectPath = requireProjectPath(context, capability);
+
+  if (capability === "run_tests") {
+    const command = inputString(input, "command");
+    const godotProject = await findGodotProject(projectPath);
+    if (godotProject && (!command || /\bgodot\b/i.test(command))) {
+      const result = await checkGodotProject(godotProject);
+      if (!result.ok) {
+        throw new OrianBuilderError(
+          `Godot validation failed: ${result.output.slice(-4_000)}`,
+          OrianBuilderErrorKind.External,
+        );
+      }
+      return {
+        passed: true,
+        command: "Godot headless project validation",
+        report: result.output,
+      };
+    }
+  }
+
+  if (capability === "run_terminal" || capability === "run_tests") {
+    const command =
+      inputString(input, "command") ??
+      (capability === "run_tests" ? "npm test" : undefined);
+    if (!command) {
+      throw new OrianBuilderError(
+        `${capability} needs input.command.`,
+        OrianBuilderErrorKind.Validation,
+      );
+    }
+    const result = await runProjectCommand(
+      projectPath,
+      command,
+      typeof input.timeoutMs === "number" ? input.timeoutMs : 10 * 60_000,
+    );
+    return {
+      ...result,
+      passed: capability === "run_tests" ? true : undefined,
+      report: `${result.stdout}\n${result.stderr}`.trim().slice(-12_000),
+    };
+  }
+
+  if (capability === "edit_files") {
+    const files = Array.isArray(input.files) ? input.files : [];
+    if (files.length === 0 || files.length > 100) {
+      throw new OrianBuilderError(
+        "edit_files needs 1-100 entries in input.files.",
+        OrianBuilderErrorKind.Validation,
+      );
+    }
+    const written: string[] = [];
+    for (const entry of files) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        throw new OrianBuilderError(
+          "Each edit_files entry needs path and content strings.",
+          OrianBuilderErrorKind.Validation,
+        );
+      }
+      const record = entry as Record<string, unknown>;
+      if (
+        typeof record.path !== "string" ||
+        typeof record.content !== "string"
+      ) {
+        throw new OrianBuilderError(
+          "Each edit_files entry needs path and content strings.",
+          OrianBuilderErrorKind.Validation,
+        );
+      }
+      const target = insideProject(projectPath, record.path);
+      await fs.promises.mkdir(path.dirname(target), { recursive: true });
+      await fs.promises.writeFile(target, record.content, "utf8");
+      written.push(target);
+    }
+    return {
+      writtenPaths: written,
+      artifacts: written.map((uri) => ({
+        uri,
+        kind: "source",
+        label: path.basename(uri),
+      })),
+    };
+  }
+
+  if (capability === "process_mesh") {
+    const inputPath =
+      inputString(input, "input", "inputPath", "sourcePath", "modelPath") ??
+      (context.artifacts ?? []).find((artifact) => artifact.kind === "mesh")
+        ?.uri;
+    if (!inputPath) {
+      throw new OrianBuilderError(
+        "process_mesh needs a mesh input or a dependent mesh-producing step.",
+        OrianBuilderErrorKind.Precondition,
+      );
+    }
+    const requestedOp = inputString(input, "operation", "op") ?? "convert";
+    if (!BLENDER_OPS.includes(requestedOp as BlenderOp)) {
+      throw new OrianBuilderError(
+        `Unknown Blender operation "${requestedOp}".`,
+        OrianBuilderErrorKind.Validation,
+      );
+    }
+    const op = requestedOp as BlenderOp;
+    const output =
+      inputString(input, "output", "outputPath") ??
+      path.join(
+        context.mediaDir,
+        "3d",
+        `${op}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.glb`,
+      );
+    await fs.promises.mkdir(path.dirname(output), { recursive: true });
+    const result = await runBlender({
+      ...input,
+      op,
+      input: path.isAbsolute(inputPath)
+        ? inputPath
+        : insideProject(projectPath, inputPath),
+      ...(!["info", "inspect", "import_model"].includes(op) ? { output } : {}),
+    });
+    if (!result.ok) {
+      throw new OrianBuilderError(
+        result.error ?? `Blender ${op} failed.`,
+        OrianBuilderErrorKind.External,
+      );
+    }
+    const resultOutput =
+      typeof result.output === "string" ? result.output : undefined;
+    return {
+      ...result,
+      outputPath: resultOutput,
+      artifacts: resultOutput
+        ? [
+            {
+              uri: resultOutput,
+              kind: "mesh",
+              label: path.basename(resultOutput),
+            },
+          ]
+        : [],
+    };
+  }
+
+  if (capability === "edit_scene") {
+    let godotProject = await findGodotProject(projectPath);
+    if (!godotProject) {
+      const created = await createGodotProject({
+        dir: projectPath,
+        name: path.basename(projectPath),
+        template:
+          input.template === "2d" || input.template === "ui"
+            ? input.template
+            : "3d",
+      });
+      godotProject = created.dir;
+    }
+    const imported = await importGodotArtifacts(
+      godotProject,
+      context.artifacts,
+    );
+    const relativeScene = inputString(input, "scenePath") ?? "scenes/main.tscn";
+    const scenePath = insideProject(godotProject, relativeScene);
+    const sceneContent = inputString(input, "sceneContent", "content");
+    if (sceneContent) {
+      await fs.promises.mkdir(path.dirname(scenePath), { recursive: true });
+      await fs.promises.writeFile(scenePath, sceneContent, "utf8");
+    }
+    await composeImportedModels({
+      projectDir: godotProject,
+      scenePath,
+      modelResPaths: imported
+        .filter((artifact) => artifact.kind === "models")
+        .map((artifact) => artifact.resPath),
+    });
+    return {
+      projectDir: godotProject,
+      scenePath,
+      imported,
+      needsAgentEnhancement: !sceneContent,
+      artifacts: [
+        { uri: scenePath, kind: "scene", label: path.basename(scenePath) },
+      ],
+    };
+  }
+
+  if (capability === "build_game") {
+    let godotProject = await findGodotProject(projectPath);
+    if (!godotProject) {
+      const created = await createGodotProject({
+        dir: projectPath,
+        name: path.basename(projectPath),
+        template:
+          input.template === "2d" || input.template === "ui"
+            ? input.template
+            : "3d",
+      });
+      godotProject = created.dir;
+    }
+
+    const imported = await importGodotArtifacts(
+      godotProject,
+      context.artifacts,
+    );
+
+    const check = await checkGodotProject(godotProject);
+    if (!check.ok) {
+      throw new OrianBuilderError(
+        `Godot project validation failed: ${check.output.slice(-4_000)}`,
+        OrianBuilderErrorKind.External,
+      );
+    }
+    const requestedTarget = inputString(input, "target") ?? "windows";
+    const target = Object.prototype.hasOwnProperty.call(
+      EXPORT_TARGETS,
+      requestedTarget,
+    )
+      ? (requestedTarget as ExportTarget)
+      : "windows";
+    const exported = await exportGodotProject({
+      projectDir: godotProject,
+      target,
+    });
+    if (!exported.ok || !exported.outputPath) {
+      throw new OrianBuilderError(
+        exported.error ?? `Godot ${target} export failed.`,
+        OrianBuilderErrorKind.Precondition,
+      );
+    }
+    return {
+      projectDir: godotProject,
+      imported,
+      outputPath: exported.outputPath,
+      target,
+      artifacts: [
+        {
+          uri: exported.outputPath,
+          kind: "build",
+          label: path.basename(exported.outputPath),
+        },
+      ],
+    };
+  }
+
+  const goal = inputString(input, "goal", "prompt", "task") ?? context.goal;
+  const refs = artifactPaths(context);
+  const framedGoal =
+    capability === "deploy"
+      ? `${goal}\n\nRun the relevant tests first, then package or deploy the project and surface the final artifact or URL.`
+      : goal;
+  return prepareBuildHandoff({
+    goal: framedGoal,
+    appId: context.appId,
+    mediaRefs: refs,
+  });
+}
+
 /** Total GPU VRAM (MB) for profile selection; 0 when no GPU is detected. */
 async function detectTotalVramMb(): Promise<number> {
   try {
@@ -1250,6 +1750,7 @@ export function registerFlowHandlers(): void {
   setThreeDExecutor(prepareThreeDAsset);
   setNewsExecutor(researchNews);
   setTrackingExecutor(runTracking);
+  setHarmonyExecutor(runHarmonyCapability);
   // Mid-flow review checkpoints: at each modality-batch boundary the selected
   // model may repair the prompts of still-pending steps (never fails a flow).
   setFlowReviewer(createLlmFlowReviewer(defaultGenerateText));
@@ -1262,20 +1763,24 @@ export function registerFlowHandlers(): void {
     return parseIntent(text, appId);
   });
 
-  handle(flowContracts.runFlow, async (_event, intent) => {
+  handle(flowContracts.runFlow, async (event, intent) => {
     const mediaProfile = await resolveMediaProfile();
     return runFlow(intent, {
       mediaProfile,
       llmSlot: currentLlmSlot(),
+      onActivity: (activity) =>
+        safeSend(event.sender, flowEvents.activity.channel, activity),
     });
   });
 
-  handle(flowContracts.runCommand, async (_event, { text, appId }) => {
+  handle(flowContracts.runCommand, async (event, { text, appId }) => {
     const intent = await parseIntent(text, appId);
     const mediaProfile = await resolveMediaProfile();
     return runFlow(intent, {
       mediaProfile,
       llmSlot: currentLlmSlot(),
+      onActivity: (activity) =>
+        safeSend(event.sender, flowEvents.activity.channel, activity),
     });
   });
 
@@ -1298,11 +1803,13 @@ export function registerFlowHandlers(): void {
     return listResumableFlowRuns();
   });
 
-  handle(flowContracts.resumeFlow, async (_event, { flowId }) => {
+  handle(flowContracts.resumeFlow, async (event, { flowId }) => {
     const mediaProfile = await resolveMediaProfile();
     return resumeFlow(flowId, {
       mediaProfile,
       llmSlot: currentLlmSlot(),
+      onActivity: (activity) =>
+        safeSend(event.sender, flowEvents.activity.channel, activity),
     });
   });
 }

@@ -11,7 +11,10 @@ import { getCapability, type FlowContext } from "./capability_registry";
 import { getFlowReviewer } from "./flow_review";
 import { getModelGate, type ResidentSlot } from "./model_gate";
 import { saveFlowRunSafe, loadFlowRun } from "./flow_run_store";
+import { FlowArtifactBus } from "./artifact_bus";
+import { recordFlowActivity } from "./activity_store";
 import type { HardwareModelProfile } from "./model_profiles";
+import type { FlowArtifact } from "@/ipc/types/manifest";
 import type {
   CommandIntent,
   FlowRunResult,
@@ -45,6 +48,21 @@ export interface RunFlowOptions {
   onMediaProgress?: (progress: FlowMediaProgress) => void;
   /** Cancels remaining work and propagates into long-running media providers. */
   signal?: AbortSignal;
+  /** Low-volume lifecycle feed for Marta's live work presentation. */
+  onActivity?: (activity: FlowActivity) => void;
+}
+
+export interface FlowActivity {
+  flowId: string;
+  goal: string;
+  stepId?: string;
+  capability?: CapabilityId;
+  label: string;
+  detail?: string;
+  status: "running" | "success" | "failed" | "skipped" | "completed";
+  progress?: number;
+  artifact?: FlowArtifact;
+  timestamp: number;
 }
 
 const logger = log.scope("flow-runner");
@@ -189,6 +207,7 @@ async function executeFlow(
   options: RunFlowOptions,
   seededResults: Map<string, StepResult>,
   startedAt: number,
+  seededArtifacts: FlowArtifact[] = [],
 ): Promise<FlowRunResult> {
   const maxParallel = Math.max(1, options.maxParallel ?? 1);
   const llmSlot: ResidentSlot = options.llmSlot ?? {
@@ -212,8 +231,13 @@ async function executeFlow(
 
   const { appPath, mediaDir } = await resolveMediaContext(intent.appId);
   const priorOutputs: Record<string, Record<string, unknown>> = {};
+  const artifactBus = new FlowArtifactBus(flowId, seededArtifacts);
   const resultsById = new Map<string, StepResult>();
   const nonSuccessfulStepIds = new Set<string>();
+  const emitActivity = (activity: FlowActivity) => {
+    recordFlowActivity(activity);
+    options.onActivity?.(activity);
+  };
 
   for (const [id, seeded] of seededResults) {
     resultsById.set(id, seeded);
@@ -233,6 +257,7 @@ async function executeFlow(
       startedAt,
       updatedAt: Date.now(),
       steps: orderedResults(),
+      artifacts: artifactBus.list(),
     });
 
   const recordSkip = (step: FlowStep, reason: string) => {
@@ -246,6 +271,16 @@ async function executeFlow(
       durationMs: 0,
     });
     logger.warn(`flow ${flowId} skip step ${step.id}: ${reason}`);
+    emitActivity({
+      flowId,
+      goal: intent.goal,
+      stepId: step.id,
+      capability: step.capability,
+      label: step.description ?? step.capability,
+      detail: reason,
+      status: "skipped",
+      timestamp: Date.now(),
+    });
   };
 
   /** Execute one step; returns its output, or null when it failed. Swap events
@@ -261,6 +296,7 @@ async function executeFlow(
       mediaDir,
       constraints: intent.constraints,
       priorOutputs,
+      artifacts: artifactBus.list(),
       mediaProfile: options.mediaProfile,
       onMediaProgress: (progress) =>
         options.onMediaProgress?.({
@@ -275,13 +311,27 @@ async function executeFlow(
         throw new Error("Flow was cancelled");
       }
       const capability = getCapability(step.capability);
+      emitActivity({
+        flowId,
+        goal: intent.goal,
+        stepId: step.id,
+        capability: step.capability,
+        label: step.description ?? capability.label,
+        status: "running",
+        timestamp: Date.now(),
+      });
       // CPU/network capabilities do not need a GPU model. Release a preceding
       // media model before they run so it never remains resident accidentally.
       if (!MEDIA_CAPABILITIES.has(step.capability)) {
         await getModelGate().exit();
       }
-      const output = await capability.execute(step.input, ctx);
+      const resolvedInput = artifactBus.resolveInput(step.input) as Record<
+        string,
+        unknown
+      >;
+      const output = await capability.execute(resolvedInput, ctx);
       priorOutputs[step.id] = output;
+      const artifacts = artifactBus.publish(step.id, step.capability, output);
       const swaps = getModelGate().drainSwapTelemetry();
       resultsById.set(step.id, {
         stepId: step.id,
@@ -290,7 +340,34 @@ async function executeFlow(
         output,
         durationMs: Date.now() - stepStarted,
         swaps: swaps.length > 0 ? swaps : undefined,
+        artifacts: artifacts.length > 0 ? artifacts : undefined,
       });
+      emitActivity({
+        flowId,
+        goal: intent.goal,
+        stepId: step.id,
+        capability: step.capability,
+        label: step.description ?? capability.label,
+        detail:
+          artifacts.length > 0
+            ? `Produced ${artifacts.length} artifact${artifacts.length === 1 ? "" : "s"}`
+            : undefined,
+        status: "success",
+        timestamp: Date.now(),
+      });
+      for (const artifact of artifacts) {
+        emitActivity({
+          flowId,
+          goal: intent.goal,
+          stepId: step.id,
+          capability: step.capability,
+          label: artifact.label,
+          detail: artifact.uri,
+          status: "success",
+          artifact,
+          timestamp: Date.now(),
+        });
+      }
       logger.info(`flow ${flowId} step ${step.id} ok`);
       return output;
     } catch (err) {
@@ -307,6 +384,16 @@ async function executeFlow(
         swaps: swaps.length > 0 ? swaps : undefined,
       });
       logger.error(`flow ${flowId} step ${step.id} failed: ${message}`);
+      emitActivity({
+        flowId,
+        goal: intent.goal,
+        stepId: step.id,
+        capability: step.capability,
+        label: step.description ?? step.capability,
+        detail: message,
+        status: "failed",
+        timestamp: Date.now(),
+      });
       return null;
     }
   };
@@ -460,6 +547,7 @@ async function executeFlow(
     startedAt,
     finishedAt: Date.now(),
     swapTotals: swapTotals(stepResults),
+    artifacts: artifactBus.list(),
   };
   await persist(result.status);
   if (result.swapTotals) {
@@ -469,6 +557,15 @@ async function executeFlow(
     );
   }
   logger.info(`flow ${flowId} done: ${result.status}`);
+  emitActivity({
+    flowId,
+    goal: intent.goal,
+    label: intent.goal,
+    detail: `${stepResults.filter((step) => step.status === "success").length}/${stepResults.length} steps succeeded`,
+    status: "completed",
+    progress: 100,
+    timestamp: Date.now(),
+  });
   return result;
 }
 
@@ -488,6 +585,7 @@ export async function runFlow(
     options,
     new Map(),
     Date.now(),
+    [],
   );
 }
 
@@ -514,5 +612,12 @@ export async function resumeFlow(
       .filter((s) => s.status === "success")
       .map((s) => [s.stepId, s] as const),
   );
-  return executeFlow(flowId, saved.intent, options, seeded, saved.startedAt);
+  return executeFlow(
+    flowId,
+    saved.intent,
+    options,
+    seeded,
+    saved.startedAt,
+    saved.artifacts ?? saved.steps.flatMap((step) => step.artifacts ?? []),
+  );
 }

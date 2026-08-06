@@ -15,7 +15,7 @@ import {
   modelConfigForAsset,
   type HardwareModelProfile,
 } from "@/main/flow/model_profiles";
-import type { AssetType } from "@/ipc/types/manifest";
+import type { AssetType, FlowArtifact } from "@/ipc/types/manifest";
 import type { CapabilityId, CapabilityDescriptor } from "@/ipc/types/intent";
 
 const logger = log.scope("flow-capabilities");
@@ -42,6 +42,8 @@ export interface FlowContext {
   constraints?: Record<string, unknown>;
   /** Structured outputs of already-completed steps, keyed by step id. */
   priorOutputs: Record<string, Record<string, unknown>>;
+  /** Durable outputs already published by successful steps in this run. */
+  artifacts?: readonly FlowArtifact[];
   /**
    * Device hardware/model profile (selected models + best per-stage settings).
    * When present, media capabilities use the user's chosen model per modality at
@@ -147,6 +149,35 @@ let trackingExecutor: TrackingExecutor | null = null;
 
 export function setTrackingExecutor(fn: TrackingExecutor | null): void {
   trackingExecutor = fn;
+}
+
+/**
+ * P5 bridge into the existing Godot, Blender, workspace, terminal, coding and
+ * deployment stacks.  One injected entry point keeps this registry testable
+ * while still making those stacks first-class flow capabilities.
+ */
+export type HarmonyCapabilityId = Extract<
+  CapabilityId,
+  | "build_game"
+  | "edit_scene"
+  | "process_mesh"
+  | "run_terminal"
+  | "edit_files"
+  | "code_task"
+  | "run_tests"
+  | "deploy"
+>;
+
+export type HarmonyExecutor = (params: {
+  capability: HarmonyCapabilityId;
+  input: Record<string, unknown>;
+  context: FlowContext;
+}) => Promise<Record<string, unknown>>;
+
+let harmonyExecutor: HarmonyExecutor | null = null;
+
+export function setHarmonyExecutor(fn: HarmonyExecutor | null): void {
+  harmonyExecutor = fn;
 }
 
 /**
@@ -696,6 +727,70 @@ const buildAppCapability: Capability = {
   },
 };
 
+function makeHarmonyCapability(
+  id: HarmonyCapabilityId,
+  label: string,
+  description: string,
+): Capability {
+  return {
+    id,
+    label,
+    description,
+    async execute(input, context) {
+      if (!harmonyExecutor) {
+        logger.warn(`${id} invoked without a Harmony executor.`);
+        return {
+          runHarmony: false,
+          reason: "harmony-executor-not-registered",
+          capability: id,
+        };
+      }
+      return harmonyExecutor({ capability: id, input, context });
+    },
+  };
+}
+
+const buildGameCapability = makeHarmonyCapability(
+  "build_game",
+  "Export game",
+  "Validate a Godot project, import prior flow artifacts, and export a playable build for the requested platform.",
+);
+const editSceneCapability = makeHarmonyCapability(
+  "edit_scene",
+  "Edit scene",
+  "Create or modify a Godot scene through the coding/game agent, with earlier artifacts available as inputs.",
+);
+const processMeshCapability = makeHarmonyCapability(
+  "process_mesh",
+  "Process mesh",
+  "Run a typed Blender operation such as convert, decimate, UV generation, material application, rigging or preview rendering.",
+);
+const runTerminalCapability = makeHarmonyCapability(
+  "run_terminal",
+  "Run terminal command",
+  "Run a bounded one-shot command inside the active project and publish its log as a flow result.",
+);
+const editFilesCapability = makeHarmonyCapability(
+  "edit_files",
+  "Edit project files",
+  "Write explicit file contents inside the active project, jailed to its workspace.",
+);
+const codeTaskCapability = makeHarmonyCapability(
+  "code_task",
+  "Code task",
+  "Hand a source-level implementation, debugging or refactoring task to the coding agent with all prior artifacts attached.",
+);
+const runTestsCapability = makeHarmonyCapability(
+  "run_tests",
+  "Run tests",
+  "Run the project's requested test or validation command and return a structured pass/fail report.",
+);
+const deployCapability = makeHarmonyCapability(
+  "deploy",
+  "Deploy",
+  "Deploy or package the active project after its dependent build and test steps succeed.",
+);
+
 // =============================================================================
 // Registry
 // =============================================================================
@@ -712,6 +807,14 @@ const CAPABILITIES: Record<CapabilityId, Capability> = {
   track_price: trackPriceCapability,
   build_app: buildAppCapability,
   make_game: makeGameCapability,
+  build_game: buildGameCapability,
+  edit_scene: editSceneCapability,
+  process_mesh: processMeshCapability,
+  run_terminal: runTerminalCapability,
+  edit_files: editFilesCapability,
+  code_task: codeTaskCapability,
+  run_tests: runTestsCapability,
+  deploy: deployCapability,
 };
 
 export function getCapability(id: CapabilityId): Capability {

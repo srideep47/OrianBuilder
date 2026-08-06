@@ -1,5 +1,6 @@
 export const SECTION_IDS = {
   general: "general-settings",
+  marta: "marta-settings",
   workflow: "workflow-settings",
   ai: "ai-settings",
   providers: "provider-settings",
@@ -12,6 +13,7 @@ export const SECTION_IDS = {
 } as const;
 
 export const SETTING_IDS = {
+  marta: "setting-marta",
   theme: "setting-theme",
   zoom: "setting-zoom",
   autoUpdate: "setting-auto-update",

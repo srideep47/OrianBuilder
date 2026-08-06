@@ -392,6 +392,162 @@ export async function importAsset(params: {
   };
 }
 
+const SHOWCASE_CONTROLLER_PATH = "res://scripts/orion_showcase_controller.gd";
+const SHOWCASE_CONTROLLER_SOURCE = `extends Node3D
+
+var _start_transform := Transform3D.IDENTITY
+@onready var _world := get_node_or_null("World") as Node3D
+
+func _ready() -> void:
+    if _world:
+        _start_transform = _world.transform
+
+func _process(delta: float) -> void:
+    if not _world:
+        return
+    var turn := Input.get_axis("move_left", "move_right")
+    var travel := Input.get_axis("move_forward", "move_back")
+    _world.rotate_y(turn * delta * 1.8)
+    _world.translate_object_local(Vector3(0.0, 0.0, travel * delta * 2.5))
+    if Input.is_action_just_pressed("jump"):
+        _world.transform = _start_transform
+`;
+
+/**
+ * Turns a starter 3D scene into an immediately inspectable, interactive
+ * showcase and instances every imported model under its World node.
+ *
+ * This is deliberately deterministic. The Harmony pipeline must not report an
+ * edit_scene step as successful when it merely copied a GLB beside an otherwise
+ * empty scene and hoped that a later coding agent would compose it.
+ */
+export async function composeImportedModels(params: {
+  projectDir: string;
+  scenePath: string;
+  modelResPaths: string[];
+}): Promise<void> {
+  const controllerPath = path.join(
+    params.projectDir,
+    "scripts",
+    "orion_showcase_controller.gd",
+  );
+  await fs.mkdir(path.dirname(controllerPath), { recursive: true });
+  await fs.writeFile(controllerPath, SHOWCASE_CONTROLLER_SOURCE, "utf8");
+
+  let scene = await fs.readFile(params.scenePath, "utf8");
+  const resources: string[] = [];
+  const subResources: string[] = [];
+  let addedResources = 0;
+
+  const controllerId = "orion_showcase_controller";
+  if (!scene.includes(`path="${SHOWCASE_CONTROLLER_PATH}"`)) {
+    resources.push(
+      `[ext_resource type="Script" path="${SHOWCASE_CONTROLLER_PATH}" id="${controllerId}"]`,
+    );
+    addedResources += 1;
+  }
+  if (
+    scene.includes('[sub_resource type="PlaneMesh" id="PlaneMesh_1"]') &&
+    !scene.includes('id="OrionGroundMaterial"')
+  ) {
+    subResources.push(`[sub_resource type="StandardMaterial3D" id="OrionGroundMaterial"]
+albedo_color = Color(0.045, 0.055, 0.095, 1)
+metallic = 0.12
+roughness = 0.82`);
+    addedResources += 1;
+    scene = scene.replace(
+      '[sub_resource type="PlaneMesh" id="PlaneMesh_1"]',
+      '[sub_resource type="PlaneMesh" id="PlaneMesh_1"]\nmaterial = SubResource("OrionGroundMaterial")',
+    );
+  }
+
+  const existingModelIds = [...scene.matchAll(/id="orion_model_(\d+)"/g)].map(
+    (match) => Number(match[1]),
+  );
+  const nextModelId = Math.max(0, ...existingModelIds) + 1;
+  const models = [...new Set(params.modelResPaths)].filter(
+    (resPath) =>
+      resPath.startsWith("res://") && !scene.includes(`path="${resPath}"`),
+  );
+  const modelEntries = models.map((resPath, index) => ({
+    resPath,
+    id: `orion_model_${nextModelId + index}`,
+    name: `${path.basename(resPath, path.extname(resPath)).replace(/[^A-Za-z0-9_]/g, "_") || "Model"}_${nextModelId + index}`,
+  }));
+  for (const model of modelEntries) {
+    resources.push(
+      `[ext_resource type="PackedScene" path="${model.resPath}" id="${model.id}"]`,
+    );
+    addedResources += 1;
+  }
+
+  if (resources.length > 0) {
+    const marker = scene.search(/^\[(?:sub_resource|node)\b/m);
+    const at = marker >= 0 ? marker : scene.length;
+    scene = `${scene.slice(0, at).trimEnd()}\n${resources.join("\n")}\n\n${scene.slice(at).trimStart()}`;
+  }
+  if (subResources.length > 0) {
+    const marker = scene.search(/^\[(?:sub_resource|node)\b/m);
+    const at = marker >= 0 ? marker : scene.length;
+    scene = `${scene.slice(0, at).trimEnd()}\n${subResources.join("\n")}\n\n${scene.slice(at).trimStart()}`;
+  }
+  if (addedResources > 0) {
+    scene = scene.replace(
+      /load_steps=(\d+)/,
+      (_match, value: string) => `load_steps=${Number(value) + addedResources}`,
+    );
+  }
+
+  if (!scene.includes(`script = ExtResource("${controllerId}")`)) {
+    scene = scene.replace(
+      /(^\[node name="[^"]+" type="Node3D"\]\r?\n)/m,
+      `$1script = ExtResource("${controllerId}")\n`,
+    );
+  }
+  scene = scene
+    .replace("ambient_light_energy = 0.6", "ambient_light_energy = 0.85")
+    .replace(
+      "ambient_light_color = Color(0.72, 0.74, 0.85, 1)",
+      "ambient_light_color = Color(0.62, 0.68, 0.88, 1)\nbackground_color = Color(0.012, 0.018, 0.04, 1)",
+    )
+    .replace("size = Vector2(24, 24)", "size = Vector2(12, 12)")
+    .replace(
+      "transform = Transform3D(1, 0, 0, 0, 0.92, 0.39, 0, -0.39, 0.92, 0, 4, 9)",
+      "transform = Transform3D(1, 0, 0, 0, 0.939693, 0.34202, 0, -0.34202, 0.939693, 0, 2.4, 5)",
+    );
+  if (
+    /^\[node name="Camera3D" type="Camera3D" parent="\."\]$/m.test(scene) &&
+    !/^fov\s*=/m.test(scene)
+  ) {
+    scene = scene.replace(
+      /(^\[node name="Camera3D" type="Camera3D" parent="\."\]\r?\n(?:transform = [^\n]+\r?\n)?)/m,
+      "$1fov = 52.0\n",
+    );
+  }
+  if (!/^\[node name="World" type="Node3D" parent="\."\]$/m.test(scene)) {
+    scene = `${scene.trimEnd()}\n\n[node name="World" type="Node3D" parent="."]\n`;
+  }
+  if (!/^\[node name="UI" type="CanvasLayer" parent="\."\]$/m.test(scene)) {
+    scene = `${scene.trimEnd()}\n\n[node name="UI" type="CanvasLayer" parent="."]\n`;
+  }
+  if (!/^\[node name="Instructions" type="Label" parent="UI"\]$/m.test(scene)) {
+    scene = `${scene.trimEnd()}\n\n[node name="Instructions" type="Label" parent="UI"]
+offset_left = 24.0
+offset_top = 20.0
+offset_right = 440.0
+offset_bottom = 52.0
+theme_override_colors/font_color = Color(0.92, 0.94, 1, 0.92)
+theme_override_font_sizes/font_size = 18
+text = "A/D rotate · W/S move · Space reset"
+`;
+  }
+  for (const model of modelEntries) {
+    scene = `${scene.trimEnd()}\n\n[node name="${model.name}" parent="World" instance=ExtResource("${model.id}")]\n`;
+  }
+
+  await fs.writeFile(params.scenePath, scene, "utf8");
+}
+
 /** Lists the project's imported assets, grouped by kind, for the UI. */
 export async function listAssets(
   projectDir: string,

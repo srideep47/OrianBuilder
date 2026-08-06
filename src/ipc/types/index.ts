@@ -189,12 +189,67 @@ export {
 } from "./model_marketplace";
 export { missionContracts, missionClient } from "./mission";
 export {
+  flowContracts,
+  flowClient,
+  flowEvents,
+  flowEventClient,
+} from "./intent";
+export type {
+  CapabilityId,
+  CommandIntent,
+  FlowRunResult,
+  PipelineProgress,
+  FlowActivity,
+} from "./intent";
+export {
+  martaContracts,
+  martaClient,
+  martaEvents,
+  martaEventClient,
+  martaTurnStreamContract,
+  martaTurnStreamClient,
+} from "./marta";
+export type {
+  MartaAction,
+  MartaSurface,
+  MartaDelegate,
+  MartaGraphSummary,
+  MartaStageState,
+  MartaWorldState,
+  MartaResidency,
+  MartaTierId,
+  MartaTurnEvent,
+  MartaModelStatus,
+  MartaTask,
+  MartaEvidence,
+  MartaTaskEvent,
+  MartaTaskStatus,
+  MartaPreferences,
+  MartaNarrationDetail,
+  MartaCodingWorker,
+  MartaDelegationConversation,
+  MartaDelegationSelection,
+  MartaPendingDelegation,
+} from "./marta";
+export {
   hardwareContracts,
   hardwareClient,
   HardwareProfileSchema,
   HardwareGpuInfoSchema,
 } from "./hardware";
 export type { HardwareGpuInfo, HardwareProfile } from "./hardware";
+export {
+  telemetryContracts,
+  telemetryClient,
+  LiveTelemetrySampleSchema,
+  InferenceTelemetrySchema,
+} from "./telemetry";
+export type {
+  GpuLiveSample,
+  InferenceSample,
+  InferenceTelemetry,
+  LiveTelemetrySample,
+} from "./telemetry";
 export {
   godotContracts,
   godotClient,
@@ -211,6 +266,7 @@ export {
 } from "./claude_code";
 export type {
   ClaudeAvailability,
+  ClaudeAccountUsage,
   ClaudeEvent,
   ClaudeEffort,
   ClaudePermissionMode,
@@ -694,6 +750,7 @@ import {
 } from "./model_marketplace";
 import { missionClient } from "./mission";
 import { hardwareClient } from "./hardware";
+import { telemetryClient } from "./telemetry";
 import { godotClient, blenderClient, godotEventClient } from "./game";
 import { claudeCodeClient, claudeCodeEventClient } from "./claude_code";
 import {
@@ -702,7 +759,7 @@ import {
   workspaceFilesClient,
 } from "./workspace";
 import { orchestratorClient } from "./model_orchestrator";
-import { flowClient } from "./intent";
+import { flowClient, flowEventClient } from "./intent";
 import { llamaBinaryClient, llamaBinaryEventClient } from "./llama_binary";
 import { identityClient } from "./identity";
 import { networkClient, networkEventClient } from "./network";
@@ -725,6 +782,7 @@ import {
   designStudioChatStreamClient,
 } from "./design_studio";
 import { scheduleClient, scheduleEventClient } from "./schedule";
+import { martaClient, martaEventClient } from "./marta";
 
 /**
  * Unified IPC client with all domains organized by namespace.
@@ -790,6 +848,7 @@ export const ipc = {
   marketplace: modelMarketplaceClient,
   mission: missionClient,
   hardware: hardwareClient,
+  telemetry: telemetryClient,
   godot: godotClient,
   blender: blenderClient,
   claudeCode: claudeCodeClient,
@@ -811,6 +870,7 @@ export const ipc = {
   designStudio: designStudioClient,
   designStudioStream: designStudioChatStreamClient,
   schedule: scheduleClient,
+  marta: martaClient,
 
   // Event clients for main->renderer pub/sub
   events: {
@@ -834,5 +894,7 @@ export const ipc = {
     godot: godotEventClient,
     terminal: terminalEventClient,
     claudeCode: claudeCodeEventClient,
+    marta: martaEventClient,
+    flow: flowEventClient,
   },
 } as const;

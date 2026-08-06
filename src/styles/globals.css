@@ -134,11 +134,18 @@ body[data-scroll-locked] .app-region-drag {
   --sidebar-ring: color-mix(in srgb, var(--cosmos-violet-2) 50%, transparent);
 
   /* ── Shell geometry ───────────────────────────────────────────────────────
-     The redesigned shell has exactly two horizontal chrome widths. Declaring
-     them here means the sidebar, the secondary panel and the content container
-     can never drift out of agreement. */
-  --shell-rail-width: 5.5rem; /* icon + label nav rail */
-  --shell-panel-width: 17.5rem; /* contextual list panel */
+     The Stage has one piece of chrome that overlaps content: the composer,
+     which floats over the bottom rather than docking beside it. The Stage pads
+     itself by this much so no surface's last row is permanently hidden behind
+     it. Declared here so the Stage and the composer can never disagree about
+     how much room it takes. */
+  --stage-composer-inset: 4.75rem;
+
+  /* Retained for the surfaces that still lay out against the old shell's
+     widths. Nothing in the shell itself reads them any more — the rail and the
+     context panel are gone. */
+  --shell-rail-width: 5.5rem;
+  --shell-panel-width: 17.5rem;
 }
 
 .prose {
@@ -2232,17 +2239,11 @@ select {
   font-family: var(--default-font-family);
 }
 
-:where(
-  .cosmos,
-  .galaxy-bg-wrapper,
-  .galaxy-bg-core,
-  .galaxy-bg-nebula,
-  .orion-stage,
-  .orion-stars,
-  .orion-streaks,
-  .orion-grain,
-  .orion-vignette
-) {
+/* The retired rAF-driven GalaxyBackground must stay gone, but the Stage's
+   CSS-only CosmicBackdrop is the planned resting surface.  Do not group the
+   latter in this legacy reset: doing so leaves the command center sitting on a
+   flat black rectangle and defeats the liquid material above it. */
+:where(.galaxy-bg-wrapper, .galaxy-bg-core, .galaxy-bg-nebula) {
   display: none !important;
 }
 

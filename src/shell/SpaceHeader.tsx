@@ -1,31 +1,41 @@
 import type { ReactNode } from "react";
-import { Link, useRouterState } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
-import { material, radius } from "@/components/liquid";
-import { spaceForPath, viewForPath, type SpaceView } from "./spaces";
+import { useSurfaceId } from "./stage/SurfaceContext";
+import { useSurfaceCatalog } from "./stage/useSurfaceCatalog";
 
 export interface SpaceHeaderProps {
-  /** Page title. Defaults to the active view's label. */
+  /** What this surface is. Required now that nothing can infer it from a route. */
   title?: string;
-  /** Overrides the view hint. Say what this page is for in one line. */
+  /** One line saying what it is for. */
   description?: string;
-  /** Right-aligned page actions. */
+  /** Right-aligned actions that apply to this surface. */
   actions?: ReactNode;
   /** Status chips shown inline after the title. */
   meta?: ReactNode;
-  /** Filters or search, on their own line below the switcher. */
+  /** Filters or search, on their own line below the title. */
   toolbar?: ReactNode;
   className?: string;
 }
 
 /**
- * Every page's header: which space you are in, which view of it you are looking
- * at, what this view is for, and the actions that apply to it.
+ * A surface's own header: what you are looking at, what it is for, and the
+ * actions that apply to it.
  *
- * The view switcher lives here rather than in the nav rail because that is the
- * only place it can be labelled honestly — a rail item can say "Create" but not
- * "Create → Queue", which is why the old shell ended up hiding twelve
- * destinations behind an unlabelled grid popover.
+ * It used to also carry the navigation — a breadcrumb naming the "space" and a
+ * segmented switcher between sibling views, both derived from `spaces.ts`. All
+ * of that is gone with the Stage: there are no spaces to be in and no siblings
+ * to switch between, because a surface is summoned rather than navigated to.
+ *
+ * The component survived the change, rather than being deleted and replaced,
+ * because nineteen pages render it and the header half was never the problem.
+ * Its props are unchanged; only the navigation was removed.
+ *
+ * Thirteen of those pages never passed a `title` — they relied on the route
+ * deriving one. They still do not need to: the fallback now comes from the
+ * capability graph, via the surface this pane is rendering. That is strictly
+ * better than the thirteen hard-coded strings it replaced, because the header,
+ * the command palette and Marta then all name a surface identically by
+ * construction.
  */
 export function SpaceHeader({
   title,
@@ -35,27 +45,19 @@ export function SpaceHeader({
   toolbar,
   className,
 }: SpaceHeaderProps) {
-  const { location } = useRouterState();
-  const pathname = location.pathname;
-  const space = spaceForPath(pathname);
-  const view = space ? viewForPath(space, pathname) : null;
+  // The pane's surface, not the router's location: the secondary pane renders
+  // outside the router, and both panes share one location.
+  const surfaceId = useSurfaceId();
+  const { byId } = useSurfaceCatalog();
+  const surface = surfaceId ? byId.get(surfaceId) : undefined;
 
-  const resolvedTitle = title ?? view?.label ?? space?.label ?? "Orion";
-  const resolvedDescription =
-    description ?? view?.hint ?? space?.purpose ?? undefined;
+  const resolvedTitle = title ?? surface?.title ?? "Orion";
+  const resolvedDescription = description ?? surface?.summary;
 
   return (
     <header className={cn("flex flex-col gap-3 py-3.5", className)}>
       <div className="flex min-w-0 items-start gap-3">
         <div className="min-w-0 flex-1">
-          {/* Breadcrumb, not a decorative eyebrow: it names the space so the
-              title below it can be short. */}
-          {space && (
-            <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.1em] text-primary/85">
-              <space.icon className="h-3 w-3 shrink-0" />
-              <span className="truncate">{space.label}</span>
-            </div>
-          )}
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <h1 className="min-w-0 truncate text-xl font-semibold leading-tight tracking-[-0.012em] text-foreground">
               {resolvedTitle}
@@ -75,66 +77,7 @@ export function SpaceHeader({
         )}
       </div>
 
-      {space && space.views.length > 1 && (
-        <ViewSwitcher
-          views={space.views}
-          activeTo={view?.to ?? space.views[0].to}
-        />
-      )}
-
       {toolbar && <div className="min-w-0">{toolbar}</div>}
     </header>
-  );
-}
-
-/**
- * Segmented control over routes. Real `<Link>`s so middle-click, copy-link and
- * keyboard navigation all work — the previous popover used click handlers, so a
- * destination could not be opened or shared any other way.
- */
-function ViewSwitcher({
-  views,
-  activeTo,
-}: {
-  views: ReadonlyArray<SpaceView>;
-  activeTo: string;
-}) {
-  return (
-    <div
-      role="tablist"
-      aria-label="Views"
-      className={cn(
-        "flex w-fit max-w-full items-center gap-0.5 overflow-x-auto p-[3px]",
-        radius.pill,
-        material.fill,
-        material.rim,
-        "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-      )}
-    >
-      {views.map((view) => {
-        const active = view.to === activeTo;
-        const Icon = view.icon;
-        return (
-          <Link
-            key={view.to}
-            to={view.to}
-            role="tab"
-            aria-selected={active}
-            className={cn(
-              "inline-flex h-8 shrink-0 items-center gap-1.5 px-3 text-[12px] font-medium outline-none",
-              radius.pill,
-              "transition-colors duration-[120ms] ease-[var(--ease-macos-control)]",
-              active
-                ? "border border-white/25 bg-gradient-to-b from-[var(--cosmos-violet)] to-[var(--cosmos-violet-2)] text-white shadow-[0_4px_14px_rgba(107,79,216,0.3)]"
-                : "border border-transparent text-muted-foreground hover:bg-white/[0.07] hover:text-foreground",
-              "focus-visible:ring-2 focus-visible:ring-primary/45",
-            )}
-          >
-            <Icon className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">{view.label}</span>
-          </Link>
-        );
-      })}
-    </div>
   );
 }

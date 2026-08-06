@@ -37,13 +37,13 @@ export interface GodotInstall {
  * platform, so there is no registry key or package database to consult — a path
  * sweep plus `PATH` is genuinely the whole discovery surface.
  */
-function knownLocations(): string[] {
+async function knownLocations(): Promise<string[]> {
   const home = os.homedir();
   if (process.platform === "win32") {
     const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
     const localAppData =
       process.env.LOCALAPPDATA ?? path.join(home, "AppData", "Local");
-    return [
+    const candidates = [
       path.join(programFiles, "Godot", "Godot.exe"),
       path.join(programFiles, "Godot", "godot.exe"),
       path.join(localAppData, "Programs", "Godot", "Godot.exe"),
@@ -51,6 +51,37 @@ function knownLocations(): string[] {
       path.join(home, "Godot", "Godot.exe"),
       path.join(home, "Downloads", "Godot.exe"),
     ];
+
+    // The official Windows download is a versioned portable executable, often
+    // extracted into a same-named directory (for example
+    // Downloads/Godot_v4.7.1-stable_win64.exe/Godot_v4.7.1-...exe). A fixed
+    // Downloads/Godot.exe probe misses the normal install path entirely.
+    const downloads = path.join(home, "Downloads");
+    try {
+      const entries = await fs.readdir(downloads, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!/^godot.*(?:\.exe)?$/i.test(entry.name)) continue;
+        const candidate = path.join(downloads, entry.name);
+        if (entry.isFile() && /\.exe$/i.test(entry.name)) {
+          if (!/console/i.test(entry.name)) candidates.push(candidate);
+          continue;
+        }
+        if (!entry.isDirectory()) continue;
+        const nested = await fs.readdir(candidate, { withFileTypes: true });
+        for (const child of nested) {
+          if (
+            child.isFile() &&
+            /^godot.*\.exe$/i.test(child.name) &&
+            !/console/i.test(child.name)
+          ) {
+            candidates.push(path.join(candidate, child.name));
+          }
+        }
+      }
+    } catch {
+      /* Downloads is absent or unreadable. The fixed probes still apply. */
+    }
+    return candidates;
   }
   if (process.platform === "darwin") {
     return [
@@ -199,7 +230,7 @@ export async function locateGodot(
     }
   }
 
-  for (const candidate of knownLocations()) {
+  for (const candidate of await knownLocations()) {
     if (!(await fileExists(candidate))) continue;
     const found = await probe(candidate, "known-location");
     if (found) {

@@ -8,6 +8,7 @@ import type {
   PersistedFlowStatus,
   ResumableFlowSummary,
 } from "@/ipc/types/intent";
+import type { FlowArtifact } from "@/ipc/types/manifest";
 
 // =============================================================================
 // Orion Flow — Run persistence (Phase 0 hardening)
@@ -31,6 +32,8 @@ export interface PersistedFlowRun {
   startedAt: number;
   updatedAt: number;
   steps: StepResult[];
+  /** Optional for backwards compatibility with P0-P4 run checkpoints. */
+  artifacts?: FlowArtifact[];
 }
 
 /** Runs older than this are pruned regardless of status. */

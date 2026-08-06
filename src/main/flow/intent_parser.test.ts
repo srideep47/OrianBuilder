@@ -131,6 +131,66 @@ describe("fallbackParse", () => {
     );
   });
 
+  it("routes a playable 3D game through the P5 artifact pipeline", () => {
+    const intent = fallbackParse(
+      "Create a playable Godot game with a robot mesh and metal texture",
+      42,
+    );
+
+    expect(intent.appId).toBe(42);
+    expect(intent.steps.map((step) => step.capability)).toEqual([
+      "generate_image",
+      "generate_3d_asset",
+      "process_mesh",
+      "edit_scene",
+      "run_tests",
+      "build_game",
+    ]);
+    expect(intent.steps[1].input.imagePath).toBe("artifact://texture");
+    expect(intent.steps[2].input.input).toBe("artifact://mesh");
+    expect(intent.steps[3].dependsOn).toEqual(["mesh-process"]);
+    expect(intent.steps[5].dependsOn).toEqual(["tests"]);
+  });
+
+  it("routes a simple Godot scene without inventing media work", () => {
+    const intent = fallbackParse("Build a simple playable Godot scene", 9);
+
+    expect(intent.steps.map((step) => step.capability)).toEqual([
+      "edit_scene",
+      "run_tests",
+      "build_game",
+    ]);
+  });
+
+  it("honors an explicit no-media constraint on a 3D Godot workflow", () => {
+    const intent = fallbackParse(
+      "Create a minimal playable Godot 3D smoke project and export it. Do not generate media.",
+      95,
+    );
+
+    expect(intent.steps.map((step) => step.capability)).toEqual([
+      "edit_scene",
+      "run_tests",
+      "build_game",
+    ]);
+  });
+
+  it("processes a supplied local mesh instead of regenerating one", () => {
+    const intent = fallbackParse(
+      'Build a playable Godot scene from "D:\\assets\\cube.obj" and export it. Do not generate media.',
+      95,
+    );
+
+    expect(intent.steps.map((step) => step.capability)).toEqual([
+      "process_mesh",
+      "edit_scene",
+      "run_tests",
+      "build_game",
+    ]);
+    expect(intent.steps[0].input.input).toBe("D:\\assets\\cube.obj");
+    expect(intent.steps[1].dependsOn).toEqual(["mesh-process"]);
+  });
+
   it("routes a full Orion workflow prompt across design, media, 3D, news, tracking, and build", () => {
     const intent = fallbackParse(
       "Build a market intelligence app with a polished UI screen, hero image, 3D GLB asset, latest AI news, monitor https://example.com/news, and track price for https://example.com/item",

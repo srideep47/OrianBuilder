@@ -55,6 +55,7 @@ import {
 } from "../types/model_marketplace";
 import { missionContracts } from "../types/mission";
 import { hardwareContracts } from "../types/hardware";
+import { telemetryContracts } from "../types/telemetry";
 import { godotContracts, godotEvents, blenderContracts } from "../types/game";
 import { claudeCodeContracts, claudeCodeEvents } from "../types/claude_code";
 import {
@@ -86,6 +87,11 @@ import {
   androidEmulatorEvents,
 } from "../types/android_emulator";
 import { scheduleContracts, scheduleEvents } from "../types/schedule";
+import {
+  martaContracts,
+  martaEvents,
+  martaTurnStreamContract,
+} from "../types/marta";
 
 // =============================================================================
 // Invoke Channels (derived from all contracts)
@@ -94,6 +100,7 @@ import { scheduleContracts, scheduleEvents } from "../types/schedule";
 const CHAT_STREAM_CHANNELS = getStreamChannels(chatStreamContract);
 const HELP_STREAM_CHANNELS = getStreamChannels(helpStreamContract);
 const DESIGN_CHAT_STREAM_CHANNELS = getStreamChannels(designStudioChatStream);
+const MARTA_TURN_STREAM_CHANNELS = getStreamChannels(martaTurnStreamContract);
 
 // Test-only channels (handler only registered in E2E test builds, but channel always allowed)
 const TEST_INVOKE_CHANNELS = [
@@ -116,6 +123,7 @@ export const VALID_INVOKE_CHANNELS = [
   CHAT_STREAM_CHANNELS.invoke,
   HELP_STREAM_CHANNELS.invoke,
   DESIGN_CHAT_STREAM_CHANNELS.invoke,
+  MARTA_TURN_STREAM_CHANNELS.invoke,
 
   // Integrations
   ...getInvokeChannels(githubContracts),
@@ -152,6 +160,7 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(modelMarketplaceContracts),
   ...getInvokeChannels(missionContracts),
   ...getInvokeChannels(hardwareContracts),
+  ...getInvokeChannels(telemetryContracts),
   ...getInvokeChannels(orchestratorContracts),
   ...getInvokeChannels(flowContracts),
   ...getInvokeChannels(llamaBinaryContracts),
@@ -167,6 +176,7 @@ export const VALID_INVOKE_CHANNELS = [
   ...getInvokeChannels(youtubeContracts),
   ...getInvokeChannels(androidEmulatorContracts),
   ...getInvokeChannels(scheduleContracts),
+  ...getInvokeChannels(martaContracts),
   ...getInvokeChannels(godotContracts),
   ...getInvokeChannels(blenderContracts),
   ...getInvokeChannels(terminalContracts),
@@ -190,6 +200,7 @@ export const VALID_RECEIVE_CHANNELS = [
   ...CHAT_STREAM_CHANNELS.receive,
   ...HELP_STREAM_CHANNELS.receive,
   ...DESIGN_CHAT_STREAM_CHANNELS.receive,
+  ...MARTA_TURN_STREAM_CHANNELS.receive,
 
   // Event channels
   ...getReceiveChannels(agentEvents),
@@ -214,6 +225,7 @@ export const VALID_RECEIVE_CHANNELS = [
   ...getReceiveChannels(terminalEvents),
   ...getReceiveChannels(claudeCodeEvents),
   ...getReceiveChannels(scheduleEvents),
+  ...getReceiveChannels(martaEvents),
 ] as const;
 
 // =============================================================================

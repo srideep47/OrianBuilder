@@ -177,10 +177,11 @@ export async function exportProject(params: {
 }
 
 /**
- * Runs a project's scripts through the engine's own parser without launching a
- * game window. This is the cheapest possible "did the agent write valid
- * GDScript" gate, and it catches the class of error that would otherwise only
- * appear as a runtime crash after a 30-second startup.
+ * Loads and imports the project in the headless editor without launching a game
+ * window. `--check-only` only accepts one explicit `--script <file>`; using it
+ * without a script (the previous implementation) makes Godot treat `--quit` as
+ * the script path and does not validate the project. A headless editor pass is
+ * the engine-supported whole-project parse/import gate.
  */
 export async function checkProject(
   projectDir: string,
@@ -190,14 +191,7 @@ export async function checkProject(
   try {
     const { stdout, stderr } = await execFileAsync(
       install.executable,
-      [
-        "--headless",
-        "--path",
-        projectDir,
-        "--check-only",
-        "--script",
-        "--quit",
-      ],
+      ["--headless", "--path", projectDir, "--editor", "--quit"],
       { timeout: 120_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true },
     );
     const output = `${stdout}\n${stderr}`.trim();

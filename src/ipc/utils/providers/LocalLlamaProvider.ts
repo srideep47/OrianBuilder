@@ -8,6 +8,7 @@ import { getServerStatus } from "@/ipc/utils/embedded_inference_server";
 import { LM_STUDIO_BASE_URL } from "@/ipc/utils/lm_studio_utils";
 import { localModelFetch } from "@/ipc/utils/local_model_fetch";
 import { createOllamaProvider } from "@/ipc/utils/ollama_provider";
+import { MARTA_PORT } from "@/main/marta/marta_model";
 
 import type { ModelProvider } from "./types";
 
@@ -71,5 +72,25 @@ export const embeddedProvider: ModelProvider = {
     return {
       model: provider(status.modelName ?? model.name),
     };
+  },
+};
+
+/**
+ * Reuse Marta's already-resident llama-server for small private coding tasks.
+ * It is intentionally explicit in the picker: this keeps local execution
+ * available even when LM Studio/Ollama are closed, without pretending the 4B
+ * companion is the same thing as Orion's larger embedded engine.
+ */
+export const martaProvider: ModelProvider = {
+  id: "marta",
+  supportsStreaming: true,
+  supportsTools: false,
+  createClient({ model }) {
+    const provider = createOpenAICompatible({
+      name: "marta",
+      baseURL: `http://127.0.0.1:${MARTA_PORT}/v1`,
+      fetch: localModelFetch,
+    });
+    return { model: provider(model.name) };
   },
 };

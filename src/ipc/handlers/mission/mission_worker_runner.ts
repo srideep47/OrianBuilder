@@ -273,6 +273,21 @@ export async function runMissionWorker(input: {
     worker: runningWorker,
   });
   const settings = readSettings();
+  const delegatedModel = runningWorker.metadata?.selectedModel as
+    | { provider?: unknown; name?: unknown }
+    | undefined;
+  const settingsForWorker =
+    typeof delegatedModel?.provider === "string" &&
+    typeof delegatedModel.name === "string"
+      ? {
+          ...settings,
+          selectedModel: {
+            provider: delegatedModel.provider,
+            name: delegatedModel.name,
+          },
+          selectedChatMode: "local-agent" as const,
+        }
+      : settings;
   const aiRules = await readAiRules(workspacePath);
   const systemPrompt = constructSystemPrompt({
     aiRules,
@@ -299,9 +314,10 @@ export async function runMissionWorker(input: {
       content: "",
       requestId: orianbuilderRequestId,
       model:
-        settings.selectedModel.provider === "embedded"
-          ? (getServerStatus().modelName ?? settings.selectedModel.name)
-          : settings.selectedModel.name,
+        settingsForWorker.selectedModel.provider === "embedded"
+          ? (getServerStatus().modelName ??
+            settingsForWorker.selectedModel.name)
+          : settingsForWorker.selectedModel.name,
     })
     .returning({ id: messages.id });
 
@@ -318,9 +334,10 @@ export async function runMissionWorker(input: {
       placeholderMessageId: assistantMessage.id,
       systemPrompt,
       orianbuilderRequestId,
-      settingsOverride: settings,
+      settingsOverride: settingsForWorker,
       workspacePathOverride: workspacePath,
       workerId: runningWorker.id,
+      readOnly: runningWorker.metadata?.readOnly === true,
     },
   );
 

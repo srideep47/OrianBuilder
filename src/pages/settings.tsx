@@ -42,6 +42,7 @@ import { CloudSandboxExperimentSwitch } from "@/components/CloudSandboxExperimen
 import { useSetAtom } from "jotai";
 import { activeSettingsSectionAtom } from "@/atoms/viewAtoms";
 import { SECTION_IDS, SETTING_IDS } from "@/lib/settingsSearchIndex";
+import { MartaSettings } from "@/components/MartaSettings";
 import { BraveSearchSettings } from "@/components/settings/BraveSearchSettings";
 import { AccountSettings } from "@/components/AccountSettings";
 
@@ -96,6 +97,18 @@ export default function SettingsPage() {
           </div>
 
           <div className="space-y-6">
+            <div
+              id={SECTION_IDS.marta}
+              className="bg-card border border-border/60 rounded-3xl shadow-md p-6"
+            >
+              <h2 className="text-lg font-medium text-foreground mb-4">
+                Orchestrator
+              </h2>
+              <div id={SETTING_IDS.marta}>
+                <MartaSettings />
+              </div>
+            </div>
+
             <div
               id={SECTION_IDS.telemetry}
               className="bg-card border border-border/60 rounded-3xl shadow-md p-6"

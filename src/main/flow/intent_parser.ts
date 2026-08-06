@@ -53,6 +53,16 @@ Rules:
   news, or research-current-events requests.
 - Use "track_website" for website monitoring/change detection requests.
 - Use "track_price" for product price tracking requests.
+- Use "process_mesh" after a 3D generation step when the mesh must be cleaned,
+  decimated, UV-unwrapped, converted or prepared for a game engine. Reference
+  its dependency as input.input="artifact://<step-id>".
+- Use "edit_scene" for Godot scene/node/layout changes, "run_tests" for the
+  validation gate, and "build_game" as the final playable export step.
+- Use "run_terminal" only for an explicit command, "edit_files" only when the
+  requested file contents are already known, "code_task" for implementation or
+  refactoring that needs a coding agent, and "deploy" only after tests/build.
+- A game-production plan should normally be: generate assets in parallel ->
+  process meshes -> edit_scene -> run_tests -> build_game.
 - For design steps, put a detailed UI/design prompt in input.prompt.
 - For media steps, put a detailed generation prompt in input.prompt.
 - For tracking steps, put the URL in input.url when present and the original
@@ -188,12 +198,110 @@ const BUILD_KEYWORDS = [
   "feature",
 ];
 
+const GAME_KEYWORDS = [
+  "game",
+  "godot",
+  "playable",
+  "scene",
+  "level",
+  "player character",
+];
+
 /**
  * Deterministic fallback used when no LLM is available or the model returns
  * invalid output. Keyword-based, never throws.
  */
 export function fallbackParse(text: string, appId?: number): CommandIntent {
   const lower = text.toLowerCase();
+
+  const wantsGamePipeline = GAME_KEYWORDS.some((keyword) => {
+    if (!lower.includes(keyword)) return false;
+    // "game asset" describes one mesh/texture, not a request to assemble and
+    // export a complete game. Keep that useful P4 path narrowly scoped.
+    return keyword !== "game" || !/\bgame\s+asset\b/.test(lower);
+  });
+
+  // P5 deterministic safety net.  The large intent model remains free to
+  // produce richer plans, but a local/offline failure still yields a genuine
+  // cross-workflow game pipeline instead of falling back to a web app build.
+  if (wantsGamePipeline) {
+    const existingMeshPath = text.match(
+      /["']([^"']+\.(?:obj|fbx|gltf|glb|blend))["']/i,
+    )?.[1];
+    const mediaForbidden =
+      /\b(?:do not|don't|without|no)\s+(?:generate\s+|create\s+|make\s+|use\s+)?(?:any\s+)?media\b/i.test(
+        text,
+      );
+    const textureRequested =
+      !mediaForbidden &&
+      ["texture", "material", "skin", "image"].some((keyword) =>
+        lower.includes(keyword),
+      );
+    const meshRequested =
+      !mediaForbidden &&
+      ["mesh", "3d", "model", "character", "prop"].some((keyword) =>
+        lower.includes(keyword),
+      );
+    const steps: CommandIntent["steps"] = [];
+    let prior: string[] = [];
+    if (existingMeshPath) {
+      steps.push({
+        id: "mesh-process",
+        capability: "process_mesh",
+        description: "Convert and prepare the supplied mesh for Godot",
+        input: { operation: "convert", input: existingMeshPath },
+      });
+      prior = ["mesh-process"];
+    } else if (textureRequested || meshRequested) {
+      steps.push({
+        id: "texture",
+        capability: "generate_image",
+        description: "Generate the game texture/reference art",
+        input: { prompt: text },
+      });
+      prior = ["texture"];
+    }
+    if (!existingMeshPath && meshRequested) {
+      steps.push({
+        id: "mesh",
+        capability: "generate_3d_asset",
+        description: "Generate the game mesh",
+        input: { prompt: text, imagePath: "artifact://texture" },
+        dependsOn: ["texture"],
+      });
+      steps.push({
+        id: "mesh-process",
+        capability: "process_mesh",
+        description: "Convert and prepare the mesh for Godot",
+        input: { operation: "convert", input: "artifact://mesh" },
+        dependsOn: ["mesh"],
+      });
+      prior = ["mesh-process"];
+    }
+    steps.push({
+      id: "scene",
+      capability: "edit_scene",
+      description: "Build the playable Godot scene",
+      input: { goal: text },
+      dependsOn: prior.length ? prior : undefined,
+    });
+    steps.push({
+      id: "tests",
+      capability: "run_tests",
+      description: "Validate the Godot project",
+      input: { command: "godot --headless --check-only --path . --quit" },
+      dependsOn: ["scene"],
+    });
+    steps.push({
+      id: "game-build",
+      capability: "build_game",
+      description: "Export a playable game build",
+      input: { target: process.platform === "win32" ? "windows" : "linux" },
+      dependsOn: ["tests"],
+    });
+    return { goal: text, steps, appId };
+  }
+
   const steps: CommandIntent["steps"] = [];
   const assetStepIds: string[] = [];
   const urls = [...text.matchAll(/https?:\/\/[^\s"'<>]+/g)].map(

@@ -665,4 +665,8 @@ export const LOCAL_PROVIDERS: Record<
     displayName: "Embedded (Tensor)",
     hasFreeTier: true,
   },
+  marta: {
+    displayName: "Marta Companion",
+    hasFreeTier: true,
+  },
 };

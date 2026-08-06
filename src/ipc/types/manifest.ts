@@ -76,6 +76,58 @@ export const AssetManifestSchema = z.object({
 export type AssetManifest = z.infer<typeof AssetManifestSchema>;
 
 // =============================================================================
+// Harmony artifact bus (P5)
+// =============================================================================
+
+/**
+ * A durable output that another flow step can consume.  AssetManifest remains
+ * the planning contract for generated media; FlowArtifact is the more general
+ * runtime contract shared by media, Blender, Godot, code, tests and deploys.
+ */
+export const FlowArtifactKindSchema = z.enum([
+  "image",
+  "video",
+  "audio",
+  "music",
+  "mesh",
+  "scene",
+  "source",
+  "test-report",
+  "build",
+  "deployment",
+  "research",
+  "generic",
+]);
+export type FlowArtifactKind = z.infer<typeof FlowArtifactKindSchema>;
+
+export const FlowArtifactSchema = z.object({
+  /** Stable within a flow. */
+  id: z.string().min(1),
+  flowId: z.string().min(1),
+  producerStepId: z.string().min(1),
+  /** Kept as a string to avoid a manifest -> intent -> manifest import cycle. */
+  capability: z.string().min(1),
+  kind: FlowArtifactKindSchema,
+  label: z.string().min(1),
+  /** Usually an absolute file path; URLs are valid for deployments/research. */
+  uri: z.string().min(1),
+  mimeType: z.string().optional(),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+  createdAt: z.number(),
+});
+export type FlowArtifact = z.infer<typeof FlowArtifactSchema>;
+
+/**
+ * A compact reference accepted inside any capability input.  The flow runner
+ * also accepts the shorthand string `artifact://<step-id>`.
+ */
+export const FlowArtifactRefSchema = z.object({
+  $artifact: z.string().min(1),
+  index: z.number().int().nonnegative().optional(),
+});
+export type FlowArtifactRef = z.infer<typeof FlowArtifactRefSchema>;
+
+// =============================================================================
 // Validation helpers
 // =============================================================================
 

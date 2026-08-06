@@ -25,7 +25,9 @@ command text -> intent_parser.parseIntent()  (LLM, keyword fallback)
                     `-- build_app ------------------> BuildExecutor -> app+chat handoff
                                                      (renderer launches Autopilot)
                     |
-                    `-- local AI work -------------> ModelGate (one resident slot)
+                    `-- local AI work -------------> ModelGate (exclusive slot;
+                                                     Marta holds a separate
+                                                     companion slot)
                     v
                 FlowRunResult { status, steps[] }
 ```
@@ -40,7 +42,7 @@ command text -> intent_parser.parseIntent()  (LLM, keyword fallback)
 | `flow_runner.ts`                      | sequential executor, dependency skipping, status aggregation, resume            |
 | `flow_review.ts`                      | mid-flow review checkpoints (LLM repairs pending prompts at batch boundaries)   |
 | `flow_run_store.ts`                   | per-run JSON persistence so interrupted flows can be resumed                    |
-| `model_gate.ts`                       | global single-resident LLM/media coordinator + swap telemetry                   |
+| `model_gate.ts`                       | two-tier residency: one exclusive LLM/media slot + Marta's companion slot       |
 | `../../ipc/handlers/flow_handlers.ts` | registers handlers + wires all executors                                        |
 
 ## Hardening (Phase 0)
@@ -80,7 +82,7 @@ Media steps can run on a trusted peer instead of locally:
 - **Parallel steps** — `runFlow(intent, { maxParallel: N })` executes
   dependency-independent steps concurrently in waves (review checkpoint once
   per wave). Default stays 1 (sequential, per-modality checkpoints); local
-  model use is serialized for the entire generation by the single-residency gate,
+  model use is serialized for the entire generation by the exclusive-residency gate,
   so >1 pays off when steps land on different peers.
 
 ## Capabilities (9)
@@ -99,10 +101,20 @@ Media steps can run on a trusted peer instead of locally:
 
 ## VRAM and setup fallback behavior
 
-Every local AI capability enters the global single-resident gate. The gate
-unloads the previous LLM/media pipeline before the next planned model is
-admitted, holds the residency lock for the complete generation, and leaves a
-flow idle when it finishes. The media dispatcher can still choose a lower tier,
+Every local AI capability enters the gate's **exclusive** tier. The gate unloads
+the previous LLM/media pipeline before the next planned model is admitted, holds
+the residency lock for the complete generation, and leaves a flow idle when it
+finishes.
+
+Marta, the orchestrator, sits in a second **companion** tier and is exempt from
+that rule — she has to stay answerable while a heavy job holds the card. When a
+model genuinely cannot fit beside her she is _demoted_ to a CPU placement rather
+than unloaded, so her session survives, and restored once there is room. Which
+of the two happens is decided by a `ResidencyPolicy` that Marta installs (see
+`src/main/marta/residency.ts`); `DEFAULT_RESIDENCY_POLICY` reproduces the
+pre-Marta behaviour when she is not running.
+
+Independently of residency, the media dispatcher can still choose a lower tier,
 CPU fallback, cloud fallback, or a structured setup-required result when the
 selected local backend cannot run.
 
@@ -128,7 +140,9 @@ second command could swap models while the first generation was still active.
 - `setThreeDExecutor(fn)` - 3D asset generation pipeline
 - `setNewsExecutor(fn)` - news/headline research
 - `setTrackingExecutor(fn)` - website/price tracking
-- `ModelGate.setHooks(...)` - real single-resident model load/unload lifecycle
+- `ModelGate.setHooks(...)` - real exclusive-tier model load/unload lifecycle
+- `ModelGate.setCompanionHooks(...)` - Marta's load/unload/demote/restore
+- `ModelGate.setResidencyPolicy(...)` - who gets the GPU, and when Marta yields it
 
 ## Adding a capability
 
@@ -140,14 +154,15 @@ second command could swap models while the first generation was still active.
 
 ## Tests
 
-`flow_runner.test.ts`, `intent_parser.test.ts`, `model_gate.test.ts`, and
+`flow_runner.test.ts`, `intent_parser.test.ts`, `model_gate.test.ts`,
+`model_gate_companion.test.ts`, and
 `capability_registry.test.ts` run with:
 
 ```sh
 npm test -- src/main/flow
 ```
 
-All heavy deps (DB, Electron, `ai`) are mocked. 32 tests total.
+All heavy deps (DB, Electron, `ai`) are mocked. 84 tests across those files.
 
 The Orion E2E regression lives in `e2e-tests/orion.spec.ts`. It covers:
 

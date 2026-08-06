@@ -1,12 +1,15 @@
-import { SidebarProvider } from "@/components/ui/sidebar";
-import { NavRail } from "@/shell/NavRail";
-import { ContextPanel } from "@/shell/ContextPanel";
 import { CosmicBackdrop } from "@/components/liquid";
+import { Stage } from "@/shell/stage/Stage";
+import { StageRouterSync } from "@/shell/stage/StageRouterSync";
+import { Presence } from "@/shell/stage/Presence";
+import { AmbientRail } from "@/shell/stage/AmbientRail";
+import { CommandPalette } from "@/shell/stage/CommandPalette";
+import { useMartaStatusPoll } from "@/shell/stage/presence_state";
 import { ThemeProvider } from "../contexts/ThemeContext";
 import { DeepLinkProvider } from "../contexts/DeepLinkContext";
 import { Toaster } from "sonner";
 import { TitleBar } from "@/shell/TitleBar";
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useRunApp, useAppOutputSubscription } from "@/hooks/useRunApp";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useRouterState, useNavigate } from "@tanstack/react-router";
@@ -44,6 +47,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 
   // Initialize plan events listener
   usePlanEvents();
+  // One poll of Marta's model status for the whole shell.
+  useMartaStatusPoll();
 
   // Redirect to onboarding only on the very first load (no settings yet)
   useEffect(() => {
@@ -160,50 +165,39 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   }, [currentRoute]);
 
   return (
-    <>
-      <ThemeProvider>
-        <DeepLinkProvider>
-          {/* The nebula sits behind everything, so the Liquid surfaces above it
-              have something real to refract. */}
-          <CosmicBackdrop />
-          <SidebarProvider
-            defaultOpen={true}
-            // `bg-transparent` overrides the provider's own `bg-sidebar`, which
-            // is a 72%-opaque near-black spanning the whole viewport — it sat on
-            // top of the nebula and was the reason the app read as flat black
-            // however translucent everything above it was. The rail and the
-            // context panel carry their own translucent backgrounds, so the
-            // wrapper doesn't need one.
-            className="bg-transparent"
-            style={
-              { "--sidebar-width": "var(--shell-rail-width)" } as CSSProperties
-            }
-          >
-            <TitleBar />
-            <NavRail />
-            <ContextPanel />
-            <div
-              id="layout-main-content-container"
-              className="relative z-0 mt-[var(--app-titlebar-height)] flex h-screenish min-w-0 flex-1 overflow-hidden rounded-tl-[20px] border-l border-t border-white/[0.07] bg-[color-mix(in_srgb,var(--cosmos-bg)_72%,transparent)] shadow-[0_18px_70px_rgba(0,0,0,0.32)] backdrop-blur-[28px]"
-            >
-              {children}
-            </div>
-            <Toaster
-              richColors
-              duration={settings?.isTestMode ? 500 : undefined}
-            />
-            {firedIgItem && (
-              <PublishToInstagramDialog
-                item={firedIgItem}
-                open={true}
-                onOpenChange={(o) => {
-                  if (!o) setFiredIgItem(null);
-                }}
-              />
-            )}
-          </SidebarProvider>
-        </DeepLinkProvider>
-      </ThemeProvider>
-    </>
+    <ThemeProvider>
+      <DeepLinkProvider>
+        {/* The nebula sits behind everything, so the Liquid surfaces above it
+            have something real to refract. */}
+        <CosmicBackdrop />
+
+        {/* One screen. No rail, no context panel, no view switcher — the
+            navigation chrome is gone, and everything it used to reach is
+            summoned by Marta or the palette instead. `children` is the
+            router's Outlet, rendered by the Stage as its primary pane. */}
+        <div className="relative flex h-screen w-screen flex-col overflow-hidden pt-[var(--app-titlebar-height)]">
+          <TitleBar />
+          <StageRouterSync />
+          <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)_auto] min-[981px]:grid-cols-[minmax(0,1fr)_auto] min-[981px]:grid-rows-1">
+            <Stage>{children}</Stage>
+            <AmbientRail />
+          </div>
+          <Presence />
+        </div>
+
+        <CommandPalette />
+
+        <Toaster richColors duration={settings?.isTestMode ? 500 : undefined} />
+        {firedIgItem && (
+          <PublishToInstagramDialog
+            item={firedIgItem}
+            open={true}
+            onOpenChange={(o) => {
+              if (!o) setFiredIgItem(null);
+            }}
+          />
+        )}
+      </DeepLinkProvider>
+    </ThemeProvider>
   );
 }

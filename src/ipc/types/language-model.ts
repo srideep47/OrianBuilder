@@ -37,7 +37,7 @@ export const LanguageModelSchema = z.object({
 export type LanguageModel = z.infer<typeof LanguageModelSchema>;
 
 export const LocalModelSchema = z.object({
-  provider: z.enum(["ollama", "lmstudio"]),
+  provider: z.enum(["ollama", "lmstudio", "embedded", "marta"]),
   modelName: z.string(),
   displayName: z.string(),
 });

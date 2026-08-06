@@ -5,6 +5,7 @@ import {
   defineEvent,
   createEventClient,
 } from "../contracts/core";
+import { FlowArtifactSchema } from "./manifest";
 
 // =============================================================================
 // Orion Unification - Intent Bus & Flow Layer (Phase 1)
@@ -36,6 +37,14 @@ export const CapabilityIdSchema = z.enum([
   "track_price",
   "build_app",
   "make_game",
+  "build_game",
+  "edit_scene",
+  "process_mesh",
+  "run_terminal",
+  "edit_files",
+  "code_task",
+  "run_tests",
+  "deploy",
 ]);
 export type CapabilityId = z.infer<typeof CapabilityIdSchema>;
 
@@ -71,8 +80,14 @@ export type StepStatus = z.infer<typeof StepStatusSchema>;
 
 /** One model load/unload performed while a step ran (swap telemetry). */
 export const SwapEventSchema = z.object({
-  kind: z.enum(["load", "unload"]),
-  /** Model key, e.g. "media:image". */
+  /**
+   * `demote`/`restore` are companion-tier migrations: Marta moving between the
+   * GPU and the CPU to make room for a heavy model, without her session ending.
+   * They are cheaper than a load/unload pair and are counted separately so swap
+   * telemetry does not read as if the orchestrator thrashed.
+   */
+  kind: z.enum(["load", "unload", "demote", "restore"]),
+  /** Model key, e.g. "media:image" or "companion:qwen3.5-4b". */
   key: z.string(),
   durationMs: z.number(),
   /** Free VRAM (MB) measured just before a load; absent for unloads. */
@@ -91,6 +106,8 @@ export const StepResultSchema = z.object({
   durationMs: z.number(),
   /** Model swaps performed while this step ran (absent when none). */
   swaps: z.array(SwapEventSchema).optional(),
+  /** Artifacts published by this step onto the run-scoped Harmony bus. */
+  artifacts: z.array(FlowArtifactSchema).optional(),
 });
 export type StepResult = z.infer<typeof StepResultSchema>;
 
@@ -107,6 +124,8 @@ export const FlowRunResultSchema = z.object({
   finishedAt: z.number(),
   /** Aggregated swap cost across all steps (absent when no swaps happened). */
   swapTotals: z.object({ count: z.number(), totalMs: z.number() }).optional(),
+  /** Every durable output produced during the run, in publication order. */
+  artifacts: z.array(FlowArtifactSchema).default([]),
 });
 export type FlowRunResult = z.infer<typeof FlowRunResultSchema>;
 
@@ -327,10 +346,29 @@ export const PipelineProgressSchema = z.object({
 });
 export type PipelineProgress = z.infer<typeof PipelineProgressSchema>;
 
+export const FlowActivitySchema = z.object({
+  flowId: z.string(),
+  goal: z.string(),
+  stepId: z.string().optional(),
+  capability: CapabilityIdSchema.optional(),
+  label: z.string(),
+  detail: z.string().optional(),
+  status: z.enum(["running", "success", "failed", "skipped", "completed"]),
+  progress: z.number().min(0).max(100).optional(),
+  artifact: FlowArtifactSchema.optional(),
+  timestamp: z.number(),
+});
+export type FlowActivity = z.infer<typeof FlowActivitySchema>;
+
 export const flowEvents = {
   pipelineProgress: defineEvent({
     channel: "flow:pipeline-progress",
     payload: PipelineProgressSchema,
+  }),
+  /** Generic Harmony activity used by Marta's parallel-work rail. */
+  activity: defineEvent({
+    channel: "flow:activity",
+    payload: FlowActivitySchema,
   }),
 } as const;
 

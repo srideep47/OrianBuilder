@@ -12,6 +12,7 @@ import {
   sanitizeMissionMetadata,
   sanitizeMissionText,
 } from "./mission_hardening";
+import { updateMartaTaskFromMissionEvent } from "@/main/marta/task_registry";
 
 export async function logMissionEvent(input: {
   missionId: number | undefined | null;
@@ -34,6 +35,13 @@ export async function logMissionEvent(input: {
       metadata: sanitizeMissionMetadata(input.metadata),
     })
     .returning();
+
+  updateMartaTaskFromMissionEvent({
+    missionId: input.missionId,
+    eventType: input.eventType,
+    summary: event.summary,
+    metadata: event.metadata,
+  });
 
   return event;
 }

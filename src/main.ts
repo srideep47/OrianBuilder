@@ -54,6 +54,7 @@ import {
 } from "./ipc/utils/embedded_inference_server";
 import { recoverInterruptedMissionsOnStartup } from "./ipc/utils/mission_recovery";
 import { stopMediaAiBackend } from "./ipc/utils/media_ai_backend";
+import { stopMartaModelOnQuit } from "./main/marta/marta_model";
 import { applyUserDataRelocation } from "./main/user_data_location";
 
 log.errorHandler.startCatching();
@@ -514,6 +515,27 @@ const createWindow = () => {
     // backgroundColor: "#00000001",
     // frame: false,
   });
+  // Marta's microphone.
+  //
+  // Electron does not surface Chrome's permission prompt, so an unhandled
+  // `media` request is simply denied and `getUserMedia` rejects — voice would
+  // fail with a permission error the user has no way to grant. Granting it
+  // here is safe because the renderer only ever loads our own bundle, and the
+  // mic is opened solely by an explicit click on the mic toggle.
+  //
+  // Everything else stays denied: this app has no business asking for
+  // geolocation, notifications or MIDI, and a blanket allow would hand those
+  // to any page that ever gets loaded.
+  const allowedPermissions = new Set(["media", "audioCapture"]);
+  mainWindow.webContents.session.setPermissionRequestHandler(
+    (_webContents, permission, callback) => {
+      callback(allowedPermissions.has(permission));
+    },
+  );
+  mainWindow.webContents.session.setPermissionCheckHandler(
+    (_webContents, permission) => allowedPermissions.has(permission),
+  );
+
   // DevTools is opt-in. Opening it for every development launch adds a heavy
   // renderer and a forced reload even when the developer is testing runtime
   // performance or ordinary product behavior.
@@ -1004,6 +1026,13 @@ app.on("will-quit", () => {
 
   // Stop the Media AI Python backend
   stopMediaAiBackend();
+
+  // Stop Marta's llama-server. It is a separate child process from the
+  // embedded engine above, so nothing else here reaches it — and left running
+  // it holds ~5GB of VRAM and port 11534 until the machine reboots. Killed
+  // directly rather than through the gate: `will-quit` cannot await, and the
+  // gate's queue would not have drained in time.
+  stopMartaModelOnQuit();
 
   // Stop the schedule engine timer.
   try {

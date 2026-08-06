@@ -7,6 +7,7 @@ import { googleProvider } from "./GoogleProvider";
 import {
   embeddedProvider,
   lmStudioProvider,
+  martaProvider,
   ollamaProvider,
 } from "./LocalLlamaProvider";
 import { openAIProvider } from "./OpenAIProvider";
@@ -36,6 +37,7 @@ const providerMap: Record<string, ModelProvider> = {
   embedded: embeddedProvider,
   google: googleProvider,
   lmstudio: lmStudioProvider,
+  marta: martaProvider,
   minimax: minimaxProvider,
   ollama: ollamaProvider,
   openai: openAIProvider,

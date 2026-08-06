@@ -7,6 +7,54 @@ import {
 import type { IpcContract } from "../contracts/core";
 import { sendTelemetryException } from "../utils/telemetry";
 
+// =============================================================================
+// Main-process handler registry
+// =============================================================================
+
+/**
+ * Every typed handler, keyed by channel, callable from inside the main process.
+ *
+ * `ipcMain.handle` registers a handler that only a renderer can reach — there
+ * is no main-side counterpart to `invoke`. Marta runs in main and has to call
+ * the same endpoints the UI calls, so the registration point records the
+ * handler as well as installing it. The alternative was a renderer loopback
+ * (ask the window to make the call and post the result back), which needs a
+ * live window, doubles the latency, and silently fails while the app is
+ * starting or the window is closed.
+ *
+ * This is a lookup table, not a permission model. Marta's permission model is
+ * `ACTION_REGISTRY`; see `src/main/marta/invoke_action.ts`, which is the only
+ * thing that should use this and which checks the grant before it does.
+ */
+export interface RegisteredHandler {
+  contract: IpcContract<string, z.ZodType, z.ZodType>;
+  handler: (
+    event: IpcMainInvokeEvent,
+    input: unknown,
+  ) => Promise<unknown> | unknown;
+}
+
+const mainInvokableHandlers = new Map<string, RegisteredHandler>();
+
+/** Look up a handler by IPC channel for in-process invocation. */
+export function getRegisteredHandler(
+  channel: string,
+): RegisteredHandler | undefined {
+  return mainInvokableHandlers.get(channel);
+}
+
+/** Channels with a recorded handler. Diagnostics only. */
+export function registeredHandlerChannels(): string[] {
+  return [...mainInvokableHandlers.keys()].sort();
+}
+
+function recordHandler(
+  contract: IpcContract<string, z.ZodType, z.ZodType>,
+  handler: RegisteredHandler["handler"],
+): void {
+  mainInvokableHandlers.set(contract.channel, { contract, handler });
+}
+
 /**
  * Creates a typed IPC handler from a contract.
  * Provides runtime validation of inputs and type-safe handler implementation.
@@ -30,6 +78,10 @@ export function createTypedHandler<
     input: z.infer<TInput>,
   ) => Promise<z.infer<TOutput>>,
 ): void {
+  recordHandler(
+    contract as IpcContract<string, z.ZodType, z.ZodType>,
+    handler as RegisteredHandler["handler"],
+  );
   ipcMain.handle(
     contract.channel,
     async (event: IpcMainInvokeEvent, rawInput: unknown) => {
@@ -96,6 +148,10 @@ export function createLoggedTypedHandler(logger: {
       input: z.infer<TInput>,
     ) => Promise<z.infer<TOutput>>,
   ): void {
+    recordHandler(
+      contract as IpcContract<string, z.ZodType, z.ZodType>,
+      handler as RegisteredHandler["handler"],
+    );
     ipcMain.handle(
       contract.channel,
       async (event: IpcMainInvokeEvent, rawInput: unknown) => {

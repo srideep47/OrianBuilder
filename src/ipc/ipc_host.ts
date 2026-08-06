@@ -50,6 +50,7 @@ import { registerEmbeddedModelHandlers } from "./handlers/embedded_model_handler
 import { registerMarketplaceHandlers } from "./handlers/model_marketplace_handler";
 import { registerMissionHandlers } from "./handlers/mission_handlers";
 import { registerHardwareHandlers } from "./handlers/hardware_handlers";
+import { registerTelemetryHandlers } from "./handlers/telemetry_handlers";
 import { registerGameHandlers } from "./handlers/game_handlers";
 import { registerWorkspaceHandlers } from "./handlers/workspace_handlers";
 import { registerClaudeCodeHandlers } from "./handlers/claude_code_handlers";
@@ -68,6 +69,7 @@ import { registerOrionSetupHandlers } from "./handlers/orion_setup_handlers";
 import { registerYouTubeHandlers } from "./handlers/youtube_handlers";
 import { registerAndroidEmulatorHandlers } from "./handlers/android_emulator_handlers";
 import { registerScheduleHandlers } from "./handlers/schedule_handlers";
+import { registerMartaHandlers } from "./handlers/marta_handlers";
 import { registerUserBudgetHandlers } from "./handlers/user_budget_handlers";
 
 export function registerIpcHandlers() {
@@ -124,6 +126,7 @@ export function registerIpcHandlers() {
   registerMarketplaceHandlers();
   registerMissionHandlers();
   registerHardwareHandlers();
+  registerTelemetryHandlers();
   registerGameHandlers();
   registerWorkspaceHandlers();
   registerClaudeCodeHandlers();
@@ -142,5 +145,6 @@ export function registerIpcHandlers() {
   registerYouTubeHandlers();
   registerAndroidEmulatorHandlers();
   registerScheduleHandlers();
+  registerMartaHandlers();
   registerUserBudgetHandlers();
 }

@@ -8,7 +8,9 @@ import { claudeCodeContracts, claudeCodeEvents } from "../types/claude_code";
 import { createTypedHandler } from "./base";
 import {
   cancelTurn,
+  beginClaudeCodeLogin,
   detectClaudeCode,
+  fetchClaudeAccountUsage,
   invalidateClaudeCodeCache,
   killAll,
   resetSession,
@@ -17,6 +19,16 @@ import {
   storedSessionId,
   type ClaudeEvent,
 } from "@/main/claudecode/runtime";
+import {
+  createMartaTask,
+  getMartaTask,
+  loadMartaTasks,
+  updateMartaTask,
+  updateMartaTaskFromClaudeEvent,
+  verifyMartaTaskAcceptance,
+} from "@/main/marta/task_registry";
+import { appendCodingTaskAcceptanceInstructions } from "@/main/marta/task_acceptance";
+import { prepareCodingTaskAcceptance } from "@/main/marta/task_acceptance_verifier";
 
 const logger = log.scope("claude-code-handlers");
 
@@ -39,10 +51,14 @@ async function resolveDir(input: {
 /** Directory per in-flight turn, so cancel and permission answers can find it. */
 const activeTurns = new Map<string, string>();
 
-function emit(turnId: string, event: ClaudeEvent): void {
+async function emit(turnId: string, event: ClaudeEvent): Promise<void> {
+  updateMartaTaskFromClaudeEvent(turnId, event);
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     win.webContents.send(claudeCodeEvents.event.channel, { turnId, event });
+  }
+  if (event.kind === "done" && event.ok) {
+    await verifyMartaTaskAcceptance(`claude:${turnId}`, true);
   }
 }
 
@@ -54,13 +70,68 @@ export function registerClaudeCodeHandlers(): void {
     return detectClaudeCode(input?.force);
   });
 
+  createTypedHandler(claudeCodeContracts.beginLogin, async () =>
+    beginClaudeCodeLogin(),
+  );
+
+  createTypedHandler(claudeCodeContracts.getAccountUsage, async () =>
+    fetchClaudeAccountUsage(),
+  );
+
   createTypedHandler(claudeCodeContracts.startTurn, async (_event, input) => {
+    await loadMartaTasks();
     let projectDir: string;
     try {
       projectDir = await resolveDir(input);
     } catch (err) {
       return { ok: false, error: (err as Error).message };
     }
+    const martaTaskId = `claude:${input.turnId}`;
+    if (!getMartaTask(martaTaskId)) {
+      createMartaTask({
+        id: martaTaskId,
+        runtimeId: input.turnId,
+        kind: "claude",
+        title: input.prompt.slice(0, 72),
+        goal: input.prompt,
+        appId: input.appId,
+        workerLabel: "Claude Code",
+        model: input.model || "Account default",
+        effort: input.effort || "medium",
+        status: "queued",
+        phase: "Starting Claude Code",
+      });
+    }
+    let task = getMartaTask(martaTaskId);
+    if (!task?.acceptanceTarget || !task.acceptanceBaseline) {
+      try {
+        const prepared = await prepareCodingTaskAcceptance({
+          goal: task?.goal ?? input.prompt,
+          projectRoot: projectDir,
+          readOnly: input.permissionMode === "plan",
+        });
+        task = updateMartaTask(martaTaskId, {
+          acceptanceTarget: prepared.target,
+          acceptanceBaseline: prepared.baseline,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        updateMartaTask(martaTaskId, {
+          status: "failed",
+          phase: "Could not capture the Orion acceptance baseline",
+          error: message,
+          completedAt: Date.now(),
+        });
+        return { ok: false, error: message };
+      }
+    }
+    if (!task?.acceptanceTarget) {
+      return { ok: false, error: "Could not initialize task acceptance." };
+    }
+    const workerPrompt = appendCodingTaskAcceptanceInstructions(
+      input.prompt,
+      task.acceptanceTarget,
+    );
     activeTurns.set(input.turnId, projectDir);
 
     // Fire-and-forget: the handler returns as soon as the turn is accepted and
@@ -70,18 +141,18 @@ export function registerClaudeCodeHandlers(): void {
       try {
         for await (const event of runTurn({
           projectDir,
-          prompt: input.prompt,
+          prompt: workerPrompt,
           model: input.model,
           effort: input.effort,
           permissionMode: input.permissionMode,
           fresh: input.fresh,
           appendSystemPrompt: input.appendSystemPrompt,
         })) {
-          emit(input.turnId, event);
+          await emit(input.turnId, event);
         }
       } catch (err) {
         logger.error("Claude Code turn threw:", err);
-        emit(input.turnId, {
+        await emit(input.turnId, {
           kind: "done",
           ok: false,
           error: (err as Error).message,

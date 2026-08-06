@@ -1,5 +1,6 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { app } from "electron";
@@ -32,13 +33,16 @@ export type PermissionMode =
   | "bypassPermissions"
   | "plan";
 
-export type Effort = "low" | "medium" | "high";
+export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface ClaudeCodeAvailability {
   available: boolean;
   version?: string;
   /** Absolute path when we resolved one, for display. */
   executable?: string;
+  loggedIn?: boolean;
+  email?: string;
+  subscriptionType?: string;
   error?: string;
 }
 
@@ -51,6 +55,25 @@ export interface TurnUsage {
   cacheCreationTokens: number;
   numTurns: number;
   durationMs: number;
+  /** Context usage reported by Claude Code for the latest completed turn. */
+  contextUsedTokens: number;
+  contextWindowTokens: number;
+}
+
+export interface ClaudeQuotaWindow {
+  usedPercentage: number | null;
+  resetsAtEpochSeconds: number | null;
+}
+
+export interface ClaudeModelQuota extends ClaudeQuotaWindow {
+  displayName: string;
+}
+
+export interface ClaudeAccountUsage {
+  fiveHour: ClaudeQuotaWindow;
+  sevenDay: ClaudeQuotaWindow;
+  modelScoped: ClaudeModelQuota[];
+  fetchedAt: number;
 }
 
 /** One event from a turn, already normalised for the renderer. */
@@ -115,18 +138,124 @@ async function clearSession(projectDir: string): Promise<void> {
 
 let cachedAvailability: ClaudeCodeAvailability | null = null;
 
+/**
+ * Find the real Claude Code binary.
+ *
+ * Two Windows traps, both of which produced "the CLI is not on PATH" on a
+ * machine where `claude --version` works perfectly in a terminal:
+ *
+ *   1. **A shim is not an executable.** The npm bin directory holds `claude`
+ *      (a shell script), `claude.cmd` and `claude.ps1`. `execFile` with
+ *      `shell: false` calls `CreateProcess`, which can launch none of those —
+ *      so falling back to the bare name `"claude"` fails even though the shim
+ *      is right there on PATH. The package's own `claude.exe`, one directory
+ *      deeper, is the thing that can actually be spawned.
+ *   2. **The install location is not npm's user-global one.** Under nvm4w the
+ *      global package lives beside the active Node version
+ *      (`C:\nvm4w\nodejs\node_modules\...`), not under `%APPDATA%\npm`. Only
+ *      checking the latter meant the CLI was invisible on every nvm setup.
+ *
+ * So: walk PATH and look for the package's real executable next to each entry,
+ * before giving up and handing the bare name to the OS.
+ */
+export function claudeExecutableCandidates(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): string[] {
+  const executableName = platform === "win32" ? "claude.exe" : "claude";
+  const separator = platform === "win32" ? ";" : ":";
+  const join = platform === "win32" ? path.win32.join : path.posix.join;
+  const packageBin = (root: string): string =>
+    join(
+      root,
+      "node_modules",
+      "@anthropic-ai",
+      "claude-code",
+      "bin",
+      executableName,
+    );
+
+  const candidates = [
+    env.CLAUDE_CODE_EXECUTABLE,
+    env.APPDATA ? packageBin(join(env.APPDATA, "npm")) : undefined,
+    ...(env.PATH ?? "")
+      .split(separator)
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      // `.../nodejs` holds the shims; `.../nodejs/node_modules/...` holds the
+      // binary. Both spellings are cheap to test and each covers a real layout.
+      .flatMap((entry) => [packageBin(entry), join(entry, executableName)]),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  return [...new Set(candidates)];
+}
+
+async function resolveClaudeExecutable(): Promise<string> {
+  for (const candidate of claudeExecutableCandidates()) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      // Try the next candidate; a stale NVM package is common on Windows.
+    }
+  }
+  return "claude";
+}
+
+/** Subscription sign-in must not be shadowed by a stale local/gateway key. */
+function claudeEnvironment(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env.ANTHROPIC_API_KEY;
+  delete env.ANTHROPIC_AUTH_TOKEN;
+  delete env.ANTHROPIC_BASE_URL;
+  return env;
+}
+
 /** Is the CLI installed and authenticated enough to answer `--version`? */
 export async function detectClaudeCode(
   force = false,
 ): Promise<ClaudeCodeAvailability> {
   if (!force && cachedAvailability) return cachedAvailability;
   try {
-    const { stdout } = await execFileAsync("claude", ["--version"], {
+    const executable = await resolveClaudeExecutable();
+    const { stdout } = await execFileAsync(executable, ["--version"], {
       timeout: 15_000,
       windowsHide: true,
-      shell: process.platform === "win32",
+      shell: false,
+      env: claudeEnvironment(),
     });
-    cachedAvailability = { available: true, version: stdout.trim() };
+    let loggedIn = false;
+    let email: string | undefined;
+    let subscriptionType: string | undefined;
+    try {
+      const { stdout: authOutput } = await execFileAsync(
+        executable,
+        ["auth", "status"],
+        {
+          timeout: 15_000,
+          windowsHide: true,
+          shell: false,
+          env: claudeEnvironment(),
+        },
+      );
+      const auth = JSON.parse(authOutput) as Record<string, unknown>;
+      loggedIn = auth.loggedIn === true;
+      email = typeof auth.email === "string" ? auth.email : undefined;
+      subscriptionType =
+        typeof auth.subscriptionType === "string"
+          ? auth.subscriptionType
+          : undefined;
+    } catch {
+      // An installed CLI with no account is still usable after the user signs in.
+    }
+    cachedAvailability = {
+      available: true,
+      version: stdout.trim(),
+      executable: executable === "claude" ? undefined : executable,
+      loggedIn,
+      email,
+      subscriptionType,
+    };
   } catch (err) {
     cachedAvailability = {
       available: false,
@@ -140,6 +269,42 @@ export async function detectClaudeCode(
 
 export function invalidateClaudeCodeCache(): void {
   cachedAvailability = null;
+}
+
+/** Starts Claude Code's native subscription OAuth flow without exposing credentials to Orion. */
+export async function beginClaudeCodeLogin(): Promise<{
+  ok: boolean;
+  error?: string;
+}> {
+  const executable = await resolveClaudeExecutable();
+  try {
+    if (process.platform === "win32") {
+      // `cmd /k` deliberately keeps the terminal open so a user can read a real
+      // CLI error or finish browser/device OAuth before returning to Orion.
+      const child = spawn(
+        process.env.ComSpec ?? "cmd.exe",
+        ["/d", "/k", `"${executable}" auth login --claudeai`],
+        {
+          detached: true,
+          stdio: "ignore",
+          windowsHide: false,
+          env: claudeEnvironment(),
+        },
+      );
+      child.unref();
+    } else {
+      const child = spawn(executable, ["auth", "login", "--claudeai"], {
+        detached: true,
+        stdio: "ignore",
+        env: claudeEnvironment(),
+      });
+      child.unref();
+    }
+    invalidateClaudeCodeCache();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
+  }
 }
 
 interface Session {
@@ -165,6 +330,133 @@ function emptyUsage(): TurnUsage {
     cacheCreationTokens: 0,
     numTurns: 0,
     durationMs: 0,
+    contextUsedTokens: 0,
+    contextWindowTokens: 0,
+  };
+}
+
+function numberValue(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function toPercentage(value: unknown): number | null {
+  const parsed = numberValue(value);
+  if (parsed == null) return null;
+  return parsed >= 0 && parsed <= 1 ? parsed * 100 : parsed;
+}
+
+function toEpochSeconds(value: unknown): number | null {
+  const numeric = numberValue(value);
+  if (numeric != null) return Math.floor(numeric);
+  if (typeof value === "string") {
+    const milliseconds = Date.parse(value);
+    if (Number.isFinite(milliseconds)) return Math.floor(milliseconds / 1_000);
+  }
+  return null;
+}
+
+function quotaWindow(
+  value: Record<string, unknown> | undefined,
+): ClaudeQuotaWindow {
+  return {
+    usedPercentage: toPercentage(
+      value?.percent ?? value?.utilization ?? value?.used_percentage,
+    ),
+    resetsAtEpochSeconds: toEpochSeconds(value?.resets_at ?? value?.resetsAt),
+  };
+}
+
+function findAccessToken(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const token = findAccessToken(item);
+      if (token) return token;
+    }
+  } else if (value && typeof value === "object") {
+    for (const [key, child] of Object.entries(value)) {
+      if (
+        (key === "accessToken" || key === "access_token") &&
+        typeof child === "string"
+      ) {
+        return child;
+      }
+      const token = findAccessToken(child);
+      if (token) return token;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Reads only the OAuth access token from Claude Code's own credential file in
+ * the main process, then returns its quota response without ever exposing that
+ * token to the renderer, logs, or a child-process argument.
+ */
+export async function fetchClaudeAccountUsage(): Promise<ClaudeAccountUsage> {
+  const credentialsPath = path.join(
+    os.homedir(),
+    ".claude",
+    ".credentials.json",
+  );
+  const credentials = JSON.parse(
+    await fs.readFile(credentialsPath, "utf8"),
+  ) as unknown;
+  const token = findAccessToken(credentials);
+  if (!token)
+    throw new Error(
+      "Claude Code OAuth credentials are unavailable. Sign in again first.",
+    );
+
+  const response = await fetch("https://api.anthropic.com/api/oauth/usage", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "anthropic-beta": "oauth-2025-04-20",
+      "User-Agent": "orian-builder-desktop",
+    },
+    signal: AbortSignal.timeout(25_000),
+  });
+  if (!response.ok)
+    throw new Error(`Claude usage refresh failed (${response.status}).`);
+  const payload = (await response.json()) as Record<string, unknown>;
+  const limits = Array.isArray(payload.limits)
+    ? payload.limits.filter(
+        (item): item is Record<string, unknown> =>
+          !!item && typeof item === "object",
+      )
+    : [];
+  const findLimit = (kind: string) =>
+    limits.find((limit) => limit.kind === kind);
+  const modelScoped = limits
+    .filter((limit) => limit.kind === "weekly_scoped")
+    .map((limit) => {
+      const scope = limit.scope as Record<string, unknown> | undefined;
+      const model = scope?.model as Record<string, unknown> | undefined;
+      const displayName =
+        typeof model?.display_name === "string"
+          ? model.display_name
+          : undefined;
+      return displayName ? { displayName, ...quotaWindow(limit) } : undefined;
+    })
+    .filter((quota): quota is ClaudeModelQuota => quota != null);
+
+  return {
+    fiveHour: quotaWindow(
+      findLimit("session") ??
+        (payload.five_hour as Record<string, unknown> | undefined),
+    ),
+    sevenDay: quotaWindow(
+      findLimit("weekly_all") ??
+        (payload.seven_day as Record<string, unknown> | undefined),
+    ),
+    modelScoped,
+    fetchedAt: Date.now(),
   };
 }
 
@@ -269,6 +561,20 @@ function mapEvent(
         Number(usageRaw.cache_creation_input_tokens ?? 0) || 0,
       numTurns: Number(raw.num_turns ?? 0) || 0,
       durationMs: Number(raw.duration_ms ?? 0) || 0,
+      contextUsedTokens:
+        Number(usageRaw.input_tokens ?? 0) +
+          Number(usageRaw.output_tokens ?? 0) +
+          Number(usageRaw.cache_read_input_tokens ?? 0) +
+          Number(usageRaw.cache_creation_input_tokens ?? 0) || 0,
+      contextWindowTokens: Math.max(
+        0,
+        ...Object.values(
+          (raw.modelUsage as Record<string, unknown> | undefined) ?? {},
+        ).map(
+          (entry) =>
+            numberValue((entry as Record<string, unknown>)?.contextWindow) ?? 0,
+        ),
+      ),
     };
     // Cost is reported cumulatively for the session; tokens are per turn.
     session.totals = {
@@ -279,6 +585,8 @@ function mapEvent(
       cacheCreationTokens: turn.cacheCreationTokens,
       numTurns: turn.numTurns,
       durationMs: turn.durationMs,
+      contextUsedTokens: turn.contextUsedTokens,
+      contextWindowTokens: turn.contextWindowTokens,
     };
     out.push({ kind: "usage", usage: session.totals });
     out.push({
@@ -336,8 +644,14 @@ export async function* runTurn(
     "--include-partial-messages",
     "--verbose",
     "--permission-mode",
-    options.permissionMode ?? "acceptEdits",
+    // Orion is a headless agent host.  Its tool cards are observational; they
+    // cannot answer the CLI's interactive permission prompt, so the supported
+    // default is the CLI's unattended full-tool mode.
+    options.permissionMode ?? "bypassPermissions",
   ];
+  // Omit the flag for "Account default", just like the Claude Code terminal.
+  // The clean environment above prevents API/gateway variables from diverting
+  // that selection to a local provider.
   if (options.model) args.push("--model", options.model);
   if (options.effort) args.push("--effort", options.effort);
   if (resumeId) args.push("--resume", resumeId);
@@ -349,10 +663,11 @@ export async function* runTurn(
     `claude turn in ${projectDir}${resumeId ? ` (resume ${resumeId})` : ""}`,
   );
 
-  const child = spawn("claude", args, {
+  const executable = await resolveClaudeExecutable();
+  const child = spawn(executable, args, {
     cwd: projectDir,
-    shell: process.platform === "win32",
-    env: { ...process.env },
+    shell: false,
+    env: claudeEnvironment(),
     stdio: ["pipe", "pipe", "pipe"],
   });
 
@@ -372,7 +687,13 @@ export async function* runTurn(
   child.stdin?.write(
     `${JSON.stringify({
       type: "user",
-      message: { role: "user", content: options.prompt },
+      // Claude's stream-json SDK accepts content blocks, not a bare string.
+      // The previous shape was rejected before any event was emitted, which
+      // left Orion's command surface apparently idle.
+      message: {
+        role: "user",
+        content: [{ type: "text", text: options.prompt }],
+      },
     })}\n`,
   );
   child.stdin?.end();

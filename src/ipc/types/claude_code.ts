@@ -24,7 +24,13 @@ export const PermissionModeSchema = z.enum([
 ]);
 export type ClaudePermissionMode = z.infer<typeof PermissionModeSchema>;
 
-export const ClaudeEffortSchema = z.enum(["low", "medium", "high"]);
+export const ClaudeEffortSchema = z.enum([
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+]);
 export type ClaudeEffort = z.infer<typeof ClaudeEffortSchema>;
 
 export const TurnUsageSchema = z.object({
@@ -35,13 +41,37 @@ export const TurnUsageSchema = z.object({
   cacheCreationTokens: z.number(),
   numTurns: z.number(),
   durationMs: z.number(),
+  /** Context use reported by the CLI for the last completed/resumed turn. */
+  contextUsedTokens: z.number(),
+  contextWindowTokens: z.number(),
 });
 export type ClaudeTurnUsage = z.infer<typeof TurnUsageSchema>;
+
+const ClaudeQuotaWindowSchema = z.object({
+  usedPercentage: z.number().nullable(),
+  resetsAtEpochSeconds: z.number().nullable(),
+});
+
+const ClaudeModelQuotaSchema = ClaudeQuotaWindowSchema.extend({
+  displayName: z.string(),
+});
+
+/** Account quota data from Claude Code's signed-in subscription. No credential crosses IPC. */
+export const ClaudeAccountUsageSchema = z.object({
+  fiveHour: ClaudeQuotaWindowSchema,
+  sevenDay: ClaudeQuotaWindowSchema,
+  modelScoped: z.array(ClaudeModelQuotaSchema),
+  fetchedAt: z.number(),
+});
+export type ClaudeAccountUsage = z.infer<typeof ClaudeAccountUsageSchema>;
 
 export const ClaudeAvailabilitySchema = z.object({
   available: z.boolean(),
   version: z.string().optional(),
   executable: z.string().optional(),
+  loggedIn: z.boolean().optional(),
+  email: z.string().optional(),
+  subscriptionType: z.string().optional(),
   error: z.string().optional(),
 });
 export type ClaudeAvailability = z.infer<typeof ClaudeAvailabilitySchema>;
@@ -87,6 +117,18 @@ export const claudeCodeContracts = {
     channel: "claude-code:detect",
     input: z.object({ force: z.boolean().optional() }).optional(),
     output: ClaudeAvailabilitySchema,
+  }),
+  /** Opens the native Claude Code subscription sign-in flow in a terminal. */
+  beginLogin: defineContract({
+    channel: "claude-code:begin-login",
+    input: z.undefined(),
+    output: z.object({ ok: z.boolean(), error: z.string().optional() }),
+  }),
+  /** Refreshes subscription quota windows using Claude Code's local OAuth credential. */
+  getAccountUsage: defineContract({
+    channel: "claude-code:account-usage",
+    input: z.undefined(),
+    output: ClaudeAccountUsageSchema,
   }),
   /**
    * Starts a turn. Returns as soon as the turn is accepted; events arrive on

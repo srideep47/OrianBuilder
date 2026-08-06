@@ -396,6 +396,20 @@ export const queryKeys = {
   },
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // Marta — the orchestrator's capability graph and world state
+  // ─────────────────────────────────────────────────────────────────────────────
+  marta: {
+    all: ["marta"] as const,
+    /** Derived from module constants in main; never goes stale while running. */
+    graph: () => ["marta", "graph"] as const,
+    worldState: () => ["marta", "world-state"] as const,
+    residency: () => ["marta", "residency"] as const,
+    modelStatus: () => ["marta", "model-status"] as const,
+    tasks: () => ["marta", "tasks"] as const,
+    preferences: () => ["marta", "preferences"] as const,
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // Orion Identity + Auth
   // ─────────────────────────────────────────────────────────────────────────────
   identity: {
@@ -486,4 +500,5 @@ export type AppQueryKey =
   | QueryKeyOf<(typeof queryKeys.migration)[keyof typeof queryKeys.migration]>
   | QueryKeyOf<(typeof queryKeys.neon)[keyof typeof queryKeys.neon]>
   | QueryKeyOf<(typeof queryKeys.appEnvVars)[keyof typeof queryKeys.appEnvVars]>
-  | QueryKeyOf<(typeof queryKeys.media)[keyof typeof queryKeys.media]>;
+  | QueryKeyOf<(typeof queryKeys.media)[keyof typeof queryKeys.media]>
+  | QueryKeyOf<(typeof queryKeys.marta)[keyof typeof queryKeys.marta]>;

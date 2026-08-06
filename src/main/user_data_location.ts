@@ -95,9 +95,45 @@ export function getDefaultUserDataPath(): string {
 }
 
 /**
+ * True when the process was launched with an explicit `--user-data-dir`.
+ *
+ * Playwright's Electron fixture passes one per run to give each E2E run a fresh
+ * temp profile. Overriding it from the pointer file silently defeated that: on
+ * any machine whose data directory has been relocated, the entire E2E suite ran
+ * against the developer's *real* database — which both leaks state between runs
+ * (`UNIQUE constraint failed: language_model_providers.id` on the second run)
+ * and lets tests mutate real projects and settings.
+ *
+ * An explicit switch is a caller stating exactly where the profile goes, and it
+ * has to win over a persisted preference.
+ */
+function hasExplicitUserDataDirSwitch(): boolean {
+  // `process.argv` ONLY — deliberately not `app.commandLine.hasSwitch()`.
+  //
+  // Chromium populates its own command line with a resolved `--user-data-dir`
+  // on every launch, so `hasSwitch` is true even when nobody passed one. Using
+  // it here meant the relocation pointer was skipped *always*: on a machine
+  // whose data directory had been moved to another drive, the app silently
+  // started against an empty default profile and the user's projects,
+  // settings, chat history and models all appeared to have vanished.
+  //
+  // `process.argv` reflects what the *launcher* actually passed, which is the
+  // only thing that should override a persisted preference.
+  const explicit = process.argv.some((arg) =>
+    arg.startsWith("--user-data-dir"),
+  );
+  if (explicit) {
+    logger.info(`--user-data-dir in argv: ${JSON.stringify(process.argv)}`);
+  }
+  return explicit;
+}
+
+/**
  * Reads the pointer and, if it names a usable directory, redirects Electron's
  * `userData` path to it. Call this ONCE at the very top of the main process,
  * before registering IPC handlers or touching the DB/settings.
+ *
+ * No-ops when `--user-data-dir` was passed explicitly.
  */
 export function applyUserDataRelocation(): void {
   // Capture the default before any override so we can reset/display it later.
@@ -105,9 +141,23 @@ export function applyUserDataRelocation(): void {
     _defaultUserDataPath = app.getPath("userData");
   }
 
+  if (hasExplicitUserDataDirSwitch()) {
+    logger.info(
+      "--user-data-dir was passed explicitly; ignoring the relocation pointer.",
+    );
+    return;
+  }
+
   const target = readUserDataPointer();
   if (!target) {
-    return; // Default location.
+    // Logged, not silent. "Which profile am I on?" is the first question when
+    // a user reports that their projects have vanished, and the absence of a
+    // message is not an answer — it is indistinguishable from this code never
+    // having run.
+    logger.info(
+      `No relocation pointer at "${getDataLocationPointerPath()}"; using the default userData "${_defaultUserDataPath}".`,
+    );
+    return;
   }
 
   if (path.normalize(target) === path.normalize(_defaultUserDataPath)) {

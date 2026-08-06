@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
-import { useAtom, useAtomValue } from "jotai";
-import { useRouterState } from "@tanstack/react-router";
-import { Minus, PanelLeftOpen, Square, X as XIcon } from "lucide-react";
+import { Minus, Square, X as XIcon } from "lucide-react";
 // @ts-ignore — SVG import handled by the Vite asset pipeline.
 import logo from "../../assets/logo.svg";
 import { cn } from "@/lib/utils";
@@ -11,43 +9,25 @@ import { useSystemPlatform } from "@/hooks/useSystemPlatform";
 import { useDeepLink } from "@/contexts/DeepLinkContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queryKeys";
-import { selectedChatIdAtom } from "@/atoms/chatAtoms";
-import { ChatTabs } from "@/components/chat/ChatTabs";
 import { NotificationsDrawer } from "@/components/network/NotificationsDrawer";
 import { ComputeRoutingPopover } from "@/components/ComputeRoutingPopover";
 import { OrianBuilderProSuccessDialog } from "@/components/OrianBuilderProSuccessDialog";
-import { LIconButton } from "@/components/liquid";
-import { spaceForPath } from "./spaces";
-import { contextPanelOpenAtom } from "./ContextPanel";
 
 /**
- * The window chrome.
+ * The window chrome — and, with the Stage, the only persistent chrome there is.
  *
- * Cut down from the previous version, which carried a sidebar trigger, the
- * wordmark, an "App: <name>" pill, the chat tab strip, a compute popover, a
- * notifications bell, a runtime-actions wrench and the window buttons — nine
- * controls competing in 60px, several of which duplicated things the page below
- * already showed. What's left is what genuinely belongs to the *window* rather
- * than to a page:
+ * Everything here belongs to the *window* rather than to any surface:
  *
  *  - identity (logo);
- *  - the context-panel toggle, but only in the space that has one;
- *  - open sessions, which span pages;
- *  - compute routing and notifications, which are global and always-relevant;
+ *  - compute routing and notifications, which are global and always relevant;
  *  - the window buttons.
  *
- * The runtime-actions wrench moved into the Build workspace's dock header,
- * where the runtime it acts on actually lives — it did nothing on 15 of the 16
- * old destinations.
+ * Project sessions and task controls now live inside the workspace surface;
+ * keeping them out of the title bar removes the old duplicate navigation row.
  */
 export function TitleBar() {
   const platform = useSystemPlatform();
   const showWindowControls = platform !== null && platform !== "darwin";
-  const selectedChatId = useAtomValue(selectedChatIdAtom);
-  const { location } = useRouterState();
-  const space = spaceForPath(location.pathname);
-  const [panelOpen, setPanelOpen] = useAtom(contextPanelOpenAtom);
-  const canTogglePanel = space?.id === "build";
 
   const { refreshSettings } = useSettings();
   const queryClient = useQueryClient();
@@ -85,22 +65,13 @@ export function TitleBar() {
           draggable={false}
         />
 
-        {canTogglePanel && !panelOpen && (
-          <div className="no-app-region-drag shrink-0">
-            <LIconButton
-              label="Show sessions and projects"
-              size="compact"
-              onClick={() => setPanelOpen(true)}
-            >
-              <PanelLeftOpen />
-            </LIconButton>
-          </div>
-        )}
-
-        {/* Open sessions live in the window because they outlive any one page.
-            Empty on non-Build spaces, where it collapses to nothing. */}
-        <div className="no-app-region-drag min-w-0 flex-1 overflow-hidden">
-          <ChatTabs selectedChatId={selectedChatId} />
+        <div className="min-w-0 flex-1">
+          <span className="block truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground/70">
+            Orion Command Stage
+          </span>
+          <span className="block truncate text-[9px] text-muted-foreground/65">
+            Marta orchestrates · work stays visible
+          </span>
         </div>
 
         <div className="no-app-region-drag flex shrink-0 items-center gap-1.5">

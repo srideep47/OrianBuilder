@@ -48,6 +48,16 @@ export interface LlamaServerStartConfig extends Omit<
    * system that also has an NVIDIA discrete GPU).
    */
   variantOverride?: LlamaServerVariant;
+  /**
+   * Whether this instance owns the app's inference telemetry: the `/slots`
+   * stats poller and the renderer's inference log.
+   *
+   * Both are module singletons, so a second concurrent instance — Marta's
+   * companion server — would hijack the poller onto its own port and flood the
+   * Engine log with orchestrator chatter. The companion passes `false`;
+   * everything else leaves it at the default.
+   */
+  telemetry?: boolean;
 }
 
 export interface LlamaServerStatus {
@@ -77,6 +87,8 @@ const STDERR_TAIL_LINES = 20;
 
 export class LlamaServerBackend {
   private child: ChildProcess | null = null;
+  /** See `LlamaServerStartConfig.telemetry`. */
+  private telemetry = true;
   private modelPath: string | null = null;
   private mmprojPath: string | null = null;
   private host: string | null = null;
@@ -128,6 +140,7 @@ export class LlamaServerBackend {
     );
 
     this.stderrTail = [];
+    this.telemetry = config.telemetry !== false;
     const child = spawn(binary.path, flags, {
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
@@ -147,7 +160,7 @@ export class LlamaServerBackend {
       for (const line of chunk.split(/\r?\n/)) {
         if (!line.trim()) continue;
         logger.info(`[stdout] ${line}`);
-        forwardLlamaServerLog("info", line);
+        if (this.telemetry) forwardLlamaServerLog("info", line);
       }
     });
     child.stderr?.on("data", (chunk: string) => {
@@ -163,7 +176,7 @@ export class LlamaServerBackend {
         if (this.stderrTail.length > STDERR_TAIL_LINES) {
           this.stderrTail.shift();
         }
-        forwardLlamaServerLog(level, line);
+        if (this.telemetry) forwardLlamaServerLog(level, line);
       }
     });
 
@@ -209,7 +222,7 @@ export class LlamaServerBackend {
 
     // Now that /health is up, start polling /slots so the Inference Monitor
     // pane gets live token-rate / session telemetry from the child process.
-    llamaServerStatsPoller.start(host, port);
+    if (this.telemetry) llamaServerStatsPoller.start(host, port);
 
     logger.info(
       `llama-server ready on ${host}:${port} (pid=${child.pid}, gpu-layers=${resolvedGpuLayers})`,
@@ -222,14 +235,15 @@ export class LlamaServerBackend {
     if (!child) {
       // Even if the child is already gone, the poller may still be ticking
       // against a stale port — stop it defensively so it doesn't fire after
-      // the next model loads.
-      llamaServerStatsPoller.stop();
+      // the next model loads. A non-telemetry instance never started it and
+      // must not stop the engine's.
+      if (this.telemetry) llamaServerStatsPoller.stop();
       return;
     }
 
     // Tear down telemetry before we kill the child so the final stats flush
     // happens against a /slots endpoint that's still answering.
-    llamaServerStatsPoller.stop();
+    if (this.telemetry) llamaServerStatsPoller.stop();
 
     this.child = null;
     this.modelPath = null;

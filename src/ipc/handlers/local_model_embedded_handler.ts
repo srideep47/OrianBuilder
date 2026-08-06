@@ -11,17 +11,29 @@ export function registerEmbeddedLocalModelHandlers(): void {
     const downloaded = listLocalModels();
 
     const seen = new Set<string>();
-    const models: { id: string; name: string; provider: string }[] = [];
+    const models: {
+      modelName: string;
+      displayName: string;
+      provider: "embedded";
+    }[] = [];
 
     if (status.modelLoaded && status.modelPath) {
       const name = status.modelPath.split(/[/\\]/).pop() ?? "embedded-model";
-      models.push({ id: name, name: `${name} · loaded`, provider: "embedded" });
+      models.push({
+        modelName: name,
+        displayName: `${name} · loaded`,
+        provider: "embedded",
+      });
       seen.add(name);
     }
 
     for (const m of downloaded) {
       if (seen.has(m.fileName)) continue;
-      models.push({ id: m.fileName, name: m.fileName, provider: "embedded" });
+      models.push({
+        modelName: m.fileName,
+        displayName: m.fileName,
+        provider: "embedded",
+      });
       seen.add(m.fileName);
     }
 

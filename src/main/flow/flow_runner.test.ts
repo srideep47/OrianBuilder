@@ -473,3 +473,39 @@ describe("swap telemetry", () => {
     expect(result.swapTotals?.count).toBe(2);
   });
 });
+
+describe("Harmony artifact bus", () => {
+  it("publishes a step output and resolves artifact refs in a dependent input", async () => {
+    executeMocks["generate_image"] = vi.fn(async () => ({
+      outputPath: "/tmp/stone.png",
+    }));
+    let received: Record<string, unknown> | undefined;
+    executeMocks["process_mesh"] = vi.fn(async (input) => {
+      received = input;
+      return { outputPath: "/tmp/stone.glb" };
+    });
+
+    const result = await runFlow(
+      makeIntent([
+        {
+          id: "texture",
+          capability: "generate_image",
+          input: { prompt: "stone" },
+        },
+        {
+          id: "mesh",
+          capability: "process_mesh",
+          input: { texture: "artifact://texture" },
+          dependsOn: ["texture"],
+        },
+      ]),
+    );
+
+    expect(received).toEqual({ texture: "/tmp/stone.png" });
+    expect(result.artifacts.map((artifact) => artifact.kind)).toEqual([
+      "image",
+      "mesh",
+    ]);
+    expect(result.steps[1].artifacts?.[0].uri).toBe("/tmp/stone.glb");
+  });
+});

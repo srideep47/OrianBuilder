@@ -116,7 +116,11 @@ export class PageObject {
     await this.modelPicker.selectTestModelViaIpc();
     await this.navigation.goToOrionTab();
     if (!enableBasicAgent) {
-      await this.chatActions.selectChatMode("build");
+      // Best effort: the mode selector lives on the chat surface, and at setUp
+      // time there is usually no chat open. Specs that need a specific mode
+      // select it themselves once they have one. Throwing here would fail
+      // every spec for a step most of them do not depend on.
+      await this.chatActions.selectChatMode("build").catch(() => {});
     }
   }
 

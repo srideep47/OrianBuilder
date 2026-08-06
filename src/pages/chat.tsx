@@ -15,10 +15,79 @@ import { useChats } from "@/hooks/useChats";
 import { selectedAppIdAtom } from "@/atoms/appAtoms";
 import { selectedChatIdAtom } from "@/atoms/chatAtoms";
 import { usePlanImplementation } from "@/hooks/usePlanImplementation";
+import { useSurfaceId } from "@/shell/stage/SurfaceContext";
+import { focusedTaskIdAtom } from "@/shell/stage/task_state";
+import { useQuery } from "@tanstack/react-query";
+import { ipc } from "@/ipc/types";
+import { queryKeys } from "@/lib/queryKeys";
+import { CheckCircle2, CircleAlert, Loader2 } from "lucide-react";
+import { TaskWorkspace } from "@/shell/stage/TaskWorkspace";
 
 const DEFAULT_CHAT_PANEL_SIZE = 50;
 
 export default function ChatPage() {
+  const surfaceId = useSurfaceId();
+  return surfaceId === "build.workspace" ? (
+    <OrchestratedWorkspace />
+  ) : (
+    <LegacyChatPage />
+  );
+}
+
+function OrchestratedWorkspace() {
+  const focusedTaskId = useAtomValue(focusedTaskIdAtom);
+  const { data } = useQuery({
+    queryKey: queryKeys.marta.tasks(),
+    queryFn: () => ipc.marta.listTasks({ includeCompleted: true, limit: 30 }),
+    refetchInterval: 1_000,
+  });
+  const task = data?.tasks.find((candidate) => candidate.id === focusedTaskId);
+  const fallbackTask = data?.tasks[0];
+
+  if (task || focusedTaskId === null) {
+    return <TaskWorkspace task={task} />;
+  }
+
+  {
+    // Accesses are guarded by `fallbackTask &&` in the JSX below.
+    const task = fallbackTask!;
+    return (
+      <div className="flex h-full min-w-0 flex-col">
+        {fallbackTask && (
+          <div className="flex shrink-0 items-center gap-3 border-b border-white/[0.07] bg-white/[0.025] px-3 py-2">
+            <span className="grid h-7 w-7 place-items-center rounded-[9px] bg-primary/10 text-primary">
+              {fallbackTask.status === "running" ||
+              fallbackTask.status === "queued" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : fallbackTask.status === "failed" ? (
+                <CircleAlert className="h-3.5 w-3.5 text-[var(--cosmos-red)]" />
+              ) : (
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              )}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[12px] font-medium text-foreground">
+                {fallbackTask.title}
+              </span>
+              <span className="block truncate text-[10px] text-muted-foreground">
+                {task.workerLabel} · {task.model ?? "default model"} ·{" "}
+                {task.phase}
+              </span>
+            </span>
+            <span className="rounded-full bg-white/[0.055] px-2 py-1 font-mono text-[9px] uppercase text-foreground/55">
+              {fallbackTask.status}
+            </span>
+          </div>
+        )}
+        <div className="min-h-0 flex-1">
+          <PreviewPanel />
+        </div>
+      </div>
+    );
+  }
+}
+
+function LegacyChatPage() {
   const { id: chatId } = useSearch({ from: "/chat" });
   const navigate = useNavigate();
   const [isPreviewOpen, setIsPreviewOpen] = useAtom(isPreviewOpenAtom);
